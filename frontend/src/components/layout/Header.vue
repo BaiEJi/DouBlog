@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, inject } from 'vue'
+import { computed, ref, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThemeToggle from './ThemeToggle.vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePostStore } from '@/stores/post'
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { ChevronRight } from 'lucide-vue-next'
+import { ChevronRight, Search } from 'lucide-vue-next'
 import {
   NavigationMenu,
   NavigationMenuList,
@@ -14,15 +14,17 @@ import {
   NavigationMenuLink,
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu'
-import type { Ref } from 'vue'
+
+const CommandPalette = defineAsyncComponent(() => 
+  import('@/components/CommandPalette.vue')
+)
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const postStore = usePostStore()
 
-// Inject responsive state
-const toggleSidebar = inject<() => void>('toggleSidebar')
+const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
 
 const handleLogout = () => {
   authStore.logout()
@@ -98,40 +100,53 @@ const isActive = (path: string) => {
   }
   return route.path.startsWith(path)
 }
+
+// Open command palette
+const openCommandPalette = () => {
+  commandPaletteRef.value?.toggleCommandPalette()
+}
 </script>
 
 <template>
-  <header class="flex items-center justify-between h-[var(--vscode-header-height)] px-vscode-4 sm:px-vscode-6 bg-vscode-bg-tertiary border-b border-vscode-border">
+  <header class="flex items-center justify-between h-[var(--vscode-header-height)] px-vscode-4 sm:px-vscode-6 bg-vscode-bg-tertiary border-b border-vscode-border"
+          role="banner">
     <div class="flex items-center gap-vscode-3 flex-1 min-w-0">
       <!-- Sidebar Toggle -->
-      <SidebarTrigger class="text-vscode-text-primary hover:bg-vscode-interactive-hover" />
+      <SidebarTrigger 
+        class="text-vscode-text-primary hover:bg-vscode-interactive-hover"
+        aria-label="切换侧边栏" />
       
       <!-- Breadcrumbs (hidden on mobile) -->
-      <nav class="hidden sm:flex items-center gap-1.5 text-vscode-size-sm overflow-x-auto">
+      <nav class="hidden sm:flex items-center gap-1.5 text-vscode-size-sm overflow-x-auto"
+           role="navigation"
+           aria-label="面包屑导航">
         <template v-for="(item, index) in breadcrumbs" :key="item.path">
           <button
             v-if="index < breadcrumbs.length - 1"
             @click="navigateTo(item.path)"
             class="text-vscode-text-secondary hover:text-vscode-text-primary transition-colors truncate max-w-[200px]"
+            :aria-label="`导航到 ${item.label}`"
           >
             {{ item.label }}
           </button>
           <span
             v-else
             class="text-vscode-text-primary font-vscode-medium truncate max-w-[200px]"
+            aria-current="page"
           >
             {{ item.label }}
           </span>
           <ChevronRight
             v-if="index < breadcrumbs.length - 1"
             class="w-4 h-4 text-vscode-text-muted flex-shrink-0"
+            aria-hidden="true"
           />
         </template>
       </nav>
     </div>
 
     <!-- Center: Navigation Menu (desktop only) -->
-    <NavigationMenu class="hidden md:flex">
+    <NavigationMenu class="hidden md:flex" aria-label="主导航">
       <NavigationMenuList>
         <NavigationMenuItem v-for="item in navigationItems" :key="item.path">
           <NavigationMenuLink
@@ -141,6 +156,7 @@ const isActive = (path: string) => {
               isActive(item.path) ? 'bg-vscode-bg-active text-vscode-text-primary' : ''
             ]"
             @click="navigateTo(item.path)"
+            :aria-current="isActive(item.path) ? 'page' : undefined"
           >
             {{ item.label }}
           </NavigationMenuLink>
@@ -149,9 +165,26 @@ const isActive = (path: string) => {
     </NavigationMenu>
 
     <div class="flex items-center gap-vscode-4">
+      <!-- Search Button -->
+      <Button
+        variant="ghost"
+        size="sm"
+        @click="openCommandPalette"
+        aria-label="搜索 (按 ⌘K)"
+        class="hidden sm:flex items-center gap-vscode-2 text-vscode-text-muted hover:text-vscode-text-primary hover:bg-vscode-interactive-hover"
+      >
+        <Search class="size-4" aria-hidden="true" />
+        <span class="text-vscode-size-sm">Search</span>
+        <kbd class="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded-vscode-sm border border-vscode-border bg-vscode-bg-tertiary px-1.5 font-mono text-[10px] font-medium text-vscode-text-muted sm:flex"
+             aria-hidden="true">
+          <span class="text-vscode-size-xs">⌘</span>K
+        </kbd>
+      </Button>
+
       <span
         v-if="authStore.username"
         class="text-vscode-size-sm text-vscode-text-secondary hidden sm:inline"
+        aria-label="当前用户"
       >
         {{ authStore.username }}
       </span>
@@ -162,9 +195,13 @@ const isActive = (path: string) => {
         variant="outline"
         size="default"
         @click="handleLogout"
+        aria-label="退出登录"
       >
         Logout
       </Button>
     </div>
+
+    <!-- Command Palette -->
+    <CommandPalette ref="commandPaletteRef" />
   </header>
 </template>

@@ -1,13 +1,10 @@
+@import './tokens.css';
 @import './variables.css';
+@import './accessibility.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* Smooth theme transitions */
-html {
-  transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
-}
 
 * {
   margin: 0;
@@ -21,16 +18,16 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: var(--vscode-bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-color);
+  background: var(--vscode-border-color);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: var(--vscode-text-secondary);
 }
 
 /* Toast Notification Animations - VS Code Style */

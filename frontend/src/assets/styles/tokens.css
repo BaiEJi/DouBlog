@@ -1,0 +1,433 @@
+/**
+ * Design Token System - Kimi Style
+ * 
+ * This file defines all design tokens for the application following
+ * the Kimi design system. All colors use OKLCH color space for better
+ * perceptual uniformity and accessibility.
+ * 
+ * Naming Convention: --vscode-{category}-{variant}
+ * 
+ * @see https://www.kimi.com/code
+ */
+
+/* ================================
+   LIGHT THEME (Default)
+   ================================ */
+:root {
+  /* ================================
+     COLORS - OKLCH Format
+     ================================ */
+  
+  /* Background Colors - Three-level hierarchy */
+  --vscode-bg-primary: oklch(1 0 0);                    /* Pure white - main background */
+  --vscode-bg-secondary: oklch(0.97 0.005 250);         /* Very light blue-gray - sidebar/cards */
+  --vscode-bg-tertiary: oklch(0.95 0.01 250);           /* Light blue-gray - elevated surfaces */
+  --vscode-bg-elevated: oklch(0.99 0.003 250);          /* Elevated elements like dropdowns */
+  --vscode-bg-hover: oklch(0.93 0.012 250);             /* Hover state background */
+  --vscode-bg-active: oklch(0.90 0.015 250);            /* Active/pressed state background */
+  
+  /* Text Colors - Three-level hierarchy */
+  --vscode-text-primary: oklch(0.24 0.01 250);          /* Dark blue-gray - primary text */
+  --vscode-text-secondary: oklch(0.42 0.01 250);        /* Medium gray - secondary text */
+  --vscode-text-muted: oklch(0.58 0.01 250);            /* Light gray - muted/disabled text */
+  --vscode-text-disabled: oklch(0.70 0.005 250);        /* Very light gray - disabled state */
+  --vscode-text-inverse: oklch(0.98 0 0);               /* Light text for dark backgrounds */
+  
+  /* Border Colors */
+  --vscode-border: oklch(0.76 0.01 250);                /* Standard border */
+  --vscode-border-light: oklch(0.85 0.008 250);         /* Light border for subtle separation */
+  --vscode-border-focus: oklch(0.45 0.2 250);           /* Focus ring border */
+  
+  /* Accent Colors - Primary Actions */
+  --vscode-accent-primary: oklch(0.45 0.2 250);         /* Primary accent - blue */
+  --vscode-accent-primary-hover: oklch(0.50 0.22 250);  /* Primary accent hover */
+  --vscode-accent-primary-active: oklch(0.40 0.18 250); /* Primary accent active/pressed */
+  --vscode-accent-primary-subtle: oklch(0.92 0.05 250); /* Primary accent subtle background */
+  
+  /* Accent Colors - Semantic */
+  --vscode-accent-success: oklch(0.50 0.15 142);        /* Success - green */
+  --vscode-accent-success-hover: oklch(0.55 0.17 142);
+  --vscode-accent-success-subtle: oklch(0.92 0.04 142);
+  
+  --vscode-accent-warning: oklch(0.65 0.15 80);         /* Warning - yellow/orange */
+  --vscode-accent-warning-hover: oklch(0.70 0.17 80);
+  --vscode-accent-warning-subtle: oklch(0.95 0.04 80);
+  
+  --vscode-accent-error: oklch(0.55 0.2 25);            /* Error - red */
+  --vscode-accent-error-hover: oklch(0.60 0.22 25);
+  --vscode-accent-error-subtle: oklch(0.92 0.06 25);
+  
+  --vscode-accent-info: oklch(0.48 0.18 240);           /* Info - blue */
+  --vscode-accent-info-hover: oklch(0.53 0.20 240);
+  --vscode-accent-info-subtle: oklch(0.93 0.05 240);
+  
+  /* Interactive Colors */
+  --vscode-interactive-hover: oklch(0.95 0.015 250);
+  --vscode-interactive-active: oklch(0.90 0.025 250);
+  --vscode-interactive-selected: oklch(0.90 0.08 250);
+  
+  /* Code/Syntax Highlighting */
+  --vscode-code-background: oklch(0.96 0.008 250);
+  --vscode-code-border: oklch(0.88 0.01 250);
+  
+  /* ================================
+     TYPOGRAPHY
+     ================================ */
+  
+  /* Font Families */
+  --vscode-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+  --vscode-font-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  --vscode-font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  
+  /* Font Sizes - Heading Scale */
+  --vscode-font-size-h1: 2.5rem;      /* 40px */
+  --vscode-font-size-h2: 2rem;        /* 32px */
+  --vscode-font-size-h3: 1.5rem;      /* 24px */
+  --vscode-font-size-h4: 1.25rem;     /* 20px */
+  --vscode-font-size-h5: 1.125rem;    /* 18px */
+  --vscode-font-size-h6: 1rem;        /* 16px */
+  
+  /* Font Sizes - Body Text */
+  --vscode-font-size-xs: 0.75rem;     /* 12px */
+  --vscode-font-size-sm: 0.875rem;    /* 14px */
+  --vscode-font-size-base: 1rem;      /* 16px */
+  --vscode-font-size-lg: 1.125rem;    /* 18px */
+  --vscode-font-size-xl: 1.25rem;     /* 20px */
+  --vscode-font-size-2xl: 1.5rem;     /* 24px */
+  --vscode-font-size-3xl: 1.875rem;   /* 30px */
+  --vscode-font-size-4xl: 2.25rem;    /* 36px */
+  
+  /* Font Weights */
+  --vscode-font-weight-normal: 400;
+  --vscode-font-weight-medium: 500;
+  --vscode-font-weight-semibold: 600;
+  --vscode-font-weight-bold: 700;
+  
+  /* Line Heights */
+  --vscode-line-height-tight: 1.25;
+  --vscode-line-height-snug: 1.375;
+  --vscode-line-height-normal: 1.5;
+  --vscode-line-height-relaxed: 1.625;
+  --vscode-line-height-loose: 2;
+  
+  /* Line Heights for Headings */
+  --vscode-line-height-h1: 1.2;
+  --vscode-line-height-h2: 1.25;
+  --vscode-line-height-h3: 1.3;
+  --vscode-line-height-h4: 1.35;
+  --vscode-line-height-h5: 1.4;
+  --vscode-line-height-h6: 1.45;
+  
+  /* Letter Spacing */
+  --vscode-letter-spacing-tighter: -0.05em;
+  --vscode-letter-spacing-tight: -0.025em;
+  --vscode-letter-spacing-normal: 0;
+  --vscode-letter-spacing-wide: 0.025em;
+  --vscode-letter-spacing-wider: 0.05em;
+  
+  /* ================================
+     SPACING
+     ================================ */
+  
+  --vscode-spacing-0: 0;
+  --vscode-spacing-px: 1px;
+  --vscode-spacing-0-5: 0.125rem;    /* 2px */
+  --vscode-spacing-1: 0.25rem;       /* 4px */
+  --vscode-spacing-1-5: 0.375rem;    /* 6px */
+  --vscode-spacing-2: 0.5rem;        /* 8px */
+  --vscode-spacing-2-5: 0.625rem;    /* 10px */
+  --vscode-spacing-3: 0.75rem;       /* 12px */
+  --vscode-spacing-3-5: 0.875rem;    /* 14px */
+  --vscode-spacing-4: 1rem;          /* 16px */
+  --vscode-spacing-5: 1.25rem;       /* 20px */
+  --vscode-spacing-6: 1.5rem;        /* 24px */
+  --vscode-spacing-7: 1.75rem;       /* 28px */
+  --vscode-spacing-8: 2rem;          /* 32px */
+  --vscode-spacing-9: 2.25rem;       /* 36px */
+  --vscode-spacing-10: 2.5rem;       /* 40px */
+  --vscode-spacing-11: 2.75rem;      /* 44px */
+  --vscode-spacing-12: 3rem;         /* 48px */
+  --vscode-spacing-14: 3.5rem;       /* 56px */
+  --vscode-spacing-16: 4rem;         /* 64px */
+  --vscode-spacing-20: 5rem;         /* 80px */
+  --vscode-spacing-24: 6rem;         /* 96px */
+  --vscode-spacing-28: 7rem;         /* 112px */
+  --vscode-spacing-32: 8rem;         /* 128px */
+  
+  /* Semantic Spacing */
+  --vscode-spacing-xs: var(--vscode-spacing-1);    /* 4px */
+  --vscode-spacing-sm: var(--vscode-spacing-2);    /* 8px */
+  --vscode-spacing-md: var(--vscode-spacing-4);    /* 16px */
+  --vscode-spacing-lg: var(--vscode-spacing-6);    /* 24px */
+  --vscode-spacing-xl: var(--vscode-spacing-8);    /* 32px */
+  --vscode-spacing-2xl: var(--vscode-spacing-12);  /* 48px */
+  
+  /* ================================
+     SHADOWS
+     ================================ */
+  
+  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.1);
+  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.1), 0 2px 4px -2px oklch(0 0 0 / 0.1);
+  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.1), 0 4px 6px -4px oklch(0 0 0 / 0.1);
+  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.1), 0 8px 10px -6px oklch(0 0 0 / 0.1);
+  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.25);
+  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.05);
+  
+  /* Glow shadows for focus/active states */
+  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.45 0.2 250 / 0.1);
+  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.45 0.2 250 / 0.2);
+  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.45 0.2 250 / 0.25);
+  
+  /* ================================
+     BORDER RADIUS
+     ================================ */
+  
+  --vscode-radius-none: 0;
+  --vscode-radius-sm: 0.25rem;       /* 4px */
+  --vscode-radius-md: 0.375rem;      /* 6px */
+  --vscode-radius-lg: 0.5rem;        /* 8px */
+  --vscode-radius-xl: 0.75rem;       /* 12px */
+  --vscode-radius-2xl: 1rem;         /* 16px */
+  --vscode-radius-3xl: 1.5rem;       /* 24px */
+  --vscode-radius-full: 9999px;
+  
+  /* ================================
+     LAYOUT
+     ================================ */
+  
+  --vscode-header-height: 64px;
+  --vscode-sidebar-width: 272px;
+  --vscode-sidebar-width-collapsed: 48px;
+  --vscode-content-max-width: 752px;
+  --vscode-content-padding-x: var(--vscode-spacing-6);
+  
+  /* Z-index Scale */
+  --vscode-z-dropdown: 1000;
+  --vscode-z-sticky: 1020;
+  --vscode-z-fixed: 1030;
+  --vscode-z-modal-backdrop: 1040;
+  --vscode-z-modal: 1050;
+  --vscode-z-popover: 1060;
+  --vscode-z-tooltip: 1070;
+  --vscode-z-toast: 1080;
+  
+  /* ================================
+     ANIMATIONS
+     ================================ */
+  
+  /* Durations */
+  --vscode-duration-instant: 0ms;
+  --vscode-duration-fast: 150ms;
+  --vscode-duration-normal: 300ms;
+  --vscode-duration-slow: 500ms;
+  --vscode-duration-slower: 700ms;
+  
+  /* Easings */
+  --vscode-ease-linear: linear;
+  --vscode-ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --vscode-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --vscode-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --vscode-ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --vscode-ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --vscode-ease-in-back: cubic-bezier(0.6, -0.28, 0.735, 0.045);
+  
+  /* Animation References */
+  --vscode-animate-fade-in: fadeIn var(--vscode-duration-normal) var(--vscode-ease-in-out);
+  --vscode-animate-fade-out: fadeOut var(--vscode-duration-normal) var(--vscode-ease-in-out);
+  --vscode-animate-slide-in: slideIn var(--vscode-duration-normal) var(--vscode-ease-out-back);
+  --vscode-animate-slide-out: slideOut var(--vscode-duration-normal) var(--vscode-ease-in-back);
+  --vscode-animate-scale-in: scaleIn var(--vscode-duration-normal) var(--vscode-ease-spring);
+  --vscode-animate-scale-out: scaleOut var(--vscode-duration-normal) var(--vscode-ease-in-back);
+}
+
+/* ================================
+   DARK THEME
+   ================================ */
+.dark {
+  /* Background Colors - Three-level hierarchy */
+  --vscode-bg-primary: oklch(0.18 0.01 250);           /* Dark blue-gray - main background */
+  --vscode-bg-secondary: oklch(0.14 0.01 250);         /* Darker blue-gray - sidebar/cards */
+  --vscode-bg-tertiary: oklch(0.16 0.01 250);          /* Medium dark blue-gray - elevated surfaces */
+  --vscode-bg-elevated: oklch(0.20 0.012 250);         /* Elevated elements */
+  --vscode-bg-hover: oklch(0.22 0.015 250);            /* Hover state background */
+  --vscode-bg-active: oklch(0.24 0.018 250);           /* Active/pressed state background */
+  
+  /* Text Colors - Three-level hierarchy - IMPROVED CONTRAST */
+  --vscode-text-primary: oklch(0.95 0 0);              /* Light gray - primary text (WCAG AA compliant) */
+  --vscode-text-secondary: oklch(0.70 0.01 250);       /* Medium light gray - secondary text (WCAG AA compliant) */
+  --vscode-text-muted: oklch(0.55 0.01 250);           /* Medium gray - muted text (WCAG AA compliant) */
+  --vscode-text-disabled: oklch(0.40 0.005 250);       /* Darker gray - disabled state */
+  --vscode-text-inverse: oklch(0.15 0.01 250);         /* Dark text for light backgrounds */
+  
+  /* Border Colors */
+  --vscode-border: oklch(0.24 0.02 250);               /* Standard border */
+  --vscode-border-light: oklch(0.20 0.015 250);        /* Light border */
+  --vscode-border-focus: oklch(0.70 0.2 250);          /* Focus ring border */
+  
+  /* Accent Colors - Primary Actions */
+  --vscode-accent-primary: oklch(0.70 0.2 250);        /* Primary accent - blue (lighter for dark mode) */
+  --vscode-accent-primary-hover: oklch(0.75 0.22 250);
+  --vscode-accent-primary-active: oklch(0.65 0.18 250);
+  --vscode-accent-primary-subtle: oklch(0.25 0.08 250);
+  
+  /* Accent Colors - Semantic */
+  --vscode-accent-success: oklch(0.65 0.15 142);       /* Success - green (lighter for dark mode) */
+  --vscode-accent-success-hover: oklch(0.70 0.17 142);
+  --vscode-accent-success-subtle: oklch(0.25 0.06 142);
+  
+  --vscode-accent-warning: oklch(0.75 0.15 80);        /* Warning - yellow/orange */
+  --vscode-accent-warning-hover: oklch(0.80 0.17 80);
+  --vscode-accent-warning-subtle: oklch(0.28 0.06 80);
+  
+  --vscode-accent-error: oklch(0.70 0.2 25);           /* Error - red */
+  --vscode-accent-error-hover: oklch(0.75 0.22 25);
+  --vscode-accent-error-subtle: oklch(0.30 0.08 25);
+  
+  --vscode-accent-info: oklch(0.68 0.18 240);          /* Info - blue */
+  --vscode-accent-info-hover: oklch(0.73 0.20 240);
+  --vscode-accent-info-subtle: oklch(0.25 0.07 240);
+  
+  /* Interactive Colors */
+  --vscode-interactive-hover: oklch(0.22 0.015 250);
+  --vscode-interactive-active: oklch(0.25 0.02 250);
+  --vscode-interactive-selected: oklch(0.30 0.12 250);
+  
+  /* Code/Syntax Highlighting */
+  --vscode-code-background: oklch(0.15 0.012 250);
+  --vscode-code-border: oklch(0.25 0.015 250);
+  
+  /* Shadows - darker for dark mode */
+  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.2);
+  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.3), 0 1px 2px -1px oklch(0 0 0 / 0.3);
+  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.3), 0 2px 4px -2px oklch(0 0 0 / 0.3);
+  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.3), 0 4px 6px -4px oklch(0 0 0 / 0.3);
+  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.3), 0 8px 10px -6px oklch(0 0 0 / 0.3);
+  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.5);
+  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.2);
+  
+  /* Glow shadows for dark mode */
+  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.70 0.2 250 / 0.15);
+  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.70 0.2 250 / 0.25);
+  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.70 0.2 250 / 0.3);
+}
+
+/* ================================
+   ANIMATION KEYFRAMES
+   ================================ */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(-10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-10px);
+    opacity: 0;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes scaleOut {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+}
+
+/* ================================
+   UTILITY CLASSES
+   ================================ */
+
+/* Typography utilities */
+.font-sans {
+  font-family: var(--vscode-font-sans);
+}
+
+.font-mono {
+  font-family: var(--vscode-font-mono);
+}
+
+.font-display {
+  font-family: var(--vscode-font-display);
+}
+
+/* Smooth theme transitions */
+html {
+  transition: background-color var(--vscode-duration-normal) var(--vscode-ease-in-out),
+              color var(--vscode-duration-normal) var(--vscode-ease-in-out);
+}
+
+/* Focus visible outline using tokens */
+*:focus-visible {
+  outline: 2px solid var(--vscode-border-focus);
+  outline-offset: 2px;
+}
+
+/* Selection colors */
+::selection {
+  background-color: var(--vscode-accent-primary-subtle);
+  color: var(--vscode-text-primary);
+}
+
+/* Scrollbar styling using tokens */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--vscode-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--vscode-border);
+  border-radius: var(--vscode-radius-sm);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-text-muted);
+}
