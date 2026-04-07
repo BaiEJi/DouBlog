@@ -175,6 +175,17 @@ export default {
         'ease-in-back': 'cubic-bezier(0.6, -0.28, 0.735, 0.045)',
       },
       
+      // Transition property extensions
+      transitionProperty: {
+        'width': 'width',
+        'height': 'height',
+        'spacing': 'margin, padding',
+        'size': 'width, height',
+        'colors': 'color, background-color, border-color, text-decoration-color, fill, stroke',
+        'opacity-transform': 'opacity, transform',
+        'visibility-opacity': 'visibility, opacity',
+      },
+      
       // Width extensions
       width: {
         '70': '280px',
@@ -187,7 +198,8 @@ export default {
         '3xl': '48rem',
         '4xl': '56rem',
         '5xl': '64rem',
-        'sidebar': 'var(--sidebar-width, 260px)',
+        'sidebar': '280px', // Fixed sidebar width as per plan requirement
+        'content': 'calc(100% - 280px)', // Content width alongside fixed sidebar
         'activity-bar': 'var(--activity-bar-width, 48px)',
         'panel': 'var(--panel-width, 400px)',
       },

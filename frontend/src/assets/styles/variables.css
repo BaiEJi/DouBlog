@@ -66,6 +66,28 @@
   --border: 0 0% 90%;
   --input: 0 0% 90%;
   --ring: 210 100% 50%;
+
+  /* Timing */
+  --duration-instant: 0ms;
+  --duration-fast: 150ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+
+  /* Easing */
+  --ease-linear: linear;
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-in-back: cubic-bezier(0.6, -0.28, 0.735, 0.045);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Animation references */
+  --animate-fade-in: fadeIn var(--duration-normal) var(--ease-in-out);
+  --animate-fade-out: fadeOut var(--duration-normal) var(--ease-in-out);
+  --animate-slide-in: slideIn var(--duration-normal) var(--ease-out-back);
+  --animate-slide-out: slideOut var(--duration-normal) var(--ease-in-back);
+  --animate-scale-in: scaleIn var(--duration-normal) var(--ease-spring);
+  --animate-scale-out: scaleOut var(--duration-normal) var(--ease-in-back);
 }
 
 .dark {
@@ -82,4 +104,88 @@
   --accent-green: #4caf50;
   --accent-red: #f44336;
   --accent-yellow: #ff9800;
+
+  /* VS Code Semantic Colors - Dark Mode (Dark+ Theme) */
+  --vscode-editor-background: #1e1e1e;
+  --vscode-editor-foreground: #d4d4d4;
+  --vscode-sidebar-background: #252526;
+  --vscode-sidebar-foreground: #d4d4d4;
+  --vscode-activityBar-background: #2d2d2d;
+  --vscode-activityBar-foreground: #ffffff;
+  --vscode-statusBar-background: #007acc;
+  --vscode-statusBar-foreground: #ffffff;
+  --vscode-panel-background: #1e1e1e;
+  --vscode-panel-border: #3c3c3c;
+  --vscode-input-background: #3c3c3c;
+  --vscode-input-border: #3c3c3c;
+  --vscode-dropdown-background: #252526;
+  --vscode-dropdown-border: #3c3c3c;
+  --vscode-list-activeSelection: #264f78;
+  --vscode-list-hoverBackground: #2a2d2e;
+  --vscode-button-background: #0e639c;
+  --vscode-button-foreground: #ffffff;
+  --vscode-scrollbarSlider-background: rgba(121, 121, 121, 0.4);
+  --vscode-scrollbarSlider-hover: rgba(121, 121, 121, 0.6);
+  --vscode-tab-activeBackground: #1e1e1e;
+  --vscode-tab-inactiveBackground: #2d2d2d;
+  --vscode-notification-background: #252526;
+  --vscode-notification-border: #3c3c3c;
+  --vscode-breadcrumb-foreground: #858585;
+
+  /* VS Code Border and Shadow Variables - Dark Mode */
+  --vscode-border-color: #3c3c3c;
+  --vscode-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --vscode-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.4);
+  --vscode-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+
+  /* shadcn-vue Variable Mappings - Dark Mode */
+  --background: 0 0% 12%;
+  --foreground: 0 0% 83%;
+  --card: 0 0% 12%;
+  --card-foreground: 0 0% 83%;
+  --popover: 0 0% 15%;
+  --popover-foreground: 0 0% 83%;
+  --primary: 210 100% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 15%;
+  --secondary-foreground: 0 0% 83%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 46%;
+  --accent: 210 100% 50%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 23%;
+  --input: 0 0% 23%;
+  --ring: 210 100% 50%;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes slideIn {
+  from { transform: translateX(-10px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slideOut {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-10px); opacity: 0; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes scaleOut {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(0.95); opacity: 0; }
 }

@@ -11,9 +11,9 @@ const props = defineProps<ToasterProps>()
   <Sonner
     :class="cn('toaster group', props.class)"
     :style="{
-      '--normal-bg': 'var(--popover)',
-      '--normal-text': 'var(--popover-foreground)',
-      '--normal-border': 'var(--border)',
+      '--normal-bg': 'var(--vscode-notification-background)',
+      '--normal-text': 'var(--vscode-editor-foreground)',
+      '--normal-border': 'var(--vscode-notification-border)',
       '--border-radius': 'var(--radius)',
     }"
     v-bind="props"

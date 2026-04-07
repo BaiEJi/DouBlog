@@ -43,4 +43,5 @@ export interface UpdatePostRequest {
   is_top?: boolean
   order?: number
   tags?: string[]
+  parent_id?: number | null
 }

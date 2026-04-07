@@ -4,6 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.3s ease-in-out, color 0.3s ease-in-out;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -26,4 +31,59 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
+}
+
+/* Toast Notification Animations - VS Code Style */
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slide-out {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Sonner Toast Styling */
+.toaster [data-sonner-toast] {
+  animation: slide-in 0.3s ease-out;
+  border: 1px solid var(--vscode-notification-border);
+  background: var(--vscode-notification-background);
+  color: var(--vscode-editor-foreground);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px);
+}
+
+.toaster [data-sonner-toast][data-removed="true"] {
+  animation: slide-out 0.3s ease-in forwards;
+}
+
+.toaster [data-sonner-toast] [data-icon] {
+  flex-shrink: 0;
+}
+
+.toaster [data-sonner-toast] [data-content] {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toaster [data-sonner-toast] [data-close-button] {
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.toaster [data-sonner-toast] [data-close-button]:hover {
+  opacity: 1;
 }
