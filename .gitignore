@@ -1,0 +1,10 @@
+.*/
+!.gitignore
+
+node_modules
+__pycache__
+*.pyc
+dist
+*.log
+*.db
+*.db.backup-*

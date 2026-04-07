@@ -1,0 +1,85 @@
+:root {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f3f3f3;
+  --bg-tertiary: #e8e8e8;
+  --text-primary: #1e1e1e;
+  --text-secondary: #6e6e6e;
+  --text-muted: #858585;
+  --border-color: #e5e5e5;
+  --border: #e5e5e5;
+  --accent: #007acc;
+  --accent-blue: #007acc;
+  --accent-green: #4caf50;
+  --accent-red: #f44336;
+  --accent-yellow: #ff9800;
+
+  /* VS Code Semantic Colors - Light Mode */
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #1e1e1e;
+  --vscode-sidebar-background: #f3f3f3;
+  --vscode-sidebar-foreground: #1e1e1e;
+  --vscode-activityBar-background: #2c2c2c;
+  --vscode-activityBar-foreground: #ffffff;
+  --vscode-statusBar-background: #007acc;
+  --vscode-statusBar-foreground: #ffffff;
+  --vscode-panel-background: #ffffff;
+  --vscode-panel-border: #e5e5e5;
+  --vscode-input-background: #ffffff;
+  --vscode-input-border: #e5e5e5;
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-border: #e5e5e5;
+  --vscode-list-activeSelection: #264f78;
+  --vscode-list-hoverBackground: #f3f3f3;
+  --vscode-button-background: #007acc;
+  --vscode-button-foreground: #ffffff;
+  --vscode-scrollbarSlider-background: rgba(100, 100, 100, 0.4);
+  --vscode-scrollbarSlider-hover: rgba(100, 100, 100, 0.6);
+  --vscode-tab-activeBackground: #ffffff;
+  --vscode-tab-inactiveBackground: #f3f3f3;
+  --vscode-notification-background: #f3f3f3;
+  --vscode-notification-border: #e5e5e5;
+  --vscode-breadcrumb-foreground: #6e6e6e;
+
+  /* VS Code Border and Shadow Variables */
+  --vscode-border-color: #e5e5e5;
+  --vscode-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --vscode-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --vscode-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+
+  /* shadcn-vue Variable Mappings - Light Mode */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 12%;
+  --primary: 210 100% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 12%;
+  --muted: 0 0% 95%;
+  --muted-foreground: 0 0% 46%;
+  --accent: 210 100% 50%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 210 100% 50%;
+}
+
+.dark {
+  --bg-primary: #1e1e1e;
+  --bg-secondary: #252526;
+  --bg-tertiary: #2d2d2d;
+  --text-primary: #d4d4d4;
+  --text-secondary: #858585;
+  --text-muted: #6e6e6e;
+  --border-color: #3c3c3c;
+  --border: #3c3c3c;
+  --accent: #007acc;
+  --accent-blue: #007acc;
+  --accent-green: #4caf50;
+  --accent-red: #f44336;
+  --accent-yellow: #ff9800;
+}
