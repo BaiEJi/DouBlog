@@ -3,6 +3,7 @@ import { onMounted, computed, ref, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Layout from '@/components/layout/Layout.vue'
 import MarkdownRenderer from '@/components/post/MarkdownRenderer.vue'
+import PostDetailSkeleton from '@/components/post/PostDetailSkeleton.vue'
 import { usePostStore } from '@/stores/post'
 import { formatDate } from '@/utils/format'
 import { Button } from '@/components/ui/button'
@@ -14,8 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+  BreadcrumbPage,
+} from '@/components/ui/breadcrumb'
 import { toast } from 'vue-sonner'
-import { Clock, User, Calendar, Tag, Edit, Trash2, Share2 } from 'lucide-vue-next'
+import { Clock, User, Calendar, Tag, Edit, Trash2, Share2, Home } from 'lucide-vue-next'
+import type { Post } from '@/types/post'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +34,26 @@ const postStore = usePostStore()
 const slug = computed(() => route.params.slug as string)
 const currentPost = computed(() => postStore.currentPost)
 const loading = computed(() => postStore.loading)
+
+// Build breadcrumb items from post hierarchy
+const breadcrumbItems = computed(() => {
+  if (!currentPost.value) return []
+  
+  const items = []
+  let post: Post | null = currentPost.value
+  
+  // Build path from current post to root
+  while (post) {
+    items.unshift({
+      title: post.title,
+      slug: post.slug,
+      isCurrent: post === currentPost.value
+    })
+    post = post.parent
+  }
+  
+  return items
+})
 
 // TOC state
 const tocItems = ref<Array<{ id: string; text: string; level: number }>>([])
@@ -65,7 +95,7 @@ const extractToc = (content: string) => {
 const scrollToHeading = (id: string) => {
   const element = document.getElementById(id)
   if (element) {
-    const offset = 80 // Account for header height
+    const offset = 56 // Account for header height (h-14 = 56px)
     const elementPosition = element.getBoundingClientRect().top
     const offsetPosition = elementPosition + window.pageYOffset - offset
 
@@ -83,7 +113,7 @@ const updateActiveToc = () => {
     element: document.getElementById(item.id)
   }))
 
-  const scrollPosition = window.scrollY + 100
+  const scrollPosition = window.scrollY + 56
 
   for (let i = headings.length - 1; i >= 0; i--) {
     const heading = headings[i]
@@ -178,14 +208,45 @@ onUnmounted(() => {
   <Layout>
     <div class="max-w-7xl mx-auto px-6 py-8">
       <!-- Loading State -->
-      <div v-if="loading" class="flex items-center justify-center min-h-[400px]">
-        <div class="text-vscode-text-secondary">加载中...</div>
-      </div>
+      <PostDetailSkeleton v-if="loading" />
 
       <!-- Content -->
       <div v-else-if="currentPost" class="flex gap-8">
         <!-- Main Content -->
         <div class="flex-1 min-w-0">
+          <!-- Breadcrumb Navigation -->
+          <Breadcrumb class="mb-6">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink as-child>
+                  <router-link to="/" class="flex items-center gap-1.5">
+                    <Home class="w-3.5 h-3.5" />
+                    首页
+                  </router-link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              
+              <BreadcrumbSeparator v-if="breadcrumbItems.length > 0" />
+              
+              <BreadcrumbItem
+                v-for="(item, index) in breadcrumbItems"
+                :key="item.slug"
+              >
+                <template v-if="!item.isCurrent">
+                  <BreadcrumbLink as-child>
+                    <router-link :to="`/post/${item.slug}`">
+                      {{ item.title }}
+                    </router-link>
+                  </BreadcrumbLink>
+                  <BreadcrumbSeparator v-if="index < breadcrumbItems.length - 1" />
+                </template>
+                <template v-else>
+                  <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
+                </template>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+
           <!-- Article Header -->
           <article class="mb-8">
             <!-- Title -->
@@ -275,7 +336,7 @@ onUnmounted(() => {
           v-if="showToc && tocItems.length > 0"
           class="hidden lg:block w-64 flex-shrink-0"
         >
-          <div class="sticky top-24">
+          <div class="sticky top-14">
             <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-vscode p-4">
               <h3 class="text-sm font-semibold text-vscode-text-primary mb-3 uppercase tracking-wide">
                 目录
@@ -344,6 +405,6 @@ onUnmounted(() => {
 <style scoped>
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
-  scroll-margin-top: 80px;
+  scroll-margin-top: 56px;
 }
 </style>
