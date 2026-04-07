@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed, ref, onUnmounted } from 'vue'
+import { onMounted, computed, ref, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Layout from '@/components/layout/Layout.vue'
 import MarkdownRenderer from '@/components/post/MarkdownRenderer.vue'
@@ -24,7 +24,8 @@ import {
   BreadcrumbPage,
 } from '@/components/ui/breadcrumb'
 import { toast } from 'vue-sonner'
-import { Clock, User, Calendar, Tag, Edit, Trash2, Share2, Home } from 'lucide-vue-next'
+import { Clock, User, Calendar, Tag, Edit, Trash2, Share2, Home, Eye } from 'lucide-vue-next'
+import { Badge } from '@/components/ui/badge'
 import type { Post } from '@/types/post'
 
 const route = useRoute()
@@ -60,6 +61,9 @@ const tocItems = ref<Array<{ id: string; text: string; level: number }>>([])
 const activeTocId = ref<string>('')
 const showToc = ref(true)
 
+// IntersectionObserver for scroll spy
+let observer: IntersectionObserver | null = null
+
 // Delete dialog state
 const showDeleteDialog = ref(false)
 
@@ -91,13 +95,13 @@ const extractToc = (content: string) => {
   return items
 }
 
-// Scroll to heading
+// Scroll to heading with smooth behavior
 const scrollToHeading = (id: string) => {
   const element = document.getElementById(id)
   if (element) {
-    const offset = 56 // Account for header height (h-14 = 56px)
+    const headerOffset = 64 // Header height (h-16)
     const elementPosition = element.getBoundingClientRect().top
-    const offsetPosition = elementPosition + window.pageYOffset - offset
+    const offsetPosition = elementPosition + window.pageYOffset - headerOffset
 
     window.scrollTo({
       top: offsetPosition,
@@ -106,25 +110,38 @@ const scrollToHeading = (id: string) => {
   }
 }
 
-// Track active heading on scroll
-const updateActiveToc = () => {
-  const headings = tocItems.value.map(item => ({
-    id: item.id,
-    element: document.getElementById(item.id)
-  }))
-
-  const scrollPosition = window.scrollY + 56
-
-  for (let i = headings.length - 1; i >= 0; i--) {
-    const heading = headings[i]
-    if (heading.element && heading.element.offsetTop <= scrollPosition) {
-      activeTocId.value = heading.id
-      return
-    }
+// Setup IntersectionObserver for scroll spy
+const setupScrollSpy = () => {
+  if (observer) {
+    observer.disconnect()
   }
 
-  if (headings.length > 0) {
-    activeTocId.value = headings[0].id
+  const headerHeight = 64
+  const options: IntersectionObserverInit = {
+    root: null,
+    rootMargin: `-${headerHeight}px 0px -70% 0px`,
+    threshold: 0
+  }
+
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        activeTocId.value = entry.target.id
+      }
+    })
+  }, options)
+
+  // Observe all heading elements
+  tocItems.value.forEach((item) => {
+    const element = document.getElementById(item.id)
+    if (element && observer) {
+      observer.observe(element)
+    }
+  })
+
+  // Set initial active item
+  if (tocItems.value.length > 0 && !activeTocId.value) {
+    activeTocId.value = tocItems.value[0].id
   }
 }
 
@@ -169,38 +186,26 @@ onMounted(() => {
   }
 })
 
-// Watch for content changes to extract TOC
-onMounted(() => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const unwatch = postStore.$subscribe((_mutation, state) => {
-    if (state.currentPost?.content) {
-      tocItems.value = extractToc(state.currentPost.content)
-      if (tocItems.value.length > 0) {
-        activeTocId.value = tocItems.value[0].id
-      }
+// Watch for post content changes
+watch(
+  () => currentPost.value?.content,
+  (content) => {
+    if (content) {
+      tocItems.value = extractToc(content)
+      // Wait for DOM to update before setting up observer
+      nextTick(() => {
+        setupScrollSpy()
+      })
     }
-  })
-
-  // Initial extraction if post is already loaded
-  if (currentPost.value?.content) {
-    tocItems.value = extractToc(currentPost.value.content)
-    if (tocItems.value.length > 0) {
-      activeTocId.value = tocItems.value[0].id
-    }
-  }
-
-  // Add scroll listener
-  window.addEventListener('scroll', updateActiveToc)
-
-  // Cleanup
-  onUnmounted(() => {
-    unwatch()
-    window.removeEventListener('scroll', updateActiveToc)
-  })
-})
+  },
+  { immediate: true }
+)
 
 onUnmounted(() => {
-  window.removeEventListener('scroll', updateActiveToc)
+  if (observer) {
+    observer.disconnect()
+    observer = null
+  }
 })
 </script>
 
@@ -250,7 +255,7 @@ onUnmounted(() => {
           <!-- Article Header -->
           <article class="mb-8">
             <!-- Title -->
-            <h1 class="text-4xl font-bold mb-6 text-vscode-text-primary leading-tight">
+            <h1 class="text-3xl md:text-4xl font-bold mb-6 text-vscode-text-primary leading-tight tracking-tight">
               {{ currentPost.title }}
             </h1>
 
@@ -274,22 +279,24 @@ onUnmounted(() => {
                 <span>{{ readingTime }} 分钟阅读</span>
               </div>
 
-              <!-- View Count -->
-              <div class="flex items-center gap-2">
+               <!-- View Count -->
+               <div class="flex items-center gap-2">
+                <Eye class="w-4 h-4" />
                 <span>{{ currentPost.view_count }} 次浏览</span>
               </div>
             </div>
 
             <!-- Tags -->
             <div v-if="currentPost.tags && currentPost.tags.length > 0" class="flex flex-wrap gap-2 mb-6">
-              <span
+              <Badge
                 v-for="tag in currentPost.tags"
                 :key="tag"
-                class="inline-flex items-center gap-1.5 px-3 py-1 bg-vscode-bg-secondary border border-vscode-border rounded-vscode text-xs text-vscode-text-secondary hover:border-vscode-accent-blue hover:text-vscode-accent-blue transition-colors cursor-default"
+                variant="outline"
+                class="gap-1.5"
               >
                 <Tag class="w-3 h-3" />
                 {{ tag }}
-              </span>
+              </Badge>
             </div>
           </article>
 
@@ -334,32 +341,30 @@ onUnmounted(() => {
         <!-- TOC Sidebar -->
         <aside
           v-if="showToc && tocItems.length > 0"
-          class="hidden lg:block w-64 flex-shrink-0"
+          class="hidden md:block w-56 flex-shrink-0 lg:w-64"
         >
-          <div class="sticky top-14">
-            <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-vscode p-4">
-              <h3 class="text-sm font-semibold text-vscode-text-primary mb-3 uppercase tracking-wide">
+          <div class="sticky top-16 overflow-y-auto" style="max-height: calc(100vh - 4rem);">
+            <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-lg p-4">
+              <h3 class="text-xs uppercase tracking-wider font-semibold text-vscode-text-muted mb-3">
                 目录
               </h3>
-              <ul class="space-y-1">
+              <ul class="flex flex-col gap-1">
                 <li
                   v-for="item in tocItems"
                   :key="item.id"
-                  :class="[
-                    'group',
-                    item.level === 3 ? 'ml-4' : ''
-                  ]"
+                  :style="{ paddingLeft: item.level === 3 ? 'var(--vscode-spacing-4)' : '0' }"
                 >
                   <button
                     @click="scrollToHeading(item.id)"
-                    :class="[
-                      'w-full text-left text-sm py-1.5 px-2 rounded transition-colors',
-                      activeTocId === item.id
-                        ? 'text-vscode-accent-blue bg-vscode-bg-tertiary'
-                        : 'text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-tertiary'
-                    ]"
+                    class="toc-item"
+                    :class="{ 'toc-item-active': activeTocId === item.id }"
+                    :title="item.text"
                   >
-                    {{ item.text }}
+                    <span 
+                      v-if="activeTocId === item.id"
+                      class="toc-indicator"
+                    ></span>
+                    <span class="toc-text">{{ item.text }}</span>
                   </button>
                 </li>
               </ul>
@@ -405,6 +410,85 @@ onUnmounted(() => {
 <style scoped>
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
-  scroll-margin-top: 56px;
+  scroll-margin-top: 64px;
+}
+
+/* TOC Item Styles */
+.toc-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--vscode-spacing-2);
+  padding: var(--vscode-spacing-1-5) var(--vscode-spacing-2);
+  border-radius: var(--vscode-radius-md);
+  font-size: var(--vscode-font-size-sm);
+  color: var(--vscode-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: 
+    color var(--vscode-duration-fast) var(--vscode-ease-in-out),
+    background-color var(--vscode-duration-fast) var(--vscode-ease-in-out);
+  text-align: left;
+}
+
+.toc-item:hover {
+  color: var(--vscode-text-primary);
+  background-color: var(--vscode-interactive-hover);
+}
+
+.toc-item-active {
+  color: var(--vscode-accent-primary);
+  background-color: var(--vscode-accent-primary-subtle);
+  font-weight: var(--vscode-font-weight-medium);
+}
+
+.toc-item-active:hover {
+  background-color: var(--vscode-accent-primary-subtle);
+}
+
+/* TOC Active Indicator */
+.toc-indicator {
+  width: 3px;
+  height: calc(100% - 4px);
+  min-height: 12px;
+  background-color: var(--vscode-accent-primary);
+  border-radius: var(--vscode-radius-full);
+  flex-shrink: 0;
+  position: absolute;
+  left: 0;
+  transition: 
+    background-color var(--vscode-duration-fast) var(--vscode-ease-in-out);
+}
+
+.toc-item {
+  position: relative;
+}
+
+/* TOC Text with truncation */
+.toc-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  line-height: var(--vscode-line-height-normal);
+}
+
+/* Scrollbar styling for TOC container */
+aside::-webkit-scrollbar {
+  width: 4px;
+}
+
+aside::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+aside::-webkit-scrollbar-thumb {
+  background: var(--vscode-border);
+  border-radius: var(--vscode-radius-full);
+}
+
+aside::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-text-muted);
 }
 </style>
