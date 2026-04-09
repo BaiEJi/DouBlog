@@ -1,69 +1,102 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import Layout from '@/components/layout/Layout.vue'
-import { Card, CardContent } from '@/components/ui/card'
+import PostCard from '@/components/post/PostCard.vue'
+import PostCardSkeleton from '@/components/post/PostCardSkeleton.vue'
 import { Button } from '@/components/ui/button'
 import { usePostStore } from '@/stores/post'
 import { 
+  Sparkles, 
   FilePlus, 
-  BookOpen, 
-  Settings, 
-  FileText, 
-  Tag, 
-  Clock,
-  Sparkles
+  BookOpen,
+  FolderOpen
 } from 'lucide-vue-next'
+import type { Post } from '@/types/post'
 
 const router = useRouter()
 const postStore = usePostStore()
 
-// Fetch post tree on mount
-onMounted(() => {
+/**
+ * 加载状态
+ */
+const isLoading = ref(true)
+
+/**
+ * 组件挂载时加载文章树
+ */
+onMounted(async () => {
   if (postStore.postTree.length === 0) {
-    postStore.fetchPostTree()
+    await postStore.fetchPostTree()
   }
+  isLoading.value = false
 })
 
-// Calculate statistics from post tree
-const statistics = computed(() => {
-  const tree = postStore.postTree
-  let totalPosts = 0
-  let totalTags = new Set<string>()
-  let lastUpdate: Date | null = null
-
-  const traverseTree = (nodes: typeof tree) => {
+/**
+ * 获取所有文章（扁平化）
+ * 
+ * @returns {Post[]} 文章列表，按置顶和时间排序
+ */
+const allPosts = computed(() => {
+  const posts: Post[] = []
+  const traverseTree = (nodes: typeof postStore.postTree) => {
     nodes.forEach(node => {
-      totalPosts++
-      node.tags?.forEach(tag => totalTags.add(tag))
-      
-      const updatedAt = new Date(node.updated_at)
-      if (!lastUpdate || updatedAt > lastUpdate) {
-        lastUpdate = updatedAt
-      }
-      
+      posts.push(node)
       if (node.children && node.children.length > 0) {
         traverseTree(node.children)
       }
     })
   }
+  traverseTree(postStore.postTree)
+  
+  return posts.sort((a, b) => {
+    if (a.is_top !== b.is_top) return b.is_top ? 1 : -1
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+    return dateB - dateA
+  })
+})
 
-  traverseTree(tree)
+/**
+ * 最新文章列表（前6篇）
+ */
+const recentPosts = computed(() => allPosts.value.slice(0, 6))
 
+/**
+ * 统计信息
+ */
+const statistics = computed(() => {
+  const posts = allPosts.value
+  const totalTags = new Set<string>()
+  
+  posts.forEach(post => {
+    post.tags?.forEach(tag => totalTags.add(tag))
+  })
+  
+  const lastUpdate = posts.length > 0 && posts[0].created_at
+    ? formatDate(new Date(posts[0].created_at))
+    : '暂无文章'
+  
   return {
-    totalPosts,
+    totalPosts: posts.length,
     totalTags: totalTags.size,
-    lastUpdate: lastUpdate ? formatDate(lastUpdate) : '暂无文章'
+    lastUpdate
   }
 })
 
+/**
+ * 格式化日期为相对时间
+ * 
+ * @param {Date} date - 日期对象
+ * @returns {string} 格式化的相对时间字符串
+ */
 const formatDate = (date: Date): string => {
   const now = new Date()
   const diff = now.getTime() - date.getTime()
   const minutes = Math.floor(diff / 60000)
   const hours = Math.floor(diff / 3600000)
   const days = Math.floor(diff / 86400000)
-
+  
   if (minutes < 1) return '刚刚'
   if (minutes < 60) return `${minutes}分钟前`
   if (hours < 24) return `${hours}小时前`
@@ -75,193 +108,161 @@ const formatDate = (date: Date): string => {
   })
 }
 
+/**
+ * 跳转到新建文章页
+ */
 const handleNewPost = () => {
   router.push('/post/new')
 }
 
+/**
+ * 浏览第一篇文章
+ */
 const handleBrowsePosts = () => {
-  router.push('/post/tree')
-}
-
-const handleSettings = () => {
-  // Placeholder - settings page not implemented yet
-  console.log('Settings page coming soon')
+  const firstPost = allPosts.value[0]
+  if (firstPost) {
+    router.push(`/post/id/${firstPost.id}`)
+  }
 }
 </script>
 
 <template>
   <Layout>
-    <div class="max-w-6xl mx-auto p-6 space-y-8">
-      
+    <div class="min-h-screen">
       <!-- Hero Section -->
-      <section class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-vscode-accent-blue/10 via-vscode-bg-secondary to-vscode-bg-tertiary border border-vscode-border p-8 md:p-12">
-        <div class="relative z-10 max-w-2xl">
-          <div class="flex items-center gap-3 mb-4">
-            <Sparkles class="w-8 h-8 text-vscode-accent-blue animate-pulse" />
-            <h1 class="text-4xl md:text-5xl font-bold text-vscode-text-primary tracking-tight">
-              DouBlog
-            </h1>
-          </div>
-          
-          <p class="text-xl md:text-2xl text-vscode-text-secondary mb-3 font-medium">
-            VS Code 风格的技术博客与知识库
-          </p>
-          
-          <p class="text-base text-vscode-text-muted mb-8 leading-relaxed">
-            支持无限层级树形结构，Markdown 实时预览编辑，优雅地组织您的知识与想法
-          </p>
-          
-          <div class="flex flex-wrap gap-3">
-            <Button 
-              size="lg" 
-              class="gap-2 shadow-vscode-md hover:shadow-vscode-lg transition-all"
-              @click="handleNewPost"
-            >
-              <FilePlus class="w-5 h-5" />
-              快速开始
-            </Button>
+      <section class="relative overflow-hidden">
+        <!-- Gradient Background -->
+        <div class="absolute inset-0 bg-gradient-to-br from-[var(--vscode-accent-primary-subtle)] via-[var(--vscode-bg-secondary)] to-[var(--vscode-bg-tertiary)]" />
+        
+        <!-- Decorative Elements -->
+        <div class="absolute top-0 right-0 w-96 h-96 bg-[var(--vscode-accent-primary)] opacity-5 rounded-full blur-3xl" />
+        <div class="absolute bottom-0 left-1/4 w-64 h-64 bg-[var(--vscode-accent-success)] opacity-5 rounded-full blur-2xl" />
+        
+        <!-- Content -->
+        <div class="relative z-10 max-w-6xl mx-auto px-[var(--vscode-spacing-6)] py-[var(--vscode-spacing-12)] md:py-[var(--vscode-spacing-16)]">
+          <div class="max-w-3xl">
+            <!-- Icon & Title -->
+            <div class="flex items-center gap-[var(--vscode-spacing-3)] mb-[var(--vscode-spacing-4)]">
+              <Sparkles class="w-10 h-10 md:w-12 md:h-12 text-[var(--vscode-accent-primary)] animate-pulse" />
+              <h1 class="text-[var(--vscode-font-size-4xl)] md:text-[var(--vscode-font-size-h1)] font-bold text-[var(--vscode-text-primary)] tracking-[var(--vscode-letter-spacing-tight)] leading-[var(--vscode-line-height-h1)]">
+                DouBlog
+              </h1>
+            </div>
             
-            <Button 
-              size="lg" 
-              variant="outline"
-              class="gap-2"
-              @click="handleBrowsePosts"
-            >
-              <BookOpen class="w-5 h-5" />
-              浏览文章
-            </Button>
+            <!-- Subtitle -->
+            <p class="text-[var(--vscode-font-size-2xl)] md:text-[var(--vscode-font-size-3xl)] text-[var(--vscode-text-secondary)] mb-[var(--vscode-spacing-3)] font-medium leading-[var(--vscode-line-height-snug)]">
+              VS Code 风格的技术博客与知识库
+            </p>
+            
+            <!-- Description -->
+            <p class="text-[var(--vscode-font-size-lg)] text-[var(--vscode-text-muted)] mb-[var(--vscode-spacing-8)] leading-[var(--vscode-line-height-relaxed)] max-w-2xl">
+              支持无限层级树形结构，Markdown 实时预览编辑，优雅地组织您的知识与想法
+            </p>
+            
+            <!-- Statistics -->
+            <div class="flex flex-wrap gap-[var(--vscode-spacing-6)] md:gap-[var(--vscode-spacing-8)] mb-[var(--vscode-spacing-8)]">
+              <div class="flex flex-col">
+                <span class="text-[var(--vscode-font-size-3xl)] font-bold text-[var(--vscode-accent-primary)] leading-none">
+                  {{ statistics.totalPosts }}
+                </span>
+                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">文章</span>
+              </div>
+              <div class="w-px h-12 bg-[var(--vscode-border)]" />
+              <div class="flex flex-col">
+                <span class="text-[var(--vscode-font-size-3xl)] font-bold text-[var(--vscode-accent-success)] leading-none">
+                  {{ statistics.totalTags }}
+                </span>
+                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">标签</span>
+              </div>
+              <div class="w-px h-12 bg-[var(--vscode-border)]" />
+              <div class="flex flex-col">
+                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-secondary)] font-medium">
+                  最近更新
+                </span>
+                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">
+                  {{ statistics.lastUpdate }}
+                </span>
+              </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-[var(--vscode-spacing-3)]">
+              <Button 
+                size="lg" 
+                class="gap-2 shadow-[var(--vscode-shadow-md)] hover:shadow-[var(--vscode-shadow-lg)] transition-all"
+                @click="handleNewPost"
+              >
+                <FilePlus class="w-5 h-5" />
+                快速开始
+              </Button>
+              
+              <Button 
+                size="lg" 
+                variant="outline"
+                class="gap-2"
+                @click="handleBrowsePosts"
+              >
+                <BookOpen class="w-5 h-5" />
+                浏览文章
+              </Button>
+            </div>
           </div>
         </div>
-        
-        <!-- Decorative background elements -->
-        <div class="absolute top-0 right-0 w-64 h-64 bg-vscode-accent-blue/5 rounded-full blur-3xl"></div>
-        <div class="absolute bottom-0 left-1/2 w-48 h-48 bg-vscode-accent-green/5 rounded-full blur-2xl"></div>
       </section>
 
-      <!-- Statistics Section -->
-      <section>
-        <h2 class="text-xl font-semibold text-vscode-text-primary mb-4 flex items-center gap-2">
-          <span class="w-1 h-6 bg-vscode-accent-blue rounded-full"></span>
-          数据概览
-        </h2>
-        
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- Total Posts -->
-          <Card class="group">
-            <CardContent class="flex items-center gap-4 py-6">
-              <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-vscode-accent-blue/10 flex items-center justify-center group-hover:bg-vscode-accent-blue/20 transition-colors">
-                <FileText class="w-6 h-6 text-vscode-accent-blue" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-vscode-text-secondary mb-1">文章总数</p>
-                <p class="text-2xl font-bold text-vscode-text-primary">
-                  {{ statistics.totalPosts }}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <!-- Tags Count -->
-          <Card class="group">
-            <CardContent class="flex items-center gap-4 py-6">
-              <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-vscode-accent-green/10 flex items-center justify-center group-hover:bg-vscode-accent-green/20 transition-colors">
-                <Tag class="w-6 h-6 text-vscode-accent-green" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-vscode-text-secondary mb-1">标签数量</p>
-                <p class="text-2xl font-bold text-vscode-text-primary">
-                  {{ statistics.totalTags }}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <!-- Last Update -->
-          <Card class="group">
-            <CardContent class="flex items-center gap-4 py-6">
-              <div class="flex-shrink-0 w-12 h-12 rounded-lg bg-vscode-accent-yellow/10 flex items-center justify-center group-hover:bg-vscode-accent-yellow/20 transition-colors">
-                <Clock class="w-6 h-6 text-vscode-accent-yellow" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-vscode-text-secondary mb-1">最近更新</p>
-                <p class="text-2xl font-bold text-vscode-text-primary truncate">
-                  {{ statistics.lastUpdate }}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      <!-- Quick Actions Section -->
-      <section>
-        <h2 class="text-xl font-semibold text-vscode-text-primary mb-4 flex items-center gap-2">
-          <span class="w-1 h-6 bg-vscode-accent-green rounded-full"></span>
-          快捷操作
-        </h2>
-        
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <!-- New Post -->
-          <Card 
-            class="cursor-pointer group"
-            @click="handleNewPost"
-          >
-            <CardContent class="flex flex-col items-center text-center py-8">
-              <div class="w-16 h-16 rounded-xl bg-vscode-accent-blue/10 flex items-center justify-center mb-4 group-hover:bg-vscode-accent-blue/20 group-hover:scale-110 transition-all duration-300">
-                <FilePlus class="w-8 h-8 text-vscode-accent-blue" />
-              </div>
-              <h3 class="text-lg font-semibold text-vscode-text-primary mb-2">
-                新建文章
-              </h3>
-              <p class="text-sm text-vscode-text-secondary">
-                创建一篇新的博客文章
-              </p>
-            </CardContent>
-          </Card>
-
-          <!-- Browse Posts -->
-          <Card 
-            class="cursor-pointer group"
+      <!-- Recent Posts Section -->
+      <section class="max-w-6xl mx-auto px-[var(--vscode-spacing-6)] py-[var(--vscode-spacing-10)]">
+        <div class="flex items-center justify-between mb-[var(--vscode-spacing-6)]">
+          <h2 class="text-[var(--vscode-font-size-2xl)] font-semibold text-[var(--vscode-text-primary)] flex items-center gap-[var(--vscode-spacing-2)]">
+            <span class="w-1 h-6 bg-[var(--vscode-accent-primary)] rounded-full" />
+            最新文章
+          </h2>
+          
+          <Button
+            v-if="allPosts.length > 6"
+            variant="ghost"
+            size="sm"
+            class="text-[var(--vscode-text-secondary)] hover:text-[var(--vscode-text-primary)]"
             @click="handleBrowsePosts"
           >
-            <CardContent class="flex flex-col items-center text-center py-8">
-              <div class="w-16 h-16 rounded-xl bg-vscode-accent-green/10 flex items-center justify-center mb-4 group-hover:bg-vscode-accent-green/20 group-hover:scale-110 transition-all duration-300">
-                <BookOpen class="w-8 h-8 text-vscode-accent-green" />
-              </div>
-              <h3 class="text-lg font-semibold text-vscode-text-primary mb-2">
-                浏览文章
-              </h3>
-              <p class="text-sm text-vscode-text-secondary">
-                查看所有文章和知识库
-              </p>
-            </CardContent>
-          </Card>
+            查看全部
+          </Button>
+        </div>
 
-          <!-- Settings -->
-          <Card 
-            class="cursor-pointer group relative overflow-hidden"
-            @click="handleSettings"
-          >
-            <CardContent class="flex flex-col items-center text-center py-8">
-              <div class="w-16 h-16 rounded-xl bg-vscode-bg-tertiary flex items-center justify-center mb-4 group-hover:bg-vscode-border transition-colors">
-                <Settings class="w-8 h-8 text-vscode-text-secondary group-hover:text-vscode-text-primary transition-colors" />
-              </div>
-              <h3 class="text-lg font-semibold text-vscode-text-primary mb-2">
-                设置
-              </h3>
-              <p class="text-sm text-vscode-text-secondary">
-                应用设置与偏好
-              </p>
-              
-              <!-- Coming soon badge -->
-              <div class="absolute top-3 right-3 px-2 py-1 text-xs font-medium bg-vscode-accent-yellow/20 text-vscode-accent-yellow rounded-full border border-vscode-accent-yellow/30">
-                即将推出
-              </div>
-            </CardContent>
-          </Card>
+        <!-- Loading State -->
+        <div v-if="isLoading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[var(--vscode-spacing-6)]">
+          <PostCardSkeleton v-for="i in 6" :key="i" />
+        </div>
+
+        <!-- Empty State -->
+        <div 
+          v-else-if="allPosts.length === 0"
+          class="flex flex-col items-center justify-center py-[var(--vscode-spacing-16)] text-center"
+        >
+          <div class="w-24 h-24 mb-[var(--vscode-spacing-6)] rounded-full bg-[var(--vscode-bg-tertiary)] flex items-center justify-center">
+            <FolderOpen class="w-12 h-12 text-[var(--vscode-text-muted)]" />
+          </div>
+          <h3 class="text-[var(--vscode-font-size-xl)] font-semibold text-[var(--vscode-text-primary)] mb-[var(--vscode-spacing-2)]">
+            还没有文章
+          </h3>
+          <p class="text-[var(--vscode-font-size-base)] text-[var(--vscode-text-muted)] mb-[var(--vscode-spacing-6)] max-w-md">
+            开始创建您的第一篇文章，记录您的想法和知识
+          </p>
+          <Button @click="handleNewPost" class="gap-2">
+            <FilePlus class="w-4 h-4" />
+            创建第一篇文章
+          </Button>
+        </div>
+
+        <!-- Posts Grid -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[var(--vscode-spacing-6)]">
+          <PostCard 
+            v-for="post in recentPosts" 
+            :key="post.id" 
+            :post="post" 
+          />
         </div>
       </section>
-
     </div>
   </Layout>
 </template>

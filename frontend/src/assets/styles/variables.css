@@ -1,17 +1,29 @@
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f3f3f3;
-  --bg-tertiary: #e8e8e8;
-  --text-primary: #1e1e1e;
-  --text-secondary: #6e6e6e;
-  --text-muted: #858585;
-  --border-color: #e5e5e5;
-  --border: #e5e5e5;
-  --accent: #007acc;
-  --accent-blue: #007acc;
-  --accent-green: #4caf50;
-  --accent-red: #f44336;
-  --accent-yellow: #ff9800;
+  /* Background Colors */
+  --vscode-bg-primary: #ffffff;
+  --vscode-bg-secondary: #f3f3f3;
+  --vscode-bg-tertiary: #e8e8e8;
+
+  /* Text Colors */
+  --vscode-text-primary: #1e1e1e;
+  --vscode-text-secondary: #6e6e6e;
+  --vscode-text-muted: #858585;
+
+  /* Border Colors */
+  --vscode-border-color: #e5e5e5;
+  --vscode-border: #e5e5e5;
+
+  /* Accent Colors */
+  --vscode-accent: #007acc;
+  --vscode-accent-blue: #007acc;
+  --vscode-accent-green: #4caf50;
+  --vscode-accent-red: #f44336;
+  --vscode-accent-yellow: #ff9800;
+
+  /* Semantic Colors */
+  --vscode-color-success: #4caf50;
+  --vscode-color-warning: #ff9800;
+  --vscode-color-error: #f44336;
 
   /* VS Code Semantic Colors - Light Mode */
   --vscode-editor-background: #ffffff;
@@ -68,42 +80,54 @@
   --ring: 210 100% 50%;
 
   /* Timing */
-  --duration-instant: 0ms;
-  --duration-fast: 150ms;
-  --duration-normal: 300ms;
-  --duration-slow: 500ms;
+  --vscode-duration-instant: 0ms;
+  --vscode-duration-fast: 150ms;
+  --vscode-duration-normal: 300ms;
+  --vscode-duration-slow: 500ms;
 
   /* Easing */
-  --ease-linear: linear;
-  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
-  --ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  --ease-in-back: cubic-bezier(0.6, -0.28, 0.735, 0.045);
-  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --vscode-ease-linear: linear;
+  --vscode-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --vscode-ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  --vscode-ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --vscode-ease-in-back: cubic-bezier(0.6, -0.28, 0.735, 0.045);
+  --vscode-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 
   /* Animation references */
-  --animate-fade-in: fadeIn var(--duration-normal) var(--ease-in-out);
-  --animate-fade-out: fadeOut var(--duration-normal) var(--ease-in-out);
-  --animate-slide-in: slideIn var(--duration-normal) var(--ease-out-back);
-  --animate-slide-out: slideOut var(--duration-normal) var(--ease-in-back);
-  --animate-scale-in: scaleIn var(--duration-normal) var(--ease-spring);
-  --animate-scale-out: scaleOut var(--duration-normal) var(--ease-in-back);
+  --vscode-animate-fade-in: fadeIn var(--vscode-duration-normal) var(--vscode-ease-in-out);
+  --vscode-animate-fade-out: fadeOut var(--vscode-duration-normal) var(--vscode-ease-in-out);
+  --vscode-animate-slide-in: slideIn var(--vscode-duration-normal) var(--vscode-ease-out-back);
+  --vscode-animate-slide-out: slideOut var(--vscode-duration-normal) var(--vscode-ease-in-back);
+  --vscode-animate-scale-in: scaleIn var(--vscode-duration-normal) var(--vscode-ease-spring);
+  --vscode-animate-scale-out: scaleOut var(--vscode-duration-normal) var(--vscode-ease-in-back);
 }
 
 .dark {
-  --bg-primary: #1e1e1e;
-  --bg-secondary: #252526;
-  --bg-tertiary: #2d2d2d;
-  --text-primary: #d4d4d4;
-  --text-secondary: #858585;
-  --text-muted: #6e6e6e;
-  --border-color: #3c3c3c;
-  --border: #3c3c3c;
-  --accent: #007acc;
-  --accent-blue: #007acc;
-  --accent-green: #4caf50;
-  --accent-red: #f44336;
-  --accent-yellow: #ff9800;
+  /* Background Colors */
+  --vscode-bg-primary: #1e1e1e;
+  --vscode-bg-secondary: #252526;
+  --vscode-bg-tertiary: #2d2d2d;
+
+  /* Text Colors */
+  --vscode-text-primary: #d4d4d4;
+  --vscode-text-secondary: #858585;
+  --vscode-text-muted: #6e6e6e;
+
+  /* Border Colors */
+  --vscode-border-color: #3c3c3c;
+  --vscode-border: #3c3c3c;
+
+  /* Accent Colors */
+  --vscode-accent: #007acc;
+  --vscode-accent-blue: #007acc;
+  --vscode-accent-green: #4caf50;
+  --vscode-accent-red: #f44336;
+  --vscode-accent-yellow: #ff9800;
+
+  /* Semantic Colors */
+  --vscode-color-success: #4caf50;
+  --vscode-color-warning: #ff9800;
+  --vscode-color-error: #f44336;
 
   /* VS Code Semantic Colors - Dark Mode (Dark+ Theme) */
   --vscode-editor-background: #1e1e1e;

@@ -35,6 +35,12 @@ class Settings:
     data_dir: str = os.path.join(base_dir, 'data')
     images_dir: str = os.path.join(data_dir, 'images')
     
+    # Redis 配置（与 CrownFlow 共用同一 Redis 实例）
+    redis_url: str = 'redis://:lizy111redis@localhost:50001/0'
+    
+    # 浏览计数刷盘间隔（分钟）
+    view_count_flush_interval: int = 10
+    
     # 分页配置
     max_page_size: int = 100
     default_page_size: int = 20

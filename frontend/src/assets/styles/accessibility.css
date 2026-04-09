@@ -390,18 +390,20 @@ aside,
    ICON ACCESSIBILITY
    ================================ */
 
-/* Icons without text need aria-labels */
+/* Icons without text need aria-labels - DEBUG MODE ONLY */
+/*
 svg:not([aria-label]):not([aria-hidden]) {
-  /* Flag icons without accessible name */
   outline: 2px dashed var(--vscode-accent-warning);
 }
+*/
 
-/* Icon-only buttons need aria-labels */
+/* Icon-only buttons need aria-labels - DEBUG MODE ONLY */
+/*
 button:not(:has(text)),
 [role="button"]:not(:has(text)) {
-  /* Indicate missing accessible name in development */
   outline: 2px dashed var(--vscode-accent-warning);
 }
+*/
 
 /* ================================
    FORM VALIDATION

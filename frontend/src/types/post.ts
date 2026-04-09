@@ -1,6 +1,7 @@
 export interface Post {
   id: number
   title: string
+  name: string
   slug: string
   content: string
   summary: string
@@ -25,7 +26,8 @@ export interface PostTreeNode extends Omit<Post, 'children'> {
 
 export interface CreatePostRequest {
   title: string
-  slug: string
+  name?: string
+  slug?: string
   content: string
   summary?: string
   parent_id?: number | null
@@ -37,6 +39,7 @@ export interface CreatePostRequest {
 
 export interface UpdatePostRequest {
   title?: string
+  name?: string
   content?: string
   summary?: string
   status?: 'published' | 'archived'

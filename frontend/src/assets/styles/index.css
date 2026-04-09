@@ -1,6 +1,7 @@
 @import './tokens.css';
 @import './variables.css';
 @import './accessibility.css';
+@import './forest-theme.css';
 
 @tailwind base;
 @tailwind components;

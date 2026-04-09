@@ -24,7 +24,7 @@ const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
   <div
     v-if="collapsible === 'none'"
     data-slot="sidebar"
-    :class="cn('bg-sidebar text-sidebar-foreground flex h-full w-(--sidebar-width) flex-col', props.class)"
+    :class="cn('bg-vscode-bg-secondary text-vscode-text-primary flex h-full w-[var(--sidebar-width)] flex-col border-r border-vscode-border', props.class)"
     v-bind="$attrs"
   >
     <slot />
@@ -36,7 +36,7 @@ const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
       data-slot="sidebar"
       data-mobile="true"
       :side="side"
-      class="bg-sidebar text-sidebar-foreground w-(--sidebar-width) p-0 [&>button]:hidden"
+      class="bg-vscode-bg-secondary text-vscode-text-primary w-[var(--sidebar-width)] p-0 [&>button]:hidden border-r border-vscode-border"
       :style="{
         '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
       }"
@@ -53,41 +53,39 @@ const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
 
   <div
     v-else
-    class="group peer text-sidebar-foreground hidden md:block"
+    class="group peer text-vscode-text-primary hidden md:block"
     data-slot="sidebar"
     :data-state="state"
     :data-collapsible="state === 'collapsed' ? collapsible : ''"
     :data-variant="variant"
     :data-side="side"
   >
-    <!-- This is what handles the sidebar gap on desktop  -->
     <div
       :class="cn(
-        'relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear',
+        'w-0 bg-transparent',
         'group-data-[collapsible=offcanvas]:w-0',
         'group-data-[side=right]:rotate-180',
         variant === 'floating' || variant === 'inset'
-          ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]'
-          : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon)',
+          ? 'group-data-[collapsible=icon]:w-0'
+          : 'group-data-[collapsible=icon]:w-0',
       )"
     />
     <div
       :class="cn(
-        'fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex',
+        'fixed inset-y-0 z-vscode-fixed hidden h-svh w-[var(--sidebar-width)] transition-[left,right,width] duration-vscode-normal ease-vscode-in-out md:flex',
         side === 'left'
-          ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
-          : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
-        // Adjust the padding for floating and inset variants.
+          ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--vscode-sidebar-width)*-1)]'
+          : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--vscode-sidebar-width)*-1)]',
         variant === 'floating' || variant === 'inset'
-          ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4))+2px)]'
-          : 'group-data-[collapsible=icon]:w-(--sidebar-width-icon) group-data-[side=left]:border-r group-data-[side=right]:border-l',
+          ? 'p-vscode-2 group-data-[collapsible=icon]:w-[calc(var(--vscode-sidebar-width-collapsed)+(--spacing(4))+2px)]'
+          : 'group-data-[collapsible=icon]:w-[var(--vscode-sidebar-width-collapsed)] group-data-[side=left]:border-r group-data-[side=right]:border-l border-vscode-border',
         props.class,
       )"
       v-bind="$attrs"
     >
       <div
         data-sidebar="sidebar"
-        class="bg-sidebar group-data-[variant=floating]:border-sidebar-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm"
+        class="bg-vscode-bg-secondary group-data-[variant=floating]:border-vscode-border flex h-full w-full flex-col group-data-[variant=floating]:rounded-vscode-lg group-data-[variant=floating]:border group-data-[variant=floating]:shadow-vscode-sm"
       >
         <slot />
       </div>

@@ -80,7 +80,7 @@ provideCommandContext({
   <ListboxRoot
     data-slot="command"
     v-bind="forwarded"
-    :class="cn('bg-popover text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-md', props.class)"
+    :class="cn('bg-vscode-bg-secondary text-vscode-text-primary flex h-full w-full flex-col overflow-hidden rounded-vscode-md border border-vscode-border shadow-vscode-lg', props.class)"
   >
     <slot />
   </ListboxRoot>

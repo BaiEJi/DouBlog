@@ -1,0 +1,343 @@
+/**
+ * Forest Theme for Markdown Content
+ * Adapted from Typora Forest Theme
+ * https://github.com/sylviaxgj/typora-forest-theme
+ */
+
+/* CSS Variables - Forest Theme Colors */
+.markdown-content {
+  /* Primary Colors */
+  --forest-primary: #00997B;
+  --forest-primary-light: rgba(0, 153, 123, 0.1);
+  --forest-primary-medium: rgba(0, 153, 123, 0.2);
+  
+  /* Text Colors */
+  --forest-text: #363C42;
+  --forest-text-light: #81888D;
+  --forest-heading: #333444;
+  --forest-heading-h1: rgba(0, 52, 68, 0.9);
+  
+  /* Background Colors */
+  --forest-bg: #fff;
+  --forest-bg-code: #f3f3f3;
+  --forest-bg-quote: rgba(0, 153, 123, 0.05);
+  --forest-bg-table: rgba(0, 153, 123, 0.03);
+  
+  /* Code Colors */
+  --forest-code-text: #00769A;
+  --forest-code-bg: #f3f3f3;
+  
+  /* Highlight Colors */
+  --forest-highlight-bg: #FFF3F3;
+  --forest-highlight-text: #FF2F2F;
+  
+  /* Link Colors */
+  --forest-link: #00997B;
+  
+  /* Border Colors */
+  --forest-border: #DADCDE;
+  
+  /* Font */
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  line-height: 1.6;
+  color: var(--forest-text);
+}
+
+/* Headings */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  width: auto;
+  line-height: 1.4;
+  font-style: normal;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.markdown-content h1 {
+  font-size: 2.1rem;
+  font-weight: 900;
+  text-align: center;
+  color: var(--forest-heading-h1);
+  padding-bottom: 0.5rem;
+  border-bottom: 3px double var(--forest-heading-h1);
+  margin-top: 2rem;
+}
+
+.markdown-content h2 {
+  font-size: 1.7rem;
+  font-weight: 800;
+  color: var(--forest-heading);
+  border-bottom: 1px solid rgba(0, 153, 123, 0.2);
+  padding-bottom: 0.3rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--forest-heading);
+}
+
+.markdown-content h4 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--forest-heading);
+}
+
+.markdown-content h5 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--forest-primary);
+}
+
+.markdown-content h6 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: rgba(0, 153, 123, 0.8);
+}
+
+/* Paragraphs */
+.markdown-content p {
+  font-size: 1em;
+  line-height: 1.8;
+  color: var(--forest-text);
+  margin: 1rem 0;
+}
+
+/* Links */
+.markdown-content a {
+  color: var(--forest-link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.markdown-content a:hover {
+  border-bottom-color: var(--forest-link);
+}
+
+/* Strong */
+.markdown-content strong {
+  font-weight: 700;
+  color: var(--forest-heading);
+}
+
+/* Mark/Highlight */
+.markdown-content mark {
+  background: var(--forest-highlight-bg);
+  color: var(--forest-highlight-text);
+  font-weight: 500;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+/* Inline Code */
+.markdown-content code {
+  margin: 0 2px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+  background: var(--forest-code-bg);
+  border-radius: 6px;
+  font-weight: 600;
+  color: var(--forest-code-text);
+  font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+}
+
+/* Code Block */
+.markdown-content pre {
+  background: var(--forest-bg-code);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: inherit;
+}
+
+/* Blockquote */
+.markdown-content blockquote {
+  position: relative;
+  padding: 1rem 1rem 1rem 1.5rem;
+  background-color: var(--forest-bg-quote);
+  border-radius: 6px;
+  margin: 1rem 0;
+  border-left: 4px solid var(--forest-primary);
+}
+
+.markdown-content blockquote p {
+  color: var(--forest-text-light);
+  margin: 0;
+}
+
+.markdown-content blockquote p:not(:last-child) {
+  margin-bottom: 0.5rem;
+}
+
+/* Horizontal Rule */
+.markdown-content hr {
+  border: none;
+  border-top: 2px dashed var(--forest-primary);
+  margin: 2rem auto;
+  width: 80%;
+}
+
+/* Lists */
+.markdown-content ul,
+.markdown-content ol {
+  padding-left: 1.5rem;
+  margin: 1rem 0;
+}
+
+.markdown-content li {
+  line-height: 1.8;
+  margin: 0.25rem 0;
+}
+
+.markdown-content ul > li > ul > li {
+  list-style-type: circle;
+}
+
+.markdown-content ul > li > ul > li > ul > li {
+  list-style-type: disc;
+}
+
+.markdown-content ol > li > ol > li {
+  list-style-type: lower-alpha;
+}
+
+.markdown-content ol > li > ol > li > ol > li {
+  list-style-type: decimal;
+}
+
+/* Task List */
+.markdown-content input[type="checkbox"] {
+  margin-right: 0.5rem;
+  accent-color: var(--forest-primary);
+}
+
+/* Table */
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.95em;
+}
+
+.markdown-content table thead {
+  background-color: var(--forest-bg-table);
+  font-weight: 700;
+}
+
+.markdown-content table tr:nth-child(2n) {
+  background-color: var(--forest-bg-table);
+}
+
+.markdown-content table th,
+.markdown-content table td {
+  border: 1px solid var(--forest-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+
+/* Image */
+.markdown-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+/* Selection */
+.markdown-content ::selection {
+  background: var(--forest-primary-medium);
+}
+
+/* Dark Mode Adjustments */
+.dark .markdown-content {
+  --forest-text: #d4d4d4;
+  --forest-text-light: #9ca3af;
+  --forest-heading: #e5e5e5;
+  --forest-heading-h1: rgba(200, 230, 220, 0.95);
+  --forest-bg: #1e1e1e;
+  --forest-bg-code: #2d2d2d;
+  --forest-bg-quote: rgba(0, 153, 123, 0.1);
+  --forest-bg-table: rgba(0, 153, 123, 0.05);
+  --forest-code-text: #6dd5c7;
+  --forest-code-bg: #2d2d2d;
+  --forest-border: #404040;
+}
+
+.dark .markdown-content pre {
+  background: #252526;
+}
+
+.dark .markdown-content code {
+  background: #2d2d2d;
+}
+
+/* Typography Enhancements */
+.markdown-content > *:first-child {
+  margin-top: 0;
+}
+
+.markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Code Syntax Highlighting Adjustments for Forest Theme */
+.dark .markdown-content .hljs-keyword,
+.dark .markdown-content .hljs-selector-tag {
+  color: #c792ea;
+}
+
+.dark .markdown-content .hljs-string,
+.dark .markdown-content .hljs-attr {
+  color: #c3e88d;
+}
+
+.dark .markdown-content .hljs-number {
+  color: #f78c6c;
+}
+
+.dark .markdown-content .hljs-function {
+  color: #82aaff;
+}
+
+.dark .markdown-content .hljs-comment {
+  color: #546e7a;
+  font-style: italic;
+}
+
+/* Light mode syntax highlighting */
+.markdown-content .hljs-keyword,
+.markdown-content .hljs-selector-tag {
+  color: #7c3aed;
+}
+
+.markdown-content .hljs-string,
+.markdown-content .hljs-attr {
+  color: #059669;
+}
+
+.markdown-content .hljs-number {
+  color: #d97706;
+}
+
+.markdown-content .hljs-function {
+  color: #2563eb;
+}
+
+.markdown-content .hljs-comment {
+  color: #6b7280;
+  font-style: italic;
+}

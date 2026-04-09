@@ -5,10 +5,16 @@ import { Home, SearchX, ArrowLeft } from 'lucide-vue-next'
 
 const router = useRouter()
 
+/**
+ * 返回首页
+ */
 const goHome = () => {
   router.push('/')
 }
 
+/**
+ * 返回上一页
+ */
 const goBack = () => {
   router.back()
 }

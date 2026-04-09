@@ -1,6 +1,3 @@
-"""
-Models Package
-"""
-from app.models.models import Post, Image, Base
+from app.models.models import Post, Image
 
-__all__ = ['Post', 'Image', 'Base']
+__all__ = ['Post', 'Image']

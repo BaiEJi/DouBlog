@@ -1,33 +1,40 @@
-import api from './api';
+import api from './api'
 
 /**
- * Upload an image file
- * @param file - The image file to upload
- * @param postSlug - Optional post slug to associate with the image
- * @returns The upload response with image filepath
+ * 上传图片
+ * 
+ * @param {File} file - 图片文件
+ * @param {string} postSlug - 文章别名（可选）
+ * @returns {Promise<{ filepath: string; url: string; filename: string; filesize: number }>} 上传结果
  */
-export async function uploadImage(file: File, postSlug?: string): Promise<{ filepath: string }> {
-  const formData = new FormData();
-  formData.append('file', file);
+export async function uploadImage(file: File, postSlug?: string): Promise<{ 
+  filepath: string
+  url: string
+  filename: string
+  filesize: number 
+}> {
+  const formData = new FormData()
+  formData.append('file', file)
   
   if (postSlug) {
-    formData.append('post_slug', postSlug);
+    formData.append('post_slug', postSlug)
   }
 
-  const response = await api.post<{ filepath: string }>('/images/upload', formData, {
+  const response = await api.post('/images/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-  });
+  })
 
-  return response.data;
+  return response.data
 }
 
 /**
- * Get the full URL for an image filepath
- * @param filepath - The image filepath returned from upload
- * @returns The full URL to the image
+ * 获取图片URL
+ * 
+ * @param {string} filepath - 文件路径
+ * @returns {string} 图片URL
  */
 export function getImageUrl(filepath: string): string {
-  return `/api/images/${filepath}`;
+  return `/api/images/${filepath}`
 }

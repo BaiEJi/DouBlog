@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { onMounted, computed, ref, onUnmounted, watch, nextTick } from 'vue'
+import { onMounted, computed, ref, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Layout from '@/components/layout/Layout.vue'
-import MarkdownRenderer from '@/components/post/MarkdownRenderer.vue'
 import PostDetailSkeleton from '@/components/post/PostDetailSkeleton.vue'
 import { usePostStore } from '@/stores/post'
 import { formatDate } from '@/utils/format'
@@ -26,48 +25,97 @@ import {
 import { toast } from 'vue-sonner'
 import { Clock, User, Calendar, Tag, Edit, Trash2, Share2, Home, Eye } from 'lucide-vue-next'
 import { Badge } from '@/components/ui/badge'
-import type { Post } from '@/types/post'
+import { generateHeadingId } from '@/utils/heading'
+
+/**
+ * Markdown渲染器组件（异步加载）
+ */
+const MarkdownRenderer = defineAsyncComponent(() => 
+  import('@/components/post/MarkdownRenderer.vue')
+)
 
 const route = useRoute()
 const router = useRouter()
 const postStore = usePostStore()
 
-const slug = computed(() => route.params.slug as string)
-const currentPost = computed(() => postStore.currentPost)
-const loading = computed(() => postStore.loading)
+/**
+ * 路由参数：文章ID
+ */
+const routeParamId = computed(() => route.params.id as string | undefined)
 
-// Build breadcrumb items from post hierarchy
+/**
+ * 路由参数：文章别名
+ */
+const routeParamSlug = computed(() => route.params.slug as string | undefined)
+
+/**
+ * 当前文章详情
+ */
+const currentPost = computed(() => postStore.currentPost)
+
+/**
+ * 加载状态
+ */
+const loading = computed(() => postStore.postLoading)
+
+/**
+ * 面包屑导航项
+ */
 const breadcrumbItems = computed(() => {
   if (!currentPost.value) return []
   
   const items = []
-  let post: Post | null = currentPost.value
+  const currentNode = currentPost.value
   
-  // Build path from current post to root
-  while (post) {
+  items.unshift({
+    title: currentNode.title,
+    id: currentNode.id,
+    slug: currentNode.name,
+    isCurrent: true
+  })
+  
+  if (currentNode.parent) {
     items.unshift({
-      title: post.title,
-      slug: post.slug,
-      isCurrent: post === currentPost.value
+      title: currentNode.parent.title,
+      id: currentNode.parent.id,
+      slug: currentNode.parent.name,
+      isCurrent: false
     })
-    post = post.parent
   }
   
   return items
 })
 
-// TOC state
+/**
+ * 目录项列表
+ */
 const tocItems = ref<Array<{ id: string; text: string; level: number }>>([])
+
+/**
+ * 当前激活的目录ID
+ */
 const activeTocId = ref<string>('')
+
+/**
+ * 是否显示目录
+ */
 const showToc = ref(true)
 
-// IntersectionObserver for scroll spy
+/**
+ * IntersectionObserver实例用于滚动监听
+ */
 let observer: IntersectionObserver | null = null
 
-// Delete dialog state
+/**
+ * 删除确认对话框显示状态
+ */
 const showDeleteDialog = ref(false)
 
-// Calculate reading time (200 words per minute)
+/**
+ * 计算阅读时间（分钟）
+ * 
+ * @returns {number} 阅读时间（分钟）
+ */
 const readingTime = computed(() => {
   if (!currentPost.value?.content) return 1
   const words = currentPost.value.content.split(/\s+/).length
@@ -75,7 +123,12 @@ const readingTime = computed(() => {
   return minutes
 })
 
-// Extract TOC from markdown content
+/**
+ * 从Markdown内容中提取目录项
+ * 
+ * @param {string} content - Markdown内容
+ * @returns {Array<{ id: string; text: string; level: number }>} 目录项数组
+ */
 const extractToc = (content: string) => {
   const headingRegex = /^(#{2,3})\s+(.+)$/gm
   const items: Array<{ id: string; text: string; level: number }> = []
@@ -84,10 +137,7 @@ const extractToc = (content: string) => {
   while ((match = headingRegex.exec(content)) !== null) {
     const level = match[1].length
     const text = match[2].trim()
-    const id = text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, '')
-      .replace(/\s+/g, '-')
+    const id = generateHeadingId(text)
     
     items.push({ id, text, level })
   }
@@ -95,22 +145,30 @@ const extractToc = (content: string) => {
   return items
 }
 
-// Scroll to heading with smooth behavior
+/**
+ * 滚动到指定标题
+ * 
+ * @param {string} id - 标题元素ID
+ */
 const scrollToHeading = (id: string) => {
   const element = document.getElementById(id)
-  if (element) {
-    const headerOffset = 64 // Header height (h-16)
-    const elementPosition = element.getBoundingClientRect().top
-    const offsetPosition = elementPosition + window.pageYOffset - headerOffset
+  const mainContent = document.querySelector('main')
+  if (element && mainContent) {
+    const headerOffset = 64
+    const mainRect = mainContent.getBoundingClientRect()
+    const elementRect = element.getBoundingClientRect()
+    const offsetPosition = elementRect.top - mainRect.top + mainContent.scrollTop - headerOffset
 
-    window.scrollTo({
+    mainContent.scrollTo({
       top: offsetPosition,
       behavior: 'smooth'
     })
   }
 }
 
-// Setup IntersectionObserver for scroll spy
+/**
+ * 设置滚动监听，用于高亮当前目录项
+ */
 const setupScrollSpy = () => {
   if (observer) {
     observer.disconnect()
@@ -131,7 +189,6 @@ const setupScrollSpy = () => {
     })
   }, options)
 
-  // Observe all heading elements
   tocItems.value.forEach((item) => {
     const element = document.getElementById(item.id)
     if (element && observer) {
@@ -139,25 +196,28 @@ const setupScrollSpy = () => {
     }
   })
 
-  // Set initial active item
   if (tocItems.value.length > 0 && !activeTocId.value) {
     activeTocId.value = tocItems.value[0].id
   }
 }
 
-// Handle edit
+/**
+ * 跳转到编辑页面
+ */
 const handleEdit = () => {
   if (currentPost.value) {
-    router.push(`/post/${currentPost.value.slug}/edit`)
+    router.push(`/post/id/${currentPost.value.id}/edit`)
   }
 }
 
-// Handle delete
+/**
+ * 删除当前文章
+ */
 const handleDelete = async () => {
   if (!currentPost.value) return
 
   try {
-    await postStore.deletePost(currentPost.value.slug)
+    await postStore.deletePost(currentPost.value.id)
     toast.success('文章已删除')
     router.push('/')
   } catch (error) {
@@ -168,7 +228,9 @@ const handleDelete = async () => {
   }
 }
 
-// Handle share
+/**
+ * 复制当前页面链接到剪贴板
+ */
 const handleShare = async () => {
   const url = window.location.href
   try {
@@ -180,19 +242,54 @@ const handleShare = async () => {
   }
 }
 
-onMounted(() => {
-  if (slug.value) {
-    postStore.fetchPost(slug.value)
+/**
+ * 根据路由参数获取文章数据
+ * 
+ * @throws {Error} 当路由参数无效时抛出错误
+ */
+const fetchPostData = async () => {
+  if (routeParamId.value) {
+    const id = parseInt(routeParamId.value, 10)
+    if (!isNaN(id)) {
+      await postStore.fetchPostById(id)
+      return
+    }
+  }
+  
+  if (routeParamSlug.value) {
+    await postStore.fetchPostBySlug(routeParamSlug.value)
+    return
+  }
+  
+  throw new Error('No valid route parameter')
+}
+
+watch(
+  () => [route.params.id, route.params.slug],
+  async () => {
+    try {
+      await fetchPostData()
+    } catch {
+      toast.error('文章不存在或已被移动')
+      router.push('/')
+    }
+  }
+)
+
+onMounted(async () => {
+  try {
+    await fetchPostData()
+  } catch {
+    toast.error('文章不存在或已被移动')
+    router.push('/')
   }
 })
 
-// Watch for post content changes
 watch(
   () => currentPost.value?.content,
   (content) => {
     if (content) {
       tocItems.value = extractToc(content)
-      // Wait for DOM to update before setting up observer
       nextTick(() => {
         setupScrollSpy()
       })
@@ -211,82 +308,71 @@ onUnmounted(() => {
 
 <template>
   <Layout>
-    <div class="max-w-7xl mx-auto px-6 py-8">
-      <!-- Loading State -->
-      <PostDetailSkeleton v-if="loading" />
+    <div class="max-w-none mx-auto px-8 py-8">
+      <Transition name="fade" mode="out-in">
+        <PostDetailSkeleton v-if="loading" key="skeleton" />
 
-      <!-- Content -->
-      <div v-else-if="currentPost" class="flex gap-8">
-        <!-- Main Content -->
+        <div v-else-if="currentPost" key="content" class="flex gap-8">
         <div class="flex-1 min-w-0">
-          <!-- Breadcrumb Navigation -->
-          <Breadcrumb class="mb-6">
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink as-child>
-                  <router-link to="/" class="flex items-center gap-1.5">
-                    <Home class="w-3.5 h-3.5" />
-                    首页
-                  </router-link>
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              
-              <BreadcrumbSeparator v-if="breadcrumbItems.length > 0" />
-              
-              <BreadcrumbItem
-                v-for="(item, index) in breadcrumbItems"
-                :key="item.slug"
-              >
-                <template v-if="!item.isCurrent">
+          <!-- 面包屑导航 + 元信息 -->
+          <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
                   <BreadcrumbLink as-child>
-                    <router-link :to="`/post/${item.slug}`">
-                      {{ item.title }}
+                    <router-link to="/" class="flex items-center gap-1.5">
+                      <Home class="w-3.5 h-3.5" />
+                      首页
                     </router-link>
                   </BreadcrumbLink>
-                  <BreadcrumbSeparator v-if="index < breadcrumbItems.length - 1" />
-                </template>
-                <template v-else>
-                  <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
-                </template>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+                </BreadcrumbItem>
+                
+                <BreadcrumbSeparator v-if="breadcrumbItems.length > 0" />
+                
+                <BreadcrumbItem
+                  v-for="(item, index) in breadcrumbItems"
+                  :key="item.id"
+                >
+                  <template v-if="!item.isCurrent">
+                    <BreadcrumbLink as-child>
+                      <router-link :to="`/post/id/${item.id}`">
+                        {{ item.title }}
+                      </router-link>
+                    </BreadcrumbLink>
+                    <BreadcrumbSeparator v-if="index < breadcrumbItems.length - 1" />
+                  </template>
+                  <template v-else>
+                    <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
+                  </template>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
 
-          <!-- Article Header -->
-          <article class="mb-8">
-            <!-- Title -->
-            <h1 class="text-3xl md:text-4xl font-bold mb-6 text-vscode-text-primary leading-tight tracking-tight">
-              {{ currentPost.title }}
-            </h1>
-
-            <!-- Meta Information -->
-            <div class="flex flex-wrap items-center gap-4 text-sm text-vscode-text-secondary mb-6 pb-6 border-b border-vscode-border">
-              <!-- Author -->
-              <div class="flex items-center gap-2">
-                <User class="w-4 h-4" />
+            <!-- 元信息放在右侧 -->
+            <div class="flex flex-wrap items-center gap-3 text-xs text-vscode-text-muted">
+              <div class="flex items-center gap-1.5">
+                <User class="w-3.5 h-3.5" />
                 <span>{{ currentPost.author }}</span>
               </div>
 
-              <!-- Created Date -->
-              <div class="flex items-center gap-2">
-                <Calendar class="w-4 h-4" />
+              <div class="flex items-center gap-1.5">
+                <Calendar class="w-3.5 h-3.5" />
                 <span>{{ formatDate(currentPost.created_at) }}</span>
               </div>
 
-              <!-- Reading Time -->
-              <div class="flex items-center gap-2">
-                <Clock class="w-4 h-4" />
-                <span>{{ readingTime }} 分钟阅读</span>
+              <div class="flex items-center gap-1.5">
+                <Clock class="w-3.5 h-3.5" />
+                <span>{{ readingTime }} 分钟</span>
               </div>
 
-               <!-- View Count -->
-               <div class="flex items-center gap-2">
-                <Eye class="w-4 h-4" />
-                <span>{{ currentPost.view_count }} 次浏览</span>
+              <div class="flex items-center gap-1.5">
+                <Eye class="w-3.5 h-3.5" />
+                <span>{{ currentPost.view_count }}</span>
               </div>
             </div>
+          </div>
 
-            <!-- Tags -->
+          <article class="mb-8">
             <div v-if="currentPost.tags && currentPost.tags.length > 0" class="flex flex-wrap gap-2 mb-6">
               <Badge
                 v-for="tag in currentPost.tags"
@@ -300,23 +386,12 @@ onUnmounted(() => {
             </div>
           </article>
 
-          <!-- Markdown Content -->
           <div class="markdown-content">
             <MarkdownRenderer :content="currentPost.content" />
           </div>
 
-          <!-- Article Footer Actions -->
           <footer class="mt-12 pt-8 border-t border-vscode-border">
             <div class="flex items-center gap-3">
-              <Button
-                @click="handleEdit"
-                variant="default"
-                class="flex items-center gap-2"
-              >
-                <Edit class="w-4 h-4" />
-                编辑
-              </Button>
-
               <Button
                 @click="showDeleteDialog = true"
                 variant="destructive"
@@ -325,61 +400,81 @@ onUnmounted(() => {
                 <Trash2 class="w-4 h-4" />
                 删除
               </Button>
-
-              <Button
-                @click="handleShare"
-                variant="outline"
-                class="flex items-center gap-2"
-              >
-                <Share2 class="w-4 h-4" />
-                分享
-              </Button>
             </div>
           </footer>
         </div>
 
-        <!-- TOC Sidebar -->
         <aside
-          v-if="showToc && tocItems.length > 0"
+          v-if="showToc"
           class="hidden md:block w-56 flex-shrink-0 lg:w-64"
         >
           <div class="sticky top-16 overflow-y-auto" style="max-height: calc(100vh - 4rem);">
+            <!-- 编辑和分享按钮 -->
+            <div class="flex items-center gap-2 mb-3">
+              <Button
+                @click="handleEdit"
+                variant="outline"
+                size="sm"
+                class="flex items-center gap-1.5 h-7 text-xs"
+              >
+                <Edit class="w-3 h-3" />
+                编辑
+              </Button>
+
+              <Button
+                @click="handleShare"
+                variant="outline"
+                size="sm"
+                class="flex items-center gap-1.5 h-7 text-xs"
+              >
+                <Share2 class="w-3 h-3" />
+                分享
+              </Button>
+            </div>
+
             <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-lg p-4">
               <h3 class="text-xs uppercase tracking-wider font-semibold text-vscode-text-muted mb-3">
                 目录
               </h3>
-              <ul class="flex flex-col gap-1">
-                <li
-                  v-for="item in tocItems"
-                  :key="item.id"
-                  :style="{ paddingLeft: item.level === 3 ? 'var(--vscode-spacing-4)' : '0' }"
-                >
-                  <button
-                    @click="scrollToHeading(item.id)"
-                    class="toc-item"
-                    :class="{ 'toc-item-active': activeTocId === item.id }"
-                    :title="item.text"
+              <template v-if="tocItems.length > 0">
+                <ul class="flex flex-col gap-1">
+                  <li
+                    v-for="item in tocItems"
+                    :key="item.id"
+                    :style="{ paddingLeft: item.level === 3 ? 'var(--vscode-spacing-4)' : '0' }"
                   >
-                    <span 
-                      v-if="activeTocId === item.id"
-                      class="toc-indicator"
-                    ></span>
-                    <span class="toc-text">{{ item.text }}</span>
-                  </button>
-                </li>
-              </ul>
+                    <button
+                      @click="scrollToHeading(item.id)"
+                      class="toc-item"
+                      :class="{ 'toc-item-active': activeTocId === item.id }"
+                      :title="item.text"
+                    >
+                      <span 
+                        v-if="activeTocId === item.id"
+                        class="toc-indicator"
+                      ></span>
+                      <span class="toc-text">{{ item.text }}</span>
+                    </button>
+                  </li>
+                </ul>
+              </template>
+              <div v-else class="flex flex-col items-center justify-center py-6 text-vscode-text-muted">
+                <svg class="w-6 h-6 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 10h16M4 14h10M4 18h7" />
+                </svg>
+                <span class="text-vscode-xs">暂无目录</span>
+              </div>
             </nav>
           </div>
         </aside>
       </div>
 
-      <!-- Not Found -->
-      <div v-else class="text-center py-12">
+      <div v-else key="not-found" class="text-center py-12">
         <p class="text-vscode-text-secondary">文章不存在</p>
       </div>
+      </Transition>
     </div>
 
-    <!-- Delete Confirmation Dialog -->
     <Dialog v-model:open="showDeleteDialog">
       <DialogContent class="bg-vscode-bg-primary border-vscode-border">
         <DialogHeader>
@@ -413,7 +508,6 @@ onUnmounted(() => {
   scroll-margin-top: 64px;
 }
 
-/* TOC Item Styles */
 .toc-item {
   width: 100%;
   display: flex;
@@ -447,7 +541,6 @@ onUnmounted(() => {
   background-color: var(--vscode-accent-primary-subtle);
 }
 
-/* TOC Active Indicator */
 .toc-indicator {
   width: 3px;
   height: calc(100% - 4px);
@@ -465,7 +558,6 @@ onUnmounted(() => {
   position: relative;
 }
 
-/* TOC Text with truncation */
 .toc-text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -474,7 +566,6 @@ onUnmounted(() => {
   line-height: var(--vscode-line-height-normal);
 }
 
-/* Scrollbar styling for TOC container */
 aside::-webkit-scrollbar {
   width: 4px;
 }
@@ -490,5 +581,15 @@ aside::-webkit-scrollbar-thumb {
 
 aside::-webkit-scrollbar-thumb:hover {
   background: var(--vscode-text-muted);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity var(--vscode-duration-fast) var(--vscode-ease-in-out);
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

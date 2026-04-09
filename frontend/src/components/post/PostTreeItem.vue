@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ChevronRight, ChevronDown } from 'lucide-vue-next'
+import { ChevronRight, ChevronDown, FileText, FolderOpen, Folder } from 'lucide-vue-next'
+import { SidebarMenuItem } from '@/components/ui/sidebar'
+import { usePostStore } from '@/stores/post'
 import type { PostTreeNode } from '@/types/post'
 
 interface Props {
@@ -15,73 +17,121 @@ const props = withDefaults(defineProps<Props>(), {
 
 const router = useRouter()
 const route = useRoute()
-const isExpanded = ref(false)
+const postStore = usePostStore()
 
+/**
+ * 节点是否展开
+ */
+const isExpanded = computed(() => postStore.isNodeExpanded(props.node.id))
+
+/**
+ * 节点是否激活（当前路由）
+ */
 const isActive = computed(() => {
-  return route.params.slug === props.node.slug
+  const routeId = route.params.id as string
+  const routeSlug = route.params.slug as string
+  
+  if (routeId) {
+    return parseInt(routeId, 10) === props.node.id
+  }
+  
+  if (routeSlug) {
+    return routeSlug === props.node.name
+  }
+  
+  return false
 })
 
-const toggleExpand = () => {
-  if (props.node.children.length > 0) {
-    isExpanded.value = !isExpanded.value
+/**
+ * 是否有子节点
+ */
+const hasChildren = computed(() => props.node.children.length > 0)
+
+/**
+ * 切换节点展开状态
+ * 
+ * @param {Event} event - 点击事件
+ */
+const toggleExpand = (event: Event) => {
+  event.stopPropagation()
+  if (hasChildren.value) {
+    postStore.toggleNodeExpand(props.node.id)
   }
 }
 
+/**
+ * 导航到文章详情
+ */
 const navigateToPost = () => {
-  router.push(`/post/${props.node.slug}`)
+  router.push(`/post/id/${props.node.id}`)
 }
+
+/**
+ * 缩进样式
+ */
+const indentStyle = computed(() => ({
+  paddingLeft: `${props.depth * 12 + 8}px`
+}))
 </script>
 
 <template>
-  <div class="post-tree-item">
+  <SidebarMenuItem>
     <div 
-      class="tree-node flex items-center py-1.5 px-2 cursor-pointer group relative transition-all duration-200 ease-smooth"
+      class="tree-node relative flex items-center py-vscode-1-5 cursor-pointer group transition-all duration-vscode-fast ease-vscode-in-out w-full"
       :class="{ 
         'is-active': isActive,
-        'has-children': node.children.length > 0 
       }"
-      :style="{ paddingLeft: `${depth * 16 + 8}px` }"
+      :style="indentStyle"
       @click="navigateToPost"
     >
-      <!-- Active indicator (left border) -->
       <div 
-        class="absolute left-0 top-0 bottom-0 w-0.5 bg-vscode-accent-blue opacity-0 group-hover:opacity-50 transition-opacity duration-150"
+        class="absolute left-0 top-0 bottom-0 w-0.5 bg-vscode-accent-primary opacity-0 group-hover:opacity-60 transition-opacity duration-vscode-fast"
         :class="{ 'opacity-100': isActive }"
       />
       
-      <!-- Expand/collapse button -->
       <button 
-        v-if="node.children.length > 0"
-        @click.stop="toggleExpand"
-        class="expand-btn mr-1 p-0.5 rounded transition-all duration-200 hover:bg-vscode-bg-tertiary flex-shrink-0"
+        v-if="hasChildren"
+        @click="toggleExpand"
+        class="expand-btn mr-vscode-1 p-0.5 rounded-vscode-sm flex-shrink-0 transition-colors duration-vscode-fast hover:bg-vscode-interactive-hover"
+        :class="{ 'text-vscode-accent-primary': isExpanded }"
       >
         <ChevronRight 
           v-if="!isExpanded" 
-          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-200"
+          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-vscode-fast"
         />
         <ChevronDown 
           v-else 
-          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-200"
+          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-vscode-fast"
         />
       </button>
-      <span 
-        v-else 
-        class="w-5 mr-1 flex-shrink-0"
-      ></span>
       
-      <!-- Node title -->
-      <span class="text-sm truncate transition-colors duration-150"
+      <component 
+        :is="hasChildren ? (isExpanded ? FolderOpen : Folder) : FileText"
+        class="w-4 h-4 mr-vscode-1-5 flex-shrink-0 transition-colors duration-vscode-fast"
         :class="isActive 
-          ? 'text-vscode-accent-blue font-medium' 
+          ? 'text-vscode-accent-primary' 
+          : 'text-vscode-text-muted group-hover:text-vscode-text-secondary'"
+      />
+      
+      <span 
+        class="text-vscode-sm truncate transition-colors duration-vscode-fast"
+        :class="isActive 
+          ? 'text-vscode-accent-primary font-vscode-medium' 
           : 'text-vscode-text-primary group-hover:text-vscode-text-primary'"
       >
         {{ node.title }}
       </span>
+      
+      <span
+        v-if="hasChildren"
+        class="ml-auto text-vscode-xs text-vscode-text-muted px-vscode-1-5 py-0.5 rounded-vscode-sm bg-vscode-bg-tertiary opacity-0 group-hover:opacity-100 transition-opacity duration-vscode-fast"
+      >
+        {{ node.children.length }}
+      </span>
     </div>
     
-    <!-- Children with expand/collapse animation -->
     <Transition name="expand">
-      <div v-if="isExpanded && node.children.length > 0" class="overflow-hidden">
+      <div v-if="isExpanded && hasChildren" class="overflow-hidden">
         <PostTreeItem
           v-for="child in node.children"
           :key="child.id"
@@ -90,21 +140,20 @@ const navigateToPost = () => {
         />
       </div>
     </Transition>
-  </div>
+  </SidebarMenuItem>
 </template>
 
 <style scoped>
 .tree-node {
-  position: relative;
-  border-radius: 4px;
+  border-radius: var(--vscode-radius-sm);
 }
 
 .tree-node:hover {
-  background-color: var(--vscode-list-hoverBackground);
+  background-color: var(--vscode-interactive-hover);
 }
 
 .tree-node.is-active {
-  background-color: rgba(0, 122, 204, 0.1);
+  background-color: var(--vscode-interactive-selected);
 }
 
 .tree-node:active {
@@ -115,10 +164,9 @@ const navigateToPost = () => {
   transform: scale(0.9);
 }
 
-/* Expand/collapse animation */
 .expand-enter-active,
 .expand-leave-active {
-  transition: all var(--duration-normal) var(--ease-smooth);
+  transition: all var(--vscode-duration-normal) var(--vscode-ease-in-out);
   max-height: 2000px;
 }
 
@@ -128,13 +176,7 @@ const navigateToPost = () => {
   opacity: 0;
 }
 
-/* Chevron rotation animation */
 .expand-btn svg {
-  transition: transform var(--duration-fast) var(--ease-smooth);
-}
-
-/* Text color enhancement */
-.tree-node.is-active span {
-  color: var(--accent-blue);
+  transition: transform var(--vscode-duration-fast) var(--vscode-ease-in-out);
 }
 </style>

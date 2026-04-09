@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, defineAsyncComponent } from 'vue'
+import { ref, defineAsyncComponent } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import ThemeToggle from './ThemeToggle.vue'
 import { useAuthStore } from '@/stores/auth'
-import { usePostStore } from '@/stores/post'
 import { Button } from '@/components/ui/button'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { ChevronRight, Search } from 'lucide-vue-next'
+import { Search } from 'lucide-vue-next'
 import {
   NavigationMenu,
   NavigationMenuList,
@@ -15,6 +14,9 @@ import {
   navigationMenuTriggerStyle,
 } from '@/components/ui/navigation-menu'
 
+/**
+ * 命令面板组件（异步加载）
+ */
 const CommandPalette = defineAsyncComponent(() => 
   import('@/components/CommandPalette.vue')
 )
@@ -22,78 +24,34 @@ const CommandPalette = defineAsyncComponent(() =>
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
-const postStore = usePostStore()
 
+/**
+ * 命令面板引用
+ */
 const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
 
+/**
+ * 退出登录
+ */
 const handleLogout = () => {
   authStore.logout()
   router.push('/login')
 }
 
-interface BreadcrumbItem {
-  label: string
-  path: string
-}
-
-const breadcrumbs = computed<BreadcrumbItem[]>(() => {
-  const items: BreadcrumbItem[] = [{ label: 'Home', path: '/' }]
-  
-  // For post detail or edit pages
-  if (route.name === 'PostDetail' || route.name === 'PostEdit') {
-    const currentPost = postStore.currentPost
-    if (currentPost) {
-      // Build parent hierarchy
-      const parentChain: BreadcrumbItem[] = []
-      let post = currentPost.parent
-      
-      // Traverse up the parent chain
-      while (post) {
-        parentChain.unshift({
-          label: post.title,
-          path: `/post/${post.slug}`
-        })
-        post = post.parent
-      }
-      
-      items.push(...parentChain)
-      
-      // Add current post
-      if (route.name === 'PostDetail') {
-        items.push({
-          label: currentPost.title,
-          path: `/post/${currentPost.slug}`
-        })
-      } else {
-        // For edit page, show the post title then "Edit"
-        items.push({
-          label: currentPost.title,
-          path: `/post/${currentPost.slug}`
-        })
-        items.push({
-          label: 'Edit',
-          path: `/post/${currentPost.slug}/edit`
-        })
-      }
-    }
-  } else if (route.name === 'PostNew') {
-    items.push({ label: 'New Post', path: '/post/new' })
-  }
-  
-  return items
-})
-
-const navigateTo = (path: string) => {
-  router.push(path)
-}
-
-// Navigation items for the main menu
+/**
+ * 导航菜单项
+ */
 const navigationItems = [
-  { label: 'Home', path: '/' },
-  { label: 'New Post', path: '/post/new' },
+  { label: '首页', path: '/' },
+  { label: '新建文章', path: '/post/new' },
 ]
 
-// Check if a navigation item is active
+/**
+ * 检查导航项是否激活
+ * 
+ * @param {string} path - 路径
+ * @returns {boolean} 是否激活
+ */
 const isActive = (path: string) => {
   if (path === '/') {
     return route.path === '/'
@@ -101,48 +59,31 @@ const isActive = (path: string) => {
   return route.path.startsWith(path)
 }
 
-// Open command palette
+/**
+ * 导航到指定路径
+ * 
+ * @param {string} path - 目标路径
+ */
+const navigateTo = (path: string) => {
+  router.push(path)
+}
+
+/**
+ * 打开命令面板
+ */
 const openCommandPalette = () => {
   commandPaletteRef.value?.toggleCommandPalette()
 }
 </script>
 
 <template>
-  <header class="flex items-center justify-between h-[var(--vscode-header-height)] px-vscode-4 sm:px-vscode-6 bg-vscode-bg-tertiary border-b border-vscode-border"
+  <header class="header-glass flex items-center justify-between h-vscode-header px-vscode-4 sm:px-vscode-6"
           role="banner">
     <div class="flex items-center gap-vscode-3 flex-1 min-w-0">
       <!-- Sidebar Toggle -->
       <SidebarTrigger 
         class="text-vscode-text-primary hover:bg-vscode-interactive-hover"
         aria-label="切换侧边栏" />
-      
-      <!-- Breadcrumbs (hidden on mobile) -->
-      <nav class="hidden sm:flex items-center gap-1.5 text-vscode-size-sm overflow-x-auto"
-           role="navigation"
-           aria-label="面包屑导航">
-        <template v-for="(item, index) in breadcrumbs" :key="item.path">
-          <button
-            v-if="index < breadcrumbs.length - 1"
-            @click="navigateTo(item.path)"
-            class="text-vscode-text-secondary hover:text-vscode-text-primary transition-colors truncate max-w-[200px]"
-            :aria-label="`导航到 ${item.label}`"
-          >
-            {{ item.label }}
-          </button>
-          <span
-            v-else
-            class="text-vscode-text-primary font-vscode-medium truncate max-w-[200px]"
-            aria-current="page"
-          >
-            {{ item.label }}
-          </span>
-          <ChevronRight
-            v-if="index < breadcrumbs.length - 1"
-            class="w-4 h-4 text-vscode-text-muted flex-shrink-0"
-            aria-hidden="true"
-          />
-        </template>
-      </nav>
     </div>
 
     <!-- Center: Navigation Menu (desktop only) -->
@@ -174,7 +115,7 @@ const openCommandPalette = () => {
         class="hidden sm:flex items-center gap-vscode-2 text-vscode-text-muted hover:text-vscode-text-primary hover:bg-vscode-interactive-hover"
       >
         <Search class="size-4" aria-hidden="true" />
-        <span class="text-vscode-size-sm">Search</span>
+        <span class="text-vscode-size-sm">搜索</span>
         <kbd class="pointer-events-none ml-auto hidden h-5 select-none items-center gap-1 rounded-vscode-sm border border-vscode-border bg-vscode-bg-tertiary px-1.5 font-mono text-[10px] font-medium text-vscode-text-muted sm:flex"
              aria-hidden="true">
           <span class="text-vscode-size-xs">⌘</span>K
@@ -197,7 +138,7 @@ const openCommandPalette = () => {
         @click="handleLogout"
         aria-label="退出登录"
       >
-        Logout
+        退出登录
       </Button>
     </div>
 
@@ -205,3 +146,45 @@ const openCommandPalette = () => {
     <CommandPalette ref="commandPaletteRef" />
   </header>
 </template>
+
+<style scoped>
+.header-glass {
+  flex-shrink: 0;
+  
+  /* 淡蓝色毛玻璃效果 - 更透明 */
+  background: linear-gradient(
+    135deg,
+    rgba(210, 235, 255, 0.55) 0%,
+    rgba(180, 215, 255, 0.45) 50%,
+    rgba(160, 200, 255, 0.50) 100%
+  );
+  backdrop-filter: blur(20px) saturate(200%);
+  -webkit-backdrop-filter: blur(20px) saturate(200%);
+  
+  /* 淡蓝色底部边框 */
+  border-bottom: 1px solid rgba(100, 170, 255, 0.25);
+  
+  /* 柔和阴影 */
+  box-shadow: 
+    0 2px 20px rgba(80, 140, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 暗色模式下的深蓝色毛玻璃 */
+:global(.dark) .header-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(25, 45, 80, 0.70) 0%,
+    rgba(15, 35, 65, 0.65) 50%,
+    rgba(20, 40, 75, 0.70) 100%
+  );
+  backdrop-filter: blur(24px) saturate(220%);
+  -webkit-backdrop-filter: blur(24px) saturate(220%);
+  
+  border-bottom: 1px solid rgba(60, 120, 255, 0.15);
+  
+  box-shadow: 
+    0 2px 20px rgba(0, 40, 120, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+</style>

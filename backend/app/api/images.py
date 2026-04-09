@@ -9,11 +9,11 @@ import uuid
 from datetime import datetime
 from flask import Blueprint, request, send_file
 from werkzeug.utils import secure_filename
-from app.utils.response import api_response
-from app.config import settings
-from app.database import get_db
+from app.db import db
 from app.models.models import Image
 from app.api.auth import auth
+from app.utils.response import api_response
+from app.config import settings
 
 bp = Blueprint('images', __name__, url_prefix='/api/images')
 
@@ -98,14 +98,14 @@ def upload_image():
     relative_path = os.path.join(post_slug, filename) if post_slug else filename
     
     # 保存到数据库（可选）
-    db = next(get_db())
+    session = db.session
     image = Image(
         filename=filename,
         filepath=relative_path,
         filesize=filesize
     )
-    db.add(image)
-    db.commit()
+    session.add(image)
+    session.commit()
     
     return api_response({
         'filename': filename,
@@ -155,9 +155,8 @@ def delete_image(filepath):
     # 删除文件
     os.remove(full_path)
     
-    # 从数据库删除记录
-    db = next(get_db())
-    db.query(Image).filter(Image.filepath == filepath).delete()
-    db.commit()
+    session = db.session
+    session.query(Image).filter(Image.filepath == filepath).delete()
+    session.commit()
     
     return api_response(None, 200, '删除成功')

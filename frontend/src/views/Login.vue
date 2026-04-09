@@ -10,11 +10,29 @@ import { Code2, Terminal, Loader2 } from 'lucide-vue-next'
 const router = useRouter()
 const authStore = useAuthStore()
 
+/**
+ * 用户名
+ */
 const username = ref('')
+
+/**
+ * 密码
+ */
 const password = ref('')
+
+/**
+ * 加载状态
+ */
 const loading = ref(false)
+
+/**
+ * 错误信息
+ */
 const error = ref('')
 
+/**
+ * 处理登录
+ */
 const handleLogin = async () => {
   if (!username.value || !password.value) {
     error.value = '请输入用户名和密码'

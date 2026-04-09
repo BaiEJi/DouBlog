@@ -21,23 +21,71 @@ const route = useRoute()
 const router = useRouter()
 const postStore = usePostStore()
 
-const slug = route.params.slug as string
+/**
+ * 路由参数：文章ID
+ */
+const routeParamId = computed(() => {
+  const id = route.params.id
+  return id ? Number(id) : null
+})
+
+/**
+ * 路由参数：文章别名
+ */
+const routeParamSlug = computed(() => route.params.slug as string | undefined)
+
+/**
+ * 文章内容
+ */
 const content = ref('')
+
+/**
+ * 文章标题
+ */
 const title = ref('')
-const postSlug = ref('')
+
+/**
+ * 文章别名（name字段）
+ */
+const postName = ref('')
+
+/**
+ * 原始别名（用于检测是否修改）
+ */
+const originalName = ref('')
+
+/**
+ * 文章状态
+ */
 const status = ref<'published' | 'archived'>('published')
+
+/**
+ * 父文章ID
+ */
 const parentId = ref<number | null>(null)
 
-// Save status tracking
+/**
+ * 保存状态
+ */
 const saveStatus = ref<'saved' | 'saving' | 'unsaved' | 'error'>('saved')
+
+/**
+ * 最后保存时间
+ */
 const lastSavedAt = ref<Date | null>(null)
 
-// Get all posts for parent selector
+/**
+ * 获取所有可选的父文章列表
+ * 只允许层级小于2的文章作为父文章，并排除当前文章
+ * 
+ * @returns {Array<{ id: number; title: string; level: number }>} 可选的父文章列表
+ */
 const allPosts = computed(() => {
+  const currentId = postStore.currentPost?.id
   const flattenTree = (nodes: PostTreeNode[], level = 0): Array<{ id: number; title: string; level: number }> => {
     let result: Array<{ id: number; title: string; level: number }> = []
     nodes.forEach(node => {
-      if (node.slug !== slug) { // Exclude current post from parent options
+      if (node.id !== currentId) {
         result.push({ id: node.id, title: node.title, level })
         if (node.children && node.children.length > 0) {
           result = result.concat(flattenTree(node.children, level + 1))
@@ -46,30 +94,57 @@ const allPosts = computed(() => {
     })
     return result
   }
-  return flattenTree(postStore.postTree)
+  const all = flattenTree(postStore.postTree)
+  return all.filter(post => post.level < 2)
 })
 
+/**
+ * 当前文章ID
+ */
+const currentPostId = computed(() => postStore.currentPost?.id || null)
+
+/**
+ * 根据ID或别名加载文章数据
+ */
+const loadPostData = async () => {
+  if (routeParamId.value) {
+    await postStore.fetchPostById(routeParamId.value)
+  } else if (routeParamSlug.value) {
+    await postStore.fetchPostBySlug(routeParamSlug.value)
+  }
+}
+
 onMounted(async () => {
-  await Promise.all([
-    postStore.fetchPost(slug),
-    postStore.fetchPostTree()
-  ])
-  if (postStore.currentPost) {
-    content.value = postStore.currentPost.content
-    title.value = postStore.currentPost.title
-    postSlug.value = postStore.currentPost.slug
-    status.value = postStore.currentPost.status
-    parentId.value = postStore.currentPost.parent_id
-    lastSavedAt.value = new Date(postStore.currentPost.updated_at)
+  await postStore.fetchPostTree()
+  try {
+    await loadPostData()
+    if (postStore.currentPost) {
+      content.value = postStore.currentPost.content
+      title.value = postStore.currentPost.title
+      postName.value = postStore.currentPost.name || ''
+      originalName.value = postStore.currentPost.name || ''
+      status.value = postStore.currentPost.status
+      parentId.value = postStore.currentPost.parent_id
+      lastSavedAt.value = new Date(postStore.currentPost.updated_at)
+    } else {
+      toast.error('文章不存在或已被移动')
+      router.push('/')
+    }
+  } catch {
+    toast.error('文章不存在或已被移动')
+    router.push('/')
   }
 })
 
-// Track unsaved changes
-watch([content, title, status, parentId], () => {
+/**
+ * 监听内容变化，标记为未保存
+ */
+watch([content, title, postName, status, parentId], () => {
   if (postStore.currentPost) {
     const hasChanges = 
       content.value !== postStore.currentPost.content ||
       title.value !== postStore.currentPost.title ||
+      postName.value !== postStore.currentPost.name ||
       status.value !== postStore.currentPost.status ||
       parentId.value !== postStore.currentPost.parent_id
     
@@ -79,17 +154,59 @@ watch([content, title, status, parentId], () => {
   }
 })
 
+/**
+ * 验证别名格式
+ * 
+ * @param {string} name - 别名
+ * @returns {boolean} 是否有效
+ */
+const validateName = (name: string): boolean => {
+  if (!name || name.length < 3 || name.length > 100) return false
+  return /^[a-zA-Z][a-zA-Z0-9-]*$/.test(name)
+}
+
+/**
+ * 别名验证错误信息
+ */
+const nameError = computed(() => {
+  if (!postName.value) return '别名不能为空'
+  if (postName.value.length < 3) return '别名长度至少3个字符'
+  if (postName.value.length > 100) return '别名长度不能超过100个字符'
+  if (!/^[a-zA-Z]/.test(postName.value)) return '别名必须以英文字母开头'
+  if (!/^[a-zA-Z][a-zA-Z0-9-]*$/.test(postName.value)) return '别名只能包含英文字母、数字和连字符'
+  return ''
+})
+
+/**
+ * 保存文章
+ */
 const handleSave = async () => {
   if (!title.value.trim() || !content.value.trim()) {
     toast.error('标题和内容不能为空')
     return
   }
 
+  if (!postName.value.trim()) {
+    toast.error('别名不能为空')
+    return
+  }
+
+  if (!validateName(postName.value)) {
+    toast.error('别名格式无效：必须以英文字母开头，只允许英文、数字和连字符，长度3-100字符')
+    return
+  }
+
+  if (!currentPostId.value) {
+    toast.error('文章ID不存在')
+    return
+  }
+
   saveStatus.value = 'saving'
   
   try {
-    await postStore.updatePost(slug, {
+    const updatedPost = await postStore.updatePostById(currentPostId.value, {
       title: title.value,
+      name: postName.value,
       content: content.value,
       status: status.value,
       parent_id: parentId.value
@@ -97,7 +214,15 @@ const handleSave = async () => {
     
     saveStatus.value = 'saved'
     lastSavedAt.value = new Date()
+    originalName.value = updatedPost.name
     toast.success('文章已保存')
+    
+    // 如果别名被修改，更新URL到新的slug
+    if (routeParamSlug.value && updatedPost.name !== routeParamSlug.value) {
+      router.push(`/post/slug/${updatedPost.name}`)
+    } else {
+      router.push(`/post/id/${updatedPost.id}`)
+    }
   } catch (error) {
     saveStatus.value = 'error'
     toast.error('保存失败，请重试')
@@ -105,15 +230,28 @@ const handleSave = async () => {
   }
 }
 
+/**
+ * 取消编辑并返回详情页
+ */
 const handleCancel = () => {
   if (saveStatus.value === 'unsaved') {
     if (!confirm('有未保存的更改，确定要离开吗？')) {
       return
     }
   }
-  router.push(`/post/${slug}`)
+  if (currentPostId.value) {
+    router.push(`/post/id/${currentPostId.value}`)
+  } else {
+    router.push('/')
+  }
 }
 
+/**
+ * 格式化最后保存时间
+ * 
+ * @param {Date | null} date - 日期对象
+ * @returns {string} 格式化的时间字符串
+ */
 const formatLastSaved = (date: Date | null): string => {
   if (!date) return '未保存'
   const now = new Date()
@@ -130,29 +268,63 @@ const formatLastSaved = (date: Date | null): string => {
   <Layout>
     <div class="flex flex-col h-full">
       <!-- Top Toolbar -->
-      <div class="bg-vscode-bg-secondary border-b border-vscode-border px-6 py-3 flex items-center justify-between">
+      <header 
+        class="flex items-center justify-between px-6 py-3 border-b"
+        style="
+          background-color: var(--vscode-bg-secondary);
+          border-color: var(--vscode-border);
+        "
+      >
         <div class="flex items-center gap-4">
-          <h1 class="text-lg font-semibold text-vscode-text-primary">
+          <h1 
+            class="font-semibold"
+            style="
+              font-size: var(--vscode-font-size-lg);
+              color: var(--vscode-text-primary);
+            "
+          >
             {{ postStore.currentPost?.title || '编辑文章' }}
           </h1>
           
           <!-- Save Status Indicator -->
-          <div class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm">
+          <div 
+            class="flex items-center gap-2 px-3 py-1.5 rounded-md"
+            :style="{
+              fontSize: 'var(--vscode-font-size-sm)',
+              backgroundColor: saveStatus === 'unsaved' 
+                ? 'var(--vscode-accent-warning-subtle)' 
+                : saveStatus === 'error' 
+                  ? 'var(--vscode-accent-error-subtle)'
+                  : 'transparent'
+            }"
+          >
             <template v-if="saveStatus === 'saved'">
-              <Check class="w-4 h-4 text-vscode-text-success" />
-              <span class="text-vscode-text-secondary">{{ formatLastSaved(lastSavedAt) }}</span>
+              <Check 
+                class="w-4 h-4"
+                style="color: var(--vscode-accent-success);"
+              />
+              <span style="color: var(--vscode-text-secondary);">{{ formatLastSaved(lastSavedAt) }}</span>
             </template>
             <template v-else-if="saveStatus === 'saving'">
-              <Loader2 class="w-4 h-4 animate-spin text-vscode-accent-blue" />
-              <span class="text-vscode-text-secondary">保存中...</span>
+              <Loader2 
+                class="w-4 h-4 animate-spin"
+                style="color: var(--vscode-accent-primary);"
+              />
+              <span style="color: var(--vscode-text-secondary);">保存中...</span>
             </template>
             <template v-else-if="saveStatus === 'unsaved'">
-              <AlertCircle class="w-4 h-4 text-vscode-text-warning" />
-              <span class="text-vscode-text-warning">未保存</span>
+              <AlertCircle 
+                class="w-4 h-4"
+                style="color: var(--vscode-accent-warning);"
+              />
+              <span style="color: var(--vscode-accent-warning);">未保存</span>
             </template>
             <template v-else-if="saveStatus === 'error'">
-              <AlertCircle class="w-4 h-4 text-vscode-text-error" />
-              <span class="text-vscode-text-error">保存失败</span>
+              <AlertCircle 
+                class="w-4 h-4"
+                style="color: var(--vscode-accent-error);"
+              />
+              <span style="color: var(--vscode-accent-error);">保存失败</span>
             </template>
           </div>
         </div>
@@ -175,31 +347,75 @@ const formatLastSaved = (date: Date | null): string => {
             {{ saveStatus === 'saving' ? '保存中...' : '保存' }}
           </Button>
         </div>
-      </div>
+      </header>
 
       <!-- Main Content Area -->
       <div class="flex-1 overflow-auto">
-        <div class="max-w-4xl mx-auto p-6 space-y-6">
+        <div 
+          class="mx-auto p-6 space-y-6"
+          style="max-width: var(--vscode-content-max-width);"
+        >
           <!-- Metadata Section -->
-          <div class="bg-vscode-bg-secondary border border-vscode-border rounded-vscode p-5 space-y-4">
-            <h2 class="text-sm font-semibold text-vscode-text-primary uppercase tracking-wide">文章信息</h2>
+          <section 
+            class="p-5 space-y-4 border rounded-lg"
+            style="
+              background-color: var(--vscode-bg-secondary);
+              border-color: var(--vscode-border);
+            "
+          >
+            <h2 
+              class="font-semibold uppercase tracking-wide"
+              style="
+                font-size: var(--vscode-font-size-xs);
+                color: var(--vscode-text-primary);
+                letter-spacing: var(--vscode-letter-spacing-wider);
+              "
+            >
+              文章信息
+            </h2>
             
             <!-- Title Input -->
-            <div class="grid grid-cols-4 gap-4">
-              <div class="col-span-3">
-                <label class="block text-xs font-medium mb-1.5 text-vscode-text-secondary">
-                  标题 <span class="text-vscode-text-error">*</span>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div class="md:col-span-3">
+                <label 
+                  class="block font-medium mb-1.5"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-secondary);
+                  "
+                >
+                  标题 <span style="color: var(--vscode-accent-error);">*</span>
                 </label>
                 <Input
                   v-model="title"
                   placeholder="输入文章标题"
                   class="w-full"
+                  :class="{ 'border-destructive': !title.trim() && title !== '' }"
                 />
+                <p 
+                  v-if="!title.trim() && title !== ''"
+                  class="mt-1.5 flex items-center gap-1"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-accent-error);
+                  "
+                >
+                  <AlertCircle class="w-3 h-3" />
+                  标题不能为空
+                </p>
               </div>
 
               <!-- Status Selector -->
               <div>
-                <label class="block text-xs font-medium mb-1.5 text-vscode-text-secondary">状态</label>
+                <label 
+                  class="block font-medium mb-1.5"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-secondary);
+                  "
+                >
+                  状态
+                </label>
                 <Select v-model="status">
                   <SelectTrigger class="w-full">
                     <SelectValue placeholder="选择状态" />
@@ -213,21 +429,54 @@ const formatLastSaved = (date: Date | null): string => {
             </div>
 
             <!-- Slug and Parent Row -->
-            <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="block text-xs font-medium mb-1.5 text-vscode-text-secondary">
-                  别名 (Slug)
+                <label 
+                  class="block font-medium mb-1.5"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-secondary);
+                  "
+                >
+                  别名 (Slug) <span style="color: var(--vscode-accent-error);">*</span>
                 </label>
                 <Input
-                  :model-value="postSlug"
-                  disabled
-                  class="w-full bg-vscode-bg-tertiary cursor-not-allowed"
+                  v-model="postName"
+                  placeholder="例如: my-article-title"
+                  class="w-full"
+                  :class="{ 'border-destructive': !!nameError }"
                 />
-                <p class="text-xs text-vscode-text-muted mt-1">别名不可修改</p>
+                <p 
+                  v-if="nameError"
+                  class="mt-1.5 flex items-center gap-1"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-accent-error);
+                  "
+                >
+                  <AlertCircle class="w-3 h-3" />
+                  {{ nameError }}
+                </p>
+                <p 
+                  v-else
+                  class="mt-1"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-muted);
+                  "
+                >
+                  英文字母开头，只允许英文字母、数字和连字符
+                </p>
               </div>
 
               <div>
-                <label class="block text-xs font-medium mb-1.5 text-vscode-text-secondary">
+                <label 
+                  class="block font-medium mb-1.5"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-secondary);
+                  "
+                >
                   父级文章
                 </label>
                 <Select v-model="parentId">
@@ -245,18 +494,43 @@ const formatLastSaved = (date: Date | null): string => {
                     </SelectItem>
                   </SelectContent>
                 </Select>
-                <p class="text-xs text-vscode-text-muted mt-1">选择父级文章以创建层级结构</p>
+                <p 
+                  class="mt-1"
+                  style="
+                    font-size: var(--vscode-font-size-xs);
+                    color: var(--vscode-text-muted);
+                  "
+                >
+                  选择父级文章以创建层级结构（最多3层：父-子-孙）
+                </p>
               </div>
             </div>
-          </div>
+          </section>
 
           <!-- Content Editor -->
-          <div>
-            <label class="block text-sm font-medium mb-2 text-vscode-text-primary">
-              内容 <span class="text-vscode-text-error">*</span>
+          <section>
+            <label 
+              class="block font-medium mb-2"
+              style="
+                font-size: var(--vscode-font-size-sm);
+                color: var(--vscode-text-primary);
+              "
+            >
+              内容 <span style="color: var(--vscode-accent-error);">*</span>
             </label>
+            <div 
+              v-if="!content.trim() && content !== ''"
+              class="mb-2 flex items-center gap-1"
+              style="
+                font-size: var(--vscode-font-size-xs);
+                color: var(--vscode-accent-error);
+              "
+            >
+              <AlertCircle class="w-3 h-3" />
+              内容不能为空
+            </div>
             <MarkdownEditor v-model="content" />
-          </div>
+          </section>
         </div>
       </div>
     </div>

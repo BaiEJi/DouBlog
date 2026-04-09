@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { MdPreview } from 'md-editor-v3'
 import 'md-editor-v3/lib/preview.css'
 import { useThemeStore } from '@/stores/theme'
+import { generateHeadingId } from '@/utils/heading'
 
 defineProps<{
   content: string
@@ -10,15 +11,33 @@ defineProps<{
 
 const themeStore = useThemeStore()
 const theme = computed(() => themeStore.isDark ? 'dark' : 'light')
+const showLineNumbers = ref(true)
+
+interface MdHeadingIdOptions {
+  text: string
+  level: number
+  index: number
+  currentToken?: unknown
+  nextToken?: unknown
+}
+
+const mdHeadingId = (options: MdHeadingIdOptions) => {
+  return generateHeadingId(options.text)
+}
 
 const copyToClipboard = async (text: string, button: HTMLButtonElement): Promise<void> => {
   try {
     await navigator.clipboard.writeText(text)
-    const originalText = button.textContent
-    button.textContent = 'Copied!'
+    const originalText = button.innerHTML
+    button.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;vertical-align:middle;margin-right:4px">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      Copied!
+    `
     button.classList.add('copied')
     setTimeout(() => {
-      button.textContent = originalText
+      button.innerHTML = originalText
       button.classList.remove('copied')
     }, 2000)
   } catch (err) {
@@ -32,279 +51,253 @@ const addCopyButtons = () => {
     codeBlocks.forEach((pre) => {
       const preElement = pre as HTMLElement
       // Skip if button already exists
-      if (preElement.querySelector('.copy-button')) return
+      if (preElement.querySelector('.code-copy-btn')) return
 
       const code = preElement.querySelector('code')
       if (!code) return
 
+      // Create wrapper for code block actions
+      const header = document.createElement('div')
+      header.className = 'code-block-header'
+      
+      // Get language from class
+      const langMatch = code.className.match(/language-(\w+)/)
+      const lang = langMatch ? langMatch[1] : ''
+      
+      // Language badge
+      if (lang) {
+        const langBadge = document.createElement('span')
+        langBadge.className = 'code-lang-badge'
+        langBadge.textContent = lang.toUpperCase()
+        header.appendChild(langBadge)
+      }
+      
+      // Copy button
       const button = document.createElement('button') as HTMLButtonElement
-      button.className = 'copy-button'
-      button.textContent = 'Copy'
-      button.style.cssText = `
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        padding: 4px 12px;
-        background: var(--bg-tertiary);
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        color: var(--text-primary);
-        font-size: 12px;
-        cursor: pointer;
-        opacity: 0;
-        transition: opacity 0.2s, background-color 0.2s;
-        z-index: 10;
+      button.className = 'code-copy-btn'
+      button.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        Copy
       `
       
       button.addEventListener('click', () => {
         copyToClipboard(code.textContent || '', button)
       })
       
-      button.addEventListener('mouseenter', () => {
-        button.style.background = 'var(--accent-blue)'
-        button.style.color = '#ffffff'
-      })
-      
-      button.addEventListener('mouseleave', () => {
-        if (!button.classList.contains('copied')) {
-          button.style.background = 'var(--bg-tertiary)'
-          button.style.color = 'var(--text-primary)'
-        }
-      })
-      
-      // Make pre position relative for button positioning
-      preElement.style.position = 'relative'
-
-      // Show button on hover
-      preElement.addEventListener('mouseenter', () => {
-        button.style.opacity = '1'
-      })
-
-      preElement.addEventListener('mouseleave', () => {
-        button.style.opacity = '0'
-      })
-
-      preElement.appendChild(button)
+      header.appendChild(button)
+      preElement.insertBefore(header, preElement.firstChild)
     })
   }, 100)
 }
 
-onMounted(() => {
-  addCopyButtons()
-})
+const addLineNumbers = () => {
+  if (!showLineNumbers.value) return
+  
+  setTimeout(() => {
+    const codeBlocks = document.querySelectorAll('.md-preview pre code')
+    codeBlocks.forEach((code) => {
+      const codeElement = code as HTMLElement
+      // Skip if already has line numbers
+      if (codeElement.classList.contains('line-numbers-processed')) return
+      
+      const lines = codeElement.textContent?.split('\n') || []
+      const lineCount = lines.length
+      const lineCountStr = lineCount.toString()
+      const padding = lineCountStr.length + 1
+      
+      // Add line numbers via CSS counter
+      codeElement.style.setProperty('--line-count', `"${lineCount}"`)
+      codeElement.style.setProperty('--line-padding', `${padding}ch`)
+      codeElement.classList.add('line-numbers', 'line-numbers-processed')
+    })
+  }, 100)
+}
 
 const handleHtmlChanged = () => {
   addCopyButtons()
+  addLineNumbers()
+  addHeadingIds()
 }
 
+// Add IDs to headings for TOC navigation
+const addHeadingIds = () => {
+  setTimeout(() => {
+    const preview = document.querySelector('.md-editor-preview')
+    if (!preview) return
+    
+    const headings = preview.querySelectorAll('h2, h3')
+    headings.forEach((heading) => {
+      const h = heading as HTMLElement
+      if (!h.id) {
+        h.id = generateHeadingId(h.textContent || '')
+      }
+    })
+  }, 100)
+}
+
+// Watch for content changes
+watch(() => showLineNumbers.value, () => {
+  nextTick(() => {
+    addLineNumbers()
+    // Toggle line numbers class on code blocks
+    const codeBlocks = document.querySelectorAll('.md-preview pre code')
+    codeBlocks.forEach((code) => {
+      if (showLineNumbers.value) {
+        code.classList.add('line-numbers')
+      } else {
+        code.classList.remove('line-numbers')
+      }
+    })
+  })
+})
+
+onMounted(() => {
+  addCopyButtons()
+  addLineNumbers()
+  addHeadingIds()
+})
 </script>
 
 <template>
-  <div class="markdown-renderer">
+  <div class="markdown-content">
+    <!-- Line Numbers Toggle -->
+    <div class="markdown-options" v-if="content?.includes('```')">
+      <label class="line-numbers-toggle">
+        <input type="checkbox" v-model="showLineNumbers" />
+        <span class="toggle-label">Show Line Numbers</span>
+      </label>
+    </div>
+    
     <MdPreview
       :modelValue="content"
       :theme="theme"
+      :mdHeadingId="mdHeadingId"
       @onHtmlChanged="handleHtmlChanged"
     />
   </div>
 </template>
 
 <style scoped>
-.markdown-renderer {
-  @apply w-full;
+.markdown-content {
+  width: 100%;
 }
 
-/* Override md-editor-v3 styles with VS Code theme */
-.markdown-renderer :deep(.md-preview) {
-  @apply w-full;
+/* Line numbers toggle */
+.markdown-options {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--vscode-spacing-3);
+}
+
+.line-numbers-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--vscode-spacing-2);
+  font-size: var(--vscode-font-size-sm);
+  color: var(--vscode-text-secondary);
+  cursor: pointer;
+  padding: var(--vscode-spacing-1-5) var(--vscode-spacing-3);
+  border-radius: var(--vscode-radius-md);
+  transition: all var(--vscode-duration-fast) var(--vscode-ease-in-out);
+}
+
+.line-numbers-toggle:hover {
+  background: var(--vscode-bg-hover);
+  color: var(--vscode-text-primary);
+}
+
+.line-numbers-toggle input {
+  accent-color: var(--forest-primary, #00997B);
+  cursor: pointer;
+}
+
+.toggle-label {
+  user-select: none;
+}
+
+/* Override md-editor-v3 base styles */
+.markdown-content :deep(.md-preview) {
+  width: 100%;
   background: transparent !important;
-  color: var(--text-primary) !important;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: inherit;
 }
 
-/* Code blocks - VS Code Dark+ style */
-.markdown-renderer :deep(pre) {
-  background: var(--bg-tertiary) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 6px !important;
-  padding: 16px !important;
-  margin: 16px 0 !important;
-  overflow-x: auto !important;
+/* Code block container with copy button header */
+.markdown-content :deep(pre) {
   position: relative;
+  overflow: hidden;
 }
 
-.markdown-renderer :deep(pre code) {
-  background: transparent !important;
-  color: var(--text-primary) !important;
-  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
-  font-size: 14px !important;
-  line-height: 1.6 !important;
+/* Code block header */
+.markdown-content :deep(.code-block-header) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--vscode-spacing-2) var(--vscode-spacing-3);
+  background: var(--forest-bg-code, #f3f3f3);
+  border-bottom: 1px solid var(--forest-border, #DADCDE);
+  min-height: 36px;
 }
 
-/* Inline code */
-.markdown-renderer :deep(code:not(pre code)) {
-  background: var(--bg-secondary) !important;
-  color: var(--accent-blue) !important;
-  padding: 2px 6px !important;
-  border-radius: 4px !important;
-  font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace !important;
-  font-size: 0.9em !important;
-  border: 1px solid var(--border) !important;
+/* Language badge */
+.markdown-content :deep(.code-lang-badge) {
+  font-size: var(--vscode-font-size-xs);
+  font-weight: 600;
+  color: var(--forest-text-light, #81888D);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px var(--vscode-spacing-2);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--vscode-radius-sm);
 }
 
-/* Blockquotes - VS Code panel style */
-.markdown-renderer :deep(blockquote) {
-  border-left: 4px solid var(--accent-blue) !important;
-  background: var(--bg-secondary) !important;
-  padding: 12px 16px !important;
-  margin: 16px 0 !important;
-  border-radius: 0 6px 6px 0 !important;
-  color: var(--text-secondary) !important;
+/* Copy button */
+.markdown-content :deep(.code-copy-btn) {
+  display: flex;
+  align-items: center;
+  gap: var(--vscode-spacing-1);
+  padding: var(--vscode-spacing-1) var(--vscode-spacing-2-5);
+  background: transparent;
+  border: 1px solid var(--forest-border, #DADCDE);
+  border-radius: var(--vscode-radius-md);
+  color: var(--forest-text-light, #81888D);
+  font-size: var(--vscode-font-size-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.markdown-renderer :deep(blockquote p) {
-  margin: 0 !important;
+.markdown-content :deep(.code-copy-btn:hover) {
+  background: var(--forest-primary, #00997B);
+  border-color: var(--forest-primary, #00997B);
+  color: #fff;
 }
 
-/* Tables - zebra stripes and horizontal scroll */
-.markdown-renderer :deep(table) {
-  width: 100% !important;
-  border-collapse: collapse !important;
-  margin: 16px 0 !important;
-  display: block !important;
-  overflow-x: auto !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 6px !important;
+.markdown-content :deep(.code-copy-btn.copied) {
+  background: #4caf50;
+  border-color: #4caf50;
+  color: #fff;
 }
 
-.markdown-renderer :deep(thead) {
-  background: var(--bg-secondary) !important;
-  border-bottom: 2px solid var(--accent-blue) !important;
+/* Dark mode code header */
+.dark .markdown-content :deep(.code-block-header) {
+  background: #252526;
+  border-bottom-color: #404040;
 }
 
-.markdown-renderer :deep(th) {
-  padding: 12px 16px !important;
-  text-align: left !important;
-  font-weight: 600 !important;
-  color: var(--text-primary) !important;
-  border-bottom: 2px solid var(--accent-blue) !important;
+.dark .markdown-content :deep(.code-lang-badge) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.markdown-renderer :deep(td) {
-  padding: 10px 16px !important;
-  border-bottom: 1px solid var(--border) !important;
+.dark .markdown-content :deep(.code-copy-btn) {
+  border-color: #404040;
 }
 
-/* Zebra stripes */
-.markdown-renderer :deep(tbody tr:nth-child(odd)) {
-  background: transparent !important;
-}
-
-.markdown-renderer :deep(tbody tr:nth-child(even)) {
-  background: var(--bg-secondary) !important;
-}
-
-.markdown-renderer :deep(tbody tr:hover) {
-  background: var(--bg-tertiary) !important;
-}
-
-/* Images - rounded corners and shadow */
-.markdown-renderer :deep(img) {
-  max-width: 100% !important;
-  height: auto !important;
-  border-radius: 8px !important;
-  box-shadow: var(--vscode-shadow-lg) !important;
-  margin: 16px 0 !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-}
-
-.markdown-renderer :deep(img:hover) {
-  transform: scale(1.02) !important;
-  box-shadow: var(--vscode-shadow-xl) !important;
-}
-
-/* Headings */
-.markdown-renderer :deep(h1) {
-  @apply text-3xl font-bold;
-  color: var(--text-primary) !important;
-  margin: 24px 0 16px 0 !important;
-  padding-bottom: 8px !important;
-  border-bottom: 2px solid var(--border) !important;
-}
-
-.markdown-renderer :deep(h2) {
-  @apply text-2xl font-semibold;
-  color: var(--text-primary) !important;
-  margin: 20px 0 12px 0 !important;
-  padding-bottom: 6px !important;
-  border-bottom: 1px solid var(--border) !important;
-}
-
-.markdown-renderer :deep(h3) {
-  @apply text-xl font-semibold;
-  color: var(--text-primary) !important;
-  margin: 16px 0 8px 0 !important;
-}
-
-.markdown-renderer :deep(h4) {
-  @apply text-lg font-semibold;
-  color: var(--text-primary) !important;
-  margin: 14px 0 6px 0 !important;
-}
-
-.markdown-renderer :deep(h5) {
-  @apply text-base font-semibold;
-  color: var(--text-primary) !important;
-  margin: 12px 0 4px 0 !important;
-}
-
-.markdown-renderer :deep(h6) {
-  @apply text-sm font-semibold;
-  color: var(--text-secondary) !important;
-  margin: 10px 0 4px 0 !important;
-}
-
-/* Paragraphs and lists */
-.markdown-renderer :deep(p) {
-  color: var(--text-primary) !important;
-  line-height: 1.7 !important;
-  margin: 12px 0 !important;
-}
-
-.markdown-renderer :deep(ul),
-.markdown-renderer :deep(ol) {
-  margin: 12px 0 !important;
-  padding-left: 24px !important;
-  color: var(--text-primary) !important;
-}
-
-.markdown-renderer :deep(li) {
-  margin: 6px 0 !important;
-  line-height: 1.6 !important;
-}
-
-/* Links */
-.markdown-renderer :deep(a) {
-  color: var(--accent-blue) !important;
-  text-decoration: none !important;
-  border-bottom: 1px solid transparent !important;
-  transition: border-color 0.2s ease !important;
-}
-
-.markdown-renderer :deep(a:hover) {
-  border-bottom-color: var(--accent-blue) !important;
-}
-
-/* Horizontal rule */
-.markdown-renderer :deep(hr) {
-  border: none !important;
-  border-top: 2px solid var(--border) !important;
-  margin: 24px 0 !important;
-}
-
-/* Copy button styles */
-.copy-button.copied {
-  background: var(--accent-green) !important;
-  color: #ffffff !important;
+.dark .markdown-content :deep(.code-copy-btn:hover) {
+  background: var(--forest-primary, #00997B);
+  border-color: var(--forest-primary, #00997B);
 }
 </style>
