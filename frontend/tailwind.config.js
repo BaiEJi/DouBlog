@@ -133,25 +133,25 @@ export default {
           },
         },
         
-        // Syntax highlighting colors (VS Code Dark+ palette)
+        // Syntax highlighting colors (Vercel/Linear palette)
         syntax: {
-          comment: '#6a9955',
-          keyword: '#569cd6',
-          string: '#ce9178',
-          function: '#dcdcaa',
-          variable: '#9cdcfe',
-          number: '#b5cea8',
-          operator: '#d4d4d4',
-          type: '#4ec9b0',
-          constant: '#4fc1ff',
+          comment: '#6b7280',
+          keyword: '#a78bfa',
+          string: '#34d399',
+          function: '#60a5fa',
+          variable: '#67e8f9',
+          number: '#fb923c',
+          operator: '#9ca3af',
+          type: '#22d3ee',
+          constant: '#818cf8',
         },
       },
       
       // Typography - Font Families
       fontFamily: {
-        sans: 'var(--vscode-font-sans)',
-        mono: 'var(--vscode-font-mono)',
-        display: 'var(--vscode-font-display)',
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['Geist Mono', 'SF Mono', 'Monaco', 'Cascadia Code', 'monospace'],
+        display: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },
       
       // Typography - Font Sizes

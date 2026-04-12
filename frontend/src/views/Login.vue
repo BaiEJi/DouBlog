@@ -2,10 +2,9 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Code2, Terminal, Loader2 } from 'lucide-vue-next'
+import { Terminal, Loader2 } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -58,42 +57,27 @@ const handleLogin = async () => {
        style="background: var(--vscode-bg-primary);"
        role="main">
 
-    <!-- Background Gradient Mesh -->
-    <div class="absolute inset-0" style="background: linear-gradient(135deg,
-      var(--vscode-bg-primary) 0%,
-      var(--vscode-bg-secondary) 50%,
-      var(--vscode-bg-tertiary) 100%);"></div>
-
-    <!-- Floating Code Decorations -->
-    <div class="absolute inset-0 overflow-hidden pointer-events-none">
-      <!-- Top Left -->
-      <div class="absolute top-20 left-20 font-mono animate-pulse opacity-5"
-           style="font-size: 6rem; animation-delay: 0s; color: var(--vscode-accent-primary);">
-        { }
-      </div>
-
-      <!-- Top Right -->
-      <div class="absolute top-32 right-32 font-mono animate-pulse opacity-5"
-           style="font-size: 5rem; animation-delay: 1s; color: var(--vscode-accent-success);">
-        &lt;/&gt;
-      </div>
-
-      <!-- Bottom Left -->
-      <div class="absolute bottom-40 left-40 font-mono animate-pulse opacity-5"
-           style="font-size: 4rem; animation-delay: 2s; color: var(--vscode-accent-warning);">
-        [ ]
-      </div>
-
-      <!-- Bottom Right -->
-      <div class="absolute bottom-24 right-20 font-mono animate-pulse opacity-5"
-           style="font-size: 5rem; animation-delay: 1.5s; color: var(--vscode-accent-error);">
-        #
-      </div>
-
-      <!-- Grid Pattern Overlay -->
-      <div class="absolute inset-0" style="background-image: radial-gradient(circle at 1px 1px,
-        var(--vscode-border) 1px, transparent 0);
-        background-size: 40px 40px; opacity: 0.2;"></div>
+    <!-- Modern Vercel/Linear-inspired Background -->
+    <div class="absolute inset-0" style="background: var(--vscode-bg-primary);">
+      <!-- Gradient Orbs -->
+      <div class="absolute top-20 left-20 w-72 h-72 rounded-full opacity-10 blur-3xl"
+           style="background: radial-gradient(circle, var(--vscode-accent-primary) 0%, transparent 70%);"></div>
+      <div class="absolute top-40 right-40 w-96 h-96 rounded-full opacity-8 blur-3xl"
+           style="background: radial-gradient(circle, var(--vscode-accent-primary-subtle) 0%, transparent 70%);"></div>
+      <div class="absolute bottom-32 left-32 w-64 h-64 rounded-full opacity-6 blur-3xl"
+           style="background: radial-gradient(circle, var(--vscode-accent-primary) 0%, transparent 70%);"></div>
+      
+      <!-- Subtle Grid Pattern -->
+      <div class="absolute inset-0" style="background-image: 
+        linear-gradient(var(--vscode-border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--vscode-border) 1px, transparent 1px);
+        background-size: 60px 60px; opacity: 0.1;"></div>
+      
+      <!-- Diagonal Gradient Overlay -->
+      <div class="absolute inset-0" style="background: linear-gradient(135deg,
+        transparent 0%,
+        var(--vscode-accent-primary-subtle) 50%,
+        transparent 100%); opacity: 0.05;"></div>
     </div>
 
     <!-- Main Content -->
@@ -140,26 +124,40 @@ const handleLogin = async () => {
         </div>
       </div>
 
-      <!-- Login Card with Glassmorphism -->
-      <Card class="w-full backdrop-blur-lg border"
-            style="background: var(--vscode-bg-elevated);
-                   border-color: var(--vscode-border-light);
-                   box-shadow: var(--vscode-shadow-xl);"
-            role="form"
-            aria-labelledby="login-title">
-        <CardHeader>
-          <CardTitle id="login-title" style="font-size: var(--vscode-font-size-2xl); color: var(--vscode-text-primary);">
-            登录
-          </CardTitle>
-          <CardDescription style="color: var(--vscode-text-secondary);">
-            请输入您的用户名和密码
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form @submit.prevent="handleLogin" class="flex flex-col gap-5" aria-label="登录表单">
+<!-- Modern Login Card with Enhanced Glassmorphism -->
+    <div class="w-full rounded-2xl border border-opacity-20"
+         style="background: var(--vscode-bg-elevated);
+                backdrop-filter: blur(20px);
+                -webkit-backdrop-filter: blur(20px);
+                border-color: var(--vscode-border-light);
+                box-shadow: var(--vscode-shadow-xl);
+                border-radius: var(--vscode-radius-2xl);">
+      <div class="p-8">
+        <div class="text-center mb-8 space-y-4">
+          <h1 class="font-bold font-display"
+              style="font-size: var(--vscode-font-size-3xl);
+                     background: linear-gradient(90deg,
+                       var(--vscode-text-primary),
+                       var(--vscode-accent-primary),
+                       var(--vscode-text-primary));
+                     -webkit-background-clip: text;
+                     -webkit-text-fill-color: transparent;
+                     background-clip: text;">
+            DouBlog
+          </h1>
+          
+          <div class="flex items-center justify-center gap-2"
+               style="color: var(--vscode-text-secondary); font-size: var(--vscode-font-size-sm); font-weight: var(--vscode-font-weight-medium);">
+            <Terminal class="w-4 h-4" />
+            <span>VS Code 风格的技术博客</span>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <form @submit.prevent="handleLogin" aria-label="登录表单">
             <!-- Error Message -->
             <div v-if="error"
-                 class="px-4 py-3 rounded-lg border"
+                 class="px-4 py-3 rounded-xl border"
                  role="alert"
                  aria-live="assertive"
                  style="background: var(--vscode-accent-error-subtle);
@@ -169,7 +167,7 @@ const handleLogin = async () => {
               {{ error }}
             </div>
 
-            <div class="flex flex-col gap-2.5">
+            <div class="flex flex-col gap-4">
               <label for="username"
                      style="font-size: var(--vscode-font-size-sm);
                             font-weight: var(--vscode-font-weight-medium);
@@ -186,11 +184,14 @@ const handleLogin = async () => {
                 :aria-describedby="error ? 'login-error' : undefined"
                 required
                 autocomplete="username"
-                class="transition-all duration-200"
+                class="transition-all duration-200 focus:ring-2 focus:ring-opacity-20"
+                style="border-color: var(--vscode-border-light);
+                       focus:ring-color: var(--vscode-accent-primary);
+                       focus:ring-offset-color: var(--vscode-bg-elevated);"
               />
             </div>
 
-            <div class="flex flex-col gap-2.5">
+            <div class="flex flex-col gap-4">
               <label for="password"
                      style="font-size: var(--vscode-font-size-sm);
                             font-weight: var(--vscode-font-weight-medium);
@@ -207,7 +208,10 @@ const handleLogin = async () => {
                 :aria-describedby="error ? 'login-error' : undefined"
                 required
                 autocomplete="current-password"
-                class="transition-all duration-200"
+                class="transition-all duration-200 focus:ring-2 focus:ring-opacity-20"
+                style="border-color: var(--vscode-border-light);
+                       focus:ring-color: var(--vscode-accent-primary);
+                       focus:ring-offset-color: var(--vscode-bg-elevated);"
               />
             </div>
 
@@ -215,15 +219,20 @@ const handleLogin = async () => {
               type="submit"
               :disabled="loading"
               :aria-busy="loading"
-              class="w-full h-10 font-medium mt-2"
+              class="w-full h-11 font-medium mt-6 transition-all duration-200 hover:scale-105"
               size="lg"
-              style="font-size: var(--vscode-font-size-base);">
+              style="font-size: var(--vscode-font-size-base);
+                     background: linear-gradient(135deg, var(--vscode-accent-primary), var(--vscode-accent-primary-hover));
+                     color: var(--vscode-text-inverse);
+                     border-radius: var(--vscode-radius-xl);
+                     box-shadow: var(--vscode-shadow-md);">
               <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
               {{ loading ? '登录中...' : '登录' }}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+    </div>
 
       <!-- Footer Info -->
       <div class="mt-6 text-center">

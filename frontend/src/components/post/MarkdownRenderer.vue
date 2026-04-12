@@ -210,7 +210,7 @@ onMounted(() => {
 }
 
 .line-numbers-toggle input {
-  accent-color: var(--forest-primary, #00997B);
+  accent-color: var(--vscode-accent-primary);
   cursor: pointer;
 }
 
@@ -229,6 +229,7 @@ onMounted(() => {
 .markdown-content :deep(pre) {
   position: relative;
   overflow: hidden;
+  font-family: var(--vscode-font-mono);
 }
 
 /* Code block header */
@@ -237,20 +238,24 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--vscode-spacing-2) var(--vscode-spacing-3);
-  background: var(--forest-bg-code, #f3f3f3);
-  border-bottom: 1px solid var(--forest-border, #DADCDE);
+  background: var(--vscode-bg-secondary);
+  border-bottom: 1px solid var(--vscode-border);
   min-height: 36px;
+}
+
+.markdown-content :deep(pre code) {
+  font-family: inherit;
 }
 
 /* Language badge */
 .markdown-content :deep(.code-lang-badge) {
   font-size: var(--vscode-font-size-xs);
   font-weight: 600;
-  color: var(--forest-text-light, #81888D);
+  color: var(--vscode-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 2px var(--vscode-spacing-2);
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--vscode-bg-tertiary);
   border-radius: var(--vscode-radius-sm);
 }
 
@@ -261,43 +266,43 @@ onMounted(() => {
   gap: var(--vscode-spacing-1);
   padding: var(--vscode-spacing-1) var(--vscode-spacing-2-5);
   background: transparent;
-  border: 1px solid var(--forest-border, #DADCDE);
+  border: 1px solid var(--vscode-border);
   border-radius: var(--vscode-radius-md);
-  color: var(--forest-text-light, #81888D);
+  color: var(--vscode-text-secondary);
   font-size: var(--vscode-font-size-xs);
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all var(--vscode-duration-fast) var(--vscode-ease-in-out);
 }
 
 .markdown-content :deep(.code-copy-btn:hover) {
-  background: var(--forest-primary, #00997B);
-  border-color: var(--forest-primary, #00997B);
-  color: #fff;
+  background: var(--vscode-accent-primary);
+  border-color: var(--vscode-accent-primary);
+  color: var(--vscode-text-primary);
 }
 
 .markdown-content :deep(.code-copy-btn.copied) {
-  background: #4caf50;
-  border-color: #4caf50;
-  color: #fff;
+  background: var(--vscode-success);
+  border-color: var(--vscode-success);
+  color: var(--vscode-text-primary);
 }
 
 /* Dark mode code header */
 .dark .markdown-content :deep(.code-block-header) {
-  background: #252526;
-  border-bottom-color: #404040;
+  background: var(--vscode-bg-primary);
+  border-bottom-color: var(--vscode-border);
 }
 
 .dark .markdown-content :deep(.code-lang-badge) {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--vscode-bg-tertiary);
 }
 
 .dark .markdown-content :deep(.code-copy-btn) {
-  border-color: #404040;
+  border-color: var(--vscode-border);
 }
 
 .dark .markdown-content :deep(.code-copy-btn:hover) {
-  background: var(--forest-primary, #00997B);
-  border-color: var(--forest-primary, #00997B);
+  background: var(--vscode-accent-primary);
+  border-color: var(--vscode-accent-primary);
 }
 </style>

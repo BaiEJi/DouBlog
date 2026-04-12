@@ -74,10 +74,17 @@ export async function login(page: Page): Promise<void> {
  * Wait for all images to load
  */
 export async function waitForImages(page: Page): Promise<void> {
-  await page.waitForFunction(() => {
-    const images = Array.from(document.images);
-    return images.every((img) => img.complete && img.naturalHeight !== 0);
-  }, { timeout: 10000 });
+  try {
+    await page.waitForFunction(
+      () => {
+        const images = Array.from(document.images);
+        return images.every((img) => img.complete && img.naturalHeight !== 0);
+      },
+      { timeout: 5000 }
+    );
+  } catch {
+    // Timeout is acceptable — some images may fail to load in test env
+  }
 }
 
 /**

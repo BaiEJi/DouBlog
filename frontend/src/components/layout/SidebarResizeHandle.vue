@@ -72,6 +72,9 @@ onMounted(() => {
     role="separator"
     aria-orientation="vertical"
     aria-label="调整侧边栏宽度"
+    :aria-valuenow="currentWidth"
+    :aria-valuemin="MIN_WIDTH"
+    :aria-valuemax="MAX_WIDTH"
     tabindex="0"
   />
 </template>
@@ -79,23 +82,28 @@ onMounted(() => {
 <style scoped>
 .sidebar-resize-handle {
   position: absolute;
-  right: -2px;
+  right: -1px;
   top: 0;
   bottom: 0;
-  width: 5px;
+  width: 3px;
   cursor: col-resize;
   z-index: 50;
   background-color: transparent;
+  transition: all var(--vscode-duration-normal) var(--vscode-ease-in-out);
 }
 
 .sidebar-resize-handle:hover {
   background-color: var(--vscode-accent-primary);
-  opacity: 0.4;
+  opacity: 0.3;
+  width: 4px;
+  box-shadow: 0 0 0 1px var(--vscode-accent-primary);
 }
 
 .sidebar-resize-handle.resizing {
   background-color: var(--vscode-accent-primary);
-  opacity: 0.6;
+  opacity: 0.5;
+  width: 4px;
+  box-shadow: 0 0 0 2px var(--vscode-accent-primary);
 }
 </style>
 

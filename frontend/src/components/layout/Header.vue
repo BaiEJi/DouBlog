@@ -151,40 +151,40 @@ const openCommandPalette = () => {
 .header-glass {
   flex-shrink: 0;
   
-  /* 淡蓝色毛玻璃效果 - 更透明 */
+  /* 现代玻璃效果 - 使用 tokens */
   background: linear-gradient(
     135deg,
-    rgba(210, 235, 255, 0.55) 0%,
-    rgba(180, 215, 255, 0.45) 50%,
-    rgba(160, 200, 255, 0.50) 100%
+    var(--vscode-bg-secondary) 0%,
+    var(--vscode-bg-secondary) 50%,
+    var(--vscode-bg-secondary) 100%
   );
   backdrop-filter: blur(20px) saturate(200%);
   -webkit-backdrop-filter: blur(20px) saturate(200%);
   
-  /* 淡蓝色底部边框 */
-  border-bottom: 1px solid rgba(100, 170, 255, 0.25);
+  /* 使用 accent token 的边框 */
+  border-bottom: 1px solid var(--vscode-accent-primary);
   
-  /* 柔和阴影 */
+  /* 使用 accent token 的阴影 */
   box-shadow: 
-    0 2px 20px rgba(80, 140, 255, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    0 2px 20px var(--vscode-accent-primary),
+    inset 0 1px 0 var(--vscode-text-primary);
 }
 
-/* 暗色模式下的深蓝色毛玻璃 */
+/* 暗色模式下的玻璃效果 */
 :global(.dark) .header-glass {
   background: linear-gradient(
     135deg,
-    rgba(25, 45, 80, 0.70) 0%,
-    rgba(15, 35, 65, 0.65) 50%,
-    rgba(20, 40, 75, 0.70) 100%
+    var(--vscode-bg-secondary) 0%,
+    var(--vscode-bg-secondary) 50%,
+    var(--vscode-bg-secondary) 100%
   );
   backdrop-filter: blur(24px) saturate(220%);
   -webkit-backdrop-filter: blur(24px) saturate(220%);
   
-  border-bottom: 1px solid rgba(60, 120, 255, 0.15);
+  border-bottom: 1px solid var(--vscode-accent-primary);
   
   box-shadow: 
-    0 2px 20px rgba(0, 40, 120, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    0 2px 20px var(--vscode-accent-primary),
+    inset 0 1px 0 var(--vscode-text-primary);
 }
 </style>

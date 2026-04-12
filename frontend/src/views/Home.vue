@@ -144,8 +144,10 @@ const handleBrowsePosts = () => {
             <!-- Icon & Title -->
             <div class="flex items-center gap-[var(--vscode-spacing-3)] mb-[var(--vscode-spacing-4)]">
               <Sparkles class="w-10 h-10 md:w-12 md:h-12 text-[var(--vscode-accent-primary)] animate-pulse" />
-              <h1 class="text-[var(--vscode-font-size-4xl)] md:text-[var(--vscode-font-size-h1)] font-bold text-[var(--vscode-text-primary)] tracking-[var(--vscode-letter-spacing-tight)] leading-[var(--vscode-line-height-h1)]">
-                DouBlog
+              <h1 class="text-[var(--vscode-font-size-4xl)] md:text-[var(--vscode-font-size-h1)] font-bold leading-[var(--vscode-line-height-h1)]">
+                <span class="bg-gradient-to-r from-[var(--vscode-accent-primary)] via-[var(--vscode-accent-primary)] to-[var(--vscode-accent-primary-hover)] bg-clip-text text-transparent">
+                  DouBlog
+                </span>
               </h1>
             </div>
             
@@ -160,26 +162,26 @@ const handleBrowsePosts = () => {
             </p>
             
             <!-- Statistics -->
-            <div class="flex flex-wrap gap-[var(--vscode-spacing-6)] md:gap-[var(--vscode-spacing-8)] mb-[var(--vscode-spacing-8)]">
-              <div class="flex flex-col">
-                <span class="text-[var(--vscode-font-size-3xl)] font-bold text-[var(--vscode-accent-primary)] leading-none">
+            <div class="flex flex-wrap gap-[var(--vscode-spacing-3)] md:gap-[var(--vscode-spacing-4)] mb-[var(--vscode-spacing-8]">
+              <div class="flex items-center gap-[var(--vscode-spacing-2)] bg-[var(--vscode-bg-tertiary)] px-[var(--vscode-spacing-3)] py-[var(--vscode-spacing-2)] rounded-[var(--vscode-radius-xl)]">
+                <span class="text-[var(--vscode-font-size-2xl)] font-bold text-[var(--vscode-accent-primary)] leading-none">
                   {{ statistics.totalPosts }}
                 </span>
-                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">文章</span>
+                <span class="text-[var(--vscode-font-size-xs)] text-[var(--vscode-text-muted)] ml-1">文章</span>
               </div>
-              <div class="w-px h-12 bg-[var(--vscode-border)]" />
-              <div class="flex flex-col">
-                <span class="text-[var(--vscode-font-size-3xl)] font-bold text-[var(--vscode-accent-success)] leading-none">
+              
+              <div class="flex items-center gap-[var(--vscode-spacing-2)] bg-[var(--vscode-bg-tertiary)] px-[var(--vscode-spacing-3)] py-[var(--vscode-spacing-2)] rounded-[var(--vscode-radius-xl)]">
+                <span class="text-[var(--vscode-font-size-2xl)] font-bold text-[var(--vscode-accent-success)] leading-none">
                   {{ statistics.totalTags }}
                 </span>
-                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">标签</span>
+                <span class="text-[var(--vscode-font-size-xs)] text-[var(--vscode-text-muted)] ml-1">标签</span>
               </div>
-              <div class="w-px h-12 bg-[var(--vscode-border)]" />
-              <div class="flex flex-col">
-                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-secondary)] font-medium">
+              
+              <div class="flex items-center gap-[var(--vscode-spacing-2)] bg-[var(--vscode-bg-tertiary)] px-[var(--vscode-spacing-3)] py-[var(--vscode-spacing-2)] rounded-[var(--vscode-radius-xl)]">
+                <span class="text-[var(--vscode-font-size-xs)] text-[var(--vscode-text-secondary)] font-medium">
                   最近更新
                 </span>
-                <span class="text-[var(--vscode-font-size-sm)] text-[var(--vscode-text-muted)] mt-1">
+                <span class="text-[var(--vscode-font-size-xs)] text-[var(--vscode-text-muted)] ml-1">
                   {{ statistics.lastUpdate }}
                 </span>
               </div>
@@ -237,21 +239,39 @@ const handleBrowsePosts = () => {
         <!-- Empty State -->
         <div 
           v-else-if="allPosts.length === 0"
-          class="flex flex-col items-center justify-center py-[var(--vscode-spacing-16)] text-center"
+          class="flex flex-col items-center justify-center py-[var(--vscode-spacing-20)] text-center"
         >
-          <div class="w-24 h-24 mb-[var(--vscode-spacing-6)] rounded-full bg-[var(--vscode-bg-tertiary)] flex items-center justify-center">
-            <FolderOpen class="w-12 h-12 text-[var(--vscode-text-muted)]" />
+          <div class="w-32 h-32 mb-[var(--vscode-spacing-8)] rounded-[var(--vscode-radius-2xl)] bg-gradient-to-br from-[var(--vscode-accent-primary-subtle)] to-[var(--vscode-accent-primary)] p-1">
+            <div class="w-full h-full rounded-[var(--vscode-radius-2xl)] bg-[var(--vscode-bg-primary)] flex items-center justify-center">
+              <FolderOpen class="w-16 h-16 text-[var(--vscode-accent-primary)]" />
+            </div>
           </div>
-          <h3 class="text-[var(--vscode-font-size-xl)] font-semibold text-[var(--vscode-text-primary)] mb-[var(--vscode-spacing-2)]">
+          <h3 class="text-[var(--vscode-font-size-2xl)] font-bold text-[var(--vscode-text-primary)] mb-[var(--vscode-spacing-3)]">
             还没有文章
           </h3>
-          <p class="text-[var(--vscode-font-size-base)] text-[var(--vscode-text-muted)] mb-[var(--vscode-spacing-6)] max-w-md">
-            开始创建您的第一篇文章，记录您的想法和知识
+          <p class="text-[var(--vscode-font-size-lg)] text-[var(--vscode-text-muted)] mb-[var(--vscode-spacing-8)] max-w-md">
+            开始创建您的第一篇文章，记录您的想法和知识，构建您的个人知识库
           </p>
-          <Button @click="handleNewPost" class="gap-2">
-            <FilePlus class="w-4 h-4" />
-            创建第一篇文章
-          </Button>
+          <div class="flex flex-wrap gap-[var(--vscode-spacing-3)] justify-center">
+            <Button 
+              size="lg" 
+              class="gap-2 shadow-[var(--vscode-shadow-md)] hover:shadow-[var(--vscode-shadow-lg)] transition-all"
+              @click="handleNewPost"
+            >
+              <FilePlus class="w-5 h-5" />
+              创建第一篇文章
+            </Button>
+            
+            <Button 
+              size="lg" 
+              variant="outline"
+              class="gap-2"
+              @click="handleBrowsePosts"
+            >
+              <BookOpen class="w-5 h-5" />
+              浏览示例
+            </Button>
+          </div>
         </div>
 
         <!-- Posts Grid -->

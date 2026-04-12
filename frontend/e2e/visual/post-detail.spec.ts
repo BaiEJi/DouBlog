@@ -27,7 +27,7 @@ test.describe('Post Detail Page Visual Regression', () => {
         await login(page);
         await setTheme(page, theme);
 
-        await page.goto('/post/getting-started');
+        await page.goto('/post/slug/getting-started');
         await page.waitForLoadState('networkidle');
 
         const screenshot = await takeScreenshot(page, config);

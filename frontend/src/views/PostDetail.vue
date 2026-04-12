@@ -320,14 +320,18 @@ onUnmounted(() => {
               <BreadcrumbList>
                 <BreadcrumbItem>
                   <BreadcrumbLink as-child>
-                    <router-link to="/" class="flex items-center gap-1.5">
+                    <router-link to="/" class="flex items-center gap-1.5 text-vscode-text-secondary hover:text-vscode-text-primary transition-colors">
                       <Home class="w-3.5 h-3.5" />
                       首页
                     </router-link>
                   </BreadcrumbLink>
                 </BreadcrumbItem>
                 
-                <BreadcrumbSeparator v-if="breadcrumbItems.length > 0" />
+                <BreadcrumbSeparator v-if="breadcrumbItems.length > 0" class="text-vscode-border">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </BreadcrumbSeparator>
                 
                 <BreadcrumbItem
                   v-for="(item, index) in breadcrumbItems"
@@ -335,14 +339,18 @@ onUnmounted(() => {
                 >
                   <template v-if="!item.isCurrent">
                     <BreadcrumbLink as-child>
-                      <router-link :to="`/post/id/${item.id}`">
+                      <router-link :to="`/post/id/${item.id}`" class="text-vscode-text-secondary hover:text-vscode-text-primary transition-colors">
                         {{ item.title }}
                       </router-link>
                     </BreadcrumbLink>
-                    <BreadcrumbSeparator v-if="index < breadcrumbItems.length - 1" />
+                    <BreadcrumbSeparator v-if="index < breadcrumbItems.length - 1" class="text-vscode-border">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </BreadcrumbSeparator>
                   </template>
                   <template v-else>
-                    <BreadcrumbPage>{{ item.title }}</BreadcrumbPage>
+                    <BreadcrumbPage class="text-vscode-text-primary font-medium">{{ item.title }}</BreadcrumbPage>
                   </template>
                 </BreadcrumbItem>
               </BreadcrumbList>
@@ -350,22 +358,22 @@ onUnmounted(() => {
 
             <!-- 元信息放在右侧 -->
             <div class="flex flex-wrap items-center gap-3 text-xs text-vscode-text-muted">
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 bg-vscode-bg-tertiary px-2 py-1 rounded-full">
                 <User class="w-3.5 h-3.5" />
                 <span>{{ currentPost.author }}</span>
               </div>
 
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 bg-vscode-bg-tertiary px-2 py-1 rounded-full">
                 <Calendar class="w-3.5 h-3.5" />
                 <span>{{ formatDate(currentPost.created_at) }}</span>
               </div>
 
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 bg-vscode-bg-tertiary px-2 py-1 rounded-full">
                 <Clock class="w-3.5 h-3.5" />
                 <span>{{ readingTime }} 分钟</span>
               </div>
 
-              <div class="flex items-center gap-1.5">
+              <div class="flex items-center gap-1.5 bg-vscode-bg-tertiary px-2 py-1 rounded-full">
                 <Eye class="w-3.5 h-3.5" />
                 <span>{{ currentPost.view_count }}</span>
               </div>
@@ -373,6 +381,10 @@ onUnmounted(() => {
           </div>
 
           <article class="mb-8">
+            <h1 class="text-4xl font-bold text-vscode-text-primary mb-4 leading-tight" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;">
+              {{ currentPost.title }}
+            </h1>
+            
             <div v-if="currentPost.tags && currentPost.tags.length > 0" class="flex flex-wrap gap-2 mb-6">
               <Badge
                 v-for="tag in currentPost.tags"
@@ -386,12 +398,30 @@ onUnmounted(() => {
             </div>
           </article>
 
-          <div class="markdown-content">
+          <div class="markdown-content prose prose-lg max-w-none" style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.8; color: var(--vscode-text-primary);">
             <MarkdownRenderer :content="currentPost.content" />
           </div>
 
           <footer class="mt-12 pt-8 border-t border-vscode-border">
             <div class="flex items-center gap-3">
+              <Button
+                @click="handleEdit"
+                variant="ghost"
+                class="flex items-center gap-2 text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-hover"
+              >
+                <Edit class="w-4 h-4" />
+                编辑
+              </Button>
+              
+              <Button
+                @click="handleShare"
+                variant="ghost"
+                class="flex items-center gap-2 text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-hover"
+              >
+                <Share2 class="w-4 h-4" />
+                分享
+              </Button>
+              
               <Button
                 @click="showDeleteDialog = true"
                 variant="destructive"
@@ -413,9 +443,9 @@ onUnmounted(() => {
             <div class="flex items-center gap-2 mb-3">
               <Button
                 @click="handleEdit"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                class="flex items-center gap-1.5 h-7 text-xs"
+                class="flex items-center gap-1.5 h-7 text-xs text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-hover"
               >
                 <Edit class="w-3 h-3" />
                 编辑
@@ -423,16 +453,16 @@ onUnmounted(() => {
 
               <Button
                 @click="handleShare"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                class="flex items-center gap-1.5 h-7 text-xs"
+                class="flex items-center gap-1.5 h-7 text-xs text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-hover"
               >
                 <Share2 class="w-3 h-3" />
                 分享
               </Button>
             </div>
 
-            <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-lg p-4">
+            <nav class="bg-vscode-bg-secondary border border-vscode-border rounded-lg p-4 shadow-lg">
               <h3 class="text-xs uppercase tracking-wider font-semibold text-vscode-text-muted mb-3">
                 目录
               </h3>
@@ -478,7 +508,7 @@ onUnmounted(() => {
     <Dialog v-model:open="showDeleteDialog">
       <DialogContent class="bg-vscode-bg-primary border-vscode-border">
         <DialogHeader>
-          <DialogTitle class="text-vscode-text-primary">确认删除</DialogTitle>
+          <DialogTitle class="text-vscode-text-primary text-lg font-semibold">确认删除</DialogTitle>
           <DialogDescription class="text-vscode-text-secondary">
             确定要删除文章「{{ currentPost?.title }}」吗？此操作无法撤销。
           </DialogDescription>
@@ -486,6 +516,7 @@ onUnmounted(() => {
         <DialogFooter>
           <Button
             variant="outline"
+            class="text-vscode-text-secondary hover:text-vscode-text-primary hover:bg-vscode-bg-hover"
             @click="showDeleteDialog = false"
           >
             取消
@@ -505,7 +536,7 @@ onUnmounted(() => {
 <style scoped>
 .markdown-content :deep(h2),
 .markdown-content :deep(h3) {
-  scroll-margin-top: 64px;
+  scroll-margin-top: 80px;
 }
 
 .toc-item {
@@ -535,6 +566,7 @@ onUnmounted(() => {
   color: var(--vscode-accent-primary);
   background-color: var(--vscode-accent-primary-subtle);
   font-weight: var(--vscode-font-weight-medium);
+  box-shadow: inset 0 0 0 1px var(--vscode-accent-primary);
 }
 
 .toc-item-active:hover {
@@ -591,5 +623,123 @@ aside::-webkit-scrollbar-thumb:hover {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.prose {
+  max-width: none;
+}
+
+.prose :deep(h1) {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+}
+
+.prose :deep(h2) {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.prose :deep(h3) {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.prose :deep(p) {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.prose :deep(ul),
+.prose :deep(ol) {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+.prose :deep(li) {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose :deep(blockquote) {
+  font-style: italic;
+  border-left: 4px solid var(--vscode-accent-primary);
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  color: var(--vscode-text-secondary);
+}
+
+.prose :deep(code) {
+  font-family: 'Geist Mono', monospace;
+  background-color: var(--vscode-bg-code);
+  border-radius: var(--vscode-radius-sm);
+  padding: 0.2rem 0.4rem;
+  font-size: 0.9em;
+}
+
+.prose :deep(pre) {
+  font-family: 'Geist Mono', monospace;
+  background-color: var(--vscode-bg-code);
+  border-radius: var(--vscode-radius-md);
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+.prose :deep(pre code) {
+  font-family: inherit;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.prose :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+}
+
+.prose :deep(th),
+.prose :deep(td) {
+  padding: 0.5rem 1rem;
+  text-align: left;
+  border: 1px solid var(--vscode-border);
+}
+
+.prose :deep(th) {
+  background-color: var(--vscode-bg-secondary);
+  font-weight: 600;
+}
+
+.prose :deep(a) {
+  color: var(--vscode-accent-primary);
+  text-decoration: none;
+  transition: color var(--vscode-duration-fast) var(--vscode-ease-in-out);
+}
+
+.prose :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.prose :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--vscode-radius-md);
+  margin: 1rem 0;
+}
+
+.prose :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--vscode-border);
+  margin: 2rem 0;
 }
 </style>

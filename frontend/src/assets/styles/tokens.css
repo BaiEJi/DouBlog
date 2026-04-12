@@ -1,13 +1,11 @@
 /**
- * Design Token System - Kimi Style
+ * Design Token System - Vercel/Linear Inspired
  * 
- * This file defines all design tokens for the application following
- * the Kimi design system. All colors use OKLCH color space for better
- * perceptual uniformity and accessibility.
+ * Dark-first palette inspired by Vercel and Linear aesthetics.
+ * Deep blue-black hierarchy with electric blue accents.
+ * All colors use OKLCH color space for perceptual uniformity.
  * 
  * Naming Convention: --vscode-{category}-{variant}
- * 
- * @see https://www.kimi.com/code
  */
 
 /* ================================
@@ -18,65 +16,131 @@
      COLORS - OKLCH Format
      ================================ */
   
-  /* Background Colors - Three-level hierarchy */
-  --vscode-bg-primary: oklch(1 0 0);                    /* Pure white - main background */
-  --vscode-bg-secondary: oklch(0.97 0.005 250);         /* Very light blue-gray - sidebar/cards */
-  --vscode-bg-tertiary: oklch(0.95 0.01 250);           /* Light blue-gray - elevated surfaces */
-  --vscode-bg-elevated: oklch(0.99 0.003 250);          /* Elevated elements like dropdowns */
-  --vscode-bg-hover: oklch(0.93 0.012 250);             /* Hover state background */
-  --vscode-bg-active: oklch(0.90 0.015 250);            /* Active/pressed state background */
+  /* Background Colors - Clean white/gray hierarchy */
+  --vscode-bg-primary: oklch(1 0 0);                       /* Pure white - main background */
+  --vscode-bg-secondary: oklch(0.98 0 0);                  /* #fafafa - sidebar/cards */
+  --vscode-bg-tertiary: oklch(0.96 0 0);                   /* #f4f4f5 - elevated surfaces */
+  --vscode-bg-elevated: oklch(1 0 0);                      /* White - dropdowns/popovers */
+  --vscode-bg-hover: oklch(0.95 0 0);                      /* #e8e8ea - hover state */
+  --vscode-bg-active: oklch(0.92 0 0);                     /* #d4d4d8 - active/pressed */
   
-  /* Text Colors - Three-level hierarchy */
-  --vscode-text-primary: oklch(0.24 0.01 250);          /* Dark blue-gray - primary text */
-  --vscode-text-secondary: oklch(0.42 0.01 250);        /* Medium gray - secondary text */
-  --vscode-text-muted: oklch(0.58 0.01 250);            /* Light gray - muted/disabled text */
-  --vscode-text-disabled: oklch(0.70 0.005 250);        /* Very light gray - disabled state */
-  --vscode-text-inverse: oklch(0.98 0 0);               /* Light text for dark backgrounds */
+  /* Text Colors - Deep high-contrast hierarchy */
+  --vscode-text-primary: oklch(0.10 0 0);                  /* #09090b - near black */
+  --vscode-text-secondary: oklch(0.45 0 0);                /* #52525b - gray-600 */
+  --vscode-text-muted: oklch(0.55 0 0);                    /* #71717a - gray-500 */
+  --vscode-text-disabled: oklch(0.70 0 0);                 /* #a1a1aa - gray-400 */
+  --vscode-text-inverse: oklch(0.97 0 0);                  /* #fafafa - light on dark */
   
   /* Border Colors */
-  --vscode-border: oklch(0.76 0.01 250);                /* Standard border */
-  --vscode-border-light: oklch(0.85 0.008 250);         /* Light border for subtle separation */
-  --vscode-border-focus: oklch(0.45 0.2 250);           /* Focus ring border */
+  --vscode-border: oklch(0.82 0 0);                        /* #d4d4d8 - standard border */
+  --vscode-border-light: oklch(0.90 0 0);                  /* #e4e4e7 - subtle separation */
+  --vscode-border-focus: oklch(0.62 0.19 260);             /* Electric blue focus ring */
   
   /* Accent Colors - Primary Actions */
-  --vscode-accent-primary: oklch(0.45 0.2 250);         /* Primary accent - blue */
-  --vscode-accent-primary-hover: oklch(0.50 0.22 250);  /* Primary accent hover */
-  --vscode-accent-primary-active: oklch(0.40 0.18 250); /* Primary accent active/pressed */
-  --vscode-accent-primary-subtle: oklch(0.92 0.05 250); /* Primary accent subtle background */
+  --vscode-accent-primary: oklch(0.55 0.2 260);            /* #3b82f6 - electric blue */
+  --vscode-accent-primary-hover: oklch(0.60 0.22 260);     /* #60a5fa - hover */
+  --vscode-accent-primary-active: oklch(0.50 0.2 260);     /* #2563eb - active/pressed */
+  --vscode-accent-primary-subtle: oklch(0.93 0.05 260);    /* Subtle blue background */
   
   /* Accent Colors - Semantic */
-  --vscode-accent-success: oklch(0.50 0.15 142);        /* Success - green */
-  --vscode-accent-success-hover: oklch(0.55 0.17 142);
-  --vscode-accent-success-subtle: oklch(0.92 0.04 142);
+  --vscode-accent-success: oklch(0.55 0.17 155);           /* #22c55e - modern green */
+  --vscode-accent-success-hover: oklch(0.60 0.19 155);
+  --vscode-accent-success-subtle: oklch(0.93 0.05 155);
   
-  --vscode-accent-warning: oklch(0.65 0.15 80);         /* Warning - yellow/orange */
-  --vscode-accent-warning-hover: oklch(0.70 0.17 80);
-  --vscode-accent-warning-subtle: oklch(0.95 0.04 80);
+  --vscode-accent-warning: oklch(0.70 0.16 65);            /* #f59e0b - modern amber */
+  --vscode-accent-warning-hover: oklch(0.75 0.18 65);
+  --vscode-accent-warning-subtle: oklch(0.95 0.05 65);
   
-  --vscode-accent-error: oklch(0.55 0.2 25);            /* Error - red */
-  --vscode-accent-error-hover: oklch(0.60 0.22 25);
-  --vscode-accent-error-subtle: oklch(0.92 0.06 25);
+  --vscode-accent-error: oklch(0.58 0.22 27);              /* #ef4444 - modern red */
+  --vscode-accent-error-hover: oklch(0.63 0.24 27);
+  --vscode-accent-error-subtle: oklch(0.93 0.06 27);
   
-  --vscode-accent-info: oklch(0.48 0.18 240);           /* Info - blue */
-  --vscode-accent-info-hover: oklch(0.53 0.20 240);
-  --vscode-accent-info-subtle: oklch(0.93 0.05 240);
+  --vscode-accent-info: oklch(0.55 0.2 260);               /* #3b82f6 - blue info */
+  --vscode-accent-info-hover: oklch(0.60 0.22 260);
+  --vscode-accent-info-subtle: oklch(0.93 0.05 260);
   
   /* Interactive Colors */
-  --vscode-interactive-hover: oklch(0.95 0.015 250);
-  --vscode-interactive-active: oklch(0.90 0.025 250);
-  --vscode-interactive-selected: oklch(0.90 0.08 250);
+  --vscode-interactive-hover: oklch(0.95 0 0);
+  --vscode-interactive-active: oklch(0.92 0.005 0);
+  --vscode-interactive-selected: oklch(0.92 0.06 260);
   
   /* Code/Syntax Highlighting */
-  --vscode-code-background: oklch(0.96 0.008 250);
-  --vscode-code-border: oklch(0.88 0.01 250);
+  --vscode-code-background: oklch(0.97 0 0);
+  --vscode-code-border: oklch(0.90 0 0);
+
+  /* VS Code Semantic Colors - Light Mode */
+  --vscode-editor-background: #ffffff;
+  --vscode-editor-foreground: #09090b;
+  --vscode-sidebar-background: #fafafa;
+  --vscode-sidebar-foreground: #09090b;
+  --vscode-activityBar-background: #09090b;
+  --vscode-activityBar-foreground: #ffffff;
+  --vscode-statusBar-background: #3b82f6;
+  --vscode-statusBar-foreground: #ffffff;
+  --vscode-panel-background: #ffffff;
+  --vscode-panel-border: #e4e4e7;
+  --vscode-input-background: #ffffff;
+  --vscode-input-border: #d4d4d8;
+  --vscode-dropdown-background: #ffffff;
+  --vscode-dropdown-border: #d4d4d8;
+  --vscode-list-activeSelection: rgba(59, 130, 246, 0.1);
+  --vscode-list-hoverBackground: #f4f4f5;
+  --vscode-button-background: #3b82f6;
+  --vscode-button-foreground: #ffffff;
+  --vscode-scrollbarSlider-background: rgba(0, 0, 0, 0.15);
+  --vscode-scrollbarSlider-hover: rgba(0, 0, 0, 0.25);
+  --vscode-tab-activeBackground: #ffffff;
+  --vscode-tab-inactiveBackground: #f4f4f5;
+  --vscode-notification-background: #ffffff;
+  --vscode-notification-border: #e4e4e7;
+  --vscode-breadcrumb-foreground: #71717a;
+
+  /* Accent Aliases */
+  --vscode-accent: #3b82f6;
+  --vscode-accent-blue: #3b82f6;
+  --vscode-accent-green: #22c55e;
+  --vscode-accent-red: #ef4444;
+  --vscode-accent-yellow: #f59e0b;
+
+  /* Semantic Color Aliases */
+  --vscode-color-success: #22c55e;
+  --vscode-color-warning: #f59e0b;
+  --vscode-color-error: #ef4444;
+
+  /* Legacy Border Color Alias */
+  --vscode-border-color: #d4d4d8;
+
+  /* Shadow Aliases (compat) */
+  --vscode-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.08);
+
+  /* shadcn-vue Variable Mappings - Light Mode (HSL format) */
+  --background: 0 0% 100%;
+  --foreground: 0 0% 4%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 4%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 4%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 4%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 82%;
+  --input: 0 0% 82%;
+  --ring: 217 91% 60%;
   
   /* ================================
      TYPOGRAPHY
      ================================ */
   
   /* Font Families */
-  --vscode-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
-  --vscode-font-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  --vscode-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --vscode-font-mono: 'Geist Mono', 'SF Mono', Monaco, 'Cascadia Code', monospace;
   --vscode-font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   
   /* Font Sizes - Heading Scale */
@@ -166,18 +230,18 @@
      SHADOWS
      ================================ */
   
-  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.05);
-  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.1);
-  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.1), 0 2px 4px -2px oklch(0 0 0 / 0.1);
-  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.1), 0 4px 6px -4px oklch(0 0 0 / 0.1);
-  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.1), 0 8px 10px -6px oklch(0 0 0 / 0.1);
-  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.25);
-  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.05);
+  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.08);
+  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.08), 0 2px 4px -2px oklch(0 0 0 / 0.08);
+  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.08), 0 4px 6px -4px oklch(0 0 0 / 0.08);
+  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.08), 0 8px 10px -6px oklch(0 0 0 / 0.08);
+  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.2);
+  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.04);
   
   /* Glow shadows for focus/active states */
-  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.45 0.2 250 / 0.1);
-  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.45 0.2 250 / 0.2);
-  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.45 0.2 250 / 0.25);
+  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.55 0.2 260 / 0.12);
+  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.55 0.2 260 / 0.2);
+  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.55 0.2 260 / 0.25);
   
   /* ================================
      BORDER RADIUS
@@ -231,6 +295,7 @@
   --vscode-ease-spring: cubic-bezier(0.68, -0.55, 0.265, 1.55);
   --vscode-ease-out-back: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --vscode-ease-in-back: cubic-bezier(0.6, -0.28, 0.735, 0.045);
+  --vscode-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
   
   /* Animation References */
   --vscode-animate-fade-in: fadeIn var(--vscode-duration-normal) var(--vscode-ease-in-out);
@@ -242,74 +307,140 @@
 }
 
 /* ================================
-   DARK THEME
+   DARK THEME (Primary Design Target)
    ================================ */
 .dark {
-  /* Background Colors - Three-level hierarchy */
-  --vscode-bg-primary: oklch(0.18 0.01 250);           /* Dark blue-gray - main background */
-  --vscode-bg-secondary: oklch(0.14 0.01 250);         /* Darker blue-gray - sidebar/cards */
-  --vscode-bg-tertiary: oklch(0.16 0.01 250);          /* Medium dark blue-gray - elevated surfaces */
-  --vscode-bg-elevated: oklch(0.20 0.012 250);         /* Elevated elements */
-  --vscode-bg-hover: oklch(0.22 0.015 250);            /* Hover state background */
-  --vscode-bg-active: oklch(0.24 0.018 250);           /* Active/pressed state background */
+  /* Background Colors - Deep blue-black hierarchy */
+  --vscode-bg-primary: oklch(0.10 0 0);                    /* #0a0a0a - deep black main bg */
+  --vscode-bg-secondary: oklch(0.13 0 0);                  /* #111111 - sidebar/cards */
+  --vscode-bg-tertiary: oklch(0.17 0 0);                   /* #171717 - elevated surfaces */
+  --vscode-bg-elevated: oklch(0.18 0 0);                   /* #1a1a1a - dropdowns/popovers */
+  --vscode-bg-hover: oklch(0.20 0.005 0);                  /* #222222 - hover state */
+  --vscode-bg-active: oklch(0.24 0.008 0);                 /* #2a2a2a - active/pressed */
   
-  /* Text Colors - Three-level hierarchy - IMPROVED CONTRAST */
-  --vscode-text-primary: oklch(0.95 0 0);              /* Light gray - primary text (WCAG AA compliant) */
-  --vscode-text-secondary: oklch(0.70 0.01 250);       /* Medium light gray - secondary text (WCAG AA compliant) */
-  --vscode-text-muted: oklch(0.55 0.01 250);           /* Medium gray - muted text (WCAG AA compliant) */
-  --vscode-text-disabled: oklch(0.40 0.005 250);       /* Darker gray - disabled state */
-  --vscode-text-inverse: oklch(0.15 0.01 250);         /* Dark text for light backgrounds */
+  /* Text Colors - High contrast whites (WCAG AA) */
+  --vscode-text-primary: oklch(0.95 0 0);                  /* #ededed - primary text */
+  --vscode-text-secondary: oklch(0.68 0 0);                /* #a1a1aa - secondary text */
+  --vscode-text-muted: oklch(0.53 0 0);                    /* #71717a - muted text */
+  --vscode-text-disabled: oklch(0.38 0 0);                 /* #52525b - disabled state */
+  --vscode-text-inverse: oklch(0.10 0 0);                  /* #0a0a0a - dark on light */
   
-  /* Border Colors */
-  --vscode-border: oklch(0.24 0.02 250);               /* Standard border */
-  --vscode-border-light: oklch(0.20 0.015 250);        /* Light border */
-  --vscode-border-focus: oklch(0.70 0.2 250);          /* Focus ring border */
+  /* Border Colors - Subtle with slight transparency feel */
+  --vscode-border: oklch(0.27 0 0);                        /* #333333 - standard border */
+  --vscode-border-light: oklch(0.20 0 0);                  /* #222222 - subtle separation */
+  --vscode-border-focus: oklch(0.62 0.19 260);             /* Electric blue focus ring */
   
-  /* Accent Colors - Primary Actions */
-  --vscode-accent-primary: oklch(0.70 0.2 250);        /* Primary accent - blue (lighter for dark mode) */
-  --vscode-accent-primary-hover: oklch(0.75 0.22 250);
-  --vscode-accent-primary-active: oklch(0.65 0.18 250);
-  --vscode-accent-primary-subtle: oklch(0.25 0.08 250);
+  /* Accent Colors - Primary Actions - Electric Blue */
+  --vscode-accent-primary: oklch(0.62 0.19 260);           /* #3b82f6 - electric blue */
+  --vscode-accent-primary-hover: oklch(0.70 0.18 260);     /* #60a5fa - hover */
+  --vscode-accent-primary-active: oklch(0.55 0.2 260);     /* #2563eb - active/pressed */
+  --vscode-accent-primary-subtle: oklch(0.22 0.05 260);    /* Subtle blue background */
   
   /* Accent Colors - Semantic */
-  --vscode-accent-success: oklch(0.65 0.15 142);       /* Success - green (lighter for dark mode) */
-  --vscode-accent-success-hover: oklch(0.70 0.17 142);
-  --vscode-accent-success-subtle: oklch(0.25 0.06 142);
+  --vscode-accent-success: oklch(0.65 0.17 155);           /* #4ade80 - green (lighter for dark) */
+  --vscode-accent-success-hover: oklch(0.72 0.19 155);
+  --vscode-accent-success-subtle: oklch(0.22 0.06 155);
   
-  --vscode-accent-warning: oklch(0.75 0.15 80);        /* Warning - yellow/orange */
-  --vscode-accent-warning-hover: oklch(0.80 0.17 80);
-  --vscode-accent-warning-subtle: oklch(0.28 0.06 80);
+  --vscode-accent-warning: oklch(0.78 0.16 65);            /* #fbbf24 - amber */
+  --vscode-accent-warning-hover: oklch(0.83 0.18 65);
+  --vscode-accent-warning-subtle: oklch(0.25 0.06 65);
   
-  --vscode-accent-error: oklch(0.70 0.2 25);           /* Error - red */
-  --vscode-accent-error-hover: oklch(0.75 0.22 25);
-  --vscode-accent-error-subtle: oklch(0.30 0.08 25);
+  --vscode-accent-error: oklch(0.65 0.22 27);              /* #f87171 - red (lighter for dark) */
+  --vscode-accent-error-hover: oklch(0.72 0.24 27);
+  --vscode-accent-error-subtle: oklch(0.25 0.08 27);
   
-  --vscode-accent-info: oklch(0.68 0.18 240);          /* Info - blue */
-  --vscode-accent-info-hover: oklch(0.73 0.20 240);
-  --vscode-accent-info-subtle: oklch(0.25 0.07 240);
+  --vscode-accent-info: oklch(0.62 0.19 260);              /* #3b82f6 - blue */
+  --vscode-accent-info-hover: oklch(0.70 0.18 260);
+  --vscode-accent-info-subtle: oklch(0.22 0.05 260);
   
   /* Interactive Colors */
-  --vscode-interactive-hover: oklch(0.22 0.015 250);
-  --vscode-interactive-active: oklch(0.25 0.02 250);
-  --vscode-interactive-selected: oklch(0.30 0.12 250);
+  --vscode-interactive-hover: oklch(0.20 0.005 0);
+  --vscode-interactive-active: oklch(0.24 0.008 0);
+  --vscode-interactive-selected: oklch(0.25 0.08 260);
   
   /* Code/Syntax Highlighting */
-  --vscode-code-background: oklch(0.15 0.012 250);
-  --vscode-code-border: oklch(0.25 0.015 250);
+  --vscode-code-background: oklch(0.12 0 0);
+  --vscode-code-border: oklch(0.22 0 0);
+
+  /* VS Code Semantic Colors - Dark Mode (Vercel/Linear palette) */
+  --vscode-editor-background: #0a0a0a;
+  --vscode-editor-foreground: #ededed;
+  --vscode-sidebar-background: #111111;
+  --vscode-sidebar-foreground: #ededed;
+  --vscode-activityBar-background: #050505;
+  --vscode-activityBar-foreground: #ededed;
+  --vscode-statusBar-background: #3b82f6;
+  --vscode-statusBar-foreground: #ffffff;
+  --vscode-panel-background: #0a0a0a;
+  --vscode-panel-border: #1e1e1e;
+  --vscode-input-background: #171717;
+  --vscode-input-border: #262626;
+  --vscode-dropdown-background: #171717;
+  --vscode-dropdown-border: #262626;
+  --vscode-list-activeSelection: rgba(59, 130, 246, 0.15);
+  --vscode-list-hoverBackground: #171717;
+  --vscode-button-background: #3b82f6;
+  --vscode-button-foreground: #ffffff;
+  --vscode-scrollbarSlider-background: rgba(255, 255, 255, 0.08);
+  --vscode-scrollbarSlider-hover: rgba(255, 255, 255, 0.15);
+  --vscode-tab-activeBackground: #0a0a0a;
+  --vscode-tab-inactiveBackground: #111111;
+  --vscode-notification-background: #171717;
+  --vscode-notification-border: #262626;
+  --vscode-breadcrumb-foreground: #71717a;
+
+  /* Accent Aliases */
+  --vscode-accent: #3b82f6;
+  --vscode-accent-blue: #3b82f6;
+  --vscode-accent-green: #22c55e;
+  --vscode-accent-red: #ef4444;
+  --vscode-accent-yellow: #f59e0b;
+
+  /* Semantic Color Aliases */
+  --vscode-color-success: #22c55e;
+  --vscode-color-warning: #f59e0b;
+  --vscode-color-error: #ef4444;
+
+  /* Legacy Border Color Alias */
+  --vscode-border-color: #262626;
+
+  /* Shadow Aliases (compat) */
+  --vscode-shadow: 0 1px 3px 0 oklch(0 0 0 / 0.3), 0 1px 2px -1px oklch(0 0 0 / 0.3);
+
+  /* shadcn-vue Variable Mappings - Dark Mode (HSL format) */
+  --background: 0 0% 4%;
+  --foreground: 0 0% 93%;
+  --card: 0 0% 4%;
+  --card-foreground: 0 0% 93%;
+  --popover: 0 0% 7%;
+  --popover-foreground: 0 0% 93%;
+  --primary: 217 91% 60%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 9%;
+  --secondary-foreground: 0 0% 93%;
+  --muted: 0 0% 9%;
+  --muted-foreground: 0 0% 46%;
+  --accent: 217 91% 60%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 15%;
+  --input: 0 0% 15%;
+  --ring: 217 91% 60%;
   
-  /* Shadows - darker for dark mode */
-  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.2);
-  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.3), 0 1px 2px -1px oklch(0 0 0 / 0.3);
-  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.3), 0 2px 4px -2px oklch(0 0 0 / 0.3);
-  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.3), 0 4px 6px -4px oklch(0 0 0 / 0.3);
-  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.3), 0 8px 10px -6px oklch(0 0 0 / 0.3);
-  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.5);
-  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.2);
+  /* Shadows - deeper for dark mode */
+  --vscode-shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.15);
+  --vscode-shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.25), 0 1px 2px -1px oklch(0 0 0 / 0.25);
+  --vscode-shadow-md: 0 4px 6px -1px oklch(0 0 0 / 0.25), 0 2px 4px -2px oklch(0 0 0 / 0.25);
+  --vscode-shadow-lg: 0 10px 15px -3px oklch(0 0 0 / 0.25), 0 4px 6px -4px oklch(0 0 0 / 0.25);
+  --vscode-shadow-xl: 0 20px 25px -5px oklch(0 0 0 / 0.25), 0 8px 10px -6px oklch(0 0 0 / 0.25);
+  --vscode-shadow-2xl: 0 25px 50px -12px oklch(0 0 0 / 0.45);
+  --vscode-shadow-inner: inset 0 2px 4px 0 oklch(0 0 0 / 0.15);
   
-  /* Glow shadows for dark mode */
-  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.70 0.2 250 / 0.15);
-  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.70 0.2 250 / 0.25);
-  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.70 0.2 250 / 0.3);
+  /* Glow shadows - electric blue for dark mode */
+  --vscode-shadow-glow-sm: 0 0 0 3px oklch(0.62 0.19 260 / 0.15);
+  --vscode-shadow-glow-md: 0 0 0 3px oklch(0.62 0.19 260 / 0.25);
+  --vscode-shadow-glow-lg: 0 0 0 4px oklch(0.62 0.19 260 / 0.3);
 }
 
 /* ================================
@@ -375,6 +506,57 @@
   to {
     transform: scale(0.95);
     opacity: 0;
+  }
+}
+
+/* ================================
+   SCROLL-DRIVEN ANIMATIONS
+   Progressive enhancement — only active in browsers
+   that support animation-timeline.
+   ================================ */
+
+@supports (animation-timeline: scroll()) {
+  /* Reading progress bar — positioned at the top of the scroll container */
+  .reading-progress-bar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    z-index: 1;
+    background: transparent;
+    transform-origin: left;
+    animation: readingProgress linear;
+    animation-timeline: scroll();
+  }
+
+  @keyframes readingProgress {
+    from {
+      background-color: var(--vscode-accent-primary);
+      transform: scaleX(0);
+    }
+    to {
+      background-color: var(--vscode-accent-primary);
+      transform: scaleX(1);
+    }
+  }
+
+  /* Fade-in-on-scroll for content sections */
+  .fade-in-on-scroll {
+    animation: fadeInOnScroll linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 80%;
+  }
+
+  @keyframes fadeInOnScroll {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 

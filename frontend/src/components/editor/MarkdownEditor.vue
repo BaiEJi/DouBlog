@@ -71,6 +71,173 @@ const MdEditorLazy = defineAsyncComponent(() =>
   </Suspense>
 </template>
 
+<style>
+/* Override md-editor-v3 styles to match VS Code theme */
+.md-editor {
+  font-family: 'Geist Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  border: 1px solid var(--vscode-border);
+  border-radius: var(--vscode-radius-lg);
+  background-color: var(--vscode-bg-secondary);
+}
+
+.md-editor-toolbar {
+  background-color: var(--vscode-bg-tertiary);
+  border-bottom: 1px solid var(--vscode-border);
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.md-editor-toolbar button {
+  color: var(--vscode-text-primary);
+  background-color: transparent;
+  border: none;
+  padding: 6px 10px;
+  border-radius: var(--vscode-radius-sm);
+  font-size: var(--vscode-font-size-sm);
+}
+
+.md-editor-toolbar button:hover {
+  background-color: var(--vscode-bg-secondary);
+}
+
+.md-editor-toolbar button.active {
+  background-color: var(--vscode-accent-primary);
+  color: white;
+}
+
+.md-editor-toolbar .separator {
+  width: 1px;
+  height: 16px;
+  background-color: var(--vscode-border);
+  margin: 0 8px;
+}
+
+.md-editor-content {
+  padding: 16px;
+  min-height: 400px;
+  background-color: var(--vscode-bg-secondary);
+  color: var(--vscode-text-primary);
+  font-family: 'Geist Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: var(--vscode-font-size-sm);
+}
+
+.md-editor-preview {
+  padding: 16px;
+  background-color: var(--vscode-bg-secondary);
+  color: var(--vscode-text-primary);
+  font-family: 'Geist Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: var(--vscode-font-size-sm);
+}
+
+/* Preview mode styling to match MarkdownRenderer */
+.md-editor-preview h1, .md-editor-preview h2, .md-editor-preview h3, .md-editor-preview h4, .md-editor-preview h5, .md-editor-preview h6 {
+  color: var(--vscode-text-primary);
+  font-weight: 600;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.md-editor-preview p {
+  color: var(--vscode-text-primary);
+  line-height: 1.6;
+  margin-bottom: 1rem;
+}
+
+.md-editor-preview a {
+  color: var(--vscode-accent-primary);
+  text-decoration: none;
+}
+
+.md-editor-preview a:hover {
+  text-decoration: underline;
+}
+
+.md-editor-preview code {
+  background-color: var(--vscode-bg-tertiary);
+  padding: 2px 4px;
+  border-radius: var(--vscode-radius-sm);
+  font-family: 'Geist Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+  font-size: 0.9em;
+}
+
+.md-editor-preview pre {
+  background-color: var(--vscode-bg-tertiary);
+  padding: 16px;
+  border-radius: var(--vscode-radius-sm);
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.md-editor-preview pre code {
+  background-color: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+.md-editor-preview blockquote {
+  border-left: 3px solid var(--vscode-accent-primary);
+  padding-left: 16px;
+  margin: 1rem 0;
+  color: var(--vscode-text-secondary);
+}
+
+.md-editor-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.md-editor-preview th, .md-editor-preview td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-border);
+}
+
+.md-editor-preview th {
+  background-color: var(--vscode-bg-tertiary);
+  color: var(--vscode-text-primary);
+  font-weight: 600;
+}
+
+.md-editor-preview tr:hover {
+  background-color: var(--vscode-bg-tertiary);
+}
+
+.md-editor-preview ul, .md-editor-preview ol {
+  padding-left: 24px;
+  margin: 1rem 0;
+}
+
+.md-editor-preview li {
+  margin-bottom: 0.5rem;
+}
+
+/* Editor resize handle */
+.md-editor-resize {
+  background-color: var(--vscode-bg-tertiary);
+  border-top: 1px solid var(--vscode-border);
+}
+
+/* Editor tab styles */
+.md-editor-tab {
+  background-color: var(--vscode-bg-tertiary);
+  border: 1px solid var(--vscode-border);
+  border-bottom: none;
+  padding: 8px 16px;
+  color: var(--vscode-text-primary);
+  font-size: var(--vscode-font-size-sm);
+}
+
+.md-editor-tab.active {
+  background-color: var(--vscode-bg-secondary);
+  border-bottom: 2px solid var(--vscode-accent-primary);
+}
+
+.md-editor-tab:hover {
+  background-color: var(--vscode-bg-secondary);
+}
+</style>
+
 <style scoped>
 .editor-loading-skeleton {
   width: 100%;

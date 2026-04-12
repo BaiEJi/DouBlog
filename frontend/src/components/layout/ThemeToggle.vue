@@ -43,6 +43,9 @@ const toggleTheme = () => {
 .theme-toggle-btn {
   position: relative;
   overflow: hidden;
+  border-radius: var(--vscode-radius-full);
+  width: 36px;
+  height: 36px;
   transition: 
     background-color var(--vscode-duration-fast) var(--vscode-ease-in-out),
     color var(--vscode-duration-fast) var(--vscode-ease-in-out),
@@ -52,18 +55,19 @@ const toggleTheme = () => {
 
 .theme-toggle-btn:hover {
   background-color: var(--vscode-interactive-hover);
+  box-shadow: var(--vscode-shadow-glow-sm);
 }
 
 .theme-toggle-btn:active {
   background-color: var(--vscode-interactive-active);
-  transform: scale(0.95);
+  transform: scale(0.92);
 }
 
 .theme-toggle-btn:focus-visible {
   box-shadow: var(--vscode-shadow-glow-md);
 }
 
-/* Sun icon - uses warning/accent colors */
+/* Sun icon - amber/warm tones */
 .theme-icon-sun {
   color: var(--vscode-accent-warning);
   transition: color var(--vscode-duration-fast) var(--vscode-ease-in-out);
@@ -73,17 +77,17 @@ const toggleTheme = () => {
   color: var(--vscode-accent-warning-hover);
 }
 
-/* Moon icon - uses secondary text color */
+/* Moon icon - cool accent tones */
 .theme-icon-moon {
   color: var(--vscode-text-secondary);
   transition: color var(--vscode-duration-fast) var(--vscode-ease-in-out);
 }
 
 .theme-toggle-btn:hover .theme-icon-moon {
-  color: var(--vscode-accent-primary);
+  color: var(--vscode-accent-primary-hover);
 }
 
-/* Icon transition animations */
+/* Icon transition animations - spring physics */
 .theme-icon-enter-active,
 .theme-icon-leave-active {
   transition: 

@@ -77,7 +77,7 @@ const indentStyle = computed(() => ({
 <template>
   <SidebarMenuItem>
     <div 
-      class="tree-node relative flex items-center py-vscode-1-5 cursor-pointer group transition-all duration-vscode-fast ease-vscode-in-out w-full"
+      class="tree-node relative flex items-center py-vscode-2 cursor-pointer group transition-all duration-vscode-normal ease-vscode-in-out w-full"
       :class="{ 
         'is-active': isActive,
       }"
@@ -85,36 +85,38 @@ const indentStyle = computed(() => ({
       @click="navigateToPost"
     >
       <div 
-        class="absolute left-0 top-0 bottom-0 w-0.5 bg-vscode-accent-primary opacity-0 group-hover:opacity-60 transition-opacity duration-vscode-fast"
+        class="absolute left-0 top-0 bottom-0 w-1 bg-vscode-accent-primary opacity-0 group-hover:opacity-40 transition-opacity duration-vscode-normal"
         :class="{ 'opacity-100': isActive }"
       />
       
       <button 
         v-if="hasChildren"
         @click="toggleExpand"
-        class="expand-btn mr-vscode-1 p-0.5 rounded-vscode-sm flex-shrink-0 transition-colors duration-vscode-fast hover:bg-vscode-interactive-hover"
+        class="expand-btn mr-vscode-2 p-1 rounded-vscode-md flex-shrink-0 transition-all duration-vscode-normal hover:bg-vscode-interactive-hover"
         :class="{ 'text-vscode-accent-primary': isExpanded }"
+        :aria-label="isExpanded ? '收起子文章' : '展开子文章'"
+        :aria-expanded="isExpanded"
       >
         <ChevronRight 
           v-if="!isExpanded" 
-          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-vscode-fast"
+          class="w-5 h-5 text-vscode-text-secondary transition-transform duration-vscode-normal"
         />
         <ChevronDown 
           v-else 
-          class="w-4 h-4 text-vscode-text-secondary transition-transform duration-vscode-fast"
+          class="w-5 h-5 text-vscode-text-secondary transition-transform duration-vscode-normal"
         />
       </button>
       
       <component 
         :is="hasChildren ? (isExpanded ? FolderOpen : Folder) : FileText"
-        class="w-4 h-4 mr-vscode-1-5 flex-shrink-0 transition-colors duration-vscode-fast"
+        class="w-5 h-5 mr-vscode-2 flex-shrink-0 transition-colors duration-vscode-normal"
         :class="isActive 
           ? 'text-vscode-accent-primary' 
-          : 'text-vscode-text-muted group-hover:text-vscode-text-secondary'"
+          : 'text-vscode-text-muted group-hover:text-vscode-text-primary'"
       />
       
       <span 
-        class="text-vscode-sm truncate transition-colors duration-vscode-fast"
+        class="text-vscode-sm truncate transition-colors duration-vscode-normal"
         :class="isActive 
           ? 'text-vscode-accent-primary font-vscode-medium' 
           : 'text-vscode-text-primary group-hover:text-vscode-text-primary'"
@@ -124,7 +126,7 @@ const indentStyle = computed(() => ({
       
       <span
         v-if="hasChildren"
-        class="ml-auto text-vscode-xs text-vscode-text-muted px-vscode-1-5 py-0.5 rounded-vscode-sm bg-vscode-bg-tertiary opacity-0 group-hover:opacity-100 transition-opacity duration-vscode-fast"
+        class="ml-auto text-vscode-xs text-vscode-text-muted px-vscode-2 py-0.5 rounded-vscode-sm bg-vscode-bg-tertiary opacity-0 group-hover:opacity-100 transition-opacity duration-vscode-normal"
       >
         {{ node.children.length }}
       </span>
@@ -145,23 +147,26 @@ const indentStyle = computed(() => ({
 
 <style scoped>
 .tree-node {
-  border-radius: var(--vscode-radius-sm);
+  border-radius: var(--vscode-radius-md);
+  transition: all var(--vscode-duration-normal) var(--vscode-ease-in-out);
 }
 
 .tree-node:hover {
   background-color: var(--vscode-interactive-hover);
+  transform: translateX(var(--vscode-1));
 }
 
 .tree-node.is-active {
   background-color: var(--vscode-interactive-selected);
+  box-shadow: inset 0 0 0 1px var(--vscode-accent-primary);
 }
 
 .tree-node:active {
-  transform: scale(0.98);
+  transform: scale(0.99);
 }
 
 .expand-btn:active {
-  transform: scale(0.9);
+  transform: scale(0.95);
 }
 
 .expand-enter-active,
@@ -177,6 +182,6 @@ const indentStyle = computed(() => ({
 }
 
 .expand-btn svg {
-  transition: transform var(--vscode-duration-fast) var(--vscode-ease-in-out);
+  transition: transform var(--vscode-duration-normal) var(--vscode-ease-in-out);
 }
 </style>

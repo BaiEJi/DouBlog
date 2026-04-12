@@ -16,7 +16,7 @@ const viewports: Viewport[] = ['desktop', 'mobile'];
 const pages = [
   { name: 'login', path: '/login', requiresAuth: false },
   { name: 'home', path: '/', requiresAuth: true },
-  { name: 'post-detail', path: '/post/getting-started', requiresAuth: true },
+  { name: 'post-detail', path: '/post/slug/getting-started', requiresAuth: true },
 ];
 
 test.describe('Baseline Screenshot Capture', () => {

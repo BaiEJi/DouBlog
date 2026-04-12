@@ -57,18 +57,18 @@ const formattedDate = computed(() => {
 
 <template>
   <Card
-    class="group cursor-pointer overflow-hidden"
+    class="group cursor-pointer overflow-hidden transition-all duration-300 hover:shadow-[var(--vscode-shadow-lg)] hover:border-[var(--vscode-accent-primary)] hover:scale-[1.02] border border-[var(--vscode-border-light)] rounded-[var(--vscode-radius-xl)] shadow-[var(--vscode-shadow-sm)]"
     @click="handleClick"
   >
-    <CardHeader class="pb-3">
+    <CardHeader class="pb-4 pt-6">
       <div class="flex items-start justify-between gap-3">
-        <CardTitle class="text-[var(--vscode-font-size-lg)] font-semibold leading-[var(--vscode-line-height-snug)] text-[var(--vscode-text-primary)] line-clamp-2 transition-colors group-hover:text-[var(--vscode-accent-primary)]">
+        <CardTitle class="text-[var(--vscode-font-size-xl)] font-semibold leading-[var(--vscode-line-height-snug)] text-[var(--vscode-text-primary)] line-clamp-2 transition-colors group-hover:text-[var(--vscode-accent-primary)]">
           {{ post.title }}
         </CardTitle>
         <Badge
           v-if="post.is_top"
-          variant="warning"
-          class="shrink-0"
+          variant="default"
+          class="shrink-0 bg-[var(--vscode-accent-warning)] text-[var(--vscode-bg-primary)] hover:bg-[var(--vscode-accent-warning-hover)]"
         >
           置顶
         </Badge>
@@ -76,17 +76,17 @@ const formattedDate = computed(() => {
     </CardHeader>
     
     <CardContent class="pb-4">
-      <CardDescription class="text-[var(--vscode-font-size-sm)] leading-[var(--vscode-line-height-relaxed)] text-[var(--vscode-text-secondary)] line-clamp-2 mb-4">
+      <CardDescription class="text-[var(--vscode-font-size-base)] leading-[var(--vscode-line-height-relaxed)] text-[var(--vscode-text-secondary)] line-clamp-3 mb-4">
         {{ post.summary || '暂无摘要' }}
       </CardDescription>
       
       <!-- Tags -->
-      <div v-if="post.tags && post.tags.length > 0" class="flex flex-wrap gap-2 mb-3">
+      <div v-if="post.tags && post.tags.length > 0" class="flex flex-wrap gap-2 mb-4">
         <Badge
           v-for="tag in post.tags.slice(0, 3)"
           :key="tag"
-          variant="default"
-          class="text-[var(--vscode-font-size-xs)]"
+          variant="outline"
+          class="text-[var(--vscode-font-size-xs)] border-[var(--vscode-border)] hover:border-[var(--vscode-accent-primary)] hover:bg-[var(--vscode-accent-primary-subtle)]"
         >
           {{ tag }}
         </Badge>
@@ -99,7 +99,7 @@ const formattedDate = computed(() => {
       </div>
     </CardContent>
     
-    <CardFooter class="pt-3 border-t border-[var(--vscode-border-light)]">
+    <CardFooter class="pt-4 border-t border-[var(--vscode-border-light)]">
       <div class="flex items-center justify-between w-full text-[var(--vscode-font-size-xs)] text-[var(--vscode-text-muted)]">
         <div class="flex items-center gap-4">
           <!-- Author -->
