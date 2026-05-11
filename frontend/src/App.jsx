@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import PostDetail from './PostDetail'
 
 // ─── Icons ──────────────────────────────────────────────
 const Icons = {
@@ -21,38 +23,25 @@ function PostCard({ post }) {
   return (
     <a href={`/post/${post.id}`} className="group block">
       <article className="relative h-full p-6 rounded-2xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#111] hover:border-black/10 dark:hover:border-white/20 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:hover:shadow-[0_8px_30px_rgb(255,255,255,0.02)]">
-        {/* Top: date + pin */}
         <div className="flex items-center justify-between mb-4">
           <span className="text-sm text-[#999] dark:text-[#666] font-mono">{dateStr}</span>
           {post.is_top && (
             <span className="text-amber-500">{Icons.pin}</span>
           )}
         </div>
-
-        {/* Title */}
         <h3 className="text-xl font-semibold text-[#111] dark:text-[#eee] mb-3 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-snug">
           {post.title}
         </h3>
-
-        {/* Summary */}
         {post.summary && (
           <p className="text-base text-[#666] dark:text-[#888] leading-relaxed mb-5 line-clamp-2">
             {post.summary}
           </p>
         )}
-
-        {/* Bottom */}
         <div className="flex items-center justify-between mt-auto">
           <div className="flex items-center gap-4 text-sm text-[#999] dark:text-[#666]">
-            <span className="inline-flex items-center gap-1.5">
-              {Icons.eye}
-              {post.view_count || 0}
-            </span>
+            <span className="inline-flex items-center gap-1.5">{Icons.eye} {post.view_count || 0}</span>
             {post.children_count > 0 && (
-              <span className="inline-flex items-center gap-1.5">
-                {Icons.folder}
-                {post.children_count}
-              </span>
+              <span className="inline-flex items-center gap-1.5">{Icons.folder} {post.children_count}</span>
             )}
           </div>
           <span className="text-sm text-[#ccc] dark:text-[#444] group-hover:text-blue-500 transition-colors inline-flex items-center gap-1">
@@ -101,18 +90,11 @@ function EmptyState() {
   )
 }
 
-// ─── App ────────────────────────────────────────────────
-function App() {
+// ─── Home Page ──────────────────────────────────────────
+function HomePage({ dark, setDark }) {
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [dark, setDark] = useState(() =>
-    typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
-
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-  }, [dark])
 
   useEffect(() => {
     const auth = btoa('admin:lizy111A')
@@ -131,8 +113,8 @@ function App() {
   )
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
-      {/* ── Nav ────────────────────────────────────────── */}
+    <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
+      {/* Nav */}
       <nav className="sticky top-0 z-50 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
         <div className="w-full px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-10">
@@ -171,9 +153,8 @@ function App() {
         </div>
       </nav>
 
-      {/* ── Main Content ────────────────────────────────── */}
+      {/* Main */}
       <main className="flex-1 w-full px-8 py-16">
-        {/* Hero */}
         <div className="mb-16 animate-fade-in-up">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight mb-4">
             思考，记录，沉淀。
@@ -183,7 +164,6 @@ function App() {
           </p>
         </div>
 
-        {/* Section header */}
         <div className="flex items-center gap-3 mb-6">
           <h2 className="text-lg font-semibold text-[#111] dark:text-[#eee]">全部文章</h2>
           {!loading && (
@@ -191,7 +171,6 @@ function App() {
           )}
         </div>
 
-        {/* Grid */}
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
             {[1, 2, 3, 4, 5, 6].map(i => <PostSkeleton key={i} />)}
@@ -207,7 +186,7 @@ function App() {
         )}
       </main>
 
-      {/* ── Footer ─────────────────────────────────────── */}
+      {/* Footer */}
       <footer className="border-t border-black/5 dark:border-white/5">
         <div className="w-full px-8 py-8 flex items-center justify-between text-xs text-[#ccc] dark:text-[#444]">
           <span>DouBlog &copy; 2025</span>
@@ -218,4 +197,28 @@ function App() {
   )
 }
 
-export default App
+// ─── App ────────────────────────────────────────────────
+export default function App() {
+  const [dark, setDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('doublog_dark')
+      if (saved !== null) return saved === 'true'
+      return window.matchMedia('(prefers-color-scheme: dark)').matches
+    }
+    return false
+  })
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark)
+    localStorage.setItem('doublog_dark', dark)
+  }, [dark])
+
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage dark={dark} setDark={setDark} />} />
+        <Route path="/post/:id" element={<PostDetail dark={dark} setDark={setDark} />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}

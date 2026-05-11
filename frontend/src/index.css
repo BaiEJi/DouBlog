@@ -80,6 +80,11 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 等宽字体 - 程序员友好 */
+.font-mono {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Source Code Pro', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+}
+
 ::selection {
   background: hsl(var(--primary) / 0.1);
 }
@@ -197,3 +202,168 @@ body {
 .stagger > *:nth-child(7) { animation-delay: 360ms; }
 .stagger > *:nth-child(8) { animation-delay: 420ms; }
 .stagger > *:nth-child(9) { animation-delay: 480ms; }
+
+/* ─── Markdown Content Styles ──────────────────────────── */
+.prose-content {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #333;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Source Code Pro', 'Menlo', 'Monaco', 'Consolas', monospace;
+}
+
+.dark .prose-content {
+  color: #ccc;
+}
+
+.prose-content h1, .prose-content h2, .prose-content h3,
+.prose-content h4, .prose-content h5, .prose-content h6 {
+  font-weight: 600;
+  margin-top: 2em;
+  margin-bottom: 0.8em;
+  line-height: 1.3;
+  color: #111;
+}
+
+.dark .prose-content h1, .dark .prose-content h2, .dark .prose-content h3,
+.dark .prose-content h4, .dark .prose-content h5, .dark .prose-content h6 {
+  color: #eee;
+}
+
+.prose-content h1 { font-size: 2em; }
+.prose-content h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid rgba(0,0,0,0.06); }
+.prose-content h3 { font-size: 1.25em; }
+.prose-content h4 { font-size: 1.1em; }
+
+.prose-content p {
+  margin: 1.2em 0;
+}
+
+.prose-content a {
+  color: #0066cc;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+
+.prose-content a:hover {
+  border-bottom-color: #0066cc;
+}
+
+.dark .prose-content a {
+  color: #6699ff;
+}
+
+.dark .prose-content a:hover {
+  border-bottom-color: #6699ff;
+}
+
+.prose-content strong {
+  font-weight: 600;
+  color: #111;
+}
+
+.dark .prose-content strong {
+  color: #eee;
+}
+
+.prose-content ul, .prose-content ol {
+  padding-left: 1.8em;
+  margin: 1em 0;
+}
+
+.prose-content li {
+  margin: 0.4em 0;
+}
+
+.prose-content blockquote {
+  margin: 1.5em 0;
+  padding: 0.8em 1.2em;
+  border-left: 3px solid #ddd;
+  background: rgba(0,0,0,0.02);
+  color: #666;
+  border-radius: 0 8px 8px 0;
+}
+
+.dark .prose-content blockquote {
+  border-left-color: #333;
+  background: rgba(255,255,255,0.03);
+  color: #999;
+}
+
+.prose-content code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.9em;
+  padding: 0.15em 0.4em;
+  background: rgba(0,0,0,0.04);
+  border-radius: 4px;
+  color: #e83e8c;
+}
+
+.dark .prose-content code {
+  background: rgba(255,255,255,0.08);
+  color: #f97583;
+}
+
+.prose-content pre {
+  margin: 1.5em 0;
+  padding: 1em 1.2em;
+  background: #f6f8fa;
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 0.9em;
+  line-height: 1.6;
+}
+
+.dark .prose-content pre {
+  background: #161b22;
+}
+
+.prose-content pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  border-radius: 0;
+}
+
+.prose-content table {
+  width: 100%;
+  margin: 1.5em 0;
+  border-collapse: collapse;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.prose-content th, .prose-content td {
+  padding: 0.6em 1em;
+  border: 1px solid rgba(0,0,0,0.06);
+  text-align: left;
+}
+
+.dark .prose-content th, .dark .prose-content td {
+  border-color: rgba(255,255,255,0.08);
+}
+
+.prose-content th {
+  background: rgba(0,0,0,0.03);
+  font-weight: 600;
+}
+
+.dark .prose-content th {
+  background: rgba(255,255,255,0.04);
+}
+
+.prose-content img {
+  max-width: 100%;
+  border-radius: 12px;
+  margin: 1.5em 0;
+}
+
+.prose-content hr {
+  margin: 2em 0;
+  border: none;
+  border-top: 1px solid rgba(0,0,0,0.06);
+}
+
+.dark .prose-content hr {
+  border-top-color: rgba(255,255,255,0.08);
+}
