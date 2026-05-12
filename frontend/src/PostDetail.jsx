@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import MarkdownIt from 'markdown-it'
 import hljs from 'highlight.js'
@@ -30,6 +30,39 @@ const Icons = {
   folder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
 }
 
+// ─── 拖拽手柄 ──────────────────────────────────────────
+function ResizeHandle({ onDragStart, onDrag }) {
+  const dragging = useRef(false)
+  const startPos = useRef(0)
+
+  const onMouseDown = useCallback((e) => {
+    e.preventDefault()
+    dragging.current = true
+    startPos.current = e.clientX
+    onDragStart()
+    const onMouseMove = (e) => {
+      if (!dragging.current) return
+      onDrag(e.clientX - startPos.current)
+    }
+    const onMouseUp = () => {
+      dragging.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+    }
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [onDragStart, onDrag])
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="w-[3px] shrink-0 cursor-col-resize group h-[calc(100vh-64px)] sticky top-16"
+    >
+      <div className="w-full h-full transition-colors bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/15" />
+    </div>
+  )
+}
+
 // ─── 目录树（带记忆） ────────────────────────────────────
 const treeLevelColors = [
   'text-[#111] dark:text-[#eee] font-semibold', // level 0 - bold, strongest
@@ -49,7 +82,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
     <div>
       <a
         href={`/post/${node.id}`}
-        className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 ${
+        className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
           isActive
             ? 'bg-black/5 dark:bg-white/10 text-[#111] dark:text-[#eee] font-medium'
             : `${levelColor} hover:bg-black/[0.03] dark:hover:bg-white/[0.05] hover:text-[#111] dark:hover:text-[#eee]`
@@ -97,28 +130,49 @@ function isAncestor(node, targetId) {
 }
 
 // ─── 右侧 TOC ──────────────────────────────────────────
-function TableOfContents({ headings, activeId }) {
+const tocLevelStyles = [
+  { fontSize: 15, fontWeight: 600, color: '#111', darkColor: '#eee',  indent: 0 },
+  { fontSize: 14, fontWeight: 500, color: '#333', darkColor: '#ccc',  indent: 15 },
+  { fontSize: 14, fontWeight: 400, color: '#555', darkColor: '#aaa',  indent: 30 },
+  { fontSize: 14, fontWeight: 400, color: '#666', darkColor: '#999',  indent: 42 },
+  { fontSize: 14, fontWeight: 400, color: '#777', darkColor: '#888',  indent: 54 },
+  { fontSize: 14, fontWeight: 400, color: '#888', darkColor: '#777',  indent: 66 },
+]
+
+function TableOfContents({ headings, activeId, dark }) {
   if (!headings.length) return null
 
+  const guideColor = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
+
   return (
-    <div className="sticky top-24">
+    <div className="sticky top-16">
       <h4 className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest mb-4 font-mono">
         目录
       </h4>
-      <nav className="space-y-1">
+      <nav>
         {headings.map((h, i) => {
           const isActive = activeId === h.id
+          const s = tocLevelStyles[Math.min(h.level - 1, tocLevelStyles.length - 1)]
           return (
             <a
               key={i}
               href={`#${h.id}`}
-              className={`block py-1 text-[14px] font-mono transition-colors duration-150 border-l-2 ${
-                isActive
-                  ? 'border-[#111] dark:border-[#eee] text-[#111] dark:text-[#eee] font-medium'
-                  : 'border-transparent text-[#999] dark:text-[#555] hover:text-[#666] dark:hover:text-[#999]'
-              }`}
-              style={{ paddingLeft: `${8 + (h.level - 1) * 12}px` }}
+              className="relative block py-[3px] transition-colors duration-150 border-l-2 font-mono overflow-hidden whitespace-nowrap"
+              style={{
+                paddingLeft: `${8 + s.indent}px`,
+                fontSize: `${s.fontSize}px`,
+                fontWeight: isActive ? 600 : s.fontWeight,
+                color: isActive ? (dark ? '#eee' : '#111') : (dark ? s.darkColor : s.color),
+                borderLeftColor: isActive ? (dark ? '#eee' : '#111') : 'transparent',
+              }}
             >
+              {h.level > 1 && tocLevelStyles.slice(0, h.level - 1).map((ls, j) => (
+                <span
+                  key={j}
+                  className="absolute top-0 bottom-0 w-px pointer-events-none"
+                  style={{ left: `${8 + ls.indent}px`, background: guideColor }}
+                />
+              ))}
               {h.text}
             </a>
           )
@@ -140,6 +194,26 @@ export default function PostDetail({ dark, setDark }) {
       return JSON.parse(localStorage.getItem('doublog_tree_expanded') || '{}')
     } catch { return {} }
   })
+  const [leftWidth, setLeftWidth] = useState(() => {
+    try { return parseInt(localStorage.getItem('doublog_left_width')) || 256 } catch { return 256 }
+  })
+  const [rightWidth, setRightWidth] = useState(() => {
+    try { return parseInt(localStorage.getItem('doublog_right_width')) || 208 } catch { return 208 }
+  })
+  const leftStartRef = useRef(leftWidth)
+  const rightStartRef = useRef(rightWidth)
+
+  const onLeftDragStart = useCallback(() => { leftStartRef.current = leftWidth }, [leftWidth])
+  const onLeftDrag = useCallback((delta) => {
+    setLeftWidth(Math.max(180, Math.min(400, leftStartRef.current + delta)))
+  }, [])
+  const onRightDragStart = useCallback(() => { rightStartRef.current = rightWidth }, [rightWidth])
+  const onRightDrag = useCallback((delta) => {
+    setRightWidth(Math.max(140, Math.min(350, rightStartRef.current - delta)))
+  }, [])
+
+  useEffect(() => { localStorage.setItem('doublog_left_width', leftWidth) }, [leftWidth])
+  useEffect(() => { localStorage.setItem('doublog_right_width', rightWidth) }, [rightWidth])
 
   // 保存展开状态到 localStorage
   const toggleExpand = (nodeId) => {
@@ -244,7 +318,7 @@ export default function PostDetail({ dark, setDark }) {
         <div className="h-16 border-b border-black/5 dark:border-white/5 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl" />
         <div className="flex items-center justify-center py-32">
           <div className="text-center">
-            <p className="text-[#999] dark:text-[#555] mb-4">文章不存在</p>
+            <p className="text-muted-foreground mb-4">文章不存在</p>
             <Link to="/" className="text-sm text-[#111] dark:text-[#eee] hover:underline">返回首页</Link>
           </div>
         </div>
@@ -291,13 +365,13 @@ export default function PostDetail({ dark, setDark }) {
       {/* ── Layout ─────────────────────────────────────── */}
       <div className="flex w-full">
         {/* Left Sidebar */}
-        <aside className="hidden lg:block w-64 shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-64px)] sticky top-16 overflow-y-auto py-6 px-3">
-          <div className="mb-4 px-2">
+        <aside className="hidden lg:block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-64px)] sticky top-16 overflow-hidden py-6 px-3" style={{ width: leftWidth }}>
+          <div className="mb-4 px-2 whitespace-nowrap overflow-hidden">
             <div className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest">
               文档
             </div>
           </div>
-          <div className="space-y-0.5">
+          <div className="space-y-0.5 overflow-y-auto">
             {tree.map(node => (
               <TreeNode
                 key={node.id}
@@ -309,6 +383,7 @@ export default function PostDetail({ dark, setDark }) {
             ))}
           </div>
         </aside>
+        <ResizeHandle onDragStart={onLeftDragStart} onDrag={onLeftDrag} />
 
         {/* Center Content */}
         <article className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
@@ -363,7 +438,7 @@ export default function PostDetail({ dark, setDark }) {
             )}
 
             <div className="mt-16 pt-8 border-t border-black/5 dark:border-white/5">
-              <Link to="/" className="text-sm text-[#999] dark:text-[#555] hover:text-[#111] dark:hover:text-[#eee] transition-colors">
+              <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 &larr; 返回首页
               </Link>
             </div>
@@ -371,8 +446,9 @@ export default function PostDetail({ dark, setDark }) {
         </article>
 
         {/* Right TOC */}
-        <aside className="hidden xl:block w-52 shrink-0 h-[calc(100vh-64px)] sticky top-16 overflow-y-auto py-14 px-4">
-          <TableOfContents headings={headings} activeId={activeTocId} />
+        <ResizeHandle onDragStart={onRightDragStart} onDrag={onRightDrag} />
+        <aside className="hidden xl:block shrink-0 h-[calc(100vh-64px)] sticky top-16 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
+          <TableOfContents headings={headings} activeId={activeTocId} dark={dark} />
         </aside>
       </div>
     </div>

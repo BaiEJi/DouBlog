@@ -106,6 +106,14 @@ body {
   background: hsl(var(--muted-foreground) / 0.4);
 }
 
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Gradient text */
 .text-gradient {
   background: linear-gradient(to right, hsl(var(--foreground)), hsl(var(--muted-foreground)));
