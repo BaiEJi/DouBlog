@@ -2,7 +2,7 @@
 文章浏览计数模块
 
 使用 Redis 存储总浏览量，SQLite 作为持久化备份。
-Redis 不可用时自动降级到 SQLite 直读直写。
+Redis 不可用时自动降级到内存计数 + 定时批量写入 SQLite。
 
 Key 格式: DouBlog:view:{post_id}
 Value: 整数，文章总浏览量
@@ -14,6 +14,7 @@ Value: 整数，文章总浏览量
 """
 
 import logging
+import threading
 from app.redis_client import get_redis
 from app.db import db
 from app.models.models import Post
@@ -22,14 +23,18 @@ logger = logging.getLogger(__name__)
 
 KEY_PREFIX = "DouBlog:view:"
 
+# Redis 不可用时的内存计数器（线程安全）
+_memory_counts: dict[int, int] = {}
+_memory_lock = threading.Lock()
+
 
 def _make_key(post_id: int) -> str:
     """
     生成Redis键名
-    
+
     Args:
         post_id: 文章ID
-        
+
     Returns:
         str: Redis键名
     """
@@ -53,7 +58,7 @@ def increment_view(post_id: int) -> int:
     原子递增文章浏览计数
 
     Redis 可用时: INCR（原子操作，无锁竞争）
-    Redis 不可用时: 降级到 SQLite 递增
+    Redis 不可用时: 内存计数（不阻塞请求，由 flush_to_db 写入 SQLite）
 
     Returns:
         递增后的浏览计数
@@ -62,21 +67,11 @@ def increment_view(post_id: int) -> int:
     if redis:
         return redis.incr(_make_key(post_id))
 
-    return _increment_in_sqlite(post_id)
+    # Redis 不可用：内存计数，不写 SQLite（避免并发写锁竞争）
+    with _memory_lock:
+        _memory_counts[post_id] = _memory_counts.get(post_id, 0) + 1
+        return _memory_counts[post_id]
 
-
-def _increment_in_sqlite(post_id: int) -> int:
-    session = _get_session()
-    try:
-        post = session.query(Post).filter(Post.id == post_id).first()
-        if post:
-            post.view_count += 1
-            session.commit()
-            return post.view_count
-        return 0
-    except Exception:
-        session.rollback()
-        raise
 
 
 # ─── 读操作 ───────────────────────────────────────────────
@@ -85,12 +80,13 @@ def _increment_in_sqlite(post_id: int) -> int:
 def get_view_count(post_id: int) -> int:
     """
     获取文章浏览计数
-    
+
     优先从Redis读取，未命中时从SQLite加载并缓存到Redis。
-    
+    Redis 不可用时合并内存计数 + SQLite 基数。
+
     Args:
         post_id: 文章ID
-        
+
     Returns:
         int: 浏览计数
     """
@@ -106,7 +102,10 @@ def get_view_count(post_id: int) -> int:
             redis.set(key, sqlite_count)
         return sqlite_count
 
-    return _get_from_sqlite(post_id)
+    # Redis 不可用：SQLite 基数 + 内存增量
+    base = _get_from_sqlite(post_id)
+    with _memory_lock:
+        return base + _memory_counts.get(post_id, 0)
 
 
 def _get_from_sqlite(post_id: int) -> int:
@@ -202,15 +201,14 @@ def delete_view_count(post_id: int):
 
 def flush_to_db():
     """
-    将 Redis 中所有浏览计数批量写入 SQLite
+    将浏览计数批量写入 SQLite
 
-    使用 SCAN 遍历所有 DouBlog:view:* key，
-    只更新数据库中仍存在的文章（跳过已删除的文章）。
-    刷盘后 Redis 中的 key 保持不变（Redis 是 source of truth）。
+    Redis 可用时：从 Redis SCAN 所有 key → 批量 UPDATE SQLite
+    Redis 不可用时：从内存计数器批量 UPDATE SQLite
     """
     redis = get_redis()
     if not redis:
-        logger.warning("Redis unavailable, skipping flush")
+        _flush_memory_to_db()
         return
 
     cursor = 0
@@ -239,6 +237,38 @@ def flush_to_db():
 
     if total_updated > 0:
         logger.info(f"Flushed view counts: {total_updated} posts updated")
+
+
+def _flush_memory_to_db():
+    """将内存计数器中的增量批量写入 SQLite，并重置计数器"""
+    with _memory_lock:
+        if not _memory_counts:
+            return
+        # 取出当前计数并重置
+        snapshot = dict(_memory_counts)
+        _memory_counts.clear()
+
+    if not snapshot:
+        return
+
+    # snapshot 是增量，需要累加到 SQLite 已有值
+    from flask import has_app_context
+    if has_app_context():
+        session = db.session
+        try:
+            for post_id, delta in snapshot.items():
+                session.query(Post).filter(Post.id == post_id).update(
+                    {"view_count": Post.view_count + delta}
+                )
+            session.commit()
+            logger.info(f"Flushed memory view counts: {len(snapshot)} posts, +{sum(snapshot.values())} views")
+        except Exception as e:
+            session.rollback()
+            # 写入失败，把增量放回计数器
+            with _memory_lock:
+                for pid, delta in snapshot.items():
+                    _memory_counts[pid] = _memory_counts.get(pid, 0) + delta
+            logger.error(f"Memory flush failed: {e}")
 
 
 def _batch_update_sqlite(updates: dict[int, int]) -> int:

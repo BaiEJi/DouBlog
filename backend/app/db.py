@@ -10,7 +10,6 @@ Flask-SQLAlchemy 扩展初始化
 import os
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event
-from sqlalchemy.pool import StaticPool
 from app.config import settings
 
 db = SQLAlchemy()
@@ -32,10 +31,12 @@ def init_db(app):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['SQLALCHEMY_ECHO'] = False
     
-    # SQLite engine options
+    # SQLite engine options — WAL 模式下支持大量并发读
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'connect_args': {'check_same_thread': False},
-        'poolclass': StaticPool if database_url.startswith('sqlite') else None,
+        'pool_pre_ping': True,
+        'pool_size': 50,
+        'max_overflow': 100,
     }
     
     os.makedirs(settings.data_dir, exist_ok=True)

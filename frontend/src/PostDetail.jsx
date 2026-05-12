@@ -151,20 +151,29 @@ export default function PostDetail({ dark, setDark }) {
   }
 
   useEffect(() => {
+    const controller = new AbortController()
     const auth = btoa('admin:lizy111A')
     const host = window.location.hostname
     const headers = { 'Authorization': `Basic ${auth}` }
 
+    setLoading(true)
+
     Promise.all([
-      fetch(`http://${host}:60100/api/posts/id/${id}`, { headers }).then(r => r.json()),
-      fetch(`http://${host}:60100/api/posts/tree`, { headers }).then(r => r.json())
+      fetch(`http://${host}:60100/api/posts/id/${id}`, { headers, signal: controller.signal }).then(r => r.json()),
+      fetch(`http://${host}:60100/api/posts/tree`, { headers, signal: controller.signal }).then(r => r.json())
     ])
       .then(([postRes, treeRes]) => {
         if (postRes.success) setPost(postRes.data)
         if (treeRes.success) setTree(treeRes.data)
       })
-      .catch(console.error)
-      .finally(() => setLoading(false))
+      .catch(err => {
+        if (err.name !== 'AbortError') console.error(err)
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+      })
+
+    return () => controller.abort()
   }, [id])
 
   const { html, headings } = useMemo(() => {
