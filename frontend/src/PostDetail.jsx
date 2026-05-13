@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import md from './md'
 import mermaid from 'mermaid'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -62,7 +62,6 @@ const treeLevelColors = [
 ]
 
 function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
-  const navigate = useNavigate()
   const isActive = node.id === activeId
   const hasChildren = node.children && node.children.length > 0
   const isDefaultExpanded = hasChildren && isAncestor(node, activeId)
@@ -84,13 +83,9 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
       {...attributes}
       {...listeners}
     >
-      <div
-        onClick={(e) => {
-          // 如果点击的是展开按钮，不导航
-          if (e.target.closest('button')) return
-          navigate(`/post/${node.id}`)
-        }}
-        className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap cursor-pointer ${
+      <Link
+        to={`/post/${node.id}`}
+        className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
           isActive
             ? 'bg-black/5 dark:bg-white/10 text-[#111] dark:text-[#eee] font-medium'
             : `${levelColor} hover:bg-black/[0.03] dark:hover:bg-white/[0.05] hover:text-[#111] dark:hover:text-[#eee]`
@@ -101,7 +96,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
         <span className="w-5 shrink-0 flex items-center justify-center">
           {hasChildren && (
             <button
-              onClick={(e) => { e.stopPropagation(); onToggle(node.id) }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggle(node.id) }}
               className="p-0.5"
             >
               <span className={`block transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}>
@@ -111,7 +106,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
           )}
         </span>
         <span className="truncate ml-1">{node.title}</span>
-      </div>
+      </Link>
       {hasChildren && expanded && (
         <SortableContext items={node.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
           {node.children.map(child => (
