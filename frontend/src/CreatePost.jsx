@@ -75,44 +75,23 @@ export default function CreatePost({ dark, setDark }) {
 
   const previewHtml = useMemo(() => md.render(content || ''), [content])
 
-  // Mermaid: 渲染预览区图表（重试机制）
+  // Mermaid: 渲染预览区图表
   useEffect(() => {
     if (!previewHtml) return
     mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
     let cancelled = false
 
-    const renderAll = async () => {
+    const renderMermaid = async () => {
       if (cancelled) return
-      const els = document.querySelectorAll('.mermaid:not([data-processed])')
-      for (let i = 0; i < els.length; i++) {
-        if (cancelled) return
-        const el = els[i]
-        const src = el.textContent
-        const id = `mermaid-preview-${Date.now()}-${i}`
-        try {
-          const { svg } = await mermaid.render(id, src)
-          el.innerHTML = svg
-          el.setAttribute('data-processed', 'true')
-        } catch (e) {
-          console.error('Mermaid render error:', e)
-          el.setAttribute('data-processed', 'true')
-        }
+      try {
+        await mermaid.run({ querySelector: '.mermaid:not([data-processed])' })
+      } catch (e) {
+        console.error('Mermaid render error:', e)
       }
     }
 
-    const tryRender = (retries = 0) => {
-      if (cancelled) return
-      const els = document.querySelectorAll('.mermaid:not([data-processed])')
-      if (els.length > 0) {
-        renderAll()
-      } else if (retries < 20) {
-        setTimeout(() => tryRender(retries + 1), 50)
-      }
-    }
-
-    tryRender()
-
-    return () => { cancelled = true }
+    const timer = setTimeout(renderMermaid, 100)
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [previewHtml, dark])
 
   const validate = () => {
