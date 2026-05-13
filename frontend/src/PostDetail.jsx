@@ -400,21 +400,20 @@ export default function PostDetail({ dark, setDark }) {
     return () => observer.disconnect()
   }, [headings])
 
-  // Mermaid: 初始化 + 渲染（合并，确保时序正确）
+  // Mermaid: 初始化 + 渲染（确保 DOM 已就绪）
   useEffect(() => {
     if (!html) return
     mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
     let cancelled = false
-    const renderMermaid = async () => {
-      // 等待浏览器渲染完成（dangerouslySetInnerHTML 更新 DOM）
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+    const renderAll = async () => {
       if (cancelled) return
-      // 清除已渲染标记（dark 模式切换时需要重新渲染）
       document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
         el.removeAttribute('data-processed')
       })
       const els = document.querySelectorAll('.mermaid:not([data-processed])')
       for (let i = 0; i < els.length; i++) {
+        if (cancelled) return
         const el = els[i]
         const src = el.textContent
         const id = `mermaid-${Date.now()}-${i}`
@@ -428,7 +427,32 @@ export default function PostDetail({ dark, setDark }) {
         }
       }
     }
-    renderMermaid()
+
+    // 等待 .mermaid 元素出现在 DOM 中
+    const waitForMermaid = () => {
+      if (cancelled) return
+      const els = document.querySelectorAll('.mermaid:not([data-processed])')
+      if (els.length > 0) {
+        renderAll()
+      } else {
+        // DOM 还没更新，用 MutationObserver 等待
+        const observer = new MutationObserver(() => {
+          if (cancelled) { observer.disconnect(); return }
+          const found = document.querySelectorAll('.mermaid:not([data-processed])')
+          if (found.length > 0) {
+            observer.disconnect()
+            renderAll()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        // 超时保护：1 秒后停止观察
+        setTimeout(() => observer.disconnect(), 1000)
+      }
+    }
+
+    // 先用 requestAnimationFrame 等一帧，再检查
+    requestAnimationFrame(waitForMermaid)
+
     return () => { cancelled = true }
   }, [html, dark])
 

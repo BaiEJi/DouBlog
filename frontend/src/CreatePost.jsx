@@ -75,16 +75,17 @@ export default function CreatePost({ dark, setDark }) {
 
   const previewHtml = useMemo(() => md.render(content || ''), [content])
 
-  // Mermaid: 渲染预览区图表（初始化+渲染合并）
+  // Mermaid: 渲染预览区图表（确保 DOM 已就绪）
   useEffect(() => {
     if (!previewHtml) return
     mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
     let cancelled = false
-    const renderMermaid = async () => {
-      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+
+    const renderAll = async () => {
       if (cancelled) return
       const els = document.querySelectorAll('.mermaid:not([data-processed])')
       for (let i = 0; i < els.length; i++) {
+        if (cancelled) return
         const el = els[i]
         const src = el.textContent
         const id = `mermaid-preview-${Date.now()}-${i}`
@@ -98,7 +99,28 @@ export default function CreatePost({ dark, setDark }) {
         }
       }
     }
-    renderMermaid()
+
+    const waitForMermaid = () => {
+      if (cancelled) return
+      const els = document.querySelectorAll('.mermaid:not([data-processed])')
+      if (els.length > 0) {
+        renderAll()
+      } else {
+        const observer = new MutationObserver(() => {
+          if (cancelled) { observer.disconnect(); return }
+          const found = document.querySelectorAll('.mermaid:not([data-processed])')
+          if (found.length > 0) {
+            observer.disconnect()
+            renderAll()
+          }
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+        setTimeout(() => observer.disconnect(), 1000)
+      }
+    }
+
+    requestAnimationFrame(waitForMermaid)
+
     return () => { cancelled = true }
   }, [previewHtml, dark])
 
