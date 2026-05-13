@@ -400,7 +400,7 @@ export default function PostDetail({ dark, setDark }) {
     return () => observer.disconnect()
   }, [headings])
 
-  // Mermaid: 初始化 + 渲染（确保 DOM 已就绪）
+  // Mermaid: 初始化 + 渲染（重试机制确保 DOM 就绪）
   useEffect(() => {
     if (!html) return
     mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
@@ -428,30 +428,20 @@ export default function PostDetail({ dark, setDark }) {
       }
     }
 
-    // 等待 .mermaid 元素出现在 DOM 中
-    const waitForMermaid = () => {
+    // 重试渲染：如果 .mermaid 元素不存在，延迟重试
+    const tryRender = (retries = 0) => {
       if (cancelled) return
       const els = document.querySelectorAll('.mermaid:not([data-processed])')
       if (els.length > 0) {
         renderAll()
-      } else {
-        // DOM 还没更新，用 MutationObserver 等待
-        const observer = new MutationObserver(() => {
-          if (cancelled) { observer.disconnect(); return }
-          const found = document.querySelectorAll('.mermaid:not([data-processed])')
-          if (found.length > 0) {
-            observer.disconnect()
-            renderAll()
-          }
-        })
-        observer.observe(document.body, { childList: true, subtree: true })
-        // 超时保护：1 秒后停止观察
-        setTimeout(() => observer.disconnect(), 1000)
+      } else if (retries < 20) {
+        // DOM 还没更新，50ms 后重试，最多重试 20 次（1 秒）
+        setTimeout(() => tryRender(retries + 1), 50)
       }
     }
 
-    // 先用 requestAnimationFrame 等一帧，再检查
-    requestAnimationFrame(waitForMermaid)
+    // 立即尝试，然后延迟重试
+    tryRender()
 
     return () => { cancelled = true }
   }, [html, dark])

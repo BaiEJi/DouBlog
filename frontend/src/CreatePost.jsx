@@ -75,7 +75,7 @@ export default function CreatePost({ dark, setDark }) {
 
   const previewHtml = useMemo(() => md.render(content || ''), [content])
 
-  // Mermaid: 渲染预览区图表（确保 DOM 已就绪）
+  // Mermaid: 渲染预览区图表（重试机制）
   useEffect(() => {
     if (!previewHtml) return
     mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
@@ -100,26 +100,17 @@ export default function CreatePost({ dark, setDark }) {
       }
     }
 
-    const waitForMermaid = () => {
+    const tryRender = (retries = 0) => {
       if (cancelled) return
       const els = document.querySelectorAll('.mermaid:not([data-processed])')
       if (els.length > 0) {
         renderAll()
-      } else {
-        const observer = new MutationObserver(() => {
-          if (cancelled) { observer.disconnect(); return }
-          const found = document.querySelectorAll('.mermaid:not([data-processed])')
-          if (found.length > 0) {
-            observer.disconnect()
-            renderAll()
-          }
-        })
-        observer.observe(document.body, { childList: true, subtree: true })
-        setTimeout(() => observer.disconnect(), 1000)
+      } else if (retries < 20) {
+        setTimeout(() => tryRender(retries + 1), 50)
       }
     }
 
-    requestAnimationFrame(waitForMermaid)
+    tryRender()
 
     return () => { cancelled = true }
   }, [previewHtml, dark])
