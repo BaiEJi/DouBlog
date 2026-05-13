@@ -85,7 +85,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
       {...listeners}
     >
       <div
-        onMouseDown={(e) => {
+        onPointerUp={(e) => {
           // 如果点击的是展开按钮，不导航
           if (e.target.closest('button')) return
           navigate(`/post/${node.id}`)
