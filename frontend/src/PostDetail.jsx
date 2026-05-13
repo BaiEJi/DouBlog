@@ -85,7 +85,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
       {...listeners}
     >
       <div
-        onPointerUp={(e) => {
+        onClick={(e) => {
           // 如果点击的是展开按钮，不导航
           if (e.target.closest('button')) return
           navigate(`/post/${node.id}`)
@@ -101,7 +101,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
         <span className="w-5 shrink-0 flex items-center justify-center">
           {hasChildren && (
             <button
-              onPointerUp={(e) => { e.stopPropagation(); onToggle(node.id) }}
+              onClick={(e) => { e.stopPropagation(); onToggle(node.id) }}
               className="p-0.5"
             >
               <span className={`block transition-transform duration-150 ${expanded ? '' : '-rotate-90'}`}>
