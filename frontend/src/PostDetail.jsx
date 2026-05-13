@@ -403,7 +403,41 @@ export default function PostDetail({ dark, setDark }) {
   // Mermaid: 初始化 + 渲染
   useEffect(() => {
     if (!html) return
-    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      themeVariables: dark ? {
+        primaryColor: '#1e3a5f', primaryBorderColor: '#3b82f6', primaryTextColor: '#e0e7ff',
+        secondaryColor: '#422006', tertiaryColor: '#052e16',
+        lineColor: '#9ca3af', arrowheadColor: '#9ca3af',
+        background: '#0d1117', mainBkg: '#1e3a5f', nodeBkg: '#1e3a5f', nodeBorder: '#3b82f6',
+        clusterBkg: '#0c1629', clusterBorder: '#1e40af',
+        textColor: '#e5e7eb', titleColor: '#f9fafb', edgeLabelBackground: '#161b22',
+        fontFamily: '"Inter", "SF Mono", sans-serif', fontSize: '14px',
+        radius: 8, strokeWidth: 1.5, useGradient: true,
+        actorBkg: '#1e3a5f', actorBorder: '#3b82f6', actorTextColor: '#e0e7ff',
+        signalColor: '#d1d5db', signalTextColor: '#f9fafb',
+        activationBorderColor: '#3b82f6', activationBkgColor: '#172554',
+        taskBkgColor: '#1e3a5f', taskBorderColor: '#3b82f6',
+        doneTaskBkgColor: '#14532d', doneTaskBorderColor: '#22c55e',
+        critBorderColor: '#dc2626', critBkgColor: '#450a0a', todayLineColor: '#3b82f6',
+      } : {
+        primaryColor: '#dbeafe', primaryBorderColor: '#3b82f6', primaryTextColor: '#1e3a5f',
+        secondaryColor: '#fef3c7', tertiaryColor: '#f0fdf4',
+        lineColor: '#6b7280', arrowheadColor: '#6b7280',
+        background: '#ffffff', mainBkg: '#dbeafe', nodeBkg: '#dbeafe', nodeBorder: '#3b82f6',
+        clusterBkg: '#f0f9ff', clusterBorder: '#93c5fd',
+        textColor: '#1f2937', titleColor: '#111827', edgeLabelBackground: '#ffffff',
+        fontFamily: '"Inter", "SF Mono", sans-serif', fontSize: '14px',
+        radius: 8, strokeWidth: 1.5, useGradient: true,
+        actorBkg: '#dbeafe', actorBorder: '#3b82f6', actorTextColor: '#1e3a5f',
+        signalColor: '#374151', signalTextColor: '#111827',
+        activationBorderColor: '#3b82f6', activationBkgColor: '#eff6ff',
+        taskBkgColor: '#dbeafe', taskBorderColor: '#3b82f6',
+        doneTaskBkgColor: '#86efac', doneTaskBorderColor: '#22c55e',
+        critBorderColor: '#ef4444', critBkgColor: '#fef2f2', todayLineColor: '#3b82f6',
+      }
+    })
     let cancelled = false
 
     const renderMermaid = async () => {
