@@ -462,17 +462,13 @@ html.transitioning *::after {
 .mermaid {
   display: flex;
   justify-content: center;
-  margin: 1.5em 0;
-  padding: 1em;
+  padding: 1.5em;
   background: #fafafa;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,0.06);
   overflow-x: auto;
 }
 
 .dark .mermaid {
   background: #0d1117;
-  border-color: rgba(255,255,255,0.08);
 }
 
 .mermaid svg {

@@ -240,9 +240,11 @@ export default function App() {
     const handler = (e) => {
       const btn = e.target.closest('.code-block-copy')
       if (!btn) return
+      // mermaid 复制源代码，普通代码块复制 code 内容
+      const mermaidSource = btn.getAttribute('data-mermaid-source')
       const code = btn.closest('.code-block')?.querySelector('code')
-      if (!code) return
-      const text = code.textContent
+      const text = mermaidSource || code?.textContent
+      if (!text) return
       const showCopied = () => {
         btn.textContent = '已复制'
         setTimeout(() => { btn.textContent = '复制' }, 1500)

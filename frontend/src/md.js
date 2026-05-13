@@ -25,7 +25,8 @@ md.renderer.rules.fence = function (tokens, idx, options, env, self) {
   const raw = token.content
 
   if (info === 'mermaid') {
-    return `<div class="mermaid">${raw}</div>`
+    const escaped = md.utils.escapeHtml(raw)
+    return `<div class="code-block"><div class="code-block-header"><span class="code-block-lang">mermaid</span><button class="code-block-copy" data-mermaid-source="${escaped.replace(/"/g, '&quot;')}">复制</button></div><div class="mermaid">${raw}</div></div>`
   }
 
   const lang = info.split(/\s+/)[0] || ''
