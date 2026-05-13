@@ -237,7 +237,7 @@ body {
   color: #eee;
 }
 
-.prose-content h1 { font-size: 2em; }
+.prose-content h1 { font-size: 2em; margin-top: 1em; }
 .prose-content h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid rgba(0,0,0,0.06); }
 .prose-content h3 { font-size: 1.25em; }
 .prose-content h4 { font-size: 1.1em; }
@@ -326,9 +326,10 @@ body {
   background: #161b22;
 }
 
-.prose-content pre code {
+.prose-content pre code,
+.code-block code {
   padding: 0;
-  background: none;
+  background: none !important;
   color: inherit;
   border-radius: 0;
 }
@@ -374,4 +375,315 @@ body {
 
 .dark .prose-content hr {
   border-top-color: rgba(255,255,255,0.08);
+}
+
+/* Dark mode transition */
+html.transitioning,
+html.transitioning *,
+html.transitioning *::before,
+html.transitioning *::after {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* KaTeX display math */
+.math-block {
+  margin: 1.5em 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+/* ─── Code Block with Language Label & Copy Button ───── */
+.code-block {
+  position: relative;
+  margin: 1.5em 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  background: #f0f0f0;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+}
+
+.code-block-lang {
+  color: #666;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.code-block-copy {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.code-block-copy:hover {
+  background: rgba(0,0,0,0.06);
+  color: #333;
+}
+
+.code-block pre.hljs {
+  margin: 0;
+  border-radius: 0;
+  padding: 1em 1.2em;
+}
+
+.dark .code-block-header {
+  background: #161b22;
+  border-bottom-color: rgba(255,255,255,0.08);
+}
+
+.dark .code-block-lang {
+  color: #8b949e;
+}
+
+.dark .code-block-copy {
+  color: #8b949e;
+}
+
+.dark .code-block-copy:hover {
+  background: rgba(255,255,255,0.1);
+  color: #c9d1d9;
+}
+
+/* ─── highlight.js: GitHub Light (亮色主题) ─────────────── */
+.hljs {
+  color: #24292e;
+  background: #ffffff;
+}
+
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: #d73a49;
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  color: #6f42c1;
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #005cc5;
+}
+
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  color: #032f62;
+}
+
+.hljs-built_in,
+.hljs-symbol {
+  color: #e36209;
+}
+
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  color: #6a737d;
+}
+
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  color: #22863a;
+}
+
+.hljs-subst {
+  color: #24292e;
+}
+
+.hljs-section {
+  color: #005cc5;
+  font-weight: bold;
+}
+
+.hljs-bullet {
+  color: #735c0f;
+}
+
+.hljs-emphasis {
+  color: #24292e;
+  font-style: italic;
+}
+
+.hljs-strong {
+  color: #24292e;
+  font-weight: bold;
+}
+
+.hljs-addition {
+  color: #22863a;
+  background-color: #f0fff4;
+}
+
+.hljs-deletion {
+  color: #b31d28;
+  background-color: #ffeef0;
+}
+
+/* ─── highlight.js: GitHub Dark (暗色主题) ─────────────── */
+.dark .code-block pre.hljs,
+.dark .prose-content pre.hljs {
+  background: #0d1117 !important;
+}
+
+.dark .code-block .hljs,
+.dark .prose-content .hljs {
+  color: #c9d1d9 !important;
+}
+
+.dark .hljs-comment,
+.dark .hljs-quote {
+  color: #8b949e !important;
+  font-style: italic;
+}
+
+.dark .hljs-keyword,
+.dark .hljs-doctag,
+.dark .hljs-selector-tag,
+.dark .hljs-type,
+.dark .hljs-variable.language_ {
+  color: #ff7b72 !important;
+}
+
+.dark .hljs-subst {
+  color: #c9d1d9 !important;
+}
+
+.dark .hljs-string,
+.dark .hljs-attr,
+.dark .hljs-template-variable {
+  color: #a5d6ff !important;
+}
+
+.dark .hljs-number,
+.dark .hljs-literal,
+.dark .hljs-variable,
+.dark .hljs-variable.constant_ {
+  color: #79c0ff !important;
+}
+
+.dark .hljs-operator,
+.dark .hljs-punctuation {
+  color: #c9d1d9 !important;
+}
+
+.dark .hljs-title,
+.dark .hljs-title.class_,
+.dark .hljs-title.function_ {
+  color: #d2a8ff !important;
+}
+
+.dark .hljs-params {
+  color: #c9d1d9 !important;
+}
+
+.dark .hljs-built_in,
+.dark .hljs-class .hljs-title {
+  color: #ffa657 !important;
+}
+
+.dark .hljs-meta,
+.dark .hljs-meta .hljs-keyword {
+  color: #79c0ff !important;
+}
+
+.dark .hljs-symbol,
+.dark .hljs-bullet {
+  color: #7ee787 !important;
+}
+
+.dark .hljs-addition {
+  color: #aff5b4 !important;
+  background: rgba(46, 160, 67, 0.15) !important;
+}
+
+.dark .hljs-deletion {
+  color: #ffdcd7 !important;
+  background: rgba(248, 81, 73, 0.15) !important;
+}
+
+.dark .hljs-emphasis {
+  font-style: italic;
+}
+
+.dark .hljs-strong {
+  font-weight: bold;
+}
+
+.dark .hljs-link {
+  color: #58a6ff !important;
+  text-decoration: underline;
+}
+
+.dark .hljs-section,
+.dark .hljs-selector-id {
+  color: #7ee787 !important;
+  font-weight: 600;
+}
+
+.dark .hljs-selector-class {
+  color: #7ee787 !important;
+}
+
+.dark .hljs-property {
+  color: #79c0ff !important;
+}
+
+/* Rate limit toast */
+.toast-rate-limit {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(120%);
+  background: #111;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  z-index: 9999;
+  opacity: 0;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+  pointer-events: none;
+}
+.toast-rate-limit.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+.dark .toast-rate-limit {
+  background: #eee;
+  color: #111;
+  box-shadow: 0 8px 32px rgba(255,255,255,0.1);
 }

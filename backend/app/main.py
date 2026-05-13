@@ -9,6 +9,8 @@ from flask import Flask, jsonify, request
 from flask.json.provider import DefaultJSONProvider
 from flask_cors import CORS
 from flask_httpauth import HTTPBasicAuth
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from werkzeug.exceptions import HTTPException
 from app.config import settings
 from app.db import init_db
@@ -74,7 +76,16 @@ def create_app():
     })
 
     init_db(app)
-    get_redis()
+    redis = get_redis()
+
+    # 限流器初始化（复用已有 Redis，不可用时降级为内存）
+    storage_uri = settings.redis_url if redis else "memory://"
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        storage_uri=storage_uri,
+        default_limits=["10 per second"],
+    )
 
     scheduler.init_app(app)
     scheduler.start()
@@ -144,10 +155,11 @@ def create_app():
     app.register_blueprint(images_bp)
 
     @app.route("/")
+    @limiter.exempt
     def root():
         """
         根路径，返回欢迎信息
-        
+
         Returns:
             dict: 欢迎信息和版本号
         """
@@ -157,10 +169,11 @@ def create_app():
         })
 
     @app.route("/health")
+    @limiter.exempt
     def health_check():
         """
         健康检查端点
-        
+
         Returns:
             dict: 健康状态
         """

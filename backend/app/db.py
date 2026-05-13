@@ -62,7 +62,4 @@ def _set_sqlite_pragma(engine):
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute("PRAGMA synchronous=NORMAL")
-        cursor.execute(
-            "CREATE INDEX IF NOT EXISTS ix_posts_level_order ON posts (level, \"order\")"
-        )
         cursor.close()

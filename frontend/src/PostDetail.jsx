@@ -1,21 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import MarkdownIt from 'markdown-it'
-import hljs from 'highlight.js'
-
-const md = new MarkdownIt({
-  html: true,
-  linkify: true,
-  typographer: true,
-  highlight: function (str, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return `<pre class="hljs"><code>${hljs.highlight(str, { language: lang }).value}</code></pre>`
-      } catch (_) {}
-    }
-    return `<pre class="hljs"><code>${md.utils.escapeHtml(str)}</code></pre>`
-  }
-})
+import md from './md'
+import mermaid from 'mermaid'
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { showRateLimitToast, isRateLimitResponse } from './toast'
 
 const Icons = {
   search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
@@ -78,8 +68,21 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
   const expanded = expandedMap[node.id] !== undefined ? expandedMap[node.id] : isDefaultExpanded
   const levelColor = treeLevelColors[Math.min(level, treeLevelColors.length - 1)]
 
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: node.id,
+  })
+
   return (
-    <div>
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+      }}
+      {...attributes}
+      {...listeners}
+    >
       <a
         href={`/post/${node.id}`}
         className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
@@ -105,7 +108,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
         <span className="truncate ml-1">{node.title}</span>
       </a>
       {hasChildren && expanded && (
-        <div>
+        <SortableContext items={node.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
           {node.children.map(child => (
             <TreeNode
               key={child.id}
@@ -116,7 +119,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
               onToggle={onToggle}
             />
           ))}
-        </div>
+        </SortableContext>
       )}
     </div>
   )
@@ -127,6 +130,68 @@ function isAncestor(node, targetId) {
   if (node.id === targetId) return true
   if (!node.children) return false
   return node.children.some(child => isAncestor(child, targetId))
+}
+
+// ─── 拖拽排序树 ──────────────────────────────────────────
+function findSiblings(nodes, targetId) {
+  for (const node of nodes) {
+    if (node.id === targetId) return nodes
+    if (node.children?.length) {
+      const found = findSiblings(node.children, targetId)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+function findParentId(nodes, siblings) {
+  for (const n of nodes) {
+    if (n.children === siblings) return n.id
+    if (n.children?.length) {
+      const r = findParentId(n.children, siblings)
+      if (r !== null) return r
+    }
+  }
+  return null
+}
+
+function SortableTree({ nodes, activeId, expandedMap, onToggle, onReorder }) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  )
+  const topIds = useMemo(() => nodes.map(n => n.id), [nodes])
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const siblings = findSiblings(nodes, active.id)
+    if (!siblings) return
+
+    const oldIndex = siblings.findIndex(n => n.id === active.id)
+    const newIndex = siblings.findIndex(n => n.id === over.id)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+
+    const newOrder = arrayMove(siblings, oldIndex, newIndex).map(n => n.id)
+    const parentId = nodes === siblings ? 0 : (findParentId(nodes, siblings) || 0)
+    onReorder(parentId, newOrder)
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
+        {nodes.map(node => (
+          <TreeNode
+            key={node.id}
+            node={node}
+            activeId={activeId}
+            expandedMap={expandedMap}
+            onToggle={onToggle}
+          />
+        ))}
+      </SortableContext>
+    </DndContext>
+  )
 }
 
 // ─── 右侧 TOC ──────────────────────────────────────────
@@ -224,6 +289,41 @@ export default function PostDetail({ dark, setDark }) {
     })
   }
 
+  // 拖拽排序回调
+  const handleReorder = useCallback((parentId, newOrder) => {
+    // 乐观更新本地 tree
+    const reorderInTree = (nodes, targetParentId) => {
+      if (targetParentId === 0) {
+        return newOrder.map(id => nodes.find(n => n.id === id)).filter(Boolean)
+      }
+      return nodes.map(node => {
+        if (node.id === targetParentId) {
+          const reordered = newOrder.map(id => node.children?.find(c => c.id === id)).filter(Boolean)
+          return { ...node, children: reordered }
+        }
+        if (node.children?.length) {
+          return { ...node, children: reorderInTree(node.children, targetParentId) }
+        }
+        return node
+      })
+    }
+    setTree(prev => reorderInTree(prev, parentId))
+
+    // 调 API
+    const auth = btoa('admin:lizy111A')
+    const host = window.location.hostname
+    fetch(`http://${host}:60100/api/posts/reorder`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
+      body: JSON.stringify({ parent_id: parentId, children_order: newOrder })
+    }).catch(() => {
+      // 失败回滚
+      fetch(`http://${host}:60100/api/posts/tree`, {
+        headers: { 'Authorization': `Basic ${auth}` }
+      }).then(r => r.json()).then(d => { if (d.success) setTree(d.data) })
+    })
+  }, [])
+
   useEffect(() => {
     const controller = new AbortController()
     const auth = btoa('admin:lizy111A')
@@ -233,12 +333,14 @@ export default function PostDetail({ dark, setDark }) {
     setLoading(true)
 
     Promise.all([
-      fetch(`http://${host}:60100/api/posts/id/${id}`, { headers, signal: controller.signal }).then(r => r.json()),
-      fetch(`http://${host}:60100/api/posts/tree`, { headers, signal: controller.signal }).then(r => r.json())
+      fetch(`http://${host}:60100/api/posts/id/${id}`, { headers, signal: controller.signal })
+        .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() }),
+      fetch(`http://${host}:60100/api/posts/tree`, { headers, signal: controller.signal })
+        .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() })
     ])
       .then(([postRes, treeRes]) => {
-        if (postRes.success) setPost(postRes.data)
-        if (treeRes.success) setTree(treeRes.data)
+        if (postRes?.success) setPost(postRes.data)
+        if (treeRes?.success) setTree(treeRes.data)
       })
       .catch(err => {
         if (err.name !== 'AbortError') console.error(err)
@@ -298,6 +400,38 @@ export default function PostDetail({ dark, setDark }) {
     return () => observer.disconnect()
   }, [headings])
 
+  // Mermaid: 初始化 + 渲染（合并，确保时序正确）
+  useEffect(() => {
+    if (!html) return
+    mermaid.initialize({ startOnLoad: false, theme: dark ? 'dark' : 'default' })
+    let cancelled = false
+    const renderMermaid = async () => {
+      // 等待浏览器渲染完成（dangerouslySetInnerHTML 更新 DOM）
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      if (cancelled) return
+      // 清除已渲染标记（dark 模式切换时需要重新渲染）
+      document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
+        el.removeAttribute('data-processed')
+      })
+      const els = document.querySelectorAll('.mermaid:not([data-processed])')
+      for (let i = 0; i < els.length; i++) {
+        const el = els[i]
+        const src = el.textContent
+        const id = `mermaid-${Date.now()}-${i}`
+        try {
+          const { svg } = await mermaid.render(id, src)
+          el.innerHTML = svg
+          el.setAttribute('data-processed', 'true')
+        } catch (e) {
+          console.error('Mermaid render error:', e)
+          el.setAttribute('data-processed', 'true')
+        }
+      }
+    }
+    renderMermaid()
+    return () => { cancelled = true }
+  }, [html, dark])
+
   const date = post ? new Date(post.created_at) : null
   const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''
 
@@ -353,7 +487,7 @@ export default function PostDetail({ dark, setDark }) {
               />
             </div>
             <button
-              onClick={() => setDark(!dark)}
+              onClick={() => setDark()}
               className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
             >
               {dark ? Icons.sun : Icons.moon}
@@ -372,43 +506,48 @@ export default function PostDetail({ dark, setDark }) {
             </div>
           </div>
           <div className="space-y-0.5 overflow-y-auto">
-            {tree.map(node => (
-              <TreeNode
-                key={node.id}
-                node={node}
-                activeId={parseInt(id)}
-                expandedMap={expandedMap}
-                onToggle={toggleExpand}
-              />
-            ))}
+            <SortableTree
+              nodes={tree}
+              activeId={parseInt(id)}
+              expandedMap={expandedMap}
+              onToggle={toggleExpand}
+              onReorder={handleReorder}
+            />
           </div>
         </aside>
         <ResizeHandle onDragStart={onLeftDragStart} onDrag={onLeftDrag} />
 
         {/* Center Content */}
         <article className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-10 py-14">
-            {post.parent && (
-              <div className="flex items-center gap-2 text-sm text-[#999] dark:text-[#555] mb-6">
-                <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-                <span>/</span>
-                <span className="text-[#666] dark:text-[#888]">{post.parent.title}</span>
-                <span>/</span>
-                <span className="text-[#111] dark:text-[#eee]">{post.title}</span>
+          <div className="max-w-3xl mx-auto px-10 pt-6 pb-14">
+            <div className="flex items-center justify-between text-[13px] text-[#999] dark:text-[#555] mb-3">
+              <div className="flex items-center gap-1.5">
+                {post.parent ? (
+                  <>
+                    <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
+                    <span>/</span>
+                    <span className="text-[#666] dark:text-[#888]">{post.parent.title}</span>
+                    <span>/</span>
+                    <span className="text-[#111] dark:text-[#eee] font-medium">{post.title}</span>
+                  </>
+                ) : (
+                  <span />
+                )}
               </div>
-            )}
+              <div className="flex items-center gap-4 text-[12px]">
+                <span className="inline-flex items-center gap-1">{Icons.eye} {post.view_count}</span>
+                <span className="inline-flex items-center gap-1">{Icons.clock} {dateStr}</span>
+                {post.children && post.children.length > 0 && (
+                  <span className="inline-flex items-center gap-1">{Icons.folder} {post.children.length} 篇</span>
+                )}
+              </div>
+            </div>
 
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-4">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-3">
               {post.title}
             </h1>
 
-            <div className="flex items-center gap-5 text-sm text-[#999] dark:text-[#555] mb-10 pb-8 border-b border-black/5 dark:border-white/5">
-              <span className="inline-flex items-center gap-1.5">{Icons.eye} {post.view_count}</span>
-              <span className="inline-flex items-center gap-1.5">{Icons.clock} {dateStr}</span>
-              {post.children && post.children.length > 0 && (
-                <span className="inline-flex items-center gap-1.5">{Icons.folder} {post.children.length} 篇</span>
-              )}
-            </div>
+            <div className="mb-6 pb-4 border-b border-black/5 dark:border-white/5" />
 
             <div className="prose-content font-mono" dangerouslySetInnerHTML={{ __html: html }} />
 

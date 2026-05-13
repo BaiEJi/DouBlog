@@ -1,6 +1,9 @@
-import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+import Fuse from 'fuse.js'
+import { showRateLimitToast, isRateLimitResponse } from './toast'
 import PostDetail from './PostDetail'
+import CreatePost from './CreatePost'
 
 // ─── Icons ──────────────────────────────────────────────
 const Icons = {
@@ -83,9 +86,9 @@ function EmptyState() {
       </div>
       <h3 className="text-xl font-semibold text-[#111] dark:text-[#eee] mb-2">暂无文章</h3>
       <p className="text-base text-[#666] dark:text-[#888] mb-6">创建你的第一篇文档开始使用</p>
-      <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] text-base font-medium rounded-xl hover:opacity-90 transition-opacity">
+      <Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] text-base font-medium rounded-xl hover:opacity-90 transition-opacity">
         {Icons.plus} 新建文章
-      </button>
+      </Link>
     </div>
   )
 }
@@ -102,15 +105,28 @@ function HomePage({ dark, setDark }) {
     fetch(`http://${host}:60100/api/posts?page_size=50`, {
       headers: { 'Authorization': `Basic ${auth}` }
     })
-      .then(r => r.json())
-      .then(d => { if (d.success) setPosts(d.data.items || []) })
+      .then(r => {
+        if (isRateLimitResponse(r)) { showRateLimitToast(); return null }
+        return r.json()
+      })
+      .then(d => { if (d && d.success) setPosts(d.data.items || []) })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
 
-  const filtered = posts.filter(p =>
-    !search || p.title.toLowerCase().includes(search.toLowerCase())
-  )
+  const fuse = useMemo(() => {
+    if (!posts.length) return null
+    return new Fuse(posts, {
+      keys: ['title', 'summary', 'name'],
+      threshold: 0.3,
+      includeScore: true,
+      ignoreLocation: true,
+    })
+  }, [posts])
+
+  const filtered = search.trim() && fuse
+    ? fuse.search(search).map(r => r.item)
+    : posts
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
@@ -141,14 +157,14 @@ function HomePage({ dark, setDark }) {
               />
             </div>
             <button
-              onClick={() => setDark(!dark)}
+              onClick={() => setDark()}
               className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
             >
               {dark ? Icons.sun : Icons.moon}
             </button>
-            <button className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] text-base font-medium rounded-xl hover:opacity-90 transition-opacity">
+            <Link to="/create" className="inline-flex items-center gap-2 px-5 py-2.5 bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] text-base font-medium rounded-xl hover:opacity-90 transition-opacity">
               {Icons.plus} 新建
-            </button>
+            </Link>
           </div>
         </div>
       </nav>
@@ -213,11 +229,47 @@ export default function App() {
     localStorage.setItem('doublog_dark', dark)
   }, [dark])
 
+  const toggleDark = useCallback(() => {
+    document.documentElement.classList.add('transitioning')
+    setDark(prev => !prev)
+    setTimeout(() => document.documentElement.classList.remove('transitioning'), 350)
+  }, [])
+
+  // 全局代码块复制按钮（事件委托）
+  useEffect(() => {
+    const handler = (e) => {
+      const btn = e.target.closest('.code-block-copy')
+      if (!btn) return
+      const code = btn.closest('.code-block')?.querySelector('code')
+      if (!code) return
+      const text = code.textContent
+      const showCopied = () => {
+        btn.textContent = '已复制'
+        setTimeout(() => { btn.textContent = '复制' }, 1500)
+      }
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(showCopied)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.cssText = 'position:fixed;left:-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+        showCopied()
+      }
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [])
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<HomePage dark={dark} setDark={setDark} />} />
-        <Route path="/post/:id" element={<PostDetail dark={dark} setDark={setDark} />} />
+        <Route path="/" element={<HomePage dark={dark} setDark={toggleDark} />} />
+        <Route path="/post/:id" element={<PostDetail dark={dark} setDark={toggleDark} />} />
+        <Route path="/create" element={<CreatePost dark={dark} setDark={toggleDark} />} />
       </Routes>
     </BrowserRouter>
   )

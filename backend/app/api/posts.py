@@ -23,6 +23,8 @@ from app.config import settings
 from app.api.auth import auth
 from app.utils.response import api_response
 from app.utils.view_count import increment_view, get_view_count, get_all_view_counts, delete_view_count
+from app.utils.tree_order import ROOT_ID, get_children_order, set_children_order, append_child, remove_child
+from app.utils.audit import log_action
 
 bp = Blueprint('posts', __name__, url_prefix='/api/posts')
 
@@ -33,17 +35,17 @@ MAX_LEVEL = 2
 def calculate_level(parent_id, session):
     """
     计算文章层级
-    
+
     Args:
         parent_id: 父文章ID
         session: 数据库会话
-    
+
     Returns:
         int: 层级值，-1表示超过最大层级限制
     """
-    if parent_id is None:
+    if parent_id is None or parent_id == ROOT_ID:
         return 0
-    
+
     parent = session.query(Post).filter(Post.id == parent_id).first()
     if parent:
         new_level = parent.level + 1
@@ -68,14 +70,14 @@ def build_full_slug(post_id, session):
     """
     parts = []
     current_id = post_id
-    
-    while current_id:
+
+    while current_id and current_id != ROOT_ID:
         post = session.query(Post).filter(Post.id == current_id).first()
         if not post:
             break
         parts.insert(0, post.name)
         current_id = post.parent_id
-    
+
     if parts:
         return '/' + '/'.join(parts)
     return ''
@@ -95,7 +97,7 @@ def update_slug_for_post_and_children(post_id, session):
     
     # 更新当前文章的slug
     post.slug = build_full_slug(post.id, session)
-    
+
     # 递归更新子文章
     children = session.query(Post).filter(Post.parent_id == post.id).all()
     for child in children:
@@ -178,8 +180,8 @@ def get_posts():
     status = request.args.get('status')
     keyword = request.args.get('keyword')
     
-    query = session.query(Post)
-    
+    query = session.query(Post).filter(Post.id != ROOT_ID)
+
     if parent_id is not None:
         query = query.filter(Post.parent_id == parent_id)
     
@@ -195,7 +197,7 @@ def get_posts():
             )
         )
     
-    query = query.order_by(Post.is_top.desc(), Post.order.asc(), Post.created_at.desc())
+    query = query.order_by(Post.is_top.desc(), Post.id.asc())
     
     total = query.count()
     total_pages = (total + page_size - 1) // page_size
@@ -234,38 +236,75 @@ def get_posts():
 def get_post_tree():
     """
     获取文章树形结构
-    
+
     Returns:
         树形结构的文章列表
     """
     session = db.session
-    
-    posts = session.query(Post).order_by(Post.level.asc(), Post.order.asc()).all()
-    
+
+    # 查询所有文章（不含虚拟根）
+    posts = session.query(Post).filter(Post.id != ROOT_ID).all()
+
+    # 一次性获取 view counts
     post_ids = [post.id for post in posts]
     view_counts = get_all_view_counts(post_ids)
-    
-    # 预计算所有slug
+
+    # 构建 parent_map 和 slug_map（内存计算，零额外查询）
+    post_by_id = {post.id: post for post in posts}
     slug_cache = {}
-    for post in posts:
-        slug_cache[post.id] = build_full_slug(post.id, session)
-    
+
+    def build_slug_in_memory(post_id):
+        if post_id in slug_cache:
+            return slug_cache[post_id]
+        parts = []
+        current_id = post_id
+        while current_id and current_id != ROOT_ID:
+            p = post_by_id.get(current_id)
+            if not p:
+                break
+            parts.insert(0, p.name)
+            current_id = p.parent_id
+        slug = '/' + '/'.join(parts) if parts else ''
+        slug_cache[post_id] = slug
+        return slug
+
+    # 构建 post_map
     post_map = {}
-    tree = []
-    
     for post in posts:
         post_dict = post.to_tree_dict()
-        post_dict['slug'] = slug_cache.get(post.id, '')
+        post_dict['slug'] = build_slug_in_memory(post.id)
         post_dict['view_count'] = view_counts.get(post.id, post.view_count)
         post_map[post.id] = post_dict
-        
-        if post.parent_id is None:
+
+    # 组装树结构
+    tree = []
+    for post in posts:
+        post_dict = post_map[post.id]
+        if post.parent_id == ROOT_ID or post.parent_id is None:
             tree.append(post_dict)
         else:
             parent = post_map.get(post.parent_id)
             if parent:
-                parent['children'].append(post_dict)
-    
+                parent.setdefault('children', []).append(post_dict)
+
+    # 按 children_order 排序
+    root_node = session.query(Post).filter(Post.id == ROOT_ID).first()
+    root_order = get_children_order(root_node)
+    if root_order:
+        id_to_root = {r['id']: r for r in tree}
+        tree = [id_to_root[i] for i in root_order if i in id_to_root]
+
+    def sort_children(node):
+        order = node.get('children_order', [])
+        if order and node.get('children'):
+            id_to_child = {c['id']: c for c in node['children']}
+            node['children'] = [id_to_child[i] for i in order if i in id_to_child]
+        for child in node.get('children', []):
+            sort_children(child)
+
+    for root in tree:
+        sort_children(root)
+
     return api_response(tree)
 
 
@@ -304,7 +343,13 @@ def get_post_by_id(post_id):
                 'slug': build_full_slug(parent.id, session)
             }
     
-    children = session.query(Post).filter(Post.parent_id == post.id).order_by(Post.order).all()
+    # 按 children_order 排序子文章
+    order = get_children_order(post)
+    children = session.query(Post).filter(Post.parent_id == post.id).all()
+    if order:
+        id_to_child = {c.id: c for c in children}
+        children = [id_to_child[i] for i in order if i in id_to_child]
+
     post_dict['children'] = [
         {
             'id': child.id,
@@ -315,7 +360,7 @@ def get_post_by_id(post_id):
         }
         for child in children
     ]
-    
+
     return api_response(post_dict)
 
 
@@ -355,7 +400,12 @@ def get_post_by_slug(slug):
                 'slug': build_full_slug(parent.id, session)
             }
     
-    children = session.query(Post).filter(Post.parent_id == post.id).order_by(Post.order).all()
+    order = get_children_order(post)
+    children = session.query(Post).filter(Post.parent_id == post.id).all()
+    if order:
+        id_to_child = {c.id: c for c in children}
+        children = [id_to_child[i] for i in order if i in id_to_child]
+
     post_dict['children'] = [
         {
             'id': child.id,
@@ -366,7 +416,7 @@ def get_post_by_slug(slug):
         }
         for child in children
     ]
-    
+
     return api_response(post_dict)
 
 
@@ -423,7 +473,12 @@ def get_post_by_path(slug):
                 'slug': build_full_slug(parent.id, session)
             }
     
-    children = session.query(Post).filter(Post.parent_id == post.id).order_by(Post.order).all()
+    order = get_children_order(post)
+    children = session.query(Post).filter(Post.parent_id == post.id).all()
+    if order:
+        id_to_child = {c.id: c for c in children}
+        children = [id_to_child[i] for i in order if i in id_to_child]
+
     post_dict['children'] = [
         {
             'id': child.id,
@@ -434,7 +489,7 @@ def get_post_by_path(slug):
         }
         for child in children
     ]
-    
+
     return api_response(post_dict)
 
 
@@ -443,50 +498,48 @@ def get_post_by_path(slug):
 def create_post():
     """
     创建文章
-    
+
     请求体：
     - title: 标题（必填）
-    - name: 英文名/标识符（可选，如果不提供则从slug解析）
-    - slug: 别名（可选，用于兼容旧版）
+    - name: 英文名/标识符（必填）
     - content: 内容
     - summary: 摘要
-    - parent_id: 父文章ID
-    - order: 排序
+    - parent_id: 父文章ID（None 则挂在虚拟根下）
     - status: 状态
     - is_top: 是否置顶
     - tags: 标签数组
-    
+
     Returns:
         创建的文章信息
     """
     session = db.session
     data = request.get_json()
-    
+
     if not data.get('title'):
         return api_response(None, 400, '标题不能为空')
-    
+
     # name 字段：优先使用传入的 name，否则从 slug 解析
     name = data.get('name') or (data.get('slug', '').strip('/') or '').split('/')[-1]
-    
+
     if not name:
         return api_response(None, 400, '英文名不能为空')
-    
+
     # 验证slug格式
     if not validate_slug(name):
         return api_response(None, 400, '英文名格式无效：必须以英文字母开头，只允许英文、数字和连字符，长度3-100字符')
-    
-    parent_id = data.get('parent_id')
-    
-    # 验证name全局唯一性（不再按父级拼接）
+
+    parent_id = data.get('parent_id') or ROOT_ID
+
+    # 验证name全局唯一性
     existing = session.query(Post).filter(Post.name == name).first()
     if existing:
         return api_response(None, 400, '该英文名已被使用，请使用其他名称')
-    
+
     # 计算层级
     level = calculate_level(parent_id, session)
     if level == -1:
         return api_response(None, 400, f'父文章已达最大层级限制（最多{MAX_LEVEL + 1}层）')
-    
+
     # 创建文章
     post = Post(
         title=data['title'],
@@ -496,22 +549,27 @@ def create_post():
         summary=data.get('summary'),
         parent_id=parent_id,
         level=level,
-        order=data.get('order', 0),
         author='admin',
         status=data.get('status', 'published'),
         is_top=data.get('is_top', False),
         tags=json.dumps(data.get('tags')) if data.get('tags') else None
     )
-    
+
     session.add(post)
     session.flush()  # 获取ID
-    
-    # 计算完整slug（用于兼容旧版）
+
+    # 计算完整slug
     post.slug = build_full_slug(post.id, session)
-    
+
+    # 追加到父节点的 children_order
+    parent = session.query(Post).filter(Post.id == parent_id).first()
+    if parent:
+        append_child(parent, post.id)
+
+    log_action('create', 'post', post.id, {'title': post.title, 'parent_id': post.parent_id})
     session.commit()
     session.refresh(post)
-    
+
     return api_response({
         'id': post.id,
         'title': post.title,
@@ -537,7 +595,6 @@ def update_post_by_id(post_id):
     - summary: 摘要
     - status: 状态
     - is_top: 是否置顶
-    - order: 排序
     - tags: 标签数组
     - name: 英文名
     - parent_id: 父文章ID
@@ -567,10 +624,7 @@ def update_post_by_id(post_id):
     
     if 'is_top' in data:
         post.is_top = data['is_top']
-    
-    if 'order' in data:
-        post.order = data['order']
-    
+
     if 'tags' in data:
         post.tags = json.dumps(data['tags']) if data['tags'] else None
     
@@ -593,47 +647,60 @@ def update_post_by_id(post_id):
     
     # 处理父文章更新
     if 'parent_id' in data:
-        new_parent_id = data['parent_id']
-        
+        new_parent_id = data['parent_id'] or ROOT_ID
+
         if new_parent_id == post.id:
             return api_response(None, 400, '不能将自己设为父文章')
-        
-        if new_parent_id is not None:
-            new_parent = session.query(Post).filter(Post.id == new_parent_id).first()
-            if not new_parent:
-                return api_response(None, 400, '父文章不存在')
-            
-            if new_parent.level >= MAX_LEVEL:
-                return api_response(None, 400, f'父文章已达最大层级限制（最多{MAX_LEVEL + 1}层）')
-            
-            def is_descendant(post_id, potential_parent_id):
-                current = session.query(Post).filter(Post.id == potential_parent_id).first()
-                while current:
-                    if current.id == post_id:
-                        return True
-                    if current.parent_id is None:
-                        return False
-                    current = session.query(Post).filter(Post.id == current.parent_id).first()
-                return False
-            
-            if is_descendant(post.id, new_parent_id):
-                return api_response(None, 400, '不能选择自己的子孙文章作为父文章')
-            
-            post.parent_id = new_parent_id
-            post.level = new_parent.level + 1
-        else:
-            post.parent_id = None
-            post.level = 0
-        
-        # 更新slug
-        post.slug = build_full_slug(post.id, session)
-        
-        # 递归更新所有子孙文章的slug
-        update_slug_for_post_and_children(post.id, session)
-    
+
+        old_parent_id = post.parent_id
+
+        if new_parent_id != old_parent_id:
+            # 从旧父节点的 children_order 中移除
+            if old_parent_id:
+                old_parent = session.query(Post).filter(Post.id == old_parent_id).first()
+                if old_parent:
+                    remove_child(old_parent, post.id)
+
+            if new_parent_id != ROOT_ID:
+                new_parent = session.query(Post).filter(Post.id == new_parent_id).first()
+                if not new_parent:
+                    return api_response(None, 400, '父文章不存在')
+
+                if new_parent.level >= MAX_LEVEL:
+                    return api_response(None, 400, f'父文章已达最大层级限制（最多{MAX_LEVEL + 1}层）')
+
+                def is_descendant(post_id, potential_parent_id):
+                    current = session.query(Post).filter(Post.id == potential_parent_id).first()
+                    while current and current.id != ROOT_ID:
+                        if current.id == post_id:
+                            return True
+                        current = session.query(Post).filter(Post.id == current.parent_id).first()
+                    return False
+
+                if is_descendant(post.id, new_parent_id):
+                    return api_response(None, 400, '不能选择自己的子孙文章作为父文章')
+
+                post.parent_id = new_parent_id
+                post.level = new_parent.level + 1
+                # 追加到新父节点
+                append_child(new_parent, post.id)
+            else:
+                post.parent_id = ROOT_ID
+                post.level = 0
+                # 追加到虚拟根节点
+                root_node = session.query(Post).filter(Post.id == ROOT_ID).first()
+                if root_node:
+                    append_child(root_node, post.id)
+
+            # 更新slug
+            post.slug = build_full_slug(post.id, session)
+            # 递归更新所有子孙文章的slug
+            update_slug_for_post_and_children(post.id, session)
+
+    log_action('update', 'post', post_id, {'fields': list(data.keys())})
     session.commit()
     session.refresh(post)
-    
+
     return api_response({
         'id': post.id,
         'title': post.title,
@@ -675,28 +742,41 @@ def update_post_by_slug(slug):
 def delete_post_by_id(post_id):
     """
     通过ID删除文章
-    
+
     Args:
         post_id: 文章ID
-    
+
     Returns:
         成功消息
     """
     session = db.session
-    
+
     post = session.query(Post).filter(Post.id == post_id).first()
-    
+
     if not post:
         return api_response(None, 404, '文章不存在')
-    
-    # 子文章变为根文章
-    session.query(Post).filter(Post.parent_id == post.id).update({'parent_id': None, 'level': 0})
-    
+
+    # 从父节点的 children_order 中移除
+    if post.parent_id:
+        parent = session.query(Post).filter(Post.id == post.parent_id).first()
+        if parent:
+            remove_child(parent, post.id)
+
+    # 子文章挂到虚拟根下
+    children = session.query(Post).filter(Post.parent_id == post.id).all()
+    root_node = session.query(Post).filter(Post.id == ROOT_ID).first()
+    for child in children:
+        child.parent_id = ROOT_ID
+        child.level = 0
+        if root_node:
+            append_child(root_node, child.id)
+
     session.delete(post)
+    log_action('delete', 'post', post_id, {'title': post.title})
     session.commit()
-    
+
     delete_view_count(post_id)
-    
+
     return api_response(None, 200, '删除成功')
 
 
@@ -720,3 +800,62 @@ def delete_post_by_slug(slug):
         return api_response(None, 404, '文章不存在')
     
     return delete_post_by_id(post.id)
+
+
+@bp.route('/reorder', methods=['PUT'])
+@auth.login_required
+def reorder_children():
+    """
+    拖拽排序：更新指定父节点下的子节点顺序
+
+    请求体：
+    - parent_id: 父节点ID（0 表示根级）
+    - children_order: 新的子节点 ID 数组，如 [3, 1, 5]
+
+    Returns:
+        成功消息
+    """
+    session = db.session
+    data = request.get_json()
+
+    parent_id = data.get('parent_id', ROOT_ID)
+    new_order = data.get('children_order', [])
+
+    parent = session.query(Post).filter(Post.id == parent_id).first()
+    if not parent:
+        return api_response(None, 404, '父节点不存在')
+
+    set_children_order(parent, new_order)
+    session.commit()
+
+    return api_response(None, 200, '排序更新成功')
+
+
+@bp.route('/audit-logs', methods=['GET'])
+@auth.login_required
+def get_audit_logs():
+    """
+    查询操作日志
+
+    Query参数：
+    - page: 页码，默认1
+    - page_size: 每页数量，默认20
+
+    Returns:
+        分页后的操作日志列表
+    """
+    from app.models.models import AuditLog
+
+    page = request.args.get('page', 1, type=int)
+    page_size = min(request.args.get('page_size', 20, type=int), settings.max_page_size)
+
+    query = AuditLog.query.order_by(AuditLog.created_at.desc())
+    total = query.count()
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+
+    return api_response({
+        'items': [i.to_dict() for i in items],
+        'total': total,
+        'page': page,
+        'page_size': page_size
+    })

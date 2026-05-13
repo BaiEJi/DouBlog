@@ -13,6 +13,7 @@ from app.db import db
 from app.models.models import Image
 from app.api.auth import auth
 from app.utils.response import api_response
+from app.utils.audit import log_action
 from app.config import settings
 
 bp = Blueprint('images', __name__, url_prefix='/api/images')
@@ -105,6 +106,7 @@ def upload_image():
         filesize=filesize
     )
     session.add(image)
+    log_action('create', 'image', image.id, {'filename': filename, 'filepath': relative_path})
     session.commit()
     
     return api_response({
@@ -157,6 +159,7 @@ def delete_image(filepath):
     
     session = db.session
     session.query(Image).filter(Image.filepath == filepath).delete()
+    log_action('delete', 'image', None, {'filepath': filepath})
     session.commit()
-    
+
     return api_response(None, 200, '删除成功')
