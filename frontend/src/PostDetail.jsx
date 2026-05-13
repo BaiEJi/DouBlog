@@ -83,8 +83,8 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
       {...attributes}
       {...listeners}
     >
-      <a
-        href={`/post/${node.id}`}
+      <Link
+        to={`/post/${node.id}`}
         className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
           isActive
             ? 'bg-black/5 dark:bg-white/10 text-[#111] dark:text-[#eee] font-medium'
@@ -106,7 +106,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
           )}
         </span>
         <span className="truncate ml-1">{node.title}</span>
-      </a>
+      </Link>
       {hasChildren && expanded && (
         <SortableContext items={node.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
           {node.children.map(child => (
@@ -544,7 +544,7 @@ export default function PostDetail({ dark, setDark }) {
         <ResizeHandle onDragStart={onLeftDragStart} onDrag={onLeftDrag} />
 
         {/* Center Content */}
-        <article className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
+        <article key={id} className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
           <div className="max-w-3xl mx-auto px-10 pt-6 pb-14">
             <div className="flex items-center justify-between text-[13px] text-[#999] dark:text-[#555] mb-3">
               <div className="flex items-center gap-1.5">
