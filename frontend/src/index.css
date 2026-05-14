@@ -276,16 +276,26 @@ body {
 
 .prose-content ul, .prose-content ol {
   padding-left: 1.8em;
-  margin: 1em 0;
+  margin: 0.2em 0;
 }
 
 .prose-content li {
-  margin: 0.4em 0;
+  margin: 0.05em 0;
 }
 
+/* 无序列表：圆点、方块、空心圆交替 */
+.prose-content ul { list-style-type: disc; }
+.prose-content ul ul { list-style-type: circle; }
+.prose-content ul ul ul { list-style-type: square; }
+
+/* 有序列表：数字、字母、罗马数字交替 */
+.prose-content ol { list-style-type: decimal; }
+.prose-content ol ol { list-style-type: lower-alpha; }
+.prose-content ol ol ol { list-style-type: lower-roman; }
+
 .prose-content blockquote {
-  margin: 1.5em 0;
-  padding: 0.8em 1.2em;
+  margin: 0.6em 0;
+  padding: 0.6em 1.2em;
   border-left: 3px solid #ddd;
   background: rgba(0,0,0,0.02);
   color: #666;
