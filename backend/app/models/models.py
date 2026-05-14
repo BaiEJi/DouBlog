@@ -3,7 +3,6 @@
 
 使用 Flask-SQLAlchemy 的 db.Model 基类，避免循环引用。
 - Post: 文章模型（支持树形结构）
-- Image: 图片模型
 """
 
 import json
@@ -114,35 +113,6 @@ class Post(db.Model):
             return json.loads(self.children_order)
         except (json.JSONDecodeError, TypeError):
             return []
-
-
-class Image(db.Model):
-    """图片模型，记录上传的图片信息"""
-    __tablename__ = 'images'
-    
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    post_id = db.Column(db.Integer, db.ForeignKey('posts.id', ondelete='SET NULL'), 
-                        nullable=True, comment='关联文章ID')
-    filename = db.Column(db.String(255), nullable=False, comment='文件名')
-    filepath = db.Column(db.String(500), nullable=False, comment='存储路径')
-    filesize = db.Column(db.Integer, nullable=True, comment='文件大小')
-    created_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now(), comment='创建时间')
-    
-    def to_dict(self):
-        """
-        将图片模型转换为字典格式
-        
-        Returns:
-            dict: 包含图片所有属性的字典
-        """
-        return {
-            'id': self.id,
-            'post_id': self.post_id,
-            'filename': self.filename,
-            'filepath': self.filepath,
-            'filesize': self.filesize,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-        }
 
 
 class AuditLog(db.Model):

@@ -1,3 +1,3 @@
-from app.models.models import Post, Image
+from app.models.models import Post
 
-__all__ = ['Post', 'Image']
+__all__ = ['Post']
