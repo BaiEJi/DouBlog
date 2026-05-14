@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import md from './md'
 import mermaid from 'mermaid'
+// lightbox 自定义实现，替代 medium-zoom
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -18,6 +19,7 @@ const Icons = {
   chevronRight: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>,
   doc: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>,
   folder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+  pencil: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>,
 }
 
 // ─── 拖拽手柄 ──────────────────────────────────────────
@@ -54,6 +56,74 @@ function ResizeHandle({ onDragStart, onDrag }) {
 }
 
 // ─── 目录树（带记忆） ────────────────────────────────────
+
+function findNodeParentId(nodes, targetId) {
+  for (const node of nodes) {
+    if (node.children) {
+      if (node.children.some(c => c.id === targetId)) return node.id
+      const found = findNodeParentId(node.children, targetId)
+      if (found !== null) return found
+    }
+  }
+  return null
+}
+
+function ConfirmDialog({ title, message, onConfirm, onCancel }) {
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onCancel])
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/30 dark:bg-black/50" onClick={onCancel} />
+      <div className="relative bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-xl shadow-xl w-[360px] p-5">
+        <h3 className="text-[15px] font-semibold text-[#111] dark:text-[#eee] mb-2">{title}</h3>
+        <p className="text-[13px] text-[#666] dark:text-[#888] leading-relaxed mb-5">{message}</p>
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-1.5 text-[13px] rounded-lg hover:bg-black/[0.03] dark:hover:bg-white/[0.05] text-[#666] dark:text-[#888] transition-colors">
+            取消
+          </button>
+          <button onClick={onConfirm} className="px-4 py-1.5 text-[13px] rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors">
+            删除
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose() }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  // Adjust position to stay within viewport
+  const style = { left: x, top: y }
+  if (typeof window !== 'undefined') {
+    if (x + 180 > window.innerWidth) style.left = x - 180
+    if (y + 120 > window.innerHeight) style.top = y - 120
+  }
+
+  return (
+    <div ref={ref} className="fixed z-[100] py-1 bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg shadow-lg min-w-[160px]" style={style}>
+      {items.map((item, i) =>
+        item.separator
+          ? <div key={i} className="h-px bg-black/5 dark:bg-white/5 my-1" />
+          : <button key={i} onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); item.onClick(); onClose(); }}
+              className={`w-full px-3 py-1.5 text-left text-[13px] font-mono transition-colors ${item.danger ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20' : 'hover:bg-black/[0.03] dark:hover:bg-white/[0.05]'}`}>
+              {item.label}
+            </button>
+      )}
+    </div>
+  )
+}
+
 const treeLevelColors = [
   'text-[#111] dark:text-[#eee] font-semibold', // level 0 - bold, strongest
   'text-[#333] dark:text-[#ddd]',                // level 1
@@ -61,7 +131,7 @@ const treeLevelColors = [
   'text-[#888] dark:text-[#777]',                // level 3+
 ]
 
-function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
+function TreeNode({ node, activeId, level = 0, expandedMap, onToggle, onContextMenu }) {
   const isActive = node.id === activeId
   const hasChildren = node.children && node.children.length > 0
   const isDefaultExpanded = hasChildren && isAncestor(node, activeId)
@@ -85,9 +155,10 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
     >
       <a
         href={`/post/${node.id}`}
+        onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, node) }}
         className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
           isActive
-            ? 'bg-black/5 dark:bg-white/10 text-[#111] dark:text-[#eee] font-medium'
+            ? `bg-black/5 dark:bg-white/10 text-[#111] dark:text-[#eee] ${level === 0 ? 'font-semibold' : 'font-medium'}`
             : `${levelColor} hover:bg-black/[0.03] dark:hover:bg-white/[0.05] hover:text-[#111] dark:hover:text-[#eee]`
         }`}
         style={{ paddingLeft: `${12 + level * 16 + (level > 0 ? 10 : 0)}px`, paddingRight: '8px' }}
@@ -117,6 +188,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle }) {
               level={level + 1}
               expandedMap={expandedMap}
               onToggle={onToggle}
+              onContextMenu={onContextMenu}
             />
           ))}
         </SortableContext>
@@ -155,7 +227,7 @@ function findParentId(nodes, siblings) {
   return null
 }
 
-function SortableTree({ nodes, activeId, expandedMap, onToggle, onReorder }) {
+function SortableTree({ nodes, activeId, expandedMap, onToggle, onReorder, onContextMenu }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
@@ -187,6 +259,7 @@ function SortableTree({ nodes, activeId, expandedMap, onToggle, onReorder }) {
             activeId={activeId}
             expandedMap={expandedMap}
             onToggle={onToggle}
+            onContextMenu={onContextMenu}
           />
         ))}
       </SortableContext>
@@ -222,6 +295,16 @@ function TableOfContents({ headings, activeId, dark }) {
             <a
               key={i}
               href={`#${h.id}`}
+              onClick={(e) => {
+                e.preventDefault()
+                const target = document.getElementById(h.id)
+                if (!target) return
+                const article = target.closest('article')
+                if (article) {
+                  const offset = target.offsetTop - article.offsetTop
+                  article.scrollTo({ top: offset, behavior: 'smooth' })
+                }
+              }}
               className="relative block py-[3px] transition-colors duration-150 border-l-2 font-mono overflow-hidden whitespace-nowrap"
               style={{
                 paddingLeft: `${8 + s.indent}px`,
@@ -250,7 +333,10 @@ function TableOfContents({ headings, activeId, dark }) {
 // ─── 阅读页 ────────────────────────────────────────────
 export default function PostDetail({ dark, setDark }) {
   const { id } = useParams()
+  const navigate = useNavigate()
   const [post, setPost] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
+  const [confirmDialog, setConfirmDialog] = useState(null)
   const [tree, setTree] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTocId, setActiveTocId] = useState('')
@@ -280,6 +366,29 @@ export default function PostDetail({ dark, setDark }) {
   useEffect(() => { localStorage.setItem('doublog_left_width', leftWidth) }, [leftWidth])
   useEffect(() => { localStorage.setItem('doublog_right_width', rightWidth) }, [rightWidth])
 
+  // 收集所有有子节点的 ID
+  const collectParentIds = (nodes) => {
+    const ids = []
+    for (const node of nodes) {
+      if (node.children && node.children.length > 0) {
+        ids.push(node.id, ...collectParentIds(node.children))
+      }
+    }
+    return ids
+  }
+
+  const expandAll = () => {
+    const ids = collectParentIds(tree)
+    const map = Object.fromEntries(ids.map(id => [id, true]))
+    setExpandedMap(map)
+    localStorage.setItem('doublog_tree_expanded', JSON.stringify(map))
+  }
+
+  const collapseAll = () => {
+    setExpandedMap({})
+    localStorage.setItem('doublog_tree_expanded', '{}')
+  }
+
   // 保存展开状态到 localStorage
   const toggleExpand = (nodeId) => {
     setExpandedMap(prev => {
@@ -288,6 +397,42 @@ export default function PostDetail({ dark, setDark }) {
       return next
     })
   }
+
+  // 右键菜单
+  const handleContextMenu = useCallback((e, node) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY, node })
+  }, [])
+
+  const doDeletePost = useCallback((node) => {
+    const auth = btoa('admin:lizy111A')
+    const host = window.location.hostname
+    fetch(`http://${host}:60100/api/posts/id/${node.id}?recursive=1`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Basic ${auth}` }
+    })
+      .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() })
+      .then(d => {
+        if (d && d.success) {
+          fetch(`http://${host}:60100/api/posts/tree`, {
+            headers: { 'Authorization': `Basic ${auth}` }
+          })
+            .then(r => r.json())
+            .then(d => { if (d.success) setTree(d.data) })
+          if (node.id === parseInt(id)) navigate('/')
+        }
+      })
+      .catch(console.error)
+  }, [id, navigate])
+
+  const handleDeletePost = useCallback((node) => {
+    setConfirmDialog({
+      title: '删除文章',
+      message: `确定删除「${node.title}」？将同时删除所有子文章。`,
+      onConfirm: () => { setConfirmDialog(null); doDeletePost(node) },
+      onCancel: () => setConfirmDialog(null),
+    })
+  }, [doDeletePost])
 
   // 拖拽排序回调
   const handleReorder = useCallback((parentId, newOrder) => {
@@ -356,26 +501,17 @@ export default function PostDetail({ dark, setDark }) {
     if (!post?.content) return { html: '', headings: [] }
 
     const rendered = md.render(post.content)
-
-    const headingRegex = /<h([1-6])\s*(?:id="([^"]*)")?[^>]*>([^<]+)<\/h\1>/g
-    const extracted = []
-    let match
-    while ((match = headingRegex.exec(rendered)) !== null) {
-      extracted.push({
-        level: parseInt(match[1]),
-        id: match[2] || `heading-${match.index}`,
-        text: match[3].trim()
-      })
-    }
-
-    let processed = rendered
+    const headings = []
     let idx = 0
-    processed = processed.replace(/<h([1-6])>([^<]+)<\/h\1>/g, (_, level, text) => {
+
+    const processed = rendered.replace(/<h([1-6])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>/g, (_, level, inner) => {
       const hId = `heading-${idx++}`
-      return `<h${level} id="${hId}">${text}</h${level}>`
+      const text = inner.replace(/<[^>]+>/g, '').trim()
+      headings.push({ level: parseInt(level), id: hId, text })
+      return `<h${level} id="${hId}">${inner}</h${level}>`
     })
 
-    return { html: processed, headings: extracted }
+    return { html: processed, headings }
   }, [post?.content])
 
   useEffect(() => {
@@ -458,6 +594,63 @@ export default function PostDetail({ dark, setDark }) {
     return () => { cancelled = true; clearTimeout(timer) }
   }, [html, dark])
 
+  // Lightbox: 点击图片放大查看
+  const [lightbox, setLightbox] = useState(null) // { src, alt }
+  const lightboxZoom = useRef(1)
+  const lightboxRef = useRef(null)
+  lightboxRef.current = setLightbox
+
+  // 事件委托：在容器上统一处理图片点击，不受 React 重渲染影响
+  useEffect(() => {
+    const handler = (e) => {
+      const img = e.target.closest('.prose-content img')
+      if (img) {
+        e.preventDefault()
+        lightboxRef.current({ src: img.src, alt: img.alt || '' })
+      }
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [])
+
+  const lightboxZoomIn = () => {
+    lightboxZoom.current = Math.min(lightboxZoom.current + 0.25, 5)
+    const el = document.getElementById('lightbox-img')
+    if (el) el.style.transform = `scale(${lightboxZoom.current})`
+  }
+
+  const lightboxZoomOut = () => {
+    lightboxZoom.current = Math.max(lightboxZoom.current - 0.25, 0.5)
+    const el = document.getElementById('lightbox-img')
+    if (el) el.style.transform = `scale(${lightboxZoom.current})`
+  }
+
+  const lightboxClose = () => {
+    setLightbox(null)
+    lightboxZoom.current = 1
+  }
+
+  useEffect(() => {
+    if (!lightbox) return
+    const handler = (e) => {
+      if (e.key === 'Escape') lightboxClose()
+      if (e.key === '+' || e.key === '=') lightboxZoomIn()
+      if (e.key === '-') lightboxZoomOut()
+    }
+    const wheelHandler = (e) => {
+      e.preventDefault()
+      if (e.deltaY < 0) lightboxZoomIn()
+      else lightboxZoomOut()
+    }
+    document.addEventListener('keydown', handler)
+    const overlay = document.getElementById('lightbox-overlay')
+    if (overlay) overlay.addEventListener('wheel', wheelHandler, { passive: false })
+    return () => {
+      document.removeEventListener('keydown', handler)
+      if (overlay) overlay.removeEventListener('wheel', wheelHandler)
+    }
+  }, [lightbox])
+
   const date = post ? new Date(post.created_at) : null
   const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''
 
@@ -526,9 +719,13 @@ export default function PostDetail({ dark, setDark }) {
       <div className="flex w-full">
         {/* Left Sidebar */}
         <aside className="hidden lg:block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-64px)] sticky top-16 overflow-hidden py-6 px-3" style={{ width: leftWidth }}>
-          <div className="mb-4 px-2 whitespace-nowrap overflow-hidden">
+          <div className="mb-4 px-2 flex items-center justify-between">
             <div className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest">
               文档
+            </div>
+            <div className="flex items-center gap-0.5">
+              <button onClick={expandAll} title="全部展开" className="w-5 h-5 flex items-center justify-center rounded text-[#999] dark:text-[#555] hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-[13px] leading-none">+</button>
+              <button onClick={collapseAll} title="全部折叠" className="w-5 h-5 flex items-center justify-center rounded text-[#999] dark:text-[#555] hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-colors text-[13px] leading-none">−</button>
             </div>
           </div>
           <div className="space-y-0.5 overflow-y-auto">
@@ -538,6 +735,7 @@ export default function PostDetail({ dark, setDark }) {
               expandedMap={expandedMap}
               onToggle={toggleExpand}
               onReorder={handleReorder}
+              onContextMenu={handleContextMenu}
             />
           </div>
         </aside>
@@ -561,6 +759,12 @@ export default function PostDetail({ dark, setDark }) {
                 )}
               </div>
               <div className="flex items-center gap-4 text-[12px]">
+                <Link
+                  to={`/post/${id}/edit`}
+                  className="inline-flex items-center gap-1 hover:text-[#111] dark:hover:text-[#eee] transition-colors"
+                >
+                  {Icons.pencil} 编辑
+                </Link>
                 <span className="inline-flex items-center gap-1">{Icons.eye} {post.view_count}</span>
                 <span className="inline-flex items-center gap-1">{Icons.clock} {dateStr}</span>
                 {post.children && post.children.length > 0 && (
@@ -616,6 +820,59 @@ export default function PostDetail({ dark, setDark }) {
           <TableOfContents headings={headings} activeId={activeTocId} dark={dark} />
         </aside>
       </div>
+
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={confirmDialog.onCancel}
+        />
+      )}
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={[
+            { label: '创建子文章', onClick: () => navigate(`/create?parent_id=${contextMenu.node.id}`) },
+            { label: '创建同级文章', onClick: () => {
+              const parentId = findNodeParentId(tree, contextMenu.node.id)
+              navigate(`/create?parent_id=${parentId || ''}`)
+            }},
+            { separator: true },
+            { label: '删除文章', danger: true, onClick: () => handleDeletePost(contextMenu.node) },
+          ]}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          id="lightbox-overlay"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85"
+          onClick={(e) => { if (e.target === e.currentTarget) lightboxClose() }}
+        >
+          {/* Toolbar */}
+          <div className="absolute top-4 right-4 flex items-center gap-1 z-[201]">
+            <button onClick={lightboxZoomIn} className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white text-lg transition-colors" title="放大">+</button>
+            <button onClick={lightboxZoomOut} className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white text-lg transition-colors" title="缩小">-</button>
+            <button onClick={lightboxClose} className="w-9 h-9 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white text-lg transition-colors ml-2" title="关闭">✕</button>
+          </div>
+          {/* Image */}
+          <img
+            id="lightbox-img"
+            src={lightbox.src}
+            alt={lightbox.alt}
+            className="max-w-[90vw] max-h-[90vh] object-contain transition-transform duration-200"
+            style={{ transform: `scale(${lightboxZoom.current})` }}
+            draggable={false}
+          />
+        </div>
+      )}
     </div>
   )
 }

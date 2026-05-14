@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import md from './md'
 import mermaid from 'mermaid'
 import { showRateLimitToast, isRateLimitResponse } from './toast'
@@ -44,39 +44,67 @@ const TOOLBAR_BTNS = [
   { icon: Icons.list, label: '列表', before: '- ', after: '' },
 ]
 
-export default function CreatePost({ dark, setDark }) {
+export default function EditPost({ dark, setDark }) {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const { id } = useParams()
   const [title, setTitle] = useState('')
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [summary, setSummary] = useState('')
-  const [parentId, setParentId] = useState(searchParams.get('parent_id') || '')
+  const [parentId, setParentId] = useState('')
   const [status, setStatus] = useState('published')
   const [tree, setTree] = useState([])
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
+  // 加载文章数据
   useEffect(() => {
     const auth = btoa('admin:lizy111A')
     const host = window.location.hostname
-    fetch(`http://${host}:60100/api/posts/tree`, {
-      headers: { 'Authorization': `Basic ${auth}` }
-    })
-      .then(r => {
+
+    // 并行加载文章详情和树结构
+    Promise.all([
+      fetch(`http://${host}:60100/api/posts/id/${id}`, {
+        headers: { 'Authorization': `Basic ${auth}` }
+      }).then(r => {
+        if (isRateLimitResponse(r)) { showRateLimitToast(); return null }
+        return r.json()
+      }),
+      fetch(`http://${host}:60100/api/posts/tree`, {
+        headers: { 'Authorization': `Basic ${auth}` }
+      }).then(r => {
         if (isRateLimitResponse(r)) { showRateLimitToast(); return null }
         return r.json()
       })
-      .then(d => { if (d && d.success) setTree(d.data || []) })
-      .catch(console.error)
-  }, [])
+    ])
+      .then(([postRes, treeRes]) => {
+        if (postRes && postRes.success) {
+          const p = postRes.data
+          setTitle(p.title || '')
+          setName(p.name || '')
+          setContent(p.content || '')
+          setSummary(p.summary || '')
+          setParentId(p.parent_id ? String(p.parent_id) : '')
+          setStatus(p.status || 'published')
+        } else {
+          setLoadError(postRes?.message || '文章不存在')
+        }
+        if (treeRes && treeRes.success) {
+          setTree(treeRes.data || [])
+        }
+      })
+      .catch(() => setLoadError('网络错误，请重试'))
+      .finally(() => setLoading(false))
+  }, [id])
 
   const flatPosts = useMemo(() => flattenTree(tree), [tree])
 
   const previewHtml = useMemo(() => md.render(content || ''), [content])
 
-  // Mermaid: 渲染预览区图表
+  // Mermaid 渲染
   useEffect(() => {
     if (!previewHtml) return
     mermaid.initialize({
@@ -198,27 +226,24 @@ export default function CreatePost({ dark, setDark }) {
     try {
       const auth = btoa('admin:lizy111A')
       const host = window.location.hostname
-      const res = await fetch(`http://${host}:60100/api/posts`, {
-        method: 'POST',
+      const res = await fetch(`http://${host}:60100/api/posts/id/${id}`, {
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Basic ${auth}`
         },
         body: JSON.stringify({
           title: title.trim(),
-          name: name.trim(),
           content,
           summary: summary.trim() || undefined,
-          parent_id: parentId ? parseInt(parentId) : undefined,
-          status,
         })
       })
       if (isRateLimitResponse(res)) { showRateLimitToast(); return }
       const data = await res.json()
       if (data.success) {
-        navigate(`/post/${data.data.id}`)
+        navigate(`/post/${id}`)
       } else {
-        setServerError(data.message || '创建失败')
+        setServerError(data.message || '保存失败')
       }
     } catch (err) {
       setServerError('网络错误，请重试')
@@ -241,6 +266,69 @@ export default function CreatePost({ dark, setDark }) {
       textarea.selectionEnd = start + before.length + selected.length
     }, 0)
   }
+
+  // 加载中
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
+        <nav className="sticky top-0 z-50 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
+          <div className="w-full px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-10">
+              <Link to="/" className="flex items-center gap-2.5 group">
+                <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
+                  <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
+                </div>
+                <span className="text-xl font-bold tracking-tight">DouBlog</span>
+              </Link>
+            </div>
+          </div>
+        </nav>
+        <main className="max-w-6xl mx-auto px-8 py-10">
+          <div className="animate-pulse space-y-4">
+            <div className="h-8 w-32 bg-black/5 dark:bg-white/5 rounded" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
+              <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
+              <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
+              <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
+            </div>
+            <div className="h-20 bg-black/5 dark:bg-white/5 rounded-lg" />
+            <div className="h-[500px] bg-black/5 dark:bg-white/5 rounded-xl" />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // 加载失败
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
+        <nav className="sticky top-0 z-50 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
+          <div className="w-full px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-10">
+              <Link to="/" className="flex items-center gap-2.5 group">
+                <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
+                  <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
+                </div>
+                <span className="text-xl font-bold tracking-tight">DouBlog</span>
+              </Link>
+            </div>
+          </div>
+        </nav>
+        <main className="max-w-6xl mx-auto px-8 py-10">
+          <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
+            {loadError}
+          </div>
+          <Link to="/" className="inline-block mt-4 text-sm text-[#666] dark:text-[#888] hover:text-[#111] dark:hover:text-[#eee] transition-colors">
+            &larr; 返回首页
+          </Link>
+        </main>
+      </div>
+    )
+  }
+
+  const parentTitle = flatPosts.find(p => String(p.id) === parentId)?.title || ''
 
   return (
     <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
@@ -270,7 +358,7 @@ export default function CreatePost({ dark, setDark }) {
       </nav>
 
       <main className="max-w-6xl mx-auto px-8 py-10">
-        <h1 className="text-2xl font-bold mb-8">新建文章</h1>
+        <h1 className="text-2xl font-bold mb-8">编辑文章</h1>
 
         {/* Meta Info */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
@@ -286,41 +374,31 @@ export default function CreatePost({ dark, setDark }) {
             {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title}</p>}
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">slug *</label>
+            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">slug</label>
             <input
               type="text"
               value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="例如: my-new-post"
-              className={`w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all ${errors.name ? 'border-red-400' : 'border-black/10 dark:border-white/10'}`}
+              disabled
+              className="w-full px-3 py-2 text-[14px] font-mono bg-black/[0.02] dark:bg-white/[0.03] border border-black/10 dark:border-white/10 rounded-lg text-[#999] dark:text-[#666] cursor-not-allowed"
             />
-            {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
           <div>
             <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">父文章</label>
-            <select
-              value={parentId}
-              onChange={e => setParentId(e.target.value)}
-              className="w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
-            >
-              <option value="">无（顶级文章）</option>
-              {flatPosts.map(p => (
-                <option key={p.id} value={p.id}>{' '.repeat(p.level * 4)}{'└ '}{p.title}</option>
-              ))}
-            </select>
+            <input
+              type="text"
+              value={parentTitle || '无（顶级文章）'}
+              disabled
+              className="w-full px-3 py-2 text-[14px] font-mono bg-black/[0.02] dark:bg-white/[0.03] border border-black/10 dark:border-white/10 rounded-lg text-[#999] dark:text-[#666] cursor-not-allowed"
+            />
           </div>
           <div>
             <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">状态</label>
-            <select
-              value={status}
-              onChange={e => setStatus(e.target.value)}
-              className="w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
-            >
-              <option value="published">已发布</option>
-              <option value="archived">归档</option>
-            </select>
+            <input
+              type="text"
+              value={status === 'published' ? '已发布' : '归档'}
+              disabled
+              className="w-full px-3 py-2 text-[14px] font-mono bg-black/[0.02] dark:bg-white/[0.03] border border-black/10 dark:border-white/10 rounded-lg text-[#999] dark:text-[#666] cursor-not-allowed"
+            />
           </div>
         </div>
         <div className="mb-4">
@@ -383,7 +461,7 @@ export default function CreatePost({ dark, setDark }) {
         {/* Actions */}
         <div className="flex items-center justify-between mt-6">
           <Link
-            to="/"
+            to={`/post/${id}`}
             className="px-5 py-2.5 text-[15px] text-[#666] dark:text-[#888] hover:text-[#111] dark:hover:text-[#eee] transition-colors"
           >
             取消
@@ -393,7 +471,7 @@ export default function CreatePost({ dark, setDark }) {
             disabled={submitting}
             className="px-6 py-2.5 bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] text-[15px] font-medium rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {submitting ? '发布中...' : '发布'}
+            {submitting ? '保存中...' : '保存'}
           </button>
         </div>
       </main>

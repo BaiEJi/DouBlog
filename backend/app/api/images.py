@@ -117,23 +117,38 @@ def upload_image():
     }, 200, '上传成功')
 
 
+@bp.route('/', methods=['GET'], defaults={'filepath': ''})
 @bp.route('/<path:filepath>', methods=['GET'])
-@auth.login_required
 def get_image(filepath):
     """
     获取图片
-    
+
     Path Parameters:
-        filepath: 图片路径
-    
+        filepath: 图片路径（可选，也可通过 query ?path= 传入）
+
+    Query Parameters:
+        path: 文件路径（用于绝对路径，避免 URL 编码问题）
+        type: 路径类型
+            - 不传: 从 images_dir (data/images/) 查找（默认，上传图片）
+            - relative: 从项目根目录查找
+            - absolute: 使用绝对文件系统路径
+
     Returns:
         图片文件流
     """
-    full_path = os.path.join(settings.images_dir, filepath)
-    
-    if not os.path.exists(full_path):
+    path_type = request.args.get('type', '')
+    raw_path = request.args.get('path', '') or filepath
+
+    if path_type == 'absolute':
+        full_path = raw_path
+    elif path_type == 'relative':
+        full_path = os.path.join(settings.base_dir, raw_path)
+    else:
+        full_path = os.path.join(settings.images_dir, raw_path)
+
+    if not os.path.isfile(full_path):
         return api_response(None, 404, '图片不存在')
-    
+
     return send_file(full_path)
 
 

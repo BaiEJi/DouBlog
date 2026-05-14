@@ -289,7 +289,40 @@ body {
   border-left: 3px solid #ddd;
   background: rgba(0,0,0,0.02);
   color: #666;
-  border-radius: 0 8px 8px 0;
+}
+
+.prose-content details {
+  margin: 1.5em 0;
+  padding: 0.8em 1.2em;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 8px;
+}
+.dark .prose-content details {
+  border-color: rgba(255,255,255,0.08);
+}
+.prose-content details[open] {
+  padding-bottom: 0;
+}
+.prose-content summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: #3b82f6;
+  padding: 0.3em 0;
+  list-style: none;
+}
+.prose-content summary::-webkit-details-marker { display: none; }
+.prose-content summary::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 0.5em;
+  font-size: 0.75em;
+  transition: transform 0.2s;
+}
+.prose-content details[open] summary::before {
+  transform: rotate(90deg);
+}
+.prose-content summary:hover {
+  color: #2563eb;
 }
 
 .dark .prose-content blockquote {
@@ -319,7 +352,6 @@ body {
   border-radius: 12px;
   overflow-x: auto;
   font-size: 0.9em;
-  line-height: 1.6;
 }
 
 .dark .prose-content pre {
@@ -363,8 +395,10 @@ body {
 
 .prose-content img {
   max-width: 100%;
+  height: auto;
   border-radius: 12px;
   margin: 1.5em 0;
+  cursor: pointer;
 }
 
 .prose-content hr {
@@ -375,6 +409,212 @@ body {
 
 .dark .prose-content hr {
   border-top-color: rgba(255,255,255,0.08);
+}
+
+/* ─── 任务列表 ──────────────────────────────────────────── */
+.prose-content .task-list-item {
+  list-style: none;
+  margin-left: -1.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.prose-content .task-list-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.prose-content .task-list-item input[type="checkbox"]:checked + span {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+.dark .prose-content .task-list-item input[type="checkbox"] {
+  accent-color: #60a5fa;
+}
+
+/* ─── 脚注 ──────────────────────────────────────────────── */
+.prose-content .footnotes {
+  margin-top: 2em;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  padding-top: 1em;
+  font-size: 0.9em;
+}
+.dark .prose-content .footnotes {
+  border-top-color: rgba(255,255,255,0.08);
+}
+.prose-content .footnotes ol {
+  padding-left: 1.5em;
+}
+
+/* ─── 容器提示框 ────────────────────────────────────────── */
+.prose-content .custom-block {
+  padding: 1em 1.2em;
+  border-radius: 8px;
+  margin: 1.5em 0;
+  border-left: 3px solid;
+}
+.prose-content .custom-block p:first-child { margin-top: 0; }
+.prose-content .custom-block p:last-child { margin-bottom: 0; }
+.prose-content .custom-block-tip { background: #eff6ff; border-color: #3b82f6; }
+.prose-content .custom-block-warning { background: #fffbeb; border-color: #f59e0b; }
+.prose-content .custom-block-danger { background: #fef2f2; border-color: #ef4444; }
+.prose-content .custom-block-info { background: #f0fdf4; border-color: #22c55e; }
+.dark .prose-content .custom-block-tip { background: rgba(59,130,246,0.1); }
+.dark .prose-content .custom-block-warning { background: rgba(245,158,11,0.1); }
+.dark .prose-content .custom-block-danger { background: rgba(239,68,68,0.1); }
+.dark .prose-content .custom-block-info { background: rgba(34,197,94,0.1); }
+
+/* ─── GitHub Alert ──────────────────────────────────────── */
+.prose-content blockquote.github-alert {
+  padding: 1em 1.2em;
+  border-radius: 8px;
+  border-left: 3px solid;
+  margin: 1.5em 0;
+}
+.prose-content blockquote.github-alert p { margin: 0; }
+.prose-content blockquote.github-alert-note { background: #f0f9ff; border-color: #0ea5e9; }
+.prose-content blockquote.github-alert-tip { background: #f0fdf4; border-color: #22c55e; }
+.prose-content blockquote.github-alert-warning { background: #fffbeb; border-color: #f59e0b; }
+.prose-content blockquote.github-alert-caution { background: #fef2f2; border-color: #ef4444; }
+.prose-content blockquote.github-alert-important { background: #eff6ff; border-color: #3b82f6; }
+.dark .prose-content blockquote.github-alert-note { background: rgba(14,165,233,0.1); }
+.dark .prose-content blockquote.github-alert-tip { background: rgba(34,197,94,0.1); }
+.dark .prose-content blockquote.github-alert-warning { background: rgba(245,158,11,0.1); }
+.dark .prose-content blockquote.github-alert-caution { background: rgba(239,68,68,0.1); }
+.dark .prose-content blockquote.github-alert-important { background: rgba(59,130,246,0.1); }
+
+/* ─── 高亮/标记文本 ──────────────────────────────────────── */
+.prose-content mark {
+  background: #fef08a;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+.dark .prose-content mark {
+  background: rgba(250,204,21,0.3);
+}
+
+/* ─── 插入文本 (ins) ─────────────────────────────────────── */
+.prose-content ins {
+  text-decoration: underline;
+  text-decoration-color: #22c55e;
+}
+
+/* ─── 缩写 (abbr) ────────────────────────────────────────── */
+.prose-content abbr {
+  text-decoration: underline dotted;
+  cursor: help;
+  position: relative;
+}
+.prose-content abbr::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: #111;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+  white-space: nowrap;
+  border-radius: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.prose-content abbr:hover::after {
+  opacity: 1;
+}
+.dark .prose-content abbr::after {
+  background: #eee;
+  color: #111;
+}
+
+/* ─── 定义列表 ──────────────────────────────────────────── */
+.prose-content dl {
+  margin: 1.2em 0;
+  padding: 0;
+}
+.prose-content dt {
+  font-weight: 600;
+  color: #111;
+  margin-top: 1em;
+}
+.prose-content dt:first-child {
+  margin-top: 0;
+}
+.dark .prose-content dt {
+  color: #eee;
+}
+.prose-content dd {
+  margin: 0.3em 0 0 1.5em;
+  color: #555;
+}
+.dark .prose-content dd {
+  color: #999;
+}
+
+/* ─── 图片标题 ──────────────────────────────────────────── */
+.prose-content .image-figure {
+  margin: 1.5em 0;
+  text-align: center;
+}
+.prose-content .image-figure img {
+  margin-bottom: 0.5em;
+}
+.prose-content .image-figure figcaption {
+  font-size: 0.85em;
+  color: #666;
+}
+.dark .prose-content .image-figure figcaption {
+  color: #999;
+}
+
+/* ─── 代码块行号/行高亮 ──────────────────────────────────── */
+.prose-content .code-line {
+  display: block;
+}
+.prose-content .line-num {
+  display: inline-block;
+  width: 2.5em;
+  text-align: right;
+  padding-right: 1em;
+  color: #999;
+  user-select: none;
+}
+.dark .prose-content .line-num {
+  color: #555;
+}
+.prose-content .line-highlight {
+  background: rgba(59,130,246,0.1);
+  margin: 0 -1.2em;
+  padding: 0 1.2em;
+  display: block;
+}
+.dark .prose-content .line-highlight {
+  background: rgba(59,130,246,0.15);
+}
+
+/* ─── 键盘按键 (kbd) ─────────────────────────────────────── */
+.prose-content kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 0.85em;
+  color: #333;
+  background: #f6f8fa;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 #d1d5db;
+}
+.dark .prose-content kbd {
+  color: #c9d1d9;
+  background: #161b22;
+  border-color: #30363d;
+  box-shadow: 0 1px 0 #30363d;
 }
 
 /* Dark mode transition */

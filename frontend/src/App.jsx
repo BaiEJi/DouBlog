@@ -4,6 +4,7 @@ import Fuse from 'fuse.js'
 import { showRateLimitToast, isRateLimitResponse } from './toast'
 import PostDetail from './PostDetail'
 import CreatePost from './CreatePost'
+import EditPost from './EditPost'
 
 // ─── Icons ──────────────────────────────────────────────
 const Icons = {
@@ -271,6 +272,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage dark={dark} setDark={toggleDark} />} />
         <Route path="/post/:id" element={<PostDetail dark={dark} setDark={toggleDark} />} />
+        <Route path="/post/:id/edit" element={<EditPost dark={dark} setDark={toggleDark} />} />
         <Route path="/create" element={<CreatePost dark={dark} setDark={toggleDark} />} />
       </Routes>
     </BrowserRouter>

@@ -757,22 +757,34 @@ def delete_post_by_id(post_id):
         return api_response(None, 404, '文章不存在')
 
     # 从父节点的 children_order 中移除
-    if post.parent_id:
-        parent = session.query(Post).filter(Post.id == post.parent_id).first()
-        if parent:
-            remove_child(parent, post.id)
+    parent_id = post.parent_id if post.parent_id is not None else ROOT_ID
+    parent = session.query(Post).filter(Post.id == parent_id).first()
+    if parent:
+        remove_child(parent, post.id)
 
-    # 子文章挂到虚拟根下
-    children = session.query(Post).filter(Post.parent_id == post.id).all()
-    root_node = session.query(Post).filter(Post.id == ROOT_ID).first()
-    for child in children:
-        child.parent_id = ROOT_ID
-        child.level = 0
-        if root_node:
-            append_child(root_node, child.id)
+    recursive = request.args.get('recursive') == '1'
+
+    if recursive:
+        # 递归删除所有子孙文章
+        def delete_descendants(pid):
+            children = session.query(Post).filter(Post.parent_id == pid).all()
+            for child in children:
+                delete_descendants(child.id)
+                session.delete(child)
+                delete_view_count(child.id)
+        delete_descendants(post.id)
+    else:
+        # 子文章挂到虚拟根下
+        children = session.query(Post).filter(Post.parent_id == post.id).all()
+        root_node = session.query(Post).filter(Post.id == ROOT_ID).first()
+        for child in children:
+            child.parent_id = ROOT_ID
+            child.level = 0
+            if root_node:
+                append_child(root_node, child.id)
 
     session.delete(post)
-    log_action('delete', 'post', post_id, {'title': post.title})
+    log_action('delete', 'post', post_id, {'title': post.title, 'recursive': recursive})
     session.commit()
 
     delete_view_count(post_id)
