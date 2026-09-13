@@ -8,3 +8,7 @@ dist
 *.log
 *.db
 *.db.backup-*
+backend/app/_reload_stamp.py
+
+venv/
+data/

@@ -1,16 +1,20 @@
-# React + Vite
+# DouBlog Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19 + Vite 8 + Tailwind CSS 4 单页应用，端口 **60101**。
 
-Currently, two official plugins are available:
+完整的架构说明、渲染管线、页面组件与已知限制见项目根目录 **[../frontend.md](../frontend.md)**；API 契约见 **[../api.md](../api.md)**；仓库整体说明见 **[../README.md](../README.md)**。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 常用命令
 
-## React Compiler
+```bash
+npm install        # 安装依赖
+npm run dev        # 开发服务器（60101，热更新）
+npm run build      # 生产构建 → dist/
+npm run lint       # ESLint
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 快速上手
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- 所有后端请求必须走 `src/api.js`（项目内唯一的凭据/端口定义处）
+- Markdown 渲染统一走 `src/md.js`，勿在页面里自建 markdown-it 实例
+- 验收门槛：`npm run build` 零报错 + 首页/详情/新建/编辑四页浏览器走查

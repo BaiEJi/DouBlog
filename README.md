@@ -1,603 +1,238 @@
 <p align="center">
   <h1 align="center">DouBlog</h1>
-  <p align="center">一款 VS Code 风格的个人博客 / 知识库系统，支持无限层级树形文章结构与 Markdown 编辑</p>
+  <p align="center">前后端分离的单用户博客 / 知识库系统，树形文章结构 + 全功能 Markdown 渲染</p>
 </p>
 
 ---
 
-## 目录
+## 文档索引
 
-- [项目简介](#项目简介)
-- [功能特性](#功能特性)
-- [技术栈](#技术栈)
-- [项目结构](#项目结构)
-- [快速开始](#快速开始)
-- [配置说明](#配置说明)
-- [API 接口文档](#api-接口文档)
-- [数据库设计](#数据库设计)
-- [前端架构](#前端架构)
-- [主题系统](#主题系统)
-- [部署](#部署)
-- [开发指南](#开发指南)
-- [测试](#测试)
-- [License](#license)
+| 文档 | 内容 |
+|---|---|
+| [AGENTS.md](AGENTS.md) | **AI 代理/协作者工作指南**：命令、验证清单、**文档同步规则**（改代码必读） |
+| [api.md](api.md) | HTTP API 契约：认证、文章/日志/图片接口、错误码、实测示例 |
+| [backend.md](backend.md) | 后端架构：数据模型、树形设计、双数据库切换、中间件、测试 |
+| [frontend.md](frontend.md) | 前端架构：API 层、Markdown 渲染管线、页面组件、构建部署 |
+| [backend-prompt.md](backend-prompt.md) | ⚠️ 历史存档（开发期 AI 提示词，不随代码更新） |
 
----
+> **贡献约定**：修改代码时按 [AGENTS.md](AGENTS.md) 的"文档同步规则"在同一批改动中更新对应文档。
 
 ## 项目简介
 
-DouBlog 是一个前后端分离的单用户个人博客系统，采用 **VS Code Dark** 风格的 UI 设计。核心特色是支持**无限深度的树形文章结构**，可以像文件目录一样组织文章，非常适合作为知识库、技术笔记或文档系统使用。
+DouBlog 是一个单用户个人博客系统：
 
-文章内容使用 Markdown 编写，内置功能完善的 Markdown 编辑器，支持实时预览、工具栏操作、语法高亮和图片上传。
-
----
-
-## 功能特性
-
-### 文章管理
-- **树形结构**：文章支持无限层级的父子关系，在侧边栏以可折叠树形展示
-- **Markdown 编辑**：集成 md-editor-v3 编辑器，支持实时预览、工具栏、语法高亮、快捷键
-- **图片上传**：支持 PNG / JPG / JPEG / GIF / WebP 格式，最大 10MB，按文章分类存储
-- **文章属性**：标题、别名（slug）、摘要、标签、置顶、排序、状态（发布/归档）
-- **浏览计数**：自动统计文章阅读量
-- **分页查询**：支持按页码、父级、状态、关键词筛选
-- **非级联删除**：删除父文章时，子文章自动提升为顶级文章
-
-### 用户与认证
-- **HTTP Basic Auth** 认证机制，每次请求携带认证头
-- **路由守卫**：未登录用户自动跳转到登录页
-- **认证状态持久化**：凭据存储在 localStorage，刷新不丢失
-
-### UI / UX
-- **VS Code Dark 风格**：灵感来自 VS Code 的深色配色方案
-- **明暗主题切换**：支持 Dark / Light 主题，自动检测系统偏好
-- **响应式布局**：固定宽度侧边栏 + 自适应内容区域
-- **自定义滚动条**：与整体风格统一的滚动条样式
-- **Toast 通知**：使用 Sonner 组件显示操作反馈
-
-### 开发体验
-- **Mock API**：前端内置模拟数据，可脱离后端独立开发
-- **API 代理**：Vite 开发服务器自动代理 API 请求到后端
-- **Shell 管理脚本**：一键启停后端和前端服务
-
----
+- **后端** Flask 3，提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；支持 **SQLite / PostgreSQL 双数据库一键切换**（只换连接读新数据，不迁移，随时可切回）
+- **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
+- **多知识库**：文章按知识库分组隔离（首页切换器一键新建/切换，`/?ws=<id>` 记忆当前库）
+- **全文搜索**：关键词匹配标题/摘要/英文名/正文，跨知识库，`Ctrl+K` 快速聚焦
+- **双链 `[[wiki]]` + 反向链接**：`[[英文名]]`/`[[标题]]`/`[[名|显示文字]]` 三种写法，文末自动聚合"谁链接了我"
+- **图片上传**：编辑器内粘贴/拖拽/按钮上传（自动插入 Markdown），10MB 上限 + 类型白名单
+- **最近浏览**：首页按最近阅读横条快速回访（跨知识库，hover 预取不虚增浏览量）
+- **导出备份**：单篇页“导出”按钮下载该文 `.md`（frontmatter + 图片 URL 绝对化）；管理页一键导出全库 Markdown + 图片 zip（树形目录 + frontmatter，Obsidian 可直接导入）
+- **编辑器**：快捷键（`Ctrl+S` 保存、`Ctrl+B/I` 加粗斜体、`Ctrl+K` 链接、`Tab` 缩进）、预览同步滚动、表格/图表/代码块模板
+- **移动端适配**：知识库切换、阅读、搜索在手机可用（导航自适应换行）
+- 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
+- 单用户 HTTP Basic Auth 认证，所有 API 需携带凭据
 
 ## 技术栈
 
-| 层级 | 技术 | 版本 |
-|---|---|---|
-| **后端框架** | Flask | 3.0 |
-| **数据库** | SQLite (SQLAlchemy ORM) | 2.0 |
-| **认证** | Flask-HTTPAuth (Basic Auth) | 4.8 |
-| **跨域** | Flask-CORS | 4.0 |
-| **图像处理** | Pillow | 10.2 |
-| **前端框架** | Vue 3 (Composition API) | 3.5 |
-| **编程语言** | TypeScript | 6.0 |
-| **构建工具** | Vite | 8 |
-| **CSS 框架** | Tailwind CSS | 4.2 |
-| **UI 组件库** | shadcn-vue (reka-ui) | — |
-| **图标库** | lucide-vue-next | 1.0 |
-| **Markdown 编辑器** | md-editor-v3 | 6.4 |
-| **状态管理** | Pinia | 3.0 |
-| **HTTP 客户端** | Axios | 1.14 |
-| **Toast 通知** | vue-sonner | 2.0 |
-| **工具库** | @vueuse/core | 14.2 |
-
----
+| 层级 | 技术 |
+|---|---|
+| 后端框架 | Flask 3.0 |
+| ORM / 数据库 | Flask-SQLAlchemy 3.1 / SQLite（WAL 模式） |
+| 认证 | Flask-HTTPAuth（Basic Auth） |
+| 数据库 | SQLite（WAL，默认）/ PostgreSQL（psycopg2，可切换） |
+| 前端框架 | React 19 + React Router 7 |
+| 构建 | Vite 8 |
+| 样式 | Tailwind CSS 4 |
+| Markdown | markdown-it 14 + 12 个插件 |
+| 数学公式 | KaTeX（`$...$` / `$$...$$`） |
+| 图表 | Mermaid 11 |
+| 代码高亮 | highlight.js（common 常用语言子集） |
+| 搜索 | Fuse.js（客户端模糊搜索） |
+| 拖拽排序 | dnd-kit |
 
 ## 项目结构
 
 ```
 DouBlog/
-├── .gitignore
 ├── README.md
 ├── api.md                    # API 协议文档
 ├── backend.md                # 后端设计文档
-├── frontend.md               # 前端设计文档
 ├── backend-prompt.md         # 后端 AI 开发提示词
-├── frontend-prompt.md        # 前端 AI 开发提示词
-├── liantiao.md               # 前后端联调测试指南
-│
 ├── backend/                  # 后端 (Flask)
-│   ├── run.py                # 启动入口
-│   ├── requirements.txt      # Python 依赖
+│   ├── run.py                # 启动入口 (端口 60100)
+│   ├── requirements.txt
+│   ├── migrate_children_order.py  # 旧数据迁移脚本（虚拟根节点）
 │   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py           # Flask 应用工厂
-│   │   ├── config.py         # 配置类
-│   │   ├── database.py       # 数据库初始化
-│   │   ├── models/
-│   │   │   └── models.py     # 数据模型 (Post, Image)
-│   │   ├── api/
-│   │   │   ├── __init__.py   # 蓝图注册
-│   │   │   ├── auth.py       # 认证接口
-│   │   │   ├── posts.py      # 文章接口
-│   │   │   └── images.py     # 图片接口
-│   │   └── utils/
-│   │       └── response.py   # 统一响应格式
-│   └── tests/
-│       ├── conftest.py       # 测试配置与 Fixtures
-│       ├── test_auth.py      # 认证测试 (6 个用例)
-│       └── test_posts.py     # 文章测试 (13 个用例)
-│
-├── frontend/                 # 前端 (Vue 3 + TypeScript)
-│   ├── index.html            # HTML 入口
-│   ├── package.json          # 依赖配置
-│   ├── vite.config.ts        # Vite 配置 (代理/Mock)
-│   ├── tailwind.config.js    # Tailwind 自定义主题
-│   ├── tsconfig.json         # TypeScript 配置
-│   ├── components.json       # shadcn-vue 配置
-│   ├── public/
-│   │   ├── favicon.svg
-│   │   └── icons.svg
-│   ├── mock/                 # Mock 数据
-│   │   ├── index.ts          # Mock 入口
-│   │   ├── auth.ts           # 认证 Mock
-│   │   ├── post.ts           # 文章 Mock (5 篇示例文章)
-│   │   └── image.ts          # 图片 Mock
+│   │   ├── main.py           # 应用工厂 + gzip 压缩 + 全局异常
+│   │   ├── config.py         # 配置
+│   │   ├── db.py             # 双后端初始化(SQLite/PG) + db_config.json + 虚拟根播种
+│   │   ├── models/models.py  # Post / AuditLog 模型
+│   │   ├── api/              # auth / posts / images / admin / workspaces / export 蓝图
+│   │   └── utils/            # response / tree_order / view_count / audit
+│   └── tests/                # pytest（自包含,PG 集成测试可选依赖 pgserver）
+├── frontend/                 # 前端 (React)
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js        # 端口 60101
 │   └── src/
-│       ├── main.ts           # 应用入口
-│       ├── App.vue           # 根组件
-│       ├── style.css         # 全局样式
-│       ├── router/
-│       │   └── index.ts      # 路由配置 + 守卫
-│       ├── stores/           # Pinia 状态管理
-│       │   ├── auth.ts       #   认证状态
-│       │   ├── post.ts       #   文章状态
-│       │   └── theme.ts      #   主题状态
-│       ├── services/         # API 服务层
-│       │   ├── api.ts        #   Axios 实例 + 拦截器
-│       │   ├── auth.ts       #   认证 API
-│       │   ├── post.ts       #   文章 API
-│       │   └── image.ts      #   图片 API
-│       ├── types/            # TypeScript 类型定义
-│       │   ├── api.ts        #   通用 API 响应类型
-│       │   ├── post.ts       #   文章相关类型
-│       │   └── user.ts       #   用户类型
-│       ├── views/            # 页面组件
-│       │   ├── Login.vue     #   登录页
-│       │   ├── Home.vue      #   首页
-│       │   ├── PostNew.vue   #   新建文章
-│       │   ├── PostDetail.vue#   文章详情
-│       │   ├── PostEdit.vue  #   编辑文章
-│       │   └── NotFound.vue  #   404 页面
-│       ├── components/       # 通用组件
-│       │   ├── layout/       #   布局组件
-│       │   │   ├── Layout.vue        # 主布局
-│       │   │   ├── Header.vue        # 顶部栏
-│       │   │   ├── Sidebar.vue       # 侧边栏
-│       │   │   └── ThemeToggle.vue   # 主题切换
-│       │   ├── post/         #   文章组件
-│       │   │   ├── PostTree.vue      # 文章树容器
-│       │   │   ├── PostTreeItem.vue  # 文章树节点（递归）
-│       │   │   ├── PostCard.vue      # 文章卡片
-│       │   │   └── MarkdownRenderer.vue # Markdown 渲染
-│       │   ├── editor/       #   编辑器组件
-│       │   │   └── MarkdownEditor.vue  # Markdown 编辑器
-│       │   └── ui/           #   shadcn-vue UI 组件
-│       │       ├── button/
-│       │       ├── card/
-│       │       ├── input/
-│       │       ├── select/
-│       │       ├── dialog/
-│       │       ├── dropdown-menu/
-│       │       └── sonner/
-│       ├── lib/
-│       │   └── utils.ts      # cn() 工具函数
-│       ├── utils/
-│       │   ├── format.ts     # 格式化工具
-│       │   └── storage.ts    # localStorage 封装
-│       └── assets/
-│           ├── hero.png
-│           └── styles/
-│               ├── index.css     # 全局样式入口
-│               └── variables.css # CSS 变量（VS Code 风格）
-│
-├── data/                     # 运行时数据（已 gitignore）
+│       ├── main.jsx          # 入口
+│       ├── App.jsx           # 首页 / 归档 / 布局 / 搜索
+│       ├── PostDetail.jsx    # 详情页（目录 / 树 / 拖拽 / lightbox）
+│       ├── CreatePost.jsx    # 新建（实时预览）
+│       ├── EditPost.jsx      # 编辑
+│       ├── api.js            # 统一 API 客户端（认证 / 分页拉取）
+│       ├── md.js             # markdown-it 配置与定制渲染 + 双链 + mermaid 统一入口
+│       ├── useEditorShortcuts.js    # 编辑器快捷键
+│       ├── useEditorEnhancements.js # 图片上传/同步滚动/块模板
+│       └── index.css
+├── data/                     # 运行时数据（gitignore）
 │   ├── blog.db               # SQLite 数据库
-│   └── images/               # 上传图片存储
-│
-└── shell/                    # 管理脚本
-    ├── backend/
-    │   ├── start.sh          # 启动后端
-    │   ├── stop.sh           # 停止后端
-    │   ├── restart.sh        # 重启后端
-    │   └── status.sh         # 查看后端状态
-    └── frontend/
-        ├── start.sh          # 启动前端
-        ├── stop.sh           # 停止前端
-        ├── restart.sh        # 重启前端
-        └── status.sh         # 查看前端状态
+│   └── images/               # 图片文件
+└── shell/                    # 管理脚本（Linux/macOS/Git Bash）
 ```
-
----
 
 ## 快速开始
 
 ### 环境要求
 
-- **Python** 3.10+
-- **Node.js** 18+
-- **npm** 9+
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL（可选）：默认使用 SQLite 零配置；需要 PG 时在管理页一键切换
 
-### 1. 克隆项目
-
-```bash
-git clone https://github.com/BaiEJi/DouBlog.git
-cd DouBlog
-```
-
-### 2. 启动后端
+### 1. 启动后端（端口 60100）
 
 ```bash
 cd backend
-
-# 安装依赖（建议使用虚拟环境）
 python -m venv venv
-source venv/bin/activate   # Linux/macOS
-# venv\Scripts\activate    # Windows
+venv/Scripts/activate        # Windows
+# source venv/bin/activate   # Linux/macOS
 pip install -r requirements.txt
-
-# 启动服务（端口 60100）
 python run.py
 ```
 
-或使用管理脚本：
+首次启动自动建表、播种虚拟根节点（id=0）、创建"默认知识库"并把存量文章归入其中（幂等迁移）。
 
-```bash
-bash shell/backend/start.sh
-```
-
-### 3. 启动前端
+### 2. 启动前端（端口 60101）
 
 ```bash
 cd frontend
-
-# 安装依赖
 npm install
-
-# 启动开发服务器（端口 60101）
 npm run dev
 ```
 
-或使用管理脚本：
+### 3. 访问
+
+打开 **http://localhost:60101**
+
+默认凭据（Basic Auth）：`admin` / `lizy111A`
+
+> 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 已放开）。
+> 凭据集中定义在 `frontend/src/api.js`，修改一处即可全局生效。
+
+## 生产部署
+
+开发脚本只适合本机调试；对外提供服务请使用构建产物：
 
 ```bash
-bash shell/frontend/start.sh
+cd frontend
+npm run build               # 产物在 frontend/dist/
+npx vite preview --host 0.0.0.0 --port 60101   # 或交给 nginx 等静态服务器
 ```
 
-### 4. 访问应用
+或使用管理脚本（自动定位项目目录）：
 
-打开浏览器访问 **http://localhost:60101**
+```bash
+bash shell/backend/start.sh          # 启动后端
+bash shell/frontend/start.sh         # 构建 + preview 启动前端（生产模式）
+bash shell/frontend/start.sh dev     # 前端开发模式（Vite dev server）
+bash shell/backend/status.sh         # 查看状态
+bash shell/backend/stop.sh           # 停止
+```
 
-默认登录凭据：
-| 字段 | 值 |
-|---|---|
-| 用户名 | `admin` |
-| 密码 | `lizy111A` |
-
-> **提示**：前端 Mock API 默认开启，启动前端后即可使用模拟数据。如需连接真实后端，请确保后端服务已启动。
-
----
+> 注意：`backend/app/config.py` 中 `debug=True` 与 `host='0.0.0.0'` 仅供开发使用，公网部署务必关闭 debug 并收敛监听地址与 CORS。
 
 ## 配置说明
 
-### 后端配置 (`backend/app/config.py`)
+### 后端（`backend/app/config.py`）
 
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
-| `host` | `0.0.0.0` | 监听地址 |
-| `port` | `60100` | 监听端口 |
-| `debug` | `True` | 调试模式（打印 SQL） |
-| `secret_key` | `dev-secret-key-change-in-production` | Flask 密钥 |
+| `host` / `port` | `0.0.0.0` / `60100` | 监听地址 |
+| `debug` | `True` | 调试模式（生产必须关闭） |
 | `cors_origins` | `*` | CORS 允许来源 |
-| `auth_enabled` | `True` | 是否启用认证（测试时可关闭） |
-| `auth_username` | `admin` | 登录用户名 |
-| `auth_password` | `lizy111A` | 登录密码 |
-| `data_dir` | `<项目根目录>/data` | 数据目录 |
-| `images_dir` | `<data_dir>/images` | 图片存储目录 |
-| `max_page_size` | `100` | 最大分页大小 |
-| `default_page_size` | `20` | 默认分页大小 |
+| `auth_enabled` | `True` | 是否启用认证 |
+| `auth_username` / `auth_password` | `admin` / `lizy111A` | 登录凭据 |
+| `database_backend` | `sqlite` | 默认后端（运行时以 `data/db_config.json` 为准） |
+| `postgres_host/port/user/password/dbname` | `localhost/5432/postgres//doublog` | PG 连接默认值 |
+| `data_dir` / `images_dir` | `<根目录>/data[/images]` | 数据与图片目录 |
+| `max_page_size` | `100` | 分页上限 |
 
-### 前端配置 (`frontend/vite.config.ts`)
+### 前端
 
-| 配置项 | 值 | 说明 |
+- 端口：`vite.config.js` 中 `server.port = 60101`
+- 后端地址与凭据：`src/api.js`
+
+## API 概览
+
+统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`；全部 `/api/*` 接口需 Basic Auth；JSON 响应超过 1KB 自动 gzip。
+
+| 方法 | 路径 | 说明 |
 |---|---|---|
-| `server.port` | `60101` | 开发服务器端口 |
-| `server.proxy./api.target` | `http://localhost:60100` | API 代理目标 |
-
----
-
-## API 接口文档
-
-### 统一响应格式
-
-所有接口返回统一的 JSON 格式：
-
-```json
-{
-  "success": true,
-  "code": 200,
-  "message": "操作成功",
-  "data": { ... }
-}
-```
-
-### 认证接口
-
-| 方法 | 路径 | 认证 | 说明 |
-|---|---|---|---|
-| `POST` | `/api/auth/login` | Basic Auth | 验证凭据，返回用户名 |
-| `GET` | `/api/auth/check` | Basic Auth | 检查认证是否有效 |
-
-### 文章接口
-
-| 方法 | 路径 | 认证 | 说明 |
-|---|---|---|---|
-| `GET` | `/api/posts` | Basic Auth | 文章列表（分页） |
-| `GET` | `/api/posts/tree` | Basic Auth | 文章树形结构 |
-| `GET` | `/api/posts/<slug>` | Basic Auth | 文章详情（自增浏览量） |
-| `POST` | `/api/posts` | Basic Auth | 创建文章 |
-| `PUT` | `/api/posts/<slug>` | Basic Auth | 更新文章 |
-| `DELETE` | `/api/posts/<slug>` | Basic Auth | 删除文章 |
-
-#### 文章列表查询参数
-
-| 参数 | 类型 | 说明 |
-|---|---|---|
-| `page` | int | 页码（默认 1） |
-| `page_size` | int | 每页数量（默认 20，最大 100） |
-| `parent_id` | int | 按父级文章筛选 |
-| `status` | string | 按状态筛选（published / archived） |
-| `keyword` | string | 按关键词搜索 |
-
-#### 排序规则
-
-`is_top` DESC → `order` ASC → `created_at` DESC
-
-#### 创建文章参数
-
-```json
-{
-  "title": "文章标题",
-  "slug": "article-slug",
-  "content": "Markdown 内容",
-  "summary": "文章摘要",
-  "parent_id": null,
-  "order": 0,
-  "status": "published",
-  "is_top": false,
-  "tags": ["标签1", "标签2"]
-}
-```
-
-#### Slug 路径规则
-
-- 顶级文章：slug 直接作为路径（如 `getting-started`）
-- 子级文章：自动拼接父级路径（如 `java/java8-features`）
-
-### 图片接口
-
-| 方法 | 路径 | 认证 | 说明 |
-|---|---|---|---|
-| `POST` | `/api/images/upload` | Basic Auth | 上传图片 |
-| `GET` | `/api/images/<filepath>` | Basic Auth | 获取图片 |
-| `DELETE` | `/api/images/<filepath>` | Basic Auth | 删除图片 |
-
-#### 图片上传规格
-
-- **字段**：`file`（必填），`post_slug`（可选）
-- **格式**：PNG, JPG, JPEG, GIF, WebP
-- **大小**：最大 10MB
-- **命名**：`{时间戳}_{8位UUID}.{扩展名}`
-- **存储**：按文章 slug 分目录组织
-
-### 健康检查
-
-| 方法 | 路径 | 认证 | 说明 |
-|---|---|---|---|
-| `GET` | `/` | 无 | 欢迎信息（含版本号） |
-| `GET` | `/health` | 无 | 健康检查 |
-
----
-
-## 数据库设计
-
-### posts 表（文章）
-
-| 字段 | 类型 | 约束 | 说明 |
-|---|---|---|---|
-| `id` | Integer | PK, 自增 | 主键 |
-| `title` | String(200) | NOT NULL | 标题 |
-| `slug` | String(200) | UNIQUE, NOT NULL, 索引 | URL 别名 |
-| `content` | Text | NOT NULL | Markdown 内容 |
-| `summary` | Text | 可空 | 摘要 |
-| `parent_id` | Integer | FK → posts.id (SET NULL), 索引 | 父文章 ID |
-| `level` | Integer | 默认 0 | 层级深度 |
-| `order` | Integer | 默认 0 | 同级排序 |
-| `author` | String(50) | 默认 'admin' | 作者 |
-| `status` | String(20) | 默认 'published', 索引 | 状态 |
-| `is_top` | Boolean | 默认 False | 是否置顶 |
-| `view_count` | Integer | 默认 0 | 浏览量 |
-| `tags` | Text | 可空 | 标签（JSON 数组） |
-| `meta_data` | Text | 可空 | 元数据（JSON） |
-| `created_at` | DateTime(tz) | server_default | 创建时间 |
-| `updated_at` | DateTime(tz) | server_default, onupdate | 更新时间 |
-
-**自引用关系**：`parent` → `Post`（remote_side=id），反向引用 `children`
-
-### images 表（图片）
-
-| 字段 | 类型 | 约束 | 说明 |
-|---|---|---|---|
-| `id` | Integer | PK, 自增 | 主键 |
-| `post_id` | Integer | FK → posts.id (SET NULL), 可空 | 关联文章 |
-| `filename` | String(255) | NOT NULL | 文件名 |
-| `filepath` | String(500) | NOT NULL | 存储路径 |
-| `filesize` | Integer | 可空 | 文件大小（字节） |
-| `created_at` | DateTime(tz) | server_default | 上传时间 |
-
----
-
-## 前端架构
-
-### 路由
-
-| 路径 | 组件 | 需认证 | 说明 |
-|---|---|---|---|
-| `/login` | Login.vue | 否 | 登录页 |
-| `/` | Home.vue | 是 | 首页 |
-| `/post/new` | PostNew.vue | 是 | 新建文章 |
-| `/post/:slug` | PostDetail.vue | 是 | 文章详情 |
-| `/post/:slug/edit` | PostEdit.vue | 是 | 编辑文章 |
-
-**路由守卫**：`beforeEach` 检查 `authStore.isAuthenticated`，未认证跳转 `/login`，已认证访问 `/login` 自动跳转首页。
-
-### 状态管理（Pinia）
-
-| Store | 状态 | 说明 |
-|---|---|---|
-| `auth` | `username`, `auth` | Base64 编码凭据，持久化到 localStorage |
-| `post` | `posts[]`, `currentPost`, `postTree[]`, `loading` | 文章数据，变更后自动刷新树 |
-| `theme` | `isDark` | 主题状态，持久化到 localStorage，监听系统偏好 |
-
-### API 层
-
-- **Axios 实例**：baseURL `/api`，超时 10 秒
-- **请求拦截器**：自动添加 `Authorization: Basic {auth}` 头
-- **响应拦截器**：解包 `response.data`，401 时清除认证并跳转登录页
-
----
-
-## 主题系统
-
-采用 CSS 变量实现的 VS Code 风格双主题系统。
-
-### CSS 变量
-
-在 `frontend/src/assets/styles/variables.css` 中定义了完整的颜色体系：
-
-| 变量类别 | 示例 | 用途 |
-|---|---|---|
-| 背景 | `--bg-primary`, `--bg-secondary`, `--bg-tertiary` | 三级背景色 |
-| 文字 | `--text-primary`, `--text-secondary`, `--text-muted` | 三级文字色 |
-| 边框 | `--border` | 统一边框色 |
-| 强调 | `--accent` | 交互元素高亮 |
-
-### 主题切换
-
-- 点击顶部栏的太阳/月亮图标切换
-- 选择持久化到 `localStorage`
-- 首次访问自动检测系统 `prefers-color-scheme`
-- 通过切换 `<html>` 元素的 `dark` class 实现
-
----
-
-## 部署
-
-### 生产构建
-
-```bash
-cd frontend
-npm run build    # 输出到 dist/ 目录
-npm run preview  # 预览构建结果
-```
-
-### 使用管理脚本
-
-```bash
-# 启动服务
-bash shell/backend/start.sh
-bash shell/frontend/start.sh
-
-# 查看状态（PID、CPU、内存、运行时间）
-bash shell/backend/status.sh
-bash shell/frontend/status.sh
-
-# 重启服务
-bash shell/backend/restart.sh
-bash shell/frontend/restart.sh
-
-# 停止服务
-bash shell/backend/stop.sh
-bash shell/frontend/stop.sh
-```
-
----
-
-## 开发指南
-
-### 前端独立开发（Mock 模式）
-
-前端项目内置了 Mock API（通过 `vite-plugin-mock`），无需启动后端即可开发：
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Mock 数据包含 5 篇示例文章，形成如下树形结构：
-
-```
-├── 入门指南
-│   ├── 快速开始
-│   └── 安装配置
-└── 进阶教程
-    └── 最佳实践
-```
-
-### 添加新的 API 接口
-
-**后端**：
-
-1. 在 `backend/app/api/` 下创建或编辑蓝图文件
-2. 在 `backend/app/api/__init__.py` 中注册蓝图
-3. 在 `backend/tests/` 中添加对应测试
-
-**前端**：
-
-1. 在 `frontend/src/types/` 中定义 TypeScript 类型
-2. 在 `frontend/src/services/` 中添加 API 调用
-3. 在 `frontend/src/stores/` 中管理状态
-4. 在 `frontend/src/views/` 中创建页面
-5. 在 `frontend/src/router/index.ts` 中注册路由
-6. （可选）在 `frontend/mock/` 中添加 Mock 数据
-
-### 添加 shadcn-vue 组件
-
-```bash
-cd frontend
-npx shadcn-vue@latest add <component-name>
-```
-
----
+| `POST` | `/api/auth/login` | 登录校验 |
+| `GET` | `/api/auth/check` | 检查认证状态 |
+| `GET` | `/api/posts` | 文章列表（分页；**不含正文**；`?workspace_id=` 按库筛选） |
+| `GET` | `/api/posts/tree` | 文章树（**不含正文**，按知识库返回，缺省 = 默认库） |
+| `GET` | `/api/posts/id/<id>` | 详情（含正文，自增浏览量；`?no_view=1` 预取不计） |
+| `GET` | `/api/posts/recent?limit=` | 最近浏览（跨库，按时间倒序） |
+| `GET` | `/api/posts/id/<id>/backlinks` | 反向链接（同库内 `[[双链]]` 指向该文章的列表） |
+| `GET` | `/api/posts/slug/<name>` | 按英文名查详情 |
+| `GET` | `/api/posts/path/<slug>` | 按路径查详情（兼容旧版） |
+| `POST` | `/api/posts` | 创建 |
+| `PUT` | `/api/posts/id/<id>` | 更新（改名/移动会级联更新子孙 slug） |
+| `DELETE` | `/api/posts/id/<id>[?recursive=1]` | 删除（默认子文章提升为顶级；recursive 级联删除） |
+| `PUT` | `/api/posts/reorder` | 拖拽排序 |
+| `GET` | `/api/posts/audit-logs` | 操作日志（分页） |
+| `GET` | `/api/images[...]?type=` | 图片服务（见下） |
+| `POST` | `/api/images/upload` | 上传图片（multipart `file`，返回可写入 Markdown 的 url） |
+| `GET` | `/api/export/markdown` | 导出全库 Markdown + 图片 zip 备份 |
+| `GET` | `/api/admin/database` | 数据库状态（当前后端/数据量） |
+| `POST` | `/api/admin/database/test` | 测试目标数据库连通性 |
+| `POST` | `/api/admin/database/switch` | **迁移数据并切换后端**（SQLite ↔ PostgreSQL） |
+
+### 图片服务规则
+
+- **上传**：`POST /api/images/upload`（multipart 字段 `file`），白名单 png/jpg/jpeg/gif/webp/bmp/avif（不含 svg），单文件 ≤10MB，随机文件名落盘 `data/images/`，返回 `{url}`
+- `type` 缺省：从 `data/images/` 目录解析
+- `type=relative`：相对项目根目录
+- `type=absolute`：绝对路径
+- **安全约束**：所有路径经 realpath 归一化后必须落在项目根目录（或 images 目录）围栏内，且扩展名必须在白名单（png/jpg/jpeg/gif/webp/svg/ico/bmp/avif）内，否则 404
+
+## Markdown 渲染能力
+
+文章正文由 `frontend/src/md.js` 渲染，支持（共 40+ 项，均经实测）：
+
+- **基础**：6 级标题（ATX/Setext）、粗体、斜体、删除线、行内代码、两种硬换行、转义、有序/无序/嵌套/任务列表、引用（嵌套）、GFM 表格（三种对齐）、三种分隔线
+- **链接图片**：行内/引用式链接、自动链接、裸 URL 与邮箱自动识别、图片标题自动生成 figure 图注、行内 HTML 直通、HTML 实体
+- **代码块**：190+ 语言高亮 + 语言标签 + 复制按钮、`~~~` 围栏、`{.line-numbers}` 行号、`{data-highlight="2,4-6"}` 行高亮
+- **扩展**：`==高亮==`、上下标 `H~2~O` / `X^2^`、脚注（含行内脚注）、定义列表、缩写、`::: tip/info/warning/danger` 容器、GitHub Alerts（5 种）、`{#id .class}` 属性
+- **图表公式**：Mermaid（流程图/时序图等）、KaTeX 行内与块级公式（含矩阵）
+- **双链**：`[[文章英文名]]` / `[[文章标题]]` / `[[名|显示文字]]`（同库解析，未找到显示灰色虚线；代码块内不生效）
+- **智能排版**：`(c)`→©、`--`→–、`...`→…、智能引号等
+- **Emoji**：`:name:` 代码（内置 light 词典 150 个，注意 `:+1:` `:rocket:` 等**不在**词典内）+ `:)` `<3` 等颜文字快捷转换
 
 ## 测试
 
-### 后端测试
-
 ```bash
 cd backend
-pytest -v
+python -m pytest tests/ -q
 ```
 
-共 **19 个测试用例**：
+测试完全自包含（每用例独立临时 SQLite，无外部依赖）；其中 SQLite ↔ PostgreSQL 切换往返的集成测试需要 venv 内安装 `pgserver`（内嵌 PG，`pip install pgserver`），未安装时自动跳过。
 
-| 测试文件 | 用例数 | 覆盖范围 |
-|---|---|---|
-| `test_auth.py` | 6 | 登录成功/失败、凭据检查、未授权访问 |
-| `test_posts.py` | 13 | 文章 CRUD、分页、树形结构、父子关系、重复 slug、未授权、404 |
+## 已知限制
 
-### 前端测试
-
-```bash
-cd frontend
-npm run test
-```
-
----
-
-## License
-
-MIT
+- 单用户 Basic Auth：凭据在前端 bundle 中可见（`src/api.js`），仅适合个人/内网使用
+- 文章层级上限 3 层（`MAX_LEVEL = 2`）
+- 导航"归档"链接 `/archive` 未注册路由（死链），且无 404 兜底页

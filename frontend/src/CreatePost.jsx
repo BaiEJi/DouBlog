@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
-import md from './md'
-import mermaid from 'mermaid'
-import { showRateLimitToast, isRateLimitResponse } from './toast'
+import md, { renderMermaidDiagrams, applyWikiLinks, buildWikiMap } from './md'
+import { apiFetch, fetchWorkspaces, fetchPostTree } from './api'
+import { useEditorShortcuts } from './useEditorShortcuts'
+import { useEditorEnhancements, BLOCK_TEMPLATES } from './useEditorEnhancements'
 
 const Icons = {
   search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
@@ -53,80 +54,47 @@ export default function CreatePost({ dark, setDark }) {
   const [summary, setSummary] = useState('')
   const [parentId, setParentId] = useState(searchParams.get('parent_id') || '')
   const [status, setStatus] = useState('published')
+  const [workspaces, setWorkspaces] = useState([])
+  const [wsId, setWsId] = useState(searchParams.get('ws') || '')
   const [tree, setTree] = useState([])
   const [errors, setErrors] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [serverError, setServerError] = useState('')
 
+  // 知识库列表 + 初始树（默认库）
   useEffect(() => {
-    const auth = btoa('admin:lizy111A')
-    const host = window.location.hostname
-    fetch(`http://${host}:60100/api/posts/tree`, {
-      headers: { 'Authorization': `Basic ${auth}` }
-    })
-      .then(r => {
-        if (isRateLimitResponse(r)) { showRateLimitToast(); return null }
-        return r.json()
+    fetchWorkspaces()
+      .then(d => {
+        if (d.success) {
+          setWorkspaces(d.data)
+          if (!searchParams.get('ws') && d.data.length) {
+            setWsId(String(d.data[0].id))
+          }
+        }
       })
+      .catch(console.error)
+  }, [searchParams])
+
+  // 树跟随所选知识库
+  useEffect(() => {
+    fetchPostTree(wsId || undefined)
       .then(d => { if (d && d.success) setTree(d.data || []) })
       .catch(console.error)
-  }, [])
+  }, [wsId])
 
   const flatPosts = useMemo(() => flattenTree(tree), [tree])
 
   const previewHtml = useMemo(() => md.render(content || ''), [content])
+  // 稳定引用：避免无关重渲染(标题输入/保存状态)整体重建预览 DOM 抹掉 mermaid
+  // 预览的双链解析（按当前所选知识库的树）
+  const wikiMap = useMemo(() => buildWikiMap(tree), [tree])
+  const previewProps = useMemo(() => ({ __html: applyWikiLinks(previewHtml, wikiMap) }), [previewHtml, wikiMap])
 
-  // Mermaid: 渲染预览区图表
+  // Mermaid: 渲染预览区图表（统一走 md.js 的动态加载入口，不打进编辑页首屏）
   useEffect(() => {
     if (!previewHtml) return
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      themeVariables: dark ? {
-        primaryColor: '#1e3a5f', primaryBorderColor: '#3b82f6', primaryTextColor: '#e0e7ff',
-        secondaryColor: '#422006', tertiaryColor: '#052e16',
-        lineColor: '#9ca3af', arrowheadColor: '#9ca3af',
-        background: '#0d1117', mainBkg: '#1e3a5f', nodeBkg: '#1e3a5f', nodeBorder: '#3b82f6',
-        clusterBkg: '#0c1629', clusterBorder: '#1e40af',
-        textColor: '#e5e7eb', titleColor: '#f9fafb', edgeLabelBackground: '#161b22',
-        fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Source Code Pro", "Menlo", "Monaco", "Consolas", monospace', fontSize: '14px',
-        radius: 8, strokeWidth: 1.5, useGradient: true,
-        actorBkg: '#1e3a5f', actorBorder: '#3b82f6', actorTextColor: '#e0e7ff',
-        signalColor: '#d1d5db', signalTextColor: '#f9fafb',
-        activationBorderColor: '#3b82f6', activationBkgColor: '#172554',
-        taskBkgColor: '#1e3a5f', taskBorderColor: '#3b82f6',
-        doneTaskBkgColor: '#14532d', doneTaskBorderColor: '#22c55e',
-        critBorderColor: '#dc2626', critBkgColor: '#450a0a', todayLineColor: '#3b82f6',
-      } : {
-        primaryColor: '#dbeafe', primaryBorderColor: '#3b82f6', primaryTextColor: '#1e3a5f',
-        secondaryColor: '#fef3c7', tertiaryColor: '#f0fdf4',
-        lineColor: '#6b7280', arrowheadColor: '#6b7280',
-        background: '#ffffff', mainBkg: '#dbeafe', nodeBkg: '#dbeafe', nodeBorder: '#3b82f6',
-        clusterBkg: '#f0f9ff', clusterBorder: '#93c5fd',
-        textColor: '#1f2937', titleColor: '#111827', edgeLabelBackground: '#ffffff',
-        fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Source Code Pro", "Menlo", "Monaco", "Consolas", monospace', fontSize: '14px',
-        radius: 8, strokeWidth: 1.5, useGradient: true,
-        actorBkg: '#dbeafe', actorBorder: '#3b82f6', actorTextColor: '#1e3a5f',
-        signalColor: '#374151', signalTextColor: '#111827',
-        activationBorderColor: '#3b82f6', activationBkgColor: '#eff6ff',
-        taskBkgColor: '#dbeafe', taskBorderColor: '#3b82f6',
-        doneTaskBkgColor: '#86efac', doneTaskBorderColor: '#22c55e',
-        critBorderColor: '#ef4444', critBkgColor: '#fef2f2', todayLineColor: '#3b82f6',
-      }
-    })
-    let cancelled = false
-
-    const renderMermaid = async () => {
-      if (cancelled) return
-      try {
-        await mermaid.run({ querySelector: '.mermaid:not([data-processed])' })
-      } catch (e) {
-        console.error('Mermaid render error:', e)
-      }
-    }
-
-    const timer = setTimeout(renderMermaid, 100)
-    return () => { cancelled = true; clearTimeout(timer) }
+    const timer = setTimeout(() => { renderMermaidDiagrams(dark) }, 100)
+    return () => clearTimeout(timer)
   }, [previewHtml, dark])
 
   // Lightbox: 点击图片放大查看
@@ -196,24 +164,18 @@ export default function CreatePost({ dark, setDark }) {
     setServerError('')
 
     try {
-      const auth = btoa('admin:lizy111A')
-      const host = window.location.hostname
-      const res = await fetch(`http://${host}:60100/api/posts`, {
+      const res = await apiFetch('/api/posts', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${auth}`
-        },
         body: JSON.stringify({
           title: title.trim(),
           name: name.trim(),
           content,
           summary: summary.trim() || undefined,
+          workspace_id: wsId ? parseInt(wsId) : undefined,
           parent_id: parentId ? parseInt(parentId) : undefined,
           status,
         })
       })
-      if (isRateLimitResponse(res)) { showRateLimitToast(); return }
       const data = await res.json()
       if (data.success) {
         navigate(`/post/${data.data.id}`)
@@ -242,8 +204,14 @@ export default function CreatePost({ dark, setDark }) {
     }, 0)
   }
 
+  // 编辑器快捷键：Ctrl+S 保存 / Ctrl+B 加粗 / Ctrl+I 斜体 / Ctrl+K 链接 / Tab 缩进
+  const ed = useEditorEnhancements({ content, setContent })
+
+    useEditorShortcuts({ onSave: handleSubmit, insert: insertAtCursor })
+
+
   return (
-    <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee]">
+    <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] text-[#111] dark:text-[#eee] animate-fade-in">
       {/* Nav */}
       <nav className="sticky top-0 z-50 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-black/5 dark:border-white/5">
         <div className="w-full px-8 h-16 flex items-center justify-between">
@@ -252,7 +220,7 @@ export default function CreatePost({ dark, setDark }) {
               <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
                 <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
               </div>
-              <span className="text-xl font-bold tracking-tight">DouBlog</span>
+              <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
             </Link>
             <div className="hidden md:flex items-center gap-6 text-base text-[#666] dark:text-[#888]">
               <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
@@ -297,6 +265,18 @@ export default function CreatePost({ dark, setDark }) {
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
           <div>
+            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">所属知识库</label>
+            <select
+              value={wsId}
+              onChange={e => { setWsId(e.target.value); setParentId('') }}
+              className="w-full px-3 py-2 text-[14px] bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
+            >
+              {workspaces.map(w => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">父文章</label>
             <select
               value={parentId}
@@ -336,6 +316,15 @@ export default function CreatePost({ dark, setDark }) {
 
         {/* Editor */}
         <div className="border border-black/10 dark:border-white/10 rounded-xl overflow-hidden bg-white dark:bg-[#111]">
+                    {/* 图片上传：粘贴/拖拽/按钮共用 */}
+          <input
+            ref={ed.fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif"
+            multiple
+            hidden
+            onChange={e => { [...e.target.files].forEach(ed.uploadAndInsert); e.target.value = '' }}
+          />
           {/* Toolbar */}
           <div className="flex items-center gap-0.5 px-3 py-2 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03]">
             {TOOLBAR_BTNS.map((btn, i) => (
@@ -348,24 +337,48 @@ export default function CreatePost({ dark, setDark }) {
                 {btn.icon}
               </button>
             ))}
+            <div className="w-px h-5 bg-black/10 dark:bg-white/10 mx-1.5" />
+            <button onClick={ed.pickImage} title="插入图片（也可直接粘贴/拖拽截图）"
+              className="px-2 h-8 flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[#666] dark:text-[#888] text-[12px] transition-colors">
+              图片
+            </button>
+            <button onClick={() => ed.insertText(BLOCK_TEMPLATES.table)} title="插入表格模板"
+              className="px-2 h-8 flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[#666] dark:text-[#888] text-[12px] transition-colors">
+              表格
+            </button>
+            <button onClick={() => ed.insertText(BLOCK_TEMPLATES.mermaid)} title="插入 Mermaid 图表模板"
+              className="px-2 h-8 flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[#666] dark:text-[#888] text-[12px] transition-colors">
+              图表
+            </button>
+            <button onClick={() => ed.insertText(BLOCK_TEMPLATES.code)} title="插入代码块模板"
+              className="px-2 h-8 flex items-center rounded-md hover:bg-black/5 dark:hover:bg-white/10 text-[#666] dark:text-[#888] text-[12px] transition-colors">
+              代码块
+            </button>
+            {ed.uploading > 0 && (
+              <span className="ml-2 text-[12px] text-blue-500 animate-pulse">图片上传中…</span>
+            )}
           </div>
 
           {/* Split View */}
-          <div className="flex min-h-[500px]">
+          <div className="flex h-[70vh] min-h-[420px]">
             {/* Editor */}
             <div className="w-1/2 border-r border-black/5 dark:border-white/5">
               <textarea
                 id="md-editor"
+                ref={ed.editorRef}
                 value={content}
                 onChange={e => setContent(e.target.value)}
+                onPaste={ed.handlePaste}
+                onDrop={ed.handleDrop}
+                onDragOver={e => e.preventDefault()}
                 placeholder="在此输入 Markdown 内容..."
-                className="w-full h-full min-h-[500px] px-5 py-4 text-[14px] font-mono leading-relaxed bg-transparent text-[#333] dark:text-[#ccc] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none resize-none border-none"
+                className="w-full h-full px-5 py-4 text-[14px] font-mono leading-relaxed bg-transparent text-[#333] dark:text-[#ccc] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none resize-none border-none"
               />
             </div>
             {/* Preview */}
-            <div className="w-1/2 px-5 py-4 overflow-y-auto">
+            <div ref={ed.previewRef} className="w-1/2 px-5 py-4 overflow-y-auto">
               {content ? (
-                <div className="prose-content font-mono" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                <div className="prose-content font-mono" dangerouslySetInnerHTML={previewProps} />
               ) : (
                 <div className="text-[#bbb] dark:text-[#555] text-sm font-mono">预览区域...</div>
               )}

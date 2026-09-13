@@ -928,30 +928,92 @@ html.transitioning *::after {
   color: #79c0ff !important;
 }
 
-/* Rate limit toast */
-.toast-rate-limit {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(120%);
-  background: #111;
-  color: #fff;
-  padding: 12px 24px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-  z-index: 9999;
-  opacity: 0;
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
-  pointer-events: none;
+.dark 
+/* ─── Mermaid 渲染占位：替代首帧原始代码闪现 ─────────────── */
+.code-block .mermaid:not([data-processed]) {
+  min-height: 120px;
+  color: transparent;
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
 }
-.toast-rate-limit.show {
-  transform: translateX(-50%) translateY(0);
-  opacity: 1;
+.code-block .mermaid:not([data-processed])::after {
+  content: '图表渲染中…';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.03);
+  animation: pulse-soft 1.2s ease-in-out infinite;
 }
-.dark .toast-rate-limit {
-  background: #eee;
-  color: #111;
-  box-shadow: 0 8px 32px rgba(255,255,255,0.1);
+.dark .code-block .mermaid:not([data-processed])::after {
+  color: #666;
+  background: rgba(255, 255, 255, 0.04);
+}
+.code-block .mermaid[data-processed] {
+  animation: fade-in 0.3s ease-out;
+}
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── 动效守卫：系统减少动态偏好时禁用动画/过渡 ─────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── 下拉面板入场动画 ─────────────────────────────────── */
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-dropdown {
+  animation: dropdown-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ─── 双链 [[wiki link]] ─────────────────────────────────── */
+.prose-content a.wiki-link {
+  color: #2563eb;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.35);
+  padding: 0 1px;
+  border-radius: 2px;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.prose-content a.wiki-link:hover {
+  background: rgba(37, 99, 235, 0.08);
+  border-bottom-color: #2563eb;
+}
+.dark .prose-content a.wiki-link {
+  color: #60a5fa;
+  border-bottom-color: rgba(96, 165, 250, 0.35);
+}
+.dark .prose-content a.wiki-link:hover {
+  background: rgba(96, 165, 250, 0.12);
+  border-bottom-color: #60a5fa;
+}
+/* 未找到目标：虚线下划线 + 中性色，无 href 不可点击 */
+.prose-content a.wiki-link-missing {
+  color: inherit;
+  border-bottom: 1px dashed rgba(160, 160, 160, 0.6);
+  cursor: help;
+}
+.dark .prose-content a.wiki-link-missing {
+  border-bottom-color: rgba(110, 110, 110, 0.6);
 }

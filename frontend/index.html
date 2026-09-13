@@ -1,10 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>DouBlog</title>
+    <script>
+      // 预渲染主题初始化：在任何绘制前给 <html> 挂 dark 类并设置基础背景色，
+      // 避免暗色模式刷新时的白屏闪烁（与 App.jsx 的 doublog_dark 存储约定一致）
+      ;(function () {
+        try {
+          var saved = localStorage.getItem('doublog_dark')
+          var dark = saved !== null
+            ? saved === 'true'
+            : window.matchMedia('(prefers-color-scheme: dark)').matches
+          if (dark) document.documentElement.classList.add('dark')
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (e) {}
+      })()
+    </script>
+    <style>
+      /* 关键内联样式：JS/CSS 加载完成前保证背景色正确，无样式闪烁 */
+      html { background: #fafafa; }
+      html.dark { background: #0a0a0a; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

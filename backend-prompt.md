@@ -1,5 +1,9 @@
 # DouBlog 后端开发 Prompt
 
+> ⚠️ **历史文档（2026-04 开发期产物，仅存档，不随代码更新）**
+> 这是项目最初用于指导 AI 生成后端的开发提示词，其中的端口（60000）、架构（`app/database.py` + SessionLocal）等与**当前代码不一致**。
+> 当前架构请以 **[backend.md](backend.md)**、[api.md](api.md) 与 `backend/app/` 源码为准。
+
 > **目标**: 使用此文档指导AI大模型完成DouBlog后端开发  
 > **技术栈**: Flask 3.0 + SQLAlchemy 2.0 + SQLite + Python 3.13  
 > **端口**: 60000  

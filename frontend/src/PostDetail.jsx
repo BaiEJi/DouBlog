@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import md from './md'
-import mermaid from 'mermaid'
+import md, { renderMermaidDiagrams, applyWikiLinks, buildWikiMap } from './md'
+import { API_BASE, apiFetch, prefetchPost, takeCachedPost, setCachedPost, invalidatePost } from './api'
 // lightbox 自定义实现，替代 medium-zoom
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { showRateLimitToast, isRateLimitResponse } from './toast'
 
 const Icons = {
   search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
@@ -20,6 +19,7 @@ const Icons = {
   doc: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>,
   folder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
   pencil: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>,
+  download: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
 }
 
 // ─── 拖拽手柄 ──────────────────────────────────────────
@@ -153,8 +153,10 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle, onContextM
       {...attributes}
       {...listeners}
     >
-      <a
-        href={`/post/${node.id}`}
+      <Link
+        to={`/post/${node.id}`}
+        onPointerEnter={() => prefetchPost(node.id)}
+        onFocus={() => prefetchPost(node.id)}
         onContextMenu={(e) => { e.preventDefault(); onContextMenu(e, node) }}
         className={`flex items-center py-1.5 text-[13px] font-mono rounded-md transition-all duration-150 overflow-hidden whitespace-nowrap ${
           isActive
@@ -177,7 +179,7 @@ function TreeNode({ node, activeId, level = 0, expandedMap, onToggle, onContextM
           )}
         </span>
         <span className="truncate ml-1">{node.title}</span>
-      </a>
+      </Link>
       {hasChildren && expanded && (
         <SortableContext items={node.children.map(c => c.id)} strategy={verticalListSortingStrategy}>
           {node.children.map(child => (
@@ -330,7 +332,47 @@ function TableOfContents({ headings, activeId, dark }) {
   )
 }
 
+// ─── 渲染结果缓存 ─────────────────────────────────────────
+// 按正文内容（字符串值）缓存 md.render 结果：重访近期看过的文章
+// 跳过整个 markdown 渲染管线，接近零耗时；LRU 上限防内存增长
+const renderCache = new Map()
+const RENDER_CACHE_MAX = 16
+
+function renderPostContent(content) {
+  if (renderCache.has(content)) return renderCache.get(content)
+  const rendered = md.render(content)
+  const headings = []
+  let idx = 0
+  const processed = rendered.replace(/<h([1-6])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>/g, (_, level, inner) => {
+    const hId = `heading-${idx++}`
+    const text = inner.replace(/<[^>]+>/g, '').trim()
+    headings.push({ level: parseInt(level), id: hId, text })
+    return `<h${level} id="${hId}">${inner}</h${level}>`
+  })
+  const result = { html: processed, headings }
+  renderCache.set(content, result)
+  if (renderCache.size > RENDER_CACHE_MAX) {
+    renderCache.delete(renderCache.keys().next().value)
+  }
+  return result
+}
+
+const EMPTY_RENDER = { html: '', headings: [] }
+
 // ─── 阅读页 ────────────────────────────────────────────
+
+// Mermaid 渲染器：放在内容区内部、随内容 div 挂载/卸载（key 绑定 html）。
+// 内容区被重建的任何路径（切换文章 key 变化、骨架屏往返、SWR 刷新内容更新）
+// 都会重新挂载本组件从而重新渲染图表；渲染逻辑统一在 md.js 的
+// renderMermaidDiagrams（动态加载 mermaid，不打进首屏关键路径）。
+function MermaidRunner({ dark }) {
+  useEffect(() => {
+    const timer = setTimeout(() => { renderMermaidDiagrams(dark) }, 100)
+    return () => clearTimeout(timer)
+  }, [dark])
+  return null
+}
+
 export default function PostDetail({ dark, setDark }) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -353,6 +395,7 @@ export default function PostDetail({ dark, setDark }) {
   })
   const leftStartRef = useRef(leftWidth)
   const rightStartRef = useRef(rightWidth)
+  const articleRef = useRef(null)
 
   const onLeftDragStart = useCallback(() => { leftStartRef.current = leftWidth }, [leftWidth])
   const onLeftDrag = useCallback((delta) => {
@@ -405,25 +448,20 @@ export default function PostDetail({ dark, setDark }) {
   }, [])
 
   const doDeletePost = useCallback((node) => {
-    const auth = btoa('admin:lizy111A')
-    const host = window.location.hostname
-    fetch(`http://${host}:60100/api/posts/id/${node.id}?recursive=1`, {
-      method: 'DELETE',
-      headers: { 'Authorization': `Basic ${auth}` }
-    })
-      .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() })
+    apiFetch(`/api/posts/id/${node.id}?recursive=1`, { method: 'DELETE' })
+      .then(r => r.json())
       .then(d => {
         if (d && d.success) {
-          fetch(`http://${host}:60100/api/posts/tree`, {
-            headers: { 'Authorization': `Basic ${auth}` }
-          })
+          invalidatePost(node.id)
+          const wsId = post?.workspace_id
+          apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`)
             .then(r => r.json())
             .then(d => { if (d.success) setTree(d.data) })
           if (node.id === parseInt(id)) navigate('/')
         }
       })
       .catch(console.error)
-  }, [id, navigate])
+  }, [id, navigate, post?.workspace_id])
 
   const handleDeletePost = useCallback((node) => {
     setConfirmDialog({
@@ -454,38 +492,50 @@ export default function PostDetail({ dark, setDark }) {
     }
     setTree(prev => reorderInTree(prev, parentId))
 
-    // 调 API
-    const auth = btoa('admin:lizy111A')
-    const host = window.location.hostname
-    fetch(`http://${host}:60100/api/posts/reorder`, {
+    // 调 API（顶级排序需要带上知识库）
+    apiFetch('/api/posts/reorder', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${auth}` },
-      body: JSON.stringify({ parent_id: parentId, children_order: newOrder })
+      body: JSON.stringify({ parent_id: parentId, workspace_id: post?.workspace_id, children_order: newOrder })
     }).catch(() => {
       // 失败回滚
-      fetch(`http://${host}:60100/api/posts/tree`, {
-        headers: { 'Authorization': `Basic ${auth}` }
-      }).then(r => r.json()).then(d => { if (d.success) setTree(d.data) })
+      const wsId = post?.workspace_id
+      apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`)
+        .then(r => r.json()).then(d => { if (d.success) setTree(d.data) })
     })
-  }, [])
+  }, [post?.workspace_id])
 
   useEffect(() => {
     const controller = new AbortController()
-    const auth = btoa('admin:lizy111A')
-    const host = window.location.hostname
-    const headers = { 'Authorization': `Basic ${auth}` }
 
     setLoading(true)
+    setActiveTocId('')
 
-    Promise.all([
-      fetch(`http://${host}:60100/api/posts/id/${id}`, { headers, signal: controller.signal })
-        .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() }),
-      fetch(`http://${host}:60100/api/posts/tree`, { headers, signal: controller.signal })
-        .then(r => { if (isRateLimitResponse(r)) { showRateLimitToast(); return null }; return r.json() })
-    ])
-      .then(([postRes, treeRes]) => {
-        if (postRes?.success) setPost(postRes.data)
-        if (treeRes?.success) setTree(treeRes.data)
+    // 预取缓存命中（列表/侧栏链接 hover 时已拉取）：立即渲染，
+    // 下面的后台请求仍会执行并覆盖（stale-while-revalidate）
+    const cached = takeCachedPost(id)
+    if (cached) {
+      setPost(cached)
+      setLoading(false)
+    }
+
+    // 先取文章(得知所属知识库),再按库取树
+    apiFetch(`/api/posts/id/${id}`, { signal: controller.signal })
+      .then(r => r.json())
+      .then(postRes => {
+        if (postRes?.success) {
+          setPost(postRes.data)
+          setCachedPost(id, postRes.data)
+          // 文章一到就解除内容区骨架：切换文章时导航/侧栏外壳保持不动，树在后台刷新
+          setLoading(false)
+          const wsId = postRes.data.workspace_id
+          return apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`, { signal: controller.signal })
+            .then(r => r.json())
+            .then(treeRes => {
+              if (treeRes?.success) setTree(treeRes.data)
+            })
+        }
+        // 文章不存在：清掉旧文章，走“文章不存在”分支
+        setPost(null)
       })
       .catch(err => {
         if (err.name !== 'AbortError') console.error(err)
@@ -497,22 +547,36 @@ export default function PostDetail({ dark, setDark }) {
     return () => controller.abort()
   }, [id])
 
+  // 切换文章：内容区滚动位置归零（滚动容器被复用，不会自动重置）
+  useEffect(() => { articleRef.current?.scrollTo({ top: 0 }) }, [id])
+
+  // 反向链接：谁用 [[双链]] 指向了这篇文章
+  const [backlinks, setBacklinks] = useState(null)
+  useEffect(() => {
+    let stale = false
+    setBacklinks(null)
+    apiFetch(`/api/posts/id/${id}/backlinks`)
+      .then(r => r.json())
+      .then(d => { if (!stale && d?.success) setBacklinks(d.data.items) })
+      .catch(() => {})
+    return () => { stale = true }
+  }, [id])
+
   const { html, headings } = useMemo(() => {
-    if (!post?.content) return { html: '', headings: [] }
-
-    const rendered = md.render(post.content)
-    const headings = []
-    let idx = 0
-
-    const processed = rendered.replace(/<h([1-6])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>/g, (_, level, inner) => {
-      const hId = `heading-${idx++}`
-      const text = inner.replace(/<[^>]+>/g, '').trim()
-      headings.push({ level: parseInt(level), id: hId, text })
-      return `<h${level} id="${hId}">${inner}</h${level}>`
-    })
-
-    return { html: processed, headings }
+    return post?.content ? renderPostContent(post.content) : EMPTY_RENDER
   }, [post?.content])
+
+  // 双链解析映射（同库文章的 name/标题 -> id；name 优先）。
+  // 树在文章之后异步到达：先渲染未解析占位，树到后 html 重算补上 href
+  const wikiMap = useMemo(() => buildWikiMap(tree), [tree])
+
+  const resolvedHtml = useMemo(() => applyWikiLinks(html, wikiMap), [html, wikiMap])
+
+  // dangerouslySetInnerHTML 的 prop 必须是稳定引用：
+  // react-dom 的更新路径对 innerHTML 不做同值比较，行内对象字面量会让
+  // 每次重渲染(树刷新/TOC 高亮/展开折叠)都整体重建正文 DOM，
+  // 抹掉 mermaid.run 注入的 SVG 且无法自动恢复
+  const proseProps = useMemo(() => ({ __html: resolvedHtml }), [resolvedHtml])
 
   useEffect(() => {
     if (!headings.length) return
@@ -536,77 +600,27 @@ export default function PostDetail({ dark, setDark }) {
     return () => observer.disconnect()
   }, [headings])
 
-  // Mermaid: 初始化 + 渲染
-  useEffect(() => {
-    if (!html) return
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'base',
-      themeVariables: dark ? {
-        primaryColor: '#1e3a5f', primaryBorderColor: '#3b82f6', primaryTextColor: '#e0e7ff',
-        secondaryColor: '#422006', tertiaryColor: '#052e16',
-        lineColor: '#9ca3af', arrowheadColor: '#9ca3af',
-        background: '#0d1117', mainBkg: '#1e3a5f', nodeBkg: '#1e3a5f', nodeBorder: '#3b82f6',
-        clusterBkg: '#0c1629', clusterBorder: '#1e40af',
-        textColor: '#e5e7eb', titleColor: '#f9fafb', edgeLabelBackground: '#161b22',
-        fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Source Code Pro", "Menlo", "Monaco", "Consolas", monospace', fontSize: '14px',
-        radius: 8, strokeWidth: 1.5, useGradient: true,
-        actorBkg: '#1e3a5f', actorBorder: '#3b82f6', actorTextColor: '#e0e7ff',
-        signalColor: '#d1d5db', signalTextColor: '#f9fafb',
-        activationBorderColor: '#3b82f6', activationBkgColor: '#172554',
-        taskBkgColor: '#1e3a5f', taskBorderColor: '#3b82f6',
-        doneTaskBkgColor: '#14532d', doneTaskBorderColor: '#22c55e',
-        critBorderColor: '#dc2626', critBkgColor: '#450a0a', todayLineColor: '#3b82f6',
-      } : {
-        primaryColor: '#dbeafe', primaryBorderColor: '#3b82f6', primaryTextColor: '#1e3a5f',
-        secondaryColor: '#fef3c7', tertiaryColor: '#f0fdf4',
-        lineColor: '#6b7280', arrowheadColor: '#6b7280',
-        background: '#ffffff', mainBkg: '#dbeafe', nodeBkg: '#dbeafe', nodeBorder: '#3b82f6',
-        clusterBkg: '#f0f9ff', clusterBorder: '#93c5fd',
-        textColor: '#1f2937', titleColor: '#111827', edgeLabelBackground: '#ffffff',
-        fontFamily: '"SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", "Source Code Pro", "Menlo", "Monaco", "Consolas", monospace', fontSize: '14px',
-        radius: 8, strokeWidth: 1.5, useGradient: true,
-        actorBkg: '#dbeafe', actorBorder: '#3b82f6', actorTextColor: '#1e3a5f',
-        signalColor: '#374151', signalTextColor: '#111827',
-        activationBorderColor: '#3b82f6', activationBkgColor: '#eff6ff',
-        taskBkgColor: '#dbeafe', taskBorderColor: '#3b82f6',
-        doneTaskBkgColor: '#86efac', doneTaskBorderColor: '#22c55e',
-        critBorderColor: '#ef4444', critBkgColor: '#fef2f2', todayLineColor: '#3b82f6',
-      }
-    })
-    let cancelled = false
-
-    const renderMermaid = async () => {
-      if (cancelled) return
-      // 清除旧标记
-      document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
-        el.removeAttribute('data-processed')
-      })
-      try {
-        await mermaid.run({ querySelector: '.mermaid:not([data-processed])' })
-      } catch (e) {
-        console.error('Mermaid render error:', e)
-      }
-    }
-
-    // 延迟渲染，确保 DOM 已更新
-    const timer = setTimeout(renderMermaid, 100)
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [html, dark])
-
   // Lightbox: 点击图片放大查看
   const [lightbox, setLightbox] = useState(null) // { src, alt }
   const lightboxZoom = useRef(1)
   const lightboxRef = useRef(null)
   lightboxRef.current = setLightbox
 
-  // 事件委托：在容器上统一处理图片点击，不受 React 重渲染影响
+  // 事件委托：统一处理图片点击(lightbox)与双链点击(SPA 导航)，不受 React 重渲染影响
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
   useEffect(() => {
     const handler = (e) => {
       const img = e.target.closest('.prose-content img')
       if (img) {
         e.preventDefault()
         lightboxRef.current({ src: img.src, alt: img.alt || '' })
+        return
+      }
+      const wiki = e.target.closest('a.wiki-link[href]')
+      if (wiki) {
+        e.preventDefault()
+        navigateRef.current(wiki.getAttribute('href'))
       }
     }
     document.addEventListener('click', handler)
@@ -651,15 +665,57 @@ export default function PostDetail({ dark, setDark }) {
     }
   }, [lightbox])
 
+  // 导出当前文章为 .md 文件（纯前端：正文已在手，frontmatter + 图片 URL 绝对化）
+  const handleExportMd = () => {
+    if (!post) return
+    const q = (v) => String(v ?? '').replace(/"/g, "'").replace(/\n/g, ' ')
+    const fm = ['---',
+      `title: "${q(post.title)}"`,
+      `name: ${post.name}`,
+      post.created_at ? `created_at: ${post.created_at}` : null,
+      post.updated_at ? `updated_at: ${post.updated_at}` : null,
+      post.summary ? `summary: "${q(post.summary).slice(0, 200)}"` : null,
+      '---', ''].filter(v => v !== null).join('\n')
+    // /api/images/x.png → 带主机名的完整 URL（导出文件在任意位置图片仍可访问）
+    const body = (post.content || '').replace(
+      /(?<![\w/])(\/api\/images\/[A-Za-z0-9._-]+)/g,
+      (m, path) => API_BASE + path
+    )
+    const blob = new Blob([fm + body], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = ((post.name || post.title || 'document').replace(/[\/:*?"<>|\s]+/g, '_').slice(0, 80)) + '.md'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+
   const date = post ? new Date(post.created_at) : null
   const dateStr = date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''
 
-  if (loading) {
+  // 整页骨架只在首次进入（从未加载出任何文章）时出现；
+  // 之后切换文章时 post 已存在，走下方主布局，仅内容区切换
+  if (loading && !post) {
+    // 结构化骨架屏：与正文布局一致，避免加载→内容的跳变闪烁
     return (
-      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a]">
+      <div className="min-h-screen bg-[#fafafa] dark:bg-[#0a0a0a] animate-fade-in">
         <div className="h-16 border-b border-black/5 dark:border-white/5 bg-[#fafafa]/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl" />
-        <div className="flex items-center justify-center py-32">
-          <div className="text-sm text-[#999] dark:text-[#555]">加载中...</div>
+        <div className="max-w-[800px] mx-auto px-8 py-14 animate-pulse">
+          <div className="h-9 w-2/3 bg-black/5 dark:bg-white/5 rounded mb-6" />
+          <div className="flex gap-3 mb-10">
+            <div className="h-4 w-24 bg-black/5 dark:bg-white/5 rounded" />
+            <div className="h-4 w-16 bg-black/5 dark:bg-white/5 rounded" />
+          </div>
+          <div className="space-y-3">
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-full" />
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-11/12" />
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-4/5" />
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-full mt-7" />
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-5/6" />
+            <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-2/3" />
+          </div>
         </div>
       </div>
     )
@@ -689,11 +745,11 @@ export default function PostDetail({ dark, setDark }) {
               <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
                 <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
               </div>
-              <span className="text-xl font-bold tracking-tight">DouBlog</span>
+              <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
             </Link>
             <div className="hidden md:flex items-center gap-6 text-base text-[#666] dark:text-[#888]">
               <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-              <a href="/archive" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">归档</a>
+              <Link to="/admin" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">管理</Link>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -702,7 +758,7 @@ export default function PostDetail({ dark, setDark }) {
               <input
                 type="text"
                 placeholder="搜索文章..."
-                className="w-56 pl-9 pr-3 py-2.5 text-base bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[#111] dark:text-[#eee] placeholder:text-[#999] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
+                className="w-32 sm:w-56 pl-9 pr-3 py-2.5 text-sm sm:text-base bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[#111] dark:text-[#eee] placeholder:text-[#999] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
               />
             </div>
             <button
@@ -741,9 +797,24 @@ export default function PostDetail({ dark, setDark }) {
         </aside>
         <ResizeHandle onDragStart={onLeftDragStart} onDrag={onLeftDrag} />
 
-        {/* Center Content */}
-        <article className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-10 pt-6 pb-14">
+        {/* Center Content：切换文章时仅此区域切换，导航/侧栏/目录外壳不动 */}
+        <article ref={articleRef} className="flex-1 min-w-0 h-[calc(100vh-64px)] overflow-y-auto">
+          {loading ? (
+            <div className="max-w-3xl mx-auto px-10 pt-6 pb-14 animate-pulse">
+              <div className="h-3.5 w-48 bg-black/5 dark:bg-white/5 rounded mb-3" />
+              <div className="h-10 w-2/3 bg-black/5 dark:bg-white/5 rounded mb-4" />
+              <div className="h-px bg-black/5 dark:bg-white/5 mb-10" />
+              <div className="space-y-3">
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-full" />
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-11/12" />
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-4/5" />
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-full mt-7" />
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-5/6" />
+                <div className="h-5 bg-black/5 dark:bg-white/5 rounded w-2/3" />
+              </div>
+            </div>
+          ) : (
+          <div key={post.id} className="max-w-3xl mx-auto px-10 pt-6 pb-14 animate-fade-in">
             <div className="flex items-center justify-between text-[13px] text-[#999] dark:text-[#555] mb-3">
               <div className="flex items-center gap-1.5">
                 {post.parent ? (
@@ -765,6 +836,13 @@ export default function PostDetail({ dark, setDark }) {
                 >
                   {Icons.pencil} 编辑
                 </Link>
+                <button
+                  onClick={handleExportMd}
+                  title="导出为 Markdown 文件"
+                  className="inline-flex items-center gap-1 hover:text-[#111] dark:hover:text-[#eee] transition-colors"
+                >
+                  {Icons.download} 导出
+                </button>
                 <span className="inline-flex items-center gap-1">{Icons.eye} {post.view_count}</span>
                 <span className="inline-flex items-center gap-1">{Icons.clock} {dateStr}</span>
                 {post.children && post.children.length > 0 && (
@@ -779,7 +857,8 @@ export default function PostDetail({ dark, setDark }) {
 
             <div className="mb-6 pb-4 border-b border-black/5 dark:border-white/5" />
 
-            <div className="prose-content font-mono" dangerouslySetInnerHTML={{ __html: html }} />
+            <div className="prose-content font-mono" dangerouslySetInnerHTML={proseProps} />
+            <MermaidRunner key={resolvedHtml} dark={dark} />
 
             {post.children && post.children.length > 0 && (
               <div className="mt-16 pt-10 border-t border-black/5 dark:border-white/5">
@@ -791,6 +870,7 @@ export default function PostDetail({ dark, setDark }) {
                     <Link
                       key={child.id}
                       to={`/post/${child.id}`}
+                      onPointerEnter={() => prefetchPost(child.id)}
                       className="flex items-center gap-4 px-5 py-4 rounded-xl border border-black/5 dark:border-white/10 bg-white dark:bg-[#111] hover:border-black/10 dark:hover:border-white/20 transition-all duration-200 group"
                     >
                       <div className="w-8 h-8 rounded-lg bg-black/[0.03] dark:bg-white/[0.06] flex items-center justify-center text-[#999] dark:text-[#555] group-hover:bg-black/[0.06] dark:group-hover:bg-white/10 transition-colors">
@@ -806,18 +886,46 @@ export default function PostDetail({ dark, setDark }) {
               </div>
             )}
 
+            {backlinks && backlinks.length > 0 && (
+              <div className="mt-16 pt-10 border-t border-black/5 dark:border-white/5">
+                <h3 className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest mb-5">
+                  反向链接 · {backlinks.length}
+                </h3>
+                <div className="space-y-2">
+                  {backlinks.map(bl => (
+                    <Link
+                      key={bl.id}
+                      to={`/post/${bl.id}`}
+                      onPointerEnter={() => prefetchPost(bl.id)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl border border-black/5 dark:border-white/10
+                        hover:border-black/15 dark:hover:border-white/20 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-all group"
+                    >
+                      <span className="text-[#bbb] dark:text-[#555] group-hover:text-blue-500 transition-colors shrink-0 font-mono text-sm">[[→]]</span>
+                      <span className="text-[14px] font-medium text-[#333] dark:text-[#ccc] group-hover:text-[#111] dark:group-hover:text-[#eee] transition-colors truncate">
+                        {bl.title}
+                      </span>
+                      {bl.summary && (
+                        <span className="text-[12px] text-[#999] dark:text-[#666] truncate hidden sm:inline">{bl.summary.slice(0, 60)}</span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="mt-16 pt-8 border-t border-black/5 dark:border-white/5">
               <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 &larr; 返回首页
               </Link>
             </div>
           </div>
+          )}
         </article>
 
-        {/* Right TOC */}
+        {/* Right TOC：切换期间不显示旧文章的目录 */}
         <ResizeHandle onDragStart={onRightDragStart} onDrag={onRightDrag} />
         <aside className="hidden xl:block shrink-0 h-[calc(100vh-64px)] sticky top-16 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
-          <TableOfContents headings={headings} activeId={activeTocId} dark={dark} />
+          <TableOfContents headings={loading ? [] : headings} activeId={activeTocId} dark={dark} />
         </aside>
       </div>
 
