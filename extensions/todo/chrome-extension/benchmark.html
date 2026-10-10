@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MyTodo 扩展性能压测</title>
+<style>
+  body { font-family: Consolas, monospace; background: #1c1f26; color: #e5e7eb; padding: 24px; }
+  h3 { color: #8ab4f8; }
+  pre { background: #0f1115; padding: 12px; border-radius: 8px; white-space: pre-wrap; }
+  #bench-result { color: #7ee787; }
+</style>
+</head>
+<body>
+<h3>MyTodo 扩展性能压测台</h3>
+<pre id="bench-result">运行中…</pre>
+<!-- 与 test-page.html 相同:测试环境中机器人脚本由页面显式引入(扩展环境由 manifest 自动注入) -->
+<script src="js/config.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/notify.js"></script>
+<script src="content.js"></script>
+<script src="bench.js"></script>
+</body>
+</html>

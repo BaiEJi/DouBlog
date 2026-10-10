@@ -1,0 +1,37 @@
+/* 剧情图谱画布样式：源自源仓库 index.css 的**被引用子集**（body/滚动条等全局规则
+ * 与未引用的 gm-node-halo / gm-node-selected / gm-stat-value 不搬）。
+ * .react-flow 系列规则只作用于 gamemap 画布（DouBlog 其他模块无 react-flow）。 */
+
+/* React Flow 暗色化 */
+.react-flow { background: #0b0d14; }
+.react-flow__node { font-family: inherit; }
+.react-flow__attribution { display: none; }
+.react-flow__edge-text { fill: #c3cadb; font-size: 11px; }
+.react-flow__edge-textbg { fill: #141824; }
+.react-flow__controls-button { background: #141824 !important; border-color: #2a3040 !important; fill: #c3cadb !important; }
+.react-flow__minimap { background: #0f121b !important; }
+.react-flow__background { pointer-events: none; }
+.react-flow__node { width: fit-content; }
+
+/* 页面标题渐变字与卡片悬浮 */
+.gm-gradient-text {
+  background: linear-gradient(90deg, #a68bff, #38b6ff);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.gm-card-hover { transition: transform .25s, box-shadow .25s; }
+.gm-card-hover:hover { transform: translateY(-4px); box-shadow: 0 12px 32px rgba(0,0,0,.45); }
+
+/* ---- 风格 8：盒子节点 + SVG 自绘关系连线 ---- */
+.gm8-node { transition: box-shadow .15s, border-color .15s; }
+.gm8-node:hover .react-flow__handle { opacity: 1; }
+.gm8-node:active { cursor: grabbing; }
+.gm8-edge-g { cursor: pointer; }
+.gm8-edge-g:hover path:not([stroke='transparent']) { stroke-width: 3.2; }
+
+@keyframes gmPulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* 连线绘制层(z5) < 看板节点(z10) < 连线命中层(z30) */
+.gm8-board .react-flow { position: relative; z-index: 10 !important; }
+/* 关系表删除按钮：默认半隐，行悬停时显亮 */
+.gm-row-del { opacity: .35; transition: opacity .15s ease; }
+.ant-table-row:hover .gm-row-del { opacity: 1; }

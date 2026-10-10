@@ -12,3 +12,14 @@ backend/app/_reload_stamp.py
 
 venv/
 data/
+# 性能分析产物 / 压测临时数据 / 截图存档 / Flask 快照 / vault 测试残留
+*.prof
+.vault-e2e-recovery.txt
+backend/tools/bench/*/
+backend/tools/flask-snapshot/
+backend/tools/reports/
+docs/shots*/
+data/
+vault-account-debug.json
+frontend/dev_css*.txt
+frontend/scan_test/

@@ -1,7 +1,7 @@
 # DouBlog API 协议文档
 
 > **基础路径**: `http://<主机名>:60100/api`
-> **认证方式**: HTTP Basic Auth（所有 `/api/*` 接口均需认证）
+> **认证方式**: 统一登录（会话 Cookie 优先，Basic Auth 兼容）；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub 网关（sk-）
 > **本文档与 `backend/app/api/` 下的代码一一对应，修改接口时必须同步更新本文档**（见 `AGENTS.md` 文档同步规则）
 
 ---
@@ -9,27 +9,36 @@
 ## 目录
 
 - [1. 通用规范](#1-通用规范)
-- [2. 认证 API](#2-认证-api)
+- [2. 认证 API（统一登录）](#2-认证-api)
 - [3. 知识库 API](#3-知识库-api)
 - [4. 文章 API](#4-文章-api)
 - [5. 操作日志 API](#5-操作日志-api)
 - [6. 管理 API（数据库切换）](#6-管理-api数据库切换)
 - [7. 图片 API](#7-图片-api)
-- [8. 错误码与数据模型](#8-错误码与数据模型)
+- [8. 最近浏览 / 反链 / 导出 API](#8-最近浏览--反链--导出-api)
+- [9. 日记 API](#9-日记-api独立模块memos--day-one-超集)
+- [10. Vault API](#10-vault-api零知识密码库)
+- [11. Pwsvc API](#11-pwsvc-api密码服务轮换密码非零知识)
+- [12. Sdklogs API](#12-sdklogs-api日志接收lizysdk-send_json-服务端)
+- [13. Subs API](#13-subs-api订阅管理crownflow-迁移)
+- [14. API Hub API](#14-api-hub-api统一-api-调用平台)
+- [15. Todo API](#15-todo-api四象限待办mytodo-迁入)
+- [16. 配置中心 API](#16-配置中心-api)
+- [17. 错误码与数据模型](#17-错误码与数据模型)
 
 ---
 
 ## 1. 通用规范
 
-### 1.1 认证方式
+### 1.1 认证方式（统一登录 + Basic 兼容）
 
-HTTP Basic Auth，凭据定义在 `backend/app/config.py`（默认 `admin` / `lizy111A`）。
+**前端统一登录**：`/login` 页 `POST /api/auth/login`（JSON 载荷）→ 签发 HttpOnly 会话 Cookie `doublog_session`（HMAC 签名，30 天），之后所有模块免再登录。**API/脚本/测试**兼容 Basic Auth（凭据定义在 `backend/app/config.py`，默认 `admin` / `lizy111A`）：
 
 ```bash
 curl -u admin:lizy111A http://localhost:60100/api/posts
 ```
 
-未认证或凭据错误返回 401：
+未认证或凭据错误返回 401（附 `WWW-Authenticate`）：
 
 ```json
 { "success": false, "code": 401, "message": "认证失败", "data": null }
@@ -67,7 +76,7 @@ curl -u admin:lizy111A http://localhost:60100/api/posts
 
 ### 1.4 gzip 压缩
 
-响应为 JSON/文本且超过 1KB 时，若请求头携带 `Accept-Encoding: gzip`，服务端自动压缩（`Content-Encoding: gzip`）。
+响应超过 1KB 且请求头携带 `Accept-Encoding: gzip` 时自动压缩（`Content-Encoding: gzip`；不限 JSON/文本）。
 
 ### 1.5 正文传输约定（重要）
 
@@ -92,6 +101,14 @@ POST /api/auth/login
 { "success": true, "code": 200, "message": "登录成功", "data": { "username": "admin" } }
 ```
 
+**请求体（登录页方式，签发会话 Cookie）**
+
+```json
+{ "username": "admin", "password": "lizy111A" }
+```
+
+成功时响应头附 `Set-Cookie: doublog_session=<token>; HttpOnly; SameSite=Lax; Max-Age=2592000`（30 天），之后请求自动携带（`credentials: include`）。也接受 `Authorization: Basic` 头（兼容 API 工具，同样签发 Cookie）。
+
 **失败响应** `401`（凭据错误）
 
 ### 2.2 检查认证状态
@@ -107,6 +124,14 @@ GET /api/auth/check
 ```json
 { "success": true, "code": 200, "message": "已认证", "data": { "authenticated": true, "username": "admin" } }
 ```
+
+### 2.3 登出
+
+```
+POST /api/auth/logout
+```
+
+清除会话 Cookie（幂等，无需认证）。前端门户右上角"登出"按钮调用后跳 `/login`。
 
 ---
 
@@ -211,7 +236,7 @@ GET /api/posts/tree?workspace_id=1
 | `children_order` | 该节点自定义的子节点顺序（id 数组） |
 
 - **不含 `content`**，正文需按节点 id 调详情接口获取
-- 树按各节点的 `children_order` 排序；顶级节点按虚拟根（id=0）的 `children_order` 排序
+- 树按各节点的 `children_order` 排序；**顶级节点按所属知识库 `workspaces.children_order` 排序**（虚拟根仅存量迁移时拷贝一次）
 
 ### 4.3 获取文章详情（含正文）
 
@@ -308,7 +333,7 @@ DELETE /api/posts/slug/hello-doublog
 
 | 模式 | 行为 |
 |---|---|
-| 默认（非级联） | **子文章提升为顶级文章**（parent_id=0, level=0，挂到虚拟根的 children_order） |
+| 默认（非级联） | **子文章提升为顶级文章**（parent_id=0, level=0，挂到所属知识库 workspaces.children_order） |
 | `?recursive=1` | **递归删除所有子孙文章** |
 
 删除同时写一条操作日志。成功返回 `200`。
@@ -360,7 +385,7 @@ GET /api/posts/audit-logs?page=1&page_size=20
 
 ## 6. 管理 API（数据库切换）
 
-后端支持 SQLite / PostgreSQL 双数据库，以下接口完成"测试连接 → 切换"。前端管理页（`/admin`）即本组接口的界面。
+后端支持 SQLite / PostgreSQL 双数据库，以下接口完成"测试连接 → 切换"。前端总配置页（`/config`）即本组接口的规范界面（`/admin` 保留旧入口）。
 
 > **切换语义**：只更换连接配置（`data/db_config.json`）并重启生效，**不迁移数据**——直接读取目标库的现有数据（空库自动建表并播种默认知识库/虚拟根）；两侧数据互不影响，随时可切回。
 
@@ -406,7 +431,7 @@ POST /api/admin/database/switch
 **流程**：校验目标可达（PG 库不存在自动创建）→ 写 `data/db_config.json` → 重启生效（读取目标库现有数据）。
 
 **生效方式**：
-- 开发模式（Werkzeug reloader 下）：touch 戳文件触发**自动重启**（与改代码热重启同一机制），响应 `restart_required: false`
+- 开发模式（uvicorn `--reload`）：touch `app/_reload_stamp.py` 戳文件触发**自动重启**（与改代码热重启同一机制），响应 `restart_required: false`
 - 生产模式：响应 `restart_required: true`，需手动重启后端
 
 **成功响应**
@@ -493,7 +518,378 @@ zip 结构：每个知识库一个目录（文章按树嵌套，有子文章的�
 
 ---
 
-## 6. 错误码与数据模型
+## 9. 日记 API（独立模块，Memos/Day One 超集）
+
+> 日期一律 `YYYY-MM-DD`；同一天可多篇；删除为软删除（回收站）。存储跟随设置页数据库切换。
+
+```
+# 条目
+GET    /api/diary/entries                  视图+过滤：?view=timeline(默认)|archive|trash|pinned
+                                          ?date= ?start=&end= ?search=(仅正文 LIKE) ?mood= ?journal_id= ?limit&offset
+POST   /api/diary/entries                 创建（含 mood/journal_id(随记必填)/weather/location）
+PUT    /api/diary/entries/<id>            整包更新（自动保存）
+PUT    /api/diary/entries/<id>?action=…   动作：pin|unpin|archive|unarchive|restore
+DELETE /api/diary/entries/<id>            移入回收站；?hard=1 彻底删除（回收站内才允许）
+POST   /api/diary/quick                   一句话快速录入 {content, journal_id(必填), mood?}（外部脚本）
+
+# 日记本（分册）
+GET/POST /api/diary/journals · PUT/DELETE /api/diary/journals/<id>（有日记 409 拒删；列表含预置 日常/工作/感悟 三本与计数）
+POST   /api/diary/summary                 当日总结 upsert（每天一篇，见 docs/modules/diary.md）
+
+# 日历 / 热力图 / 回忆
+GET    /api/diary/dates?year=&month=      每月每天 {count, mood(当天最好)}
+GET    /api/diary/heatmap?year=           年度每天 {count, mood} + max（色阶归一）
+GET    /api/diary/onthisday               往年同月同日 + 随机旧记忆
+
+# 统计
+GET    /api/diary/stats                   连续/最长连续/本月/总篇/总字/本数
+GET    /api/diary/trends?months=12        每月 {entries, words, mood_avg}（缺月补零）
+GET    /api/diary/yearend?year=           年度回顾（篇/字/心情分布/最长连续/最活跃月）
+
+# 分享（单篇免登录只读）
+POST   /api/diary/entries/<id>/share      {expires_hours:1-8760} → {token}；过期/撤销/进回收站一律 404
+DELETE /api/diary/entries/<id>/share      撤销
+GET    /api/diary/share/<token>           **免登录**只读（无 id 等管理字段）
+
+# 导出 / 模板 / 引导
+GET    /api/diary/export                  全量 Markdown zip（frontmatter: date/mood/tags/weather/location）
+GET    /api/diary/templates               内置模板（晨间/晚间/周回顾/感恩/自由）
+GET    /api/diary/prompt?date=            每日写作引导问题（按日期确定性轮换，21 条）
+```
+
+天气/位置由前端采集（open-meteo + 浏览器定位，用户点按钮触发），后端只存白名单字段。
+
+### 9.1 日志上报配置（管理端）
+
+```
+GET  /api/admin/logging            → {enabled, url, level, modules:[{module, sys_name:doublog.<m>}]}
+PUT  /api/admin/logging            {enabled?, url?, level:'WARNING'|'INFO'}（即时生效，落 data/logs_config.json）
+POST /api/admin/logging/test       发一条 WARNING（sys_name=doublog.system）→ {marker}，到 /logs 搜索验证
+```
+
+
+## 10. Vault API（零知识密码库）
+
+> 服务端只存密文：`blob = {n, ct}`（AES-256-GCM，base64）与包裹后的 VEK 材料；**不存在任何明文敏感字段参数**；无服务端搜索（客户端解密后搜）。单账号（首行）。
+
+```
+GET    /api/vault/account                KDF 参数 + 双通道包裹的 VEK（404=未初始化）
+POST   /api/vault/account                初始化 {kdf_algo:'argon2id', kdf_params, kdf_salt, recovery_salt, wrapped_vault_key, recovery_wrapped_vault_key}
+PUT    /api/vault/account/keys           主密码修改/恢复密钥轮换（仅替换包裹材料）
+GET    /api/vault/items?trash=0|1        条目列表（密文+非敏感元数据：favorite/last_used_at/password_updated_at/deleted_at）
+POST   /api/vault/items                  创建 {blob, favorite?, password_updated_at?}
+PUT    /api/vault/items/<id>             更新（整包密文覆盖；password_updated_at 变化会记审计 password_changed）
+DELETE /api/vault/items/<id>             移入回收站（软删）
+POST   /api/vault/items/<id>/restore     恢复
+DELETE /api/vault/items/<id>/purge       永久删除
+POST   /api/vault/items/<id>/use         记录最近使用（仅 ID+时间）
+GET    /api/vault/audit?page=&page_size= 审计（action + item_id + 时间，无任何内容；page_size ≤200）
+GET    /api/vault/items/<id>/attachments 附件元数据列表
+POST   /api/vault/items/<id>/attachments 上传加密附件（JSON {blob, size}；5MB/文件，总量 8MB，超限 413）
+GET    /api/vault/attachments/<aid>      下载密文附件
+DELETE /api/vault/attachments/<aid>      删除附件（purge 级联清理）
+GET    /api/vault/export                 加密备份（账号材料+全部条目密文；格式串 doublog-vault-backup）
+POST   /api/vault/import                 导入（替换式；兼容历史笔误串 doublog-vault-backdown）
+```
+
+---
+
+## 11. Pwsvc API（密码服务：轮换密码，非零知识）
+
+> 密码库内子模块：项目 → 用户类型（密码策略+轮换周期）→ 用户（独立密码链）。
+> 密码**不存储**，由 `derive(seed, 时间窗口, 策略)` 确定性推导（HMAC-SHA256 + 拒绝采样 + 洗牌，黄金向量防漂移）；
+> 每用户独立 32 字节（256-bit）seed（AES-256-GCM 加密落盘，密钥 `data/pwsvc.key`）。
+> 校验：当前窗口命中→valid+剩余秒数；否则**进入窗口 30s 内**（`min(30, rotation)`）比对上一窗口（宽限）；常数时间比较。
+> 本模块为服务端校验服务，**非零知识**（UI 已标注）。
+
+```
+# 管理（Basic Auth）
+POST   /api/pwsvc/projects                  创建（响应含 api_key 明文，仅此一次；pws_ 前缀；可选 rate_limit）
+GET    /api/pwsvc/projects                  列表（含类型数/用户数/rate_limit）
+PUT    /api/pwsvc/projects/<id>             改名/描述/rate_limit（0-10000，改后立即生效）
+DELETE /api/pwsvc/projects/<id>             删除（级联，含日志）
+POST   /api/pwsvc/projects/<id>/api-key     重置 API Key（旧 key 立即失效）
+
+POST   /api/pwsvc/projects/<id>/types       创建类型 {name, length, uppercase, lowercase, digits, symbols, exclude_ambiguous, rotation_seconds}
+GET    /api/pwsvc/projects/<id>/types       类型列表（含用户数）
+PUT    /api/pwsvc/types/<id>                改策略（立即生效：当前窗口即按新策略重推导）
+DELETE /api/pwsvc/types/<id>                有关联用户时 409
+
+POST   /api/pwsvc/projects/<id>/users       创建用户 {username, type_id, display_name?}
+GET    /api/pwsvc/projects/<id>/users       用户列表（不含密码/seed）
+PUT    /api/pwsvc/users/<id>                改 display_name / status / reset_seed（旧密码全失效）
+DELETE /api/pwsvc/users/<id>
+GET    /api/pwsvc/users/<id>/current        当前密码 + expires_in（仅管理 UI）
+GET    /api/pwsvc/projects/<id>/logs?page=&per_page=   校验日志（倒序分页）+ 失败统计
+
+# 校验（第三方服务，X-Api-Key 认证）
+POST   /api/pwsvc/validate
+Headers: X-Api-Key: pws_xxx…
+Body:    {"username": "user001", "password": "..."}
+→ 200 {"data": {"valid": true, "expires_in": 23}} / {"data": {"valid": false}}；Key 错误 401；超限 429
+```
+
+**限流**（rate_limit，默认 120 次/分钟，0 = 不限）：进程内令牌桶（容量 = 每分钟额度，匀速回填），
+超出返回 `429 请求过于频繁`；被限流的请求**不写日志**（防刷爆日志表）。改配置立即生效（清桶）。
+
+**校验日志**（`pwsvc_validate_logs`）：每次校验（成功/失败/用户不存在）各记一行
+（项目/用户名/结果/IP/时间，**永不含密码内容**），保留 30 天（写入时顺手清理过期行）。
+`/logs` 响应附统计：
+
+```json
+{"data": {"items": [...], "total": 6, "page": 1, "per_page": 50,
+  "stats": {"h1": {"ok": 2, "fail": 4}, "h24": {"ok": 2, "fail": 4},
+             "fail_top": [{"username": "demo_user", "count": 3}]}}}
+```
+
+约束：rotation_seconds ∈ {30,60,120,300,600}；length 8-64 且至少启用一个字符集；
+日志/审计**永不含密码内容**。详见 `docs/pwsvc-design.md`。
+
+---
+
+## 12. Sdklogs API（日志接收：lizysdk send_json 服务端）
+
+> 接收 lizysdk `send_json=True` 逐条 POST 的 JSON 日志，批量落库、可检索。
+> 存储跟随设置页数据库（`data/db_config.json` 切换即生效）；`ts` 统一 naive UTC
+> （SDK 无时区时间戳按 `LOGSDB_INCOMING_TZ`（默认 Asia/Shanghai）解释，RFC3339 带时区直接采用）。
+> 摄入端点**免认证**（SDK 无凭据直发；可选 `LOGSDB_AUTH_TOKENS` Bearer token，空=开放）；
+> 检索/统计走统一登录（会话 Cookie 或 Basic）。
+
+```
+# 摄入（返回 202，落库异步）
+POST /api/v1/logs            单条（body = SDK JSON 对象）
+POST /api/v1/logs/batch      批量（JSON 数组 或 JSONL 文本，单批 ≤1000 条）
+  → {"data": {"accepted": 5, "dead_lettered": 1}}
+  坏日志（级别/时间戳/缺 sys_name）不报 4xx：进死信 data/dead_letters/YYYYMMDD.jsonl（可整文件重放回 batch）
+
+# 检索（会话 Cookie/Basic；任意保留字之外的查询参数 = fields kv 过滤，如 ?user_id=123）
+GET /api/v1/logs?start=&end=&sys_name=a,b&level=ERROR&level_gte=WARNING&trace_id=&q=全文&limit=100&offset=0
+  → {"data": {"total": n, "items": [{id, ts, level, level_text, sys_name, file, line, trace_id, message, fields, received_at}]}}
+GET /api/v1/logs/count       同过滤仅返回 total（无过滤走静态 count 快路径）
+GET /api/v1/logs/sysnames    库内 distinct sys_name + 条数（查询页下拉数据源，按条数倒序；结果 5s TTL 缓存）
+GET /api/v1/logs/histogram?buckets=60     时间直方图（10-240 桶，按级别分色；按查询串 5s TTL 缓存）
+GET /api/v1/logs/context?id=&before=&after= 上下文（锚点高亮，前后各 N 条）
+GET /api/v1/logs/patterns?limit=          模式分组（相似消息模板归并）
+GET /api/v1/logs/export?format=json|csv   导出（≤1 万行）
+GET /api/v1/logs/trace?trace_id=          同 trace_id 时间线
+GET /api/v1/stats            近 24h 按 sys/level 计数 + accepted/dropped/failed/dead_letter + total_rows（DB 聚合 5s TTL 缓存，队列/计数器实时）
+GET /api/v1/alerts · PUT /api/v1/alerts/config · POST /api/v1/alerts/check|ack   告警规则/事件/巡检/确认（详见 docs/modules/sdklogs.md）
+```
+
+- SDK 对接：`setup_logging(..., send_json=True, send_url="http://host:60100/api/v1/logs")`
+- 写入路径：接收线程只入队（队满丢最旧并计数 dropped）→ 单写者线程批量落库（500 条/500ms），
+  失败重试 2 次后进死信；停机排空队列
+- 保留策略：`LOGSDB_RETENTION_DAYS`（默认 30，0=永久）每日清理超期行与死信文件
+- kv 过滤参数名限 `[A-Za-z0-9_.-]`（防 JSON 路径注入）；message 全文 `LIKE` 转义 `%_`
+
+---
+
+---
+
+## 13. Subs API（订阅管理，CrownFlow 迁移）
+
+> 会员订阅管理（源自 CrownFlow 项目全量迁移）：**会员主表**（基础信息 + 提醒天数）一对多
+> **订阅记录**（每次购买/续费一条：价格/币种/计费周期/起止日期/渠道），按**分类**组织；
+> 支出统计按「日均 = 价格 ÷ 周期天数，实际支出 = 日均 × 与查询范围重叠天数（闭区间）」计算，
+> 跨币种按 `settings.subs_exchange_rates` 静态汇率折算基准币（CNY）。
+> 日期一律 `YYYY-MM-DD` 字符串；全部接口走统一登录（会话 Cookie 或 Basic）。
+
+```
+# 分类
+GET    /api/subs/categories                        全部分类（按创建时间）
+POST   /api/subs/categories                        {name(必填,唯一,≤50), icon?, color?} → 201
+PUT    /api/subs/categories/<id>                   {name?, icon?, color?}
+DELETE /api/subs/categories/<id>                   分类下有会员 → 400
+
+# 会员（列表即带聚合字段：latest_subscription / status / subscription_count /
+#       total_spending(折算基准币) / total_duration_days）
+GET    /api/subs/members?page=&page_size=&keyword=&category_id=&status=active|expired&sort_by=created_at|name&order=asc|desc
+       → {"data": {"items": [...], "total": n}}
+GET    /api/subs/members/<id>                      详情（含全部订阅记录）
+POST   /api/subs/members                           {name(必填,≤100), category_id?, notes?, reminder_days?, subscription?:{首条订阅}}
+PUT    /api/subs/members/<id>                      {name?, category_id?, notes?, reminder_days?}
+DELETE /api/subs/members/<id>                      级联删除其订阅记录
+
+# 订阅记录
+GET    /api/subs/members/<id>/subscriptions?status=active|expired&start_date=&end_date=&sort_by=created_at|start_date|end_date|price&order=
+       （start_date+end_date 成对给出时筛选与区间有重叠的订阅）
+POST   /api/subs/members/<id>/subscriptions        {price(必填,≥0), billing_cycle(必填: monthly|quarterly|yearly|custom),
+                                                     start_date, end_date(必填), currency?(CNY|USD|EUR|GBP|JPY,默认CNY),
+                                                     custom_days?(custom 必填,>0), level?, channel?, notes?} → 201
+GET    /api/subs/subscriptions/<id>                详情（附 member_name）
+PUT    /api/subs/subscriptions/<id>                部分更新（组合校验：起止顺序 / custom 需天数）
+DELETE /api/subs/subscriptions/<id>
+
+# 统计（spending/by-category/trend 需 start_date+end_date；trend granularity: day|week|month|quarter）
+GET    /api/subs/stats/overview                    {total_members, active_members, monthly_spending, yearly_spending}
+GET    /api/subs/stats/category-summary            各分类本月/年度支出 + 合计（Dashboard 表格）
+GET    /api/subs/stats/spending?start_date=&end_date=        {total, daily_average, by_currency, categories[{...,percentage}]}
+GET    /api/subs/stats/by-category?start_date=&end_date=     {categories[{...,details[{subscription_id,member_name,level,amount}]}], total}
+GET    /api/subs/stats/trend?start_date=&end_date=&granularity=month
+       → {"trend": [{date: 标签, amount, details: 按分类明细（day/week 标签为日期/mm/dd 区间，month=YYYY-MM，quarter=YYYY-Qn）}]}
+
+# 提醒
+GET    /api/subs/reminders/upcoming                end_date≥今天 且 剩余天数 ≤ 会员 reminder_days（按剩余天数升序）
+GET    /api/subs/reminders/all                     全部未到期订阅（到期日历数据源）
+
+# 备份（当前 SQLite 库快照 → data/backups/subs_YYYYMMDD_HHMMSS.db，自动清理超期；PG 后端返回 skipped）
+POST   /api/subs/backup/run                        {status: ok|skipped|error, path?, size?}（status=error 时 HTTP 409）
+GET    /api/subs/backup                            {total_count, total_size_mb, retention_days, newest/oldest_backup, backups[]}
+```
+
+**实测示例**（种子数据：Netflix 月付 ¥89/¥199、Disney+ 年付 $58 等 9 会员）：
+
+```json
+GET /api/subs/stats/overview
+→ {"success": true, "code": 200, "data": {"total_members": 9, "active_members": 8,
+   "monthly_spending": 416.32, "yearly_spending": 1747.07}}
+
+GET /api/subs/reminders/upcoming
+→ {"data": {"reminders": [{"member_name": "YouTube Premium", "days_remaining": 1, ...},
+                           {"member_name": "Netflix", "days_remaining": 10, ...}]}}
+
+GET /api/subs/members?keyword=netflix
+→ {"data": {"items": [{"name": "Netflix", "status": "active", "subscription_count": 2,
+   "total_spending": 294.0, "total_duration_days": 61, "latest_subscription": {...}}], "total": 1}}
+```
+
+**错误码**：401 认证失败；400 参数缺失/格式非法/日期倒置/币种或周期非法/分类或会员不存在/有关联分类不可删；404 资源不存在；409 分类重名。
+**会员状态口径**：任意一条订阅 `end_date ≥ 今天` ⇒ `active`，否则 `expired`。
+**月/年支出口径**（CrownFlow 原口径）：按日均 × **整月/整年** 覆盖天数计算（非"至今"）。
+**后台任务**：每日 02:00 自动备份（`SUBS_BACKUP_ENABLED=0` 关闭）、10:00 当日活跃订阅支出摘要写模块日志（sys_name=doublog.subs）。
+
+---
+
+
+---
+
+## 14. API Hub API（统一 API 调用平台）
+
+> 聚合异构上游 API，统一以平台令牌调用；四级限流 / 计次配额 / 密钥池 / 一键与定时探活。
+> 模块代码 `app/apihub/`，前端页面 `/apihub`。管理端走 Basic Auth；**网关入口走平台令牌（sk-，不挂 Basic Auth）**。
+
+### 14.1 网关调用（外部调用方，Authorization: Bearer sk-…）
+
+```
+# 统一信封：path/query/header 四个桶 + body
+POST   /api/apihub/gw/apis/{slug}
+       body: {"path": {...}, "query": {...}, "header": {...}, "body": {...}}
+
+# 透明代理：原路径/query/body 透传（存量客户端只换 base_url 与鉴权头）
+ANY    /api/apihub/gw/upstreams/{upstream_slug}/{path}
+```
+
+- 响应默认透传（含上游状态码与 `X-Hub-Latency-Ms`）；API 配置 `response_cfg.envelope=wrap` 时返回统一信封 `{code,message,data,meta}`
+- 错误归一化双通道：HTTP 状态 + `response_cfg.error_mapping`（`body_code_path/success_codes/body_message_path`，适配"HTTP 200 + body code 表错"的国内 API）
+- 429 响应头：`Retry-After` / `X-RateLimit-Scope`（token_api|api|token|global）/ `X-RateLimit-Limit` / `X-RateLimit-Remaining`
+- 上游 401/403 → 自动禁用该把 key 并换 key 重试；连接错误仅在有备选 key 时计失败（连续 3 次冷却 10s）；超时 → 504；全部失败 → 503
+- API 健康状态 down 时拒绝调用（503 unhealthy）；探活恢复后自动放行
+
+**实测示例**（上游指向本服务 /health，api_key_header 鉴权注入）：
+
+```json
+POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
+→ {"status": "healthy"}            # 上游响应原样透传，X-Hub-Latency-Ms: 0
+
+第 3 次调用（API 总量规则 2 次/60s）→ 429
+  Retry-After: 22, X-RateLimit-Scope: api, X-RateLimit-Limit: 2, X-RateLimit-Remaining: 0
+```
+
+### 14.2 管理端（Basic Auth，统一 {success,code,message,data} 包装）
+
+```
+上游      GET/POST /api/apihub/admin/upstreams   PUT/DELETE /api/apihub/admin/upstreams/{id}
+密钥池    GET/POST /api/apihub/admin/upstreams/{id}/keys   PUT/DELETE /api/apihub/admin/upstreams/keys/{kid}
+API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/apis/{id}
+平台令牌  GET/POST /api/apihub/admin/tokens      PUT/DELETE /api/apihub/admin/tokens/{id}
+限流规则  GET/POST /api/apihub/admin/rules       PUT/DELETE /api/apihub/admin/rules/{id}
+探活      POST /api/apihub/probes/run            {"api_ids": [id,…]}  # 空=全部
+日志/统计 GET /api/apihub/logs?api_id=&token_id=&limit=   GET /api/apihub/stats/overview
+```
+
+要点：
+- **上游 auth_config**（JSON）：`{providers: [...], credential_fields: [...], transport: {...}}`；
+  providers 七种静态类型 `bearer / api_key_header / query_key / basic / static_cookie / path_token / template`，
+  凭证模板 `{cred.字段}` 可用于 header/query/cookie 与 base_url/路径模板；多 provider 组合支持（数组）
+- **密钥池**：credential 按 credential_fields 填字典；列表只回脱敏指纹（`abc***23`），明文不落日志
+- **平台令牌**：`sk-` 前缀 SHA-256 落库，**明文仅创建响应返回一次**；属性：expires_at / allowed_api_ids / allowed_ips / quota_total（计次，预占-退还语义）
+- **限流规则**：scope = token_api|api|token|global（同层多条取最严格）；algorithm = token_bucket(rate_per_sec+burst) | fixed_window(window_s+max_count)；列表附当前用量 usage
+- **探活 probe**（JSON）：path（默认=API 自身路径）/expect_status/expect_body_regex/interval_s（>0 定时探，down 态间隔×5）/failure_threshold/success_threshold
+
+## 15. Todo API（四象限待办，MyTodo 迁入）
+
+> 模块代码 `app/todo/`，前端页面 `/todo`。**全部接口挂统一登录**（会话 Cookie 或 Basic）。
+> 数据表 `todo_*` 五表；象限 = is_important × is_urgent 派生；revision 乐观锁。详见 `docs/modules/todo.md`。
+
+```
+# 任务
+GET    /api/todo/tasks                   过滤 ?date= ?from=&to= ?inbox=1 ?overdue=1 ?status=active|all|done
+                                            ?category_id= ?quadrant=1-4 ?q= ?sort= ?plan_only= ?exclude_plans=
+POST   /api/todo/tasks                   新建 201 {title, quadrant|is_important+is_urgent, task_date?, category_id?}
+GET    /api/todo/tasks/{id}              详情（含最近 50 条事件）
+PATCH  /api/todo/tasks/{id}              更新（body 带 revision，冲突 409）
+DELETE /api/todo/tasks/{id}              软删
+POST   /api/todo/tasks/{id}/restore      恢复
+POST   /api/todo/tasks/{id}/complete     完成 {completed_at?, note?}
+POST   /api/todo/tasks/{id}/reopen       重开
+POST   /api/todo/tasks/{id}/move         改象限 {quadrant}
+POST   /api/todo/tasks/{id}/reorder      象限内排序 {before_task_id?}（浮点中点）
+
+# 类别
+GET/POST /api/todo/categories - PATCH/DELETE /api/todo/categories/{id}（删除时任务归未分类）
+
+# 今日 / 迁移
+GET    /api/todo/today                   ?date=（四象限分组+待迁移+昨日概况+streak+软上限）
+GET    /api/todo/migrations/pending      待迁移（含干预标记）
+GET    /api/todo/migrations/shelved      已搁置
+POST   /api/todo/tasks/{id}/migrate      {to_date, reason}
+POST   /api/todo/migrations/bulk         {task_ids, to_date, reason}
+POST   /api/todo/migrations/decide       {task_id, decision: keep|delete|unshelve}
+POST   /api/todo/migrations/auto         自动迁移 {migrated: n}
+
+# 统计
+GET    /api/todo/stats/daily             ?date=
+GET    /api/todo/stats/range             ?from=&to=
+GET    /api/todo/stats/heatmap           ?year=
+GET    /api/todo/stats/streak            {current, best, total_active, last_active_date}
+
+# 设置 / 通知 / 规律生活
+GET/PUT /api/todo/settings               字段级增量（timezone/象限文案/阈值/通知渠道）
+POST   /api/todo/notifications/test      {channel} 实测发送（email）
+GET/POST /api/todo/plans - GET /plans/today - GET /plans/report?days= - PATCH/DELETE /plans/{id}
+
+# 剧情图谱子模块（/api/todo/gamemap/*，13 表 gamemap_*）
+GET/POST /api/todo/gamemap/games · GET /games/{id}/export · POST /games/import · GET /games/{id}/stats
+GET/POST /api/todo/gamemap/games/{gid}/chapters|characters · characters 批量 POST /batch
+GET    /api/todo/gamemap/games/{gid}/boards/chapters/{cid}   # 单章看板
+GET    /api/todo/gamemap/games/{gid}/boards/merged?chapter_ids=   # 跨章聚合看板
+PATCH  /api/todo/gamemap/games/{gid}/boards/chapters/{cid}/nodes/{cid2}  # 拖动保存
+PUT    /api/todo/gamemap/games/{gid}/boards/chapters/{cid}   # 整板保存（乐观锁 409）
+GET/POST/PATCH/DELETE /api/todo/gamemap/chapters/{cid}/events · /games/{gid}/characters/{cid}/photos
+GET/POST /api/todo/gamemap/relation-types · GET /games/{gid}/relation-types ·
+       PUT /games/{gid}/relation-types/{type_id}/override（游戏级 override；全局类型无 PATCH/DELETE）
+GET    /api/todo/gamemap/search?q= · POST /api/todo/gamemap/uploads
+GET    /api/todo/gamemap/files/{name}                        # 附件下载（免认证，目录围栏）
+```
+
+## 16. 配置中心 API（confcenter）
+
+> 模块代码 `app/confcenter/`，前端页面 `/confcenter`。全部接口挂统一登录。
+> 扁平 KV：namespace+key 唯一定位 value；value = {type, data}（str 原样 / json 校验）；type 可变更。
+
+```
+GET    /api/confcenter/namespaces              # distinct namespace + 条目数
+GET    /api/confcenter/entries                 # ?namespace= &q= &page= &page_size=
+GET    /api/confcenter/{ns}/{key}              # 读：str→字符串，json→解析后结构
+PUT    /api/confcenter/{ns}/{key}              # upsert {type, data}（201 新建/200 覆盖；json 非法 400）
+DELETE /api/confcenter/{ns}/{key}              # 200 / 404
+GET    /api/confcenter/cache/status            # {enabled, configured, reachable, url_masked, hits, misses}
+GET/PUT /api/confcenter/cache/config           # Redis 配置（enabled/host/port/db/password/ttl；密码留空沿用）
+POST   /api/confcenter/cache/test              # 连通性测试（可带候选配置）
+POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
+```
+
+## 17. 错误码与数据模型
 
 ### 6.1 HTTP 状态码
 

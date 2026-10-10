@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>页面机器人 · 测试页</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 40px; background: #f8fafc; color: #1e293b; }
+    h1 { font-size: 20px; }
+    p { color: #64748b; max-width: 640px; line-height: 1.7; }
+    code { background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>页面机器人测试页(开发用)</h1>
+  <p>
+    此页面用于在<b>未安装扩展</b>的情况下验证 content.js 的注入逻辑:
+    右下角应出现 🤖 悬浮机器人,点击展开四象限面板(iframe 以相对路径加载 popup.html),
+    可拖拽换位、Esc 或 ✕ 关闭。安装到 Chrome 后,任意网页都会出现同样的机器人。
+  </p>
+  <p>正式入口:<a href="popup.html">popup.html</a> · <a href="options.html">options.html</a></p>
+
+  <!-- 与 manifest 的 content_scripts 加载顺序保持一致 -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/notify.js"></script>
+  <script src="content.js"></script>
+</body>
+</html>

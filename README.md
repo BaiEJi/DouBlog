@@ -19,9 +19,9 @@
 
 ## 项目简介
 
-DouBlog 是一个单用户个人博客系统：
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、待办四象限（`/todo`，MyTodo 迁入，含**剧情图谱**子模块 /todo/gamemap）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、管理（`/admin`）。
 
-- **后端** Flask 3，提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；支持 **SQLite / PostgreSQL 双数据库一键切换**（只换连接读新数据，不迁移，随时可切回）
+- **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
 - **多知识库**：文章按知识库分组隔离（首页切换器一键新建/切换，`/?ws=<id>` 记忆当前库）
 - **全文搜索**：关键词匹配标题/摘要/英文名/正文，跨知识库，`Ctrl+K` 快速聚焦
@@ -30,17 +30,27 @@ DouBlog 是一个单用户个人博客系统：
 - **最近浏览**：首页按最近阅读横条快速回访（跨知识库，hover 预取不虚增浏览量）
 - **导出备份**：单篇页“导出”按钮下载该文 `.md`（frontmatter + 图片 URL 绝对化）；管理页一键导出全库 Markdown + 图片 zip（树形目录 + frontmatter，Obsidian 可直接导入）
 - **编辑器**：快捷键（`Ctrl+S` 保存、`Ctrl+B/I` 加粗斜体、`Ctrl+K` 链接、`Tab` 缩进）、预览同步滚动、表格/图表/代码块模板
+- **订阅管理**（`/subs`，CrownFlow 全量迁移）：**会员主表 + 多订阅记录**（一次购买/续费一条：价格/币种 5 种/计费周期 4 种/起止/渠道）按自定义分类（emoji+颜色）组织；**支出统计**（日均×重叠天数折算 CNY 静态汇率；概览/分类汇总/趋势 day·week·month·quarter 粒度）；**到期提醒**（按会员 reminder_days 阈值）与**订阅到期日历**（农历/法定节假日/当日徽标）；会员支出排行榜（4 维度）、订阅时间轴（3m/6m/12m/全部+今天线）、表格/卡片双视图；**每日 02:00 自动备份**（90 天保留，可手动触发）
+- **私人日记**（`/diary`，Memos × Day One 超集）：**随记分日记本**（预置 日常🏡/工作💼/感悟🌱，可自建；随记必选本，录入框内直接切换）+ **每日总结**（每天一篇 upsert，总结卡置顶日期组、随记带连接线挂在总结之后）；侧栏工作台（视图/日记本含计数）+ 快捷录入（**本子**/心情/模板/**每日引导问题**/**天气位置一键记录**）；置顶/归档/**回收站**；**年度热力图**、**那年今日**、统计图表（连续/每月字数/心情趋势/**年度回顾**）；单篇**免登录分享链接**（可撤销/有效期）；一句话快速录入 API + 全量 Markdown 导出
+- **密码库**（`/vault`，零知识端到端加密）：Argon2id 派生 + AES-256-GCM，服务端只存密文；**TOTP 验证码生成**（RFC 6238，30s 环形倒计时 + 一键复制，编辑器粘贴 otpauth:// 自动解析）、**HIBP 泄露检查**（k-anonymity，仅上传 SHA-1 前 5 位，结果本地缓存）、**健康总评分**（0-100 环，按泄露/弱/复用等加权扣分，点击下钻）、**安全附件**（前端 VEK 加密上传/下载/删除，5MB/文件，purge 级联清理）、密码历史（改密自动归档）、身份（邮箱/手机 → 关联账号）、密码/口令短语生成器 + 编辑器实时强度条、安全中心（泄露/弱/复用/过旧/**到期提醒**/无 2FA/重复/缺恢复，全客户端分析）、**密码到期提醒**（条目可设 N 天周期，超期概览横条+详情徽标）、⌘K 全局搜索、自动锁定、Recovery Key、加密备份导入导出；全中文界面，三面板布局，明暗 + 移动端
+- **密码服务**（密码库内子模块）：为项目提供**自动轮换密码**（30s~10min）与机器校验 API——项目 → 用户类型（密码策略）→ 用户（**每用户独立密码链**）；密码不落盘、由 seed+时间窗口确定性推导（TOTP 思路），上一窗口 **30 秒宽限**；`POST /api/pwsvc/validate`（X-Api-Key）供第三方服务校验；**校验限流**（页面可配，默认 120 次/分钟）+ **校验日志与失败统计**（项目页时间线，保留 30 天，永不含密码内容）；设计见 `docs/pwsvc-design.md`
+- **模块化日志上报**：每个模块独立 sys_name（doublog.blog/diary/vault/…），WARNING+ 按标准 HTTP 发往日志查询模块，**服务地址/开关/级别在管理页配置**（即时生效）
+- **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（不丢已接收日志）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
+- **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——WARNING+ 自动回灌自身 `/api/v1/logs`，日志查询页可直接检索本服务告警与异常堆栈；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
+- **配置中心**（`/confcenter`）：namespace→key→value 扁平 KV；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
+- **四象限待办**（`/todo`，MyTodo 迁入）：看板内含**剧情图谱**子模块（/todo/gamemap，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
 - **移动端适配**：知识库切换、阅读、搜索在手机可用（导航自适应换行）
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
-- 单用户 HTTP Basic Auth 认证，所有 API 需携带凭据
+- **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
 
 ## 技术栈
 
 | 层级 | 技术 |
 |---|---|
-| 后端框架 | Flask 3.0 |
-| ORM / 数据库 | Flask-SQLAlchemy 3.1 / SQLite（WAL 模式） |
-| 认证 | Flask-HTTPAuth（Basic Auth） |
+| 后端框架 | FastAPI 0.143（uvicorn 单进程，60100） |
+| ORM / 数据库 | SQLAlchemy 2.0 / SQLite（WAL 模式） |
+| 认证 | 统一登录：会话 Cookie（HMAC 签名，30 天）+ Basic 兼容（`require_basic` 双通道） |
+| 日志/异常/并发池 | lizysdk（basekit）：logs / errors(AppError) / pools |
 | 数据库 | SQLite（WAL，默认）/ PostgreSQL（psycopg2，可切换） |
 | 前端框架 | React 19 + React Router 7 |
 | 构建 | Vite 8 |
@@ -51,6 +61,7 @@ DouBlog 是一个单用户个人博客系统：
 | 代码高亮 | highlight.js（common 常用语言子集） |
 | 搜索 | Fuse.js（客户端模糊搜索） |
 | 拖拽排序 | dnd-kit |
+| 农历（订阅到期日历） | lunar-javascript |
 
 ## 项目结构
 
@@ -60,35 +71,41 @@ DouBlog/
 ├── api.md                    # API 协议文档
 ├── backend.md                # 后端设计文档
 ├── backend-prompt.md         # 后端 AI 开发提示词
-├── backend/                  # 后端 (Flask)
-│   ├── run.py                # 启动入口 (端口 60100)
+├── backend/                  # 后端 (FastAPI/uvicorn)
+│   ├── run.py                # 启动入口 (端口 60100，dev 模式 --reload)
 │   ├── requirements.txt
 │   ├── migrate_children_order.py  # 旧数据迁移脚本（虚拟根节点）
 │   ├── app/
-│   │   ├── main.py           # 应用工厂 + gzip 压缩 + 全局异常
+│   │   ├── main.py           # FastAPI 应用工厂 + gzip/CORS + 统一异常信封 + 动态模块注册
 │   │   ├── config.py         # 配置
-│   │   ├── db.py             # 双后端初始化(SQLite/PG) + db_config.json + 虚拟根播种
-│   │   ├── models/models.py  # Post / AuditLog 模型
-│   │   ├── api/              # auth / posts / images / admin / workspaces / export 蓝图
-│   │   └── utils/            # response / tree_order / view_count / audit
-│   └── tests/                # pytest（自包含,PG 集成测试可选依赖 pgserver）
+│   │   ├── db.py             # 纯 SQLAlchemy：双后端 + 表名规范(模块名_表名,存量自动改名) + run_db
+│   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / logging_setup
+│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/(含 gamemap 子模块) confcenter/  # 能力包（models+routes；导出 router/start_background/ensure_migrations）
+│   └── tests/                # pytest（与能力包镜像分层，自包含）
+├── extensions/todo/           # MyTodo 客户端平迁：chrome-extension/ + android/（仍指旧 8070）
 ├── frontend/                 # 前端 (React)
 │   ├── index.html
 │   ├── package.json
 │   ├── vite.config.js        # 端口 60101
 │   └── src/
-│       ├── main.jsx          # 入口
-│       ├── App.jsx           # 首页 / 归档 / 布局 / 搜索
-│       ├── PostDetail.jsx    # 详情页（目录 / 树 / 拖拽 / lightbox）
-│       ├── CreatePost.jsx    # 新建（实时预览）
-│       ├── EditPost.jsx      # 编辑
-│       ├── api.js            # 统一 API 客户端（认证 / 分页拉取）
+│       ├── main.jsx / index.css
+│       ├── app/App.jsx        # 壳：路由表 + 主题 + 全局行为
+│       ├── shared/           # client.js（凭据/端口唯一处）+ md.js（渲染管线）
+│       ├── portal/           # / 工作台门户
+│       ├── blog/             # /blog /post /create /admin：api + pages×5 + editor×2
+│       ├── diary/ vault/ logs/   # 各能力包（api + 页面 + 组件；diary 另有 components×9：录入/总结卡/随记卡/编辑器/日历/热力图/统计/分享/确认）
 │       ├── md.js             # markdown-it 配置与定制渲染 + 双链 + mermaid 统一入口
 │       ├── useEditorShortcuts.js    # 编辑器快捷键
 │       ├── useEditorEnhancements.js # 图片上传/同步滚动/块模板
-│       └── index.css
+│       ├── subs/               # 订阅管理（CrownFlow 迁移）：api + kit + charts + useHolidays + SubsPage + views×5
+│       ├── DiaryPage.jsx      # 私人日记（随记分本/每日总结/日历/热力图/统计）
+│       ├── VaultPage.jsx      # 密码库（零知识加密/三面板/生成器/安全中心）
+│       ├── LogsPage.jsx       # 日志检索（lizysdk 接收端查询页）
+│       └── vault/             # crypto/core/ui + 详情/编辑器/生成器/安全中心/密码服务(PwsvcView)组件
 ├── data/                     # 运行时数据（gitignore）
 │   ├── blog.db               # SQLite 数据库
+│   ├── pwsvc.key             # 密码服务 seed 加密密钥（自动生成）
+│   └── dead_letters/          # 日志摄入死信（JSONL，可重放）
 │   └── images/               # 图片文件
 └── shell/                    # 管理脚本（Linux/macOS/Git Bash）
 ```
@@ -126,10 +143,10 @@ npm run dev
 
 打开 **http://localhost:60101**
 
-默认凭据（Basic Auth）：`admin` / `lizy111A`
+默认账号：`admin` / `lizy111A`
 
-> 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 已放开）。
-> 凭据集中定义在 `frontend/src/api.js`，修改一处即可全局生效。
+> 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 凭据模式，来源收敛 `:60101`）。
+> **统一登录**：打开前端即进 `/login`，登录一次签发会话 Cookie（30 天）全站生效；前端 bundle 不再持有任何凭据。Basic Auth 仅作为 API/脚本/测试的兼容通道。
 
 ## 生产部署
 
@@ -161,7 +178,7 @@ bash shell/backend/stop.sh           # 停止
 |---|---|---|
 | `host` / `port` | `0.0.0.0` / `60100` | 监听地址 |
 | `debug` | `True` | 调试模式（生产必须关闭） |
-| `cors_origins` | `*` | CORS 允许来源 |
+| `cors_origins` | `*` | ⚠️ 死配置：中间件实际用 `allow_origin_regex ^https?://.*:60101$` + 凭据模式，不读此项 |
 | `auth_enabled` | `True` | 是否启用认证 |
 | `auth_username` / `auth_password` | `admin` / `lizy111A` | 登录凭据 |
 | `database_backend` | `sqlite` | 默认后端（运行时以 `data/db_config.json` 为准） |
@@ -176,7 +193,7 @@ bash shell/backend/stop.sh           # 停止
 
 ## API 概览
 
-统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`；全部 `/api/*` 接口需 Basic Auth；JSON 响应超过 1KB 自动 gzip。
+统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`；认证=统一登录（会话 Cookie 或 Basic；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub gw）；JSON 响应超过 1KB 自动 gzip。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -197,9 +214,30 @@ bash shell/backend/stop.sh           # 停止
 | `GET` | `/api/images[...]?type=` | 图片服务（见下） |
 | `POST` | `/api/images/upload` | 上传图片（multipart `file`，返回可写入 Markdown 的 url） |
 | `GET` | `/api/export/markdown` | 导出全库 Markdown + 图片 zip 备份 |
+| `GET/POST` | `/api/diary/entries` | 随记列表（?date/?search/?journal_id/?mood，总结在前随记挂后）/ 新建随记（**journal_id 必填**） |
+| `PUT/DELETE` | `/api/diary/entries/<id>` | 更新（自动保存）/ 删除 |
+| `POST` | `/api/diary/summary` | **每日总结 upsert**（每天一篇，body: entry_date+content[+mood]，返回 created 标志） |
+| `GET/POST/PUT/DELETE` | `/api/diary/journals[...]` | 日记本管理（预置 日常/工作/感悟，存量随记自动归入日常） |
+| `GET` | `/api/diary/dates?year=&month=` | 日历视图（每天篇数+心情） |
+| `GET` | `/api/diary/stats` | 写作统计（连续天数/总篇数/总字数） |
+| `GET/POST/PUT/DELETE` | `/api/vault/*` | 零知识密码库（账号材料/条目密文 CRUD/回收站/审计/备份），见 api.md |
+| `GET/POST` | `/api/vault/items/<id>/attachments` | **安全附件**（零知识密文，明文 ≤5MB 双端校验；软删保留/purge 级联；`GET/DELETE /attachments/<aid>` 单取/删除） |
+| `GET/POST/PUT/DELETE` | `/api/pwsvc/*` | 密码服务：项目/类型/用户管理与当前密码（Basic Auth），见 api.md |
+| `POST` | `/api/pwsvc/validate` | **轮换密码校验**（`X-Api-Key` 认证，供第三方服务；30s 上一窗口宽限；限流超额 429） |
+| `GET` | `/api/pwsvc/projects/<id>/logs` | 校验日志分页 + 失败统计（近 1h/24h、失败 TOP5） |
+| `POST` | `/api/v1/logs(/batch)` | **日志摄入**（lizysdk send_json 接收端；202 异步落库；可选 Bearer token） |
+| `GET` | `/api/v1/logs(/count)` | 日志检索/计数（时间/系统/级别/trace/全文/任意 kv 字段过滤） |
+| `GET` | `/api/v1/logs/histogram` | **时间直方图**（等宽时间桶 × 级别计数，过滤条件与检索共用） |
+| `GET` | `/api/v1/logs/context?id=&before=&after=` | **日志上下文**（锚点行前后各 N 条，时间升序） |
+| `GET` | `/api/v1/logs/patterns` | **模式分组**（数字/uuid/ip/路径占位化归并相似消息，按频次排序） |
+| `GET` | `/api/v1/logs/export?format=csv|json` | **导出**当前查询（流式，上限 1 万条） |
+| `GET` | `/api/v1/logs/trace?id=` | **trace 时间线**（同 trace_id 日志升序 + 跨度） |
+| `GET/POST/PUT/DELETE` | `/api/subs/*` | **订阅管理**（CrownFlow 迁移）：会员/订阅记录/分类 CRUD、支出统计、到期提醒、备份，见 api.md 第 13 节 |
+| `GET/PUT/POST` | `/api/v1/alerts(/config|/check|/ack)` | **日志告警**：阈值规则（级别/条数/窗口/冷却/系统/webhook）+ 立即检查 + 事件确认（每 60s 自动巡检） |
+| `GET` | `/api/v1/stats` | 日志统计（近 24h 计数、队列/丢弃/死信指标） |
 | `GET` | `/api/admin/database` | 数据库状态（当前后端/数据量） |
 | `POST` | `/api/admin/database/test` | 测试目标数据库连通性 |
-| `POST` | `/api/admin/database/switch` | **迁移数据并切换后端**（SQLite ↔ PostgreSQL） |
+| `POST` | `/api/admin/database/switch` | **只换连接切换后端**（SQLite ↔ PostgreSQL，不迁移数据），`/config` 页操作 |
 
 ### 图片服务规则
 
@@ -229,10 +267,12 @@ cd backend
 python -m pytest tests/ -q
 ```
 
-测试完全自包含（每用例独立临时 SQLite，无外部依赖）；其中 SQLite ↔ PostgreSQL 切换往返的集成测试需要 venv 内安装 `pgserver`（内嵌 PG，`pip install pgserver`），未安装时自动跳过。
+测试完全自包含（每用例独立临时 SQLite，无外部依赖）；日志接收模块另带压测工具 `backend/tools/sdklogs_loadtest.py`（隔离实例实测摄入/写入/查询吞吐）；其中 SQLite ↔ PostgreSQL 切换往返的集成测试需要 venv 内安装 `pgserver`（内嵌 PG，`pip install pgserver`），未安装时自动跳过。
 
 ## 已知限制
 
-- 单用户 Basic Auth：凭据在前端 bundle 中可见（`src/api.js`），仅适合个人/内网使用
+- 单用户系统：会话 Cookie 未设 Secure、secret_key 为默认值、无服务端会话撤销——公网部署前需加固（详见 docs/modules/system.md 已知边界）
 - 文章层级上限 3 层（`MAX_LEVEL = 2`）
 - 导航"归档"链接 `/archive` 未注册路由（死链），且无 404 兜底页
+- 路径参数类型差异：非整数路径段（如 `/api/posts/id/abc`）返回 400「请求参数错误」（Flask 时代为 404）
+- gzip 现作用于一切 ≥1KB 响应（按 Accept-Encoding；Flask 时代仅 JSON/文本）

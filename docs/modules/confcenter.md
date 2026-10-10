@@ -1,0 +1,38 @@
+# 配置中心模块（confcenter）
+
+> 表：confcenter_entries　前缀：/api/confcenter　前端：/confcenter（门户卡，cyan）　更新：2026-10-11
+> 规范：docs/confcenter-spec.md
+
+## 1. 功能概述
+
+通用 KV 配置平台：**namespace → key → value** 扁平映射（无中间实体）；value 统一 `{type, data}` 包装——`type=str` 原样字符串、`type=json` 合法 JSON（对象/数组/数字）；显式 type 消除 "123"/"[1,2]" 的裸值歧义。**Redis 读穿缓存**（可选可降级），减轻数据库压力。
+
+## 2. 数据模型
+
+`confcenter_entries`：namespace(≤100)+key(≤200) 复合主键、type、data(Text)、updated_at；namespace 单列索引。字符白名单 `[A-Za-z0-9_.:-]`（含 `/` 的段在路由层结构性 404）。
+
+## 3. 读写约定（核心语义）
+
+- 读：str→字符串；json→解析后结构化数据
+- 写：同 ns+key 整体覆盖（201 新建/200 覆盖），**type 允许变更**（json→str 后 "[1,2]" 读回即字符串）
+- type=json 且非法 JSON → 400 拒绝
+
+## 4. API（全部 require_basic，信封）
+
+`GET /namespaces`（聚合计数）；`GET /entries?namespace=&q=&page=&page_size=`；`GET|PUT|DELETE /{namespace}/{key}`；缓存管理：`GET /cache/status`、`GET|PUT /cache/config`（data/redis_config.json，密码留空沿用）、`POST /cache/test`（可带候选配置试连）、`POST /cache/flush`（`confcenter:*` 前缀 SCAN+DEL）。
+**路由陷阱**：字面量路由（/namespaces /entries /cache/*）必须先于 `/{namespace}/{key}` 注册。
+
+## 5. Redis 缓存层（cache.py）
+
+- 读=先缓存（键 `confcenter:{ns}:{key}`，值整个载荷 JSON，TTL 默认 3600）→ 未命中回填；写/删=先落库再 DEL（不双写）
+- **三态降级**：redis 库缺失 / 未启用（默认）/ 连接失败 → 静默直连 DB（进程内只 warn 一次；写语义完整）；status/test/flush 探活成功可自愈
+- 运行态挂 `app.state.confcenter_cache`（禁模块级单例）
+- 已知边界：降级期 DEL 被跳过，恢复后可能短暂旧值（TTL 兜底，flush 立即清理）
+
+## 6. 前端（frontend/src/confcenter/）
+
+左 namespace 列表 + 右 KV 表（类型徽章/值预览 json 三行折叠）；新建/编辑 Modal（type 段选；str 多行原样；json 失焦校验非法标红禁存）；删除两步确认；搜索防抖分页；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）。
+
+## 7. 测试（tests/confcenter/，39 例）
+
+CRUD/type 变更/非法校验/浏览/鉴权（22）+ 缓存五路径（命中/回填/写失效/未启用/连接异常降级）与管理端点（17）；FakeRedis 内存假客户端，无需真实 Redis。

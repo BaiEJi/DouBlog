@@ -24,7 +24,7 @@
 | 决策 | 说明 |
 |---|---|
 | **无代理直连后端** | 前端不经 Vite proxy，直接请求 `http://{当前主机名}:60100`（后端 CORS 放开）。地址集中在 `api.js` |
-| **Basic Auth 每请求携带** | 单用户系统，凭据硬编码于 `api.js`（无登录会话）。⚠️ bundle 中可见，仅适合个人/内网 |
+| **统一登录（会话 Cookie）** | `/login` 登录一次签发 HttpOnly Cookie（30 天）全站生效；apiFetch `credentials:'include'`，401 自动跳 `/login`；AuthGate 路由守卫（公开页：/login、/diary/s/*）；bundle 不持有凭据，Basic 仅后端 API 兼容通道 |
 | **正文按需加载** | 列表/树接口不返回正文；详情页按 id 取全文 |
 | **管理页** | `/admin` 数据库管理页：SQLite ↔ PostgreSQL 一键切换（连接测试/迁移/自动重启提示） |
 | **多知识库** | 首页导航选择器切换/新建知识库（`/?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
@@ -35,25 +35,50 @@
 ## 2. 文件结构
 
 ```
-frontend/src/
-├── main.jsx            # 入口：BrowserRouter 挂载 App
-├── App.jsx             # 路由表 + 首页(HomePage) + 归档页 + 布局/导航/搜索/主题切换
-├── PostDetail.jsx      # 详情页：目录(TOC)/侧边栏树/拖拽排序/右键菜单/lightbox/mermaid
-├── CreatePost.jsx      # 新建：表单校验 + 实时预览
-├── EditPost.jsx        # 编辑：并行加载详情与树 + 实时预览
-├── AdminPage.jsx       # 管理页：数据库后端状态/连接测试/一键切换
-├── (知识库逻辑分散在 App/CreatePost/PostDetail/EditPost,见下文)
-├── api.js              # 统一 API 客户端（唯一持有凭据/端口处）
-└── md.js               # markdown-it 实例 + 12 插件 + 定制渲染规则
+frontend/src/                       # 按一级路径分包，每个能力目录自包含（页面+组件+自己的 api）
+├── main.jsx                        # 入口：挂载 app/App
+├── index.css
+├── app/                            # 应用壳
+│   ├── App.jsx                     # 主题状态 + AuthGate 登录守卫 + 路由表（懒加载）+ ScrollToTop/PageFallback/代码复制委托
+│   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
+├── shared/                         # 公共层
+│   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
+│   ├── PageHeader.jsx              # 模块顶栏 v2 模板：第一行(返回+标题+副标+right) + 可选第二行(统一药丸 Tab，accent 个性色)；HeaderTabs/BackButton 单独导出
+│   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
+├── portal/PortalPage.jsx           # /        统一入口（自定义分组工作台 + 11 卡含"剧情图谱"直达 /todo/gamemap）
+├── blog/                           # /blog /post/:id /create /admin
+│   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
+│   ├── pages/                      # HomePage PostDetail CreatePost EditPost AdminPage
+│   └── editor/                     # useEditorShortcuts / useEditorEnhancements
+├── diary/                          # /diary（Memos/Day One 超集 UI）
+│   ├── api.js / api-entry.js       # API 封装 / 天气位置采集（open-meteo）
+│   ├── kit.jsx                     # 心情模型/天气码/图标/Chip/Confirm
+│   ├── DiaryPage.jsx               # 侧栏（视图/日记本/标签）+ 主区布局
+│   ├── PublicShare.jsx             # /diary/s/:token 免登录只读页
+│   └── components/                 # QuickCapture EntryCard Editor CalendarView
+│                                   #   HeatmapView StatsView ShareDialog
+├── vault/                          # /vault（零知识密码库 + 密码服务子视图）
+│   ├── api.js                      # vault* + pwsvc* 封装
+│   ├── VaultPage.jsx               # 锁屏/侧栏/三面板外壳
+│   └── components/                 # crypto core ui ItemDetail ItemEditor Generator SecurityCenter PwsvcView
+├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页）
+├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx
+├── config/                        # /config：api.js + ConfigPage.jsx（统一 PageHeader 顶栏）
+├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×13 + gamemap/（剧情图谱子模块：antd6+@xyflow 保留栈，GamemapShell + board/×10 + pages/×5）
+├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
+└── subs/                          # /subs（订阅管理，CrownFlow 迁移）
+    ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
+    ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮
+    ├── charts.jsx                 # 纯 SVG 图表：useWidth + AreaTrend(面积趋势) + DonutPie(环形饼)
+    ├── useHolidays.js             # 法定节假日 API（timor.tech，localStorage 缓存 7 天，失败降级按周末）
+    ├── SubsPage.jsx               # /subs/* 壳：侧栏导航(概览/会员/统计/设置+计数徽标) + 内嵌 <Routes>
+    └── views/                     # OverviewView MembersView MemberDetailView StatsView SettingsView
 ```
 
-页面路由（`App.jsx`）：`/`（首页，`?ws=<id>` 记忆当前库）、`/post/:id`（详情）、`/create`（新建，`?ws=` 预选库）、`/post/:id/edit`（编辑）、`/admin`（管理）。
 
-> ⚠️ 导航栏的"归档"链接指向 `/archive`，但**该路由未注册**（死链，点击后内容区空白）——遗留问题，修复时更新本节。
+## 3. API 层（shared/client.js + 各包 api.js）
 
-## 3. API 层（api.js）
-
-**全项目唯一的凭据与后端地址定义处**。新增任何请求必须走它，禁止在组件里再写 `btoa(...)`/裸 fetch。
+**全项目唯一的后端地址定义处**（认证=会话 Cookie，自动携带）。新增任何请求必须走它，禁止在组件里再写 `btoa(...)`/裸 fetch/硬编码端口。
 
 ```js
 API_BASE                 // http://{hostname}:60100
@@ -79,9 +104,16 @@ invalidatePost(id)     // 编辑保存/删除后失效；LRU 上限 50 条
 
 语义为 stale-while-revalidate：hover 已拉取的文章，点击瞬间用缓存渲染，详情页仍后台重拉覆盖（浏览计数只由这次计入）。
 
+**api.js 已按能力分包**（每个能力目录自己的 api.js，公共传输层唯一在 `shared/client.js`）：
+
+- `blog/api.js`：fetchAllPosts / fetchWorkspaces / createWorkspace / searchPosts / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（SWR 预取缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks / fetchExportZip + 数据库管理三件套 + 日志上报配置（fetch/saveLoggingConfig、testLoggingSend）；并透传 `apiFetch, API_BASE`
+- `diary/api.js`：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
+- `vault/api.js`：vault*（条目/审计/备份）+ pwsvc*（项目/类型/用户/校验日志/限流）封装，透传 `API_BASE`
+- `logs/api.js`：sdklogSearch / sdklogSysnames
+
 约定：列表/树接口条目**没有 `content` 字段**，需要正文时调 `GET /api/posts/id/<id>`（详见根目录 `api.md`）。
 
-## 4. Markdown 渲染管线（md.js）
+## 4. Markdown 渲染管线（shared/md.js）
 
 `MarkdownIt({ html: true, linkify: true, typographer: true, highlight: hljs })` + 插件：
 
@@ -101,11 +133,11 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 **mermaid 为异步渲染**：统一走 `md.js` 导出的 `renderMermaidDiagrams(dark)`——内部**动态 `import('mermaid')`**（不打进文章/编辑页首屏关键路径，正文文字先出，图表模块后台加载后补画）+ 模块级队列串行化（防主题切换/快速切换时并发 `run()` 互扰，单次失败不会毒化队列）。调用方：详情页 `MermaidRunner`、编辑器两页的 useEffect，均为 100ms 定时器后调用。详情页 `MermaidRunner` 挂在正文 div 内部、`key={html}`（内容真实变化即重挂重画）、只依赖 `[dark]`——内容区被重建的任何路径（切换文章 key 变化、骨架屏往返、SWR 内容更新）都会重新渲染图表；不要改回依赖 `[html]` 的旧写法（同一篇文章卸载重建时 content 字符串按值相等会命中 useMemo 缓存导致不重跑）。
 
-## 5. 页面组件
+## 5. 页面组件（按能力包）
 
-### App.jsx（首页 + 路由 + 布局）
-- `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；Fuse.js 客户端搜索（仅当前库内）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
-- **WorkspaceSwitcher**（导航栏，`App.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
+### blog/pages（博客各页）
+- `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
+- **WorkspaceSwitcher**（导航栏，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
 - 顶部导航（**移动端自适应**：`<sm` 时 logo 文字与新建文字隐藏、搜索框收窄、导航允许换行成两行、知识库切换器全尺寸可见）：logo/知识库切换器/首页/管理/搜索框/主题切换/新建
 
 ### PostDetail.jsx（最重的页面）
@@ -119,7 +151,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - **mermaid**：见上节
 - **dangerouslySetInnerHTML 必须传稳定引用**（`proseProps = useMemo(() => ({ __html: html }), [html])`，编辑器两页同理 `previewProps`）：react-dom 的更新路径对 innerHTML 不做同值比较，行内对象字面量会让任何无关重渲染（树刷新/TOC 高亮/展开折叠）都整体重建正文 DOM——抹掉 mermaid.run 注入的 SVG 且无法自动恢复，还有整段 HTML 重新解析的性能开销
 
-### CreatePost.jsx / EditPost.jsx（编辑器增强）
+### blog/editor（编辑器增强）
 - `useEditorEnhancements`（共用 hook）：图片**粘贴/拖拽/工具栏按钮**上传（`POST /api/images/upload`，成功后光标处插入 `![alt](/api/images/x.png)`）、**预览同步滚动**（编辑区滚动→预览按比例跟随，用户滚预览时暂停 400ms；EditPost 需传 `active: !loading`——其编辑器在 loading 放行后才渲染）、块模板（表格/mermaid/代码块）
 - 分栏为固定高 `h-[70vh]`：两栏各自内部滚动（长文工具栏常驻），同步滚动才有意义
 
@@ -136,6 +168,51 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - **编辑器快捷键**（`useEditorShortcuts`，两页共用）：`Ctrl/Cmd+S` 保存/发布、`Ctrl/Cmd+B` 加粗、`Ctrl/Cmd+I` 斜体、`Ctrl/Cmd+K` 插入链接、正文内 `Tab` 两格缩进；B/I/K 仅在正文区/页面空白处生效，不干扰标题等普通输入框
 - **实时预览**：`md.render` + mermaid.run，与详情页同一管线
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
+
+### DiaryPage.jsx（diary/，Memos × Day One 超集 UI）
+- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）；移动端顶导航横滚
+- 时间线：那年今日横幅（往年同月同日 + 随机记忆）→ QuickCapture 快捷录入盒（自动增高 + 心情 + 标签 + 模板下拉 + ✦每日引导问题 + 🌤️天气位置一键采集 open-meteo）→ 日期分组 EntryCard 卡（元信息行：日期/心情/天气图标/位置/字数；hover 操作：置顶/编辑/分享/归档/回收站）
+- Editor 全屏弹层：日期/心情/本子/模板/预览/自动保存（1.2s 防抖，状态行"已保存 HH:MM"）
+- CalendarView 月历（心情着色+今日环+点选过滤）、HeatmapView 年度热力图（365 格色阶+悬浮详情+点选）、StatsView（6 指标卡 + SVG 柱状/折线（纯手写无依赖）+ 年度回顾大卡）、ShareDialog（有效期选项+复制+撤销）、PublicShare 免登录只读页（/diary/s/:token，柔和阅读排版）
+- kit.jsx 公共小件：MOODS 模型/天气码映射/Icon/Chip/Confirm
+
+### SubsPage.jsx（subs/，订阅管理 —— CrownFlow 迁移 UI）
+- 壳：侧栏（返回入口 / 概览/会员/统计/设置导航；概览带即将到期计数徽标、会员带 活跃/总数）+ 内嵌 `<Routes>`
+  （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）；移动端顶导航横滚
+- **OverviewView**：4 指标卡（总数/活跃/本月/年度支出，月年口径=整月整年）+ 分类汇总表（列排序+合计行）+
+  即将到期提醒列表（点击进详情）+ 会员支出排行榜（4 维度切换：累计花费/平均订阅/订阅次数/累计时长，金银铜奖杯+火焰）+
+  **订阅到期日历**（月历：`lunar-javascript` 农历与节日（红字优先显示法定节假日/补班）、timor.tech 节假日着色、
+  当日到期数徽标（橙=7 天内/绿=更远）、点有订阅的日期弹当日列表、今天高亮、图例）
+- **MembersView**：搜索（300ms 防抖）/分类/状态筛选 + **表格/卡片双视图**（localStorage 记忆 subs-members-view）+
+  分页（页大小记忆）+ 新建/编辑会员弹窗 + 删除确认
+- **MemberDetailView**：信息卡（分类/订阅数/分币种累计/提醒天数/备注）+ 订阅表（级别/周期/状态/覆盖日期四维筛选）+
+  **时间轴视图**（3m/6m/12m/全部 + 缩放/平移/回到当前 + 今天竖线 + 状态着色条形(绿=有效 橙=提醒窗口内 灰=过期) +
+  条形详情弹层含日均）+ 添加/编辑订阅弹窗（周期切换自动推算结束日期=整周期-1 天、custom 显自定义天数输入、组合校验）
+- **StatsView**：日期范围 + 快速选择（本周/本月/本季度/本年）+ 粒度（跨度≥90 天禁用按天并自动回落按周）+
+  面积趋势图（hover 提示，明细开关展开分类/订阅明细）+ 环形饼图（中心总计、图例带占比、明细）
+- **SettingsView**：分类管理（CRUD/16 色预设+任意 hex/emoji/搜索）、会员分布卡（计数徽标，点击跳转筛选）、
+  备份面板（手动立即备份 + 保留策略说明 + 备份文件列表）
+- 依赖：`lunar-javascript`（仅农历显示，懒加载 chunk ~122KB gzip）；图表零依赖（手写 SVG，useWidth 三重兜底自适应）
+
+### LogsPage.jsx（logs/，日志查询）
+- 查询工具条（自绘 Dropdown 级别与 sys_name 下拉/自绘 DateTimeInput 日历+时分微调/任意 kv）+ 紧凑单行结果（时间|级别|文件:行|traceId|消息）点击展开字段表格 + 复制 JSON
+
+### ApiHubPage.jsx（apihub/，统一 API 调用平台 UI）
+
+单页 `/apihub`（门户卡片入口），六个内部 Tab：总览（24h 统计卡+健康徽标+一键探活）、
+上游（CRUD+密钥池弹窗，credential 脱敏展示）、API（CRUD+单条探活结果弹窗）、平台令牌
+（签发弹窗明文仅显示一次+复制）、限流规则（四级+算法动态表单+实时余量进度条）、
+调用日志（按 API 筛选，限流触发标紫并注明层级）。配置类字段（auth_config/
+request_cfg/response_cfg/probe）用 JsonArea 组件（失焦校验标红不改值）。
+api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-）是外部调用方的事，不在页面内。
+
+### ConfigPage.jsx（config/，系统配置总入口 UI）
+
+单页 `/config`（门户卡片入口，teal 图标），全站唯一总配置页，两张卡：
+
+- **数据库卡**：当前后端徽章（SQLite（本地）/PostgreSQL（远端））+ 统计行（文章数/审计日志/连接串掩码，`GET /api/admin/database`）；PostgreSQL 连接参数表单（主机/端口/库名/用户/密码——状态返回值自动预填，密码留空表示沿用已存）；三个动作：`测试连接`（POST /database/test，连通返回 PG 版本，库不存在时后端提示切换会自动创建）、`一键切换到 PostgreSQL`（目标=表单值）、`一键切换回 SQLite`——当前后端对应按钮高亮、另一个置灰；切换成功按 `restart_required` 提示（dev 自动重启 3.5s 后自动刷新状态 / 生产提示手动重启）
+- **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
+- `config/api.js` 走 apiFetch；AdminPage 的数据库切换 UI 保留（同一批后端端点的旧入口），总配置页为规范入口
 
 ## 6. 样式与主题
 
@@ -170,12 +247,18 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 **改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍首页/详情/新建/编辑四页（详见 AGENTS.md 验证清单）。
 
+- **页面宽度约定（全站统一）**：模块页容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10 mx-auto`（1920 屏内容区 1620px）；模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮‹门户 + text-2xl 标题 + 右侧 slot；侧栏型页用 BackButton）；日记时间线内层 1100px 为阅读宽度设计、vault 锁屏居中卡豁免
+- **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
+- **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了
+
+**改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
+
 ## 8. 已知限制
 
 1. 单包无路由级 lazy / 无 vendor 分包，首屏体积大（历史优化清单遗留项）
 2. mermaid/KaTeX 静态导入三个页面，无法按需加载
 3. highlight.js 全量语言包导入（未用 `lib/core` 按需注册）
-4. 凭据在 `api.js` 源码中（bundle 可见）
+4. （已修复）凭据不再进前端 bundle——统一登录会话 Cookie（2026-10-10 移除）
 5. 无 404 兜底页（`/archive` 死链已从导航移除，路由仍未注册）
 6. 生产模式下管理页切换数据库后需手动重启后端（页面有提示）
 7. 开发模式下连续改动源文件后，Vite 依赖重优化窗口内 mermaid 偶发不渲染（刷新即恢复，仅 dev，生产预打包不受影响）

@@ -1,4 +1,20 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./app";
+@source "./apihub";
+@source "./blog";
+@source "./confcenter";
+@source "./config";
+@source "./diary";
+@source "./logs";
+@source "./portal";
+@source "./shared";
+@source "./subs";
+@source "./todo";
+@source "./vault";
+@source "./main.jsx";
+@source "./index.css";
+@source not "./components/node_modules";
+
 
 @variant dark (&:where(.dark, .dark *));
 
@@ -44,6 +60,7 @@
 }
 
 .dark {
+  color-scheme: dark; /* 浏览器原生滚动条/控件跟随深色 */
   --background: 240 10% 3.9%;
   --foreground: 0 0% 98%;
   --card: 240 10% 3.9%;
@@ -216,7 +233,8 @@ body {
   font-size: 15px;
   line-height: 1.8;
   color: #333;
-  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Source Code Pro', 'Menlo', 'Monaco', 'Consolas', monospace;
+  /* 正文无衬线（含 CJK 回退）；等宽仅用于 code/pre（下方独立规则） */
+  font-family: 'Inter', -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
 }
 
 .dark .prose-content {
@@ -987,6 +1005,15 @@ html.transitioning *::after {
   animation: dropdown-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* ─── Live Tail 新行闪入（琥珀渐隐）────────────────────── */
+@keyframes newlog-flash {
+  0% { background-color: rgba(245, 158, 11, 0.28); }
+  100% { background-color: rgba(245, 158, 11, 0.07); }
+}
+.animate-newlog {
+  animation: newlog-flash 2.4s ease-out forwards;
+}
+
 /* ─── 双链 [[wiki link]] ─────────────────────────────────── */
 .prose-content a.wiki-link {
   color: #2563eb;
@@ -1017,3 +1044,38 @@ html.transitioning *::after {
 .dark .prose-content a.wiki-link-missing {
   border-bottom-color: rgba(110, 110, 110, 0.6);
 }
+
+/* ─── 日记页（温暖阅读排版）──────────────────────────────
+   复用 .prose-content 的全部 Markdown 样式，
+   在其后声明以覆盖字体与行高，形成日记自己的阅读气质 */
+.diary-serif,
+textarea.diary-serif {
+  font-family: Georgia, "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", "Times New Roman", serif;
+}
+.diary-prose {
+  font-family: Georgia, "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", "Times New Roman", serif;
+}
+.diary-prose p {
+  margin: 0.95em 0;
+  line-height: 1.95;
+}
+.diary-prose li {
+  line-height: 1.85;
+  margin: 0.3em 0;
+}
+.diary-prose h1, .diary-prose h2, .diary-prose h3 {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.diary-prose pre, .diary-prose code {
+  font-family: "SF Mono", "Cascadia Code", Consolas, monospace;
+  font-size: 0.86em;
+}
+.diary-prose blockquote {
+  border-left: 2px solid rgba(180, 83, 9, 0.35);
+  padding-left: 1em;
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* Vault 输入框类已废弃：前端改用 Tailwind 基线输入档（VAULT_INPUT 常量），2026-10-10 删除死 CSS */

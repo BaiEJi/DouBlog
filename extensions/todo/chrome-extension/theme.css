@@ -1,0 +1,80 @@
+/* MyTodo 扩展共用主题 v2：固定浅色系(浅蓝)，不跟随系统深色模式。
+   设计系统对齐 Things 3 / Linear：清爽留白、柔和分层阴影、统一圆角。 */
+:root {
+  color-scheme: light;
+  --bg: #F6F9FD;
+  --card: #FFFFFF;
+  --card-2: #F1F5FA;
+  --text: #0F172A;
+  --text-2: #5B6B82;
+  --text-3: #94A3B8;
+  --border: rgba(15, 23, 42, 0.07);
+  --border-strong: rgba(15, 23, 42, 0.12);
+  --primary: #2563EB;
+  --primary-deep: #1D4ED8;
+  --primary-soft: rgba(37, 99, 235, 0.08);
+  --primary-ring: rgba(37, 99, 235, 0.16);
+  --ring: rgba(37, 99, 235, 0.16);
+  --danger: #E11D48;
+  --danger-soft: rgba(225, 29, 72, 0.09);
+  --ok: #059669;
+  --warn: #B45309;
+  --warn-soft: #FFF7E6;
+  --warn-strong: #D97706;
+  --warn-on: #FFFFFF;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px -14px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 2px 6px rgba(15, 23, 42, 0.06), 0 12px 32px -8px rgba(15, 23, 42, 0.16), 0 32px 72px -24px rgba(15, 23, 42, 0.22);
+  --input-bg: rgba(15, 23, 42, 0.035);
+  --hover: rgba(37, 99, 235, 0.05);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 通用 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, "Segoe UI Variable Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden {
+  display: none !important;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+/* 键盘操作的可见焦点环（输入类控件有专属 focus 样式，不在此重复） */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* 细滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

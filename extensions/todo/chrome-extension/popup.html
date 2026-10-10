@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>MyTodo 四象限</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ============ 主视图 ============ -->
+    <section id="view-main">
+      <header class="topbar">
+        <div class="date-block">
+          <div id="date-text" class="date-main">加载中…</div>
+          <div id="date-sub" class="date-sub"></div>
+        </div>
+        <button id="mig-badge" class="mig-badge hidden" title="有待迁移任务，点击处理">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          <span id="mig-count">0</span>
+        </button>
+        <div id="streak-badge" class="streak-badge hidden" title="连续活跃天数">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>
+          <span id="streak-num">0</span>&nbsp;天
+        </div>
+        <button id="life-btn" class="topbar-link" title="规律生活 · 今日打卡">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22V12"/><path d="M12 12C12 7 9 4 3 3c0 6 3 9 9 9z"/><path d="M12 12c0-5 3-8 9-9 0 6-3 9-9 9z"/></svg>
+        </button>
+        <button id="open-settings" class="topbar-link" title="设置（服务器 / Token，保存在本地）">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button id="open-full-top" class="topbar-link" title="打开完整版">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+        </button>
+        <button id="add-trigger" class="add-trigger" title="新增待办">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <button id="embedded-close" class="topbar-link embedded-only" title="关闭面板">✕</button>
+      </header>
+
+      <main id="quadrant-grid" class="quadrant-grid"></main>
+    </section>
+
+    <!-- ============ 待迁移视图 ============ -->
+    <section id="view-migrations" class="hidden">
+      <header class="topbar">
+        <button id="mig-back" class="back-btn" title="返回">←</button>
+        <div class="mig-title">待迁移 <small id="mig-view-count"></small></div>
+      </header>
+      <div id="mig-list" class="mig-list"></div>
+      <footer class="mig-footer">
+        <button id="mig-all-btn" class="mig-all-btn">一键全部迁移</button>
+      </footer>
+    </section>
+
+    <!-- ============ 规律生活视图 ============ -->
+    <section id="view-life" class="hidden">
+      <header class="topbar">
+        <button id="life-back" class="back-btn" title="返回四象限">←</button>
+        <div class="life-date-block">
+          <button id="life-prev" class="life-nav" title="前一天">‹</button>
+          <span id="life-date" class="life-date">今日</span>
+          <button id="life-next" class="life-nav" title="后一天">›</button>
+          <button id="life-today-btn" class="life-today-btn" title="回到今天">今天</button>
+        </div>
+        <span id="life-stat" class="life-stat">安排 0 · 完成 0</span>
+      </header>
+      <div class="life-tabs">
+        <button id="life-tab-today" class="life-tab on">今日打卡</button>
+        <button id="life-tab-plans" class="life-tab">计划管理</button>
+      </div>
+      <div id="life-list" class="life-list"></div>
+      <div id="plan-list" class="plan-list hidden"></div>
+      <footer class="life-footer">
+        <button id="plan-add-btn" class="life-add-btn">＋ 新增计划</button>
+      </footer>
+    </section>
+
+    <!-- 新增任务弹窗:选象限 + 类型 -->
+    <div id="add-modal" class="add-modal hidden">
+      <div class="add-sheet">
+        <div class="add-sheet-head">
+          <span id="add-sheet-title" class="add-sheet-title">新增待办</span>
+          <button id="add-close" class="add-sheet-close" title="关闭">✕</button>
+        </div>
+        <input id="add-title" type="text" maxlength="500" placeholder="要做一件什么事？">
+        <textarea id="add-desc" rows="2" maxlength="2000" placeholder="备注（可选）"></textarea>
+        <div class="add-field-label">象限</div>
+        <div id="add-quad" class="add-quad"></div>
+        <div class="add-field-label">类型 <span class="add-field-tip">可不选，默认未分类</span></div>
+        <div id="add-cats" class="add-cats"></div>
+        <button id="add-submit" class="add-submit">添加到今天</button>
+      </div>
+    </div>
+
+    <!-- 设置弹窗(浮层,保存到本地) -->
+    <div id="set-modal" class="add-modal hidden">
+      <div class="add-sheet">
+        <div class="add-sheet-head">
+          <span class="add-sheet-title">设置</span>
+          <button id="set-close" class="add-sheet-close" title="关闭">✕</button>
+        </div>
+        <div class="add-field-label">服务器地址</div>
+        <input id="set-server" type="text" spellcheck="false" autocomplete="off" placeholder="http://127.0.0.1:8070">
+        <div class="add-field-label">访问令牌（Token） <span class="add-field-tip">与账号绑定,永不过期</span></div>
+        <div class="secret-row">
+          <input id="set-token" type="password" spellcheck="false" autocomplete="new-password" placeholder="默认预填 lizy 的永久 token">
+          <button type="button" class="eye" data-for="set-token" title="点击查看">👁</button>
+        </div>
+        <div class="add-field-label">响应加密密钥 <span class="add-field-tip">需与服务端"Token 接口加密"密钥一致</span></div>
+        <div class="secret-row">
+          <input id="set-key" type="password" spellcheck="false" autocomplete="new-password" placeholder="LizySecret">
+          <button type="button" class="eye" data-for="set-key" title="点击查看">👁</button>
+        </div>
+        <button id="set-save" class="add-submit">保存</button>
+      </div>
+    </div>
+
+    <!-- 完成备注弹窗(勾选待办时弹,可留空) -->
+    <div id="done-modal" class="add-modal hidden">
+      <div class="add-sheet">
+        <div class="add-sheet-head">
+          <span id="done-title" class="add-sheet-title">完成</span>
+          <button id="done-close" class="add-sheet-close" title="取消">✕</button>
+        </div>
+        <div class="add-field-label">完成备注 <span class="add-field-tip">可选,500 字以内</span></div>
+        <textarea id="done-note" rows="3" maxlength="500" spellcheck="false" placeholder="例如：产出周报一份，耗时40分钟"></textarea>
+        <button id="done-submit" class="add-submit">完 成</button>
+      </div>
+    </div>
+
+    <!-- 计划新增/编辑弹窗(类型必选,无象限) -->
+    <div id="plan-modal" class="add-modal hidden">
+      <div class="add-sheet">
+        <div class="add-sheet-head">
+          <span id="plan-sheet-title" class="add-sheet-title">新增计划</span>
+          <button id="plan-close" class="add-sheet-close" title="关闭">✕</button>
+        </div>
+        <input id="plan-title" type="text" maxlength="200" placeholder="计划名称，如：喝水 8 杯">
+        <textarea id="plan-desc" rows="2" maxlength="2000" placeholder="备注（可选）"></textarea>
+        <div class="add-field-label">类型 <span class="add-field-tip">必选</span></div>
+        <div id="plan-cats" class="add-cats"></div>
+        <div class="add-field-label">频率</div>
+        <div id="plan-rule-type" class="plan-rule-types">
+          <button type="button" class="pr-type" data-t="interval" data-mode="daily">每天</button>
+          <button type="button" class="pr-type" data-t="interval" data-mode="interval">每隔 N 天</button>
+          <button type="button" class="pr-type" data-t="weekly">每周几</button>
+          <button type="button" class="pr-type" data-t="weekly_times">每周 N 次</button>
+          <button type="button" class="pr-type" data-t="monthly_times">每月 N 次</button>
+        </div>
+        <div id="plan-rule-param" class="plan-rule-param">
+          <div class="prp prp-interval hidden"><input id="plan-interval" type="number" min="1" max="366" value="1"> <span>天一次</span></div>
+          <div class="prp prp-weekly hidden" id="plan-weekdays"></div>
+          <div class="prp prp-times hidden"><input id="plan-times" type="number" min="1" max="31" value="1"> <span>次</span></div>
+        </div>
+        <div class="add-field-label">起止日期 <span class="add-field-tip">结束留空 = 长期</span></div>
+        <div class="plan-dates">
+          <input id="plan-start" type="date">
+          <input id="plan-end" type="date" title="结束日期(可空)">
+        </div>
+        <button id="plan-submit" class="add-submit">保 存</button>
+        <div id="plan-manage" class="plan-manage hidden">
+          <button id="plan-toggle" class="plan-toggle-btn">停用</button>
+          <button id="plan-delete" class="plan-delete-btn">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 加载 / 错误遮罩 -->
+    <div id="status" class="status hidden">
+      <div id="status-spinner" class="spinner"></div>
+      <div id="status-msg" class="msg">加载中…</div>
+      <button id="retry-btn" class="retry-btn hidden">重试</button>
+    </div>
+
+    <!-- 轻提示 -->
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <!-- 顺序不可变：config → storage → api → popup（均为经典脚本，可直接作为普通网页打开测试） -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/notify.js"></script>
+  <script src="js/api.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

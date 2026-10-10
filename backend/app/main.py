@@ -1,194 +1,185 @@
 """
-Flask 应用入口
+FastAPI 应用入口
 
-初始化 Flask 应用，配置 CORS、数据库（SQLite/PostgreSQL 双后端）与 gzip 压缩。
-无限流、无定时任务（浏览计数实时写库）。
+初始化 FastAPI 应用：CORS、gzip 压缩、统一异常信封、动态模块注册与数据库。
+无限流；后台线程随模块 start_background 钩子启动（TESTING 空转）。
 """
 
-import gzip
+import importlib
 import logging
 import os
 
-# 触发 Werkzeug reloader 热重启的戳文件（数据库切换时 touch 它），
-# 必须被 import 才会进入 reloader 的监听列表
+# uvicorn --reload 的重启戳文件（数据库切换时 touch 它），
+# 必须被 import 才会进入 reload 监听列表
 os.makedirs(os.path.dirname(os.path.abspath(__file__)), exist_ok=True)
 _stamp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_reload_stamp.py')
 if not os.path.isfile(_stamp):
     with open(_stamp, 'w', encoding='utf-8') as f:
         f.write('# reload stamp - touched to trigger dev-server reload\n')
 import app._reload_stamp  # noqa: F401,E402
-from flask import Flask, jsonify, request
-from flask.json.provider import DefaultJSONProvider
-from flask_cors import CORS
-from werkzeug.exceptions import HTTPException
-from app.config import settings
-from app.db import init_db
-from app.api import auth_bp, posts_bp, images_bp, admin_bp, workspaces_bp, export_bp
-from app.api.auth import auth
-from app.utils.response import api_response
+
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.exceptions import RequestValidationError  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+from fastapi.responses import JSONResponse  # noqa: E402
+from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
+
+from app.config import settings  # noqa: E402
+from app.db import init_db  # noqa: E402
+from app.shared import auth_router  # noqa: E402
+from app.shared.logging_setup import setup_logging_for_app  # noqa: E402
+from app.shared.modules import module_for_path, sys_name_for  # noqa: E402
+from app.shared.response import api_response  # noqa: E402
+from lizysdk.errors import AppError  # noqa: E402
+
+#: 业务模块注册表（按此顺序 import；未迁移/导入失败的模块跳过并告警）
+MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo', 'confcenter')
+
+setup_logging_for_app()
+logger = logging.getLogger('doublog.main')
 
 
-class CustomJSONProvider(DefaultJSONProvider):
-    """自定义JSON提供器，确保中文不被转义"""
-
-    def __init__(self, app):
-        """
-        初始化JSON提供器
-
-        Args:
-            app: Flask应用实例
-        """
-        super().__init__(app)
-        self.ensure_ascii = False
+def _log_extra(request: Request) -> dict:
+    """按路径标注来源模块 sys_name；摄入端点自身的错误防自摄回环"""
+    mod = module_for_path(request.url.path)
+    extra = {'sys_name': sys_name_for(mod)}
+    if request.url.path.startswith('/api/v1/logs'):
+        extra['no_remote'] = True
+    return extra
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+def create_app() -> FastAPI:
+    """创建并配置 FastAPI 应用实例"""
+    app = FastAPI(
+        title=settings.app_name,
+        version=settings.app_version,
+        docs_url=None, redoc_url=None, openapi_url=None,   # 单用户内部服务，不暴露 schema
+    )
+    app.state.testing = bool(os.environ.get('DOUBLOG_TESTING'))
 
+    # CORS：凭据模式（会话 Cookie 跨端口携带）必须显式来源 + allow_credentials，
+    # 不能再用通配 *；来源收敛为前端端口 60101（dev/preview 同端口）
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=r'^https?://.*:60101$',
+        allow_credentials=True,
+        allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allow_headers=['Content-Type', 'Authorization'],
+    )
+    # gzip：≥1KB 响应压缩传输（level 6 为体积/CPU 权衡——starlette 默认 9，
+    # 压测显示 9 在大响应上每请求多耗 ~3-4ms CPU，全模块读吞吐受损）
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
-@auth.error_handler
-def auth_error(status=401):
-    """
-    认证失败错误处理
+    # ── 请求级 trace：纯 ASGI 中间件（微秒级开销，不用 BaseHTTPMiddleware）──
+    # 每个请求绑定 lizysdk trace_id（本请求内所有日志自动携带）并回写 X-Trace-Id 响应头；
+    # 上游已带 X-Trace-Id（网关/SDK 调用方）则透传延续链路
+    from lizysdk.logs import bind_context
+    from lizysdk import new_trace_id
 
-    Args:
-        status: HTTP状态码，默认401
+    def trace_middleware(app_to_wrap):
+        async def middleware(scope, receive, send):
+            if scope['type'] != 'http':
+                await app_to_wrap(scope, receive, send)
+                return
+            trace_id = None
+            for k, v in scope.get('headers') or []:
+                if k == b'x-trace-id':
+                    trace_id = v.decode('latin-1')[:64]
+                    break
+            if not trace_id:
+                trace_id = new_trace_id()
+            bind_context(trace_id=trace_id)
 
-    Returns:
-        tuple: 错误响应和状态码
-    """
-    return api_response(None, status, "认证失败")
+            async def send_with_trace(message):
+                if message['type'] == 'http.response.start':
+                    message.setdefault('headers', []).append((b'x-trace-id', trace_id.encode('latin-1')))
+                await send(message)
 
+            await app_to_wrap(scope, receive, send_with_trace)
+        return middleware
 
-def create_app():
-    """
-    创建并配置Flask应用实例
+    app.add_middleware(trace_middleware)
 
-    Returns:
-        Flask: 配置完成的Flask应用
-    """
-    app = Flask(__name__)
-    app.config['SECRET_KEY'] = settings.secret_key
-    app.json = CustomJSONProvider(app)
+    # ── 统一异常信封（与 Flask 时代行为一致）──────────────
+    async def handle_app_error(request: Request, err: AppError) -> JSONResponse:
+        logger.info(f"AppError {err.code}: {err.message} [{request.method} {request.url.path}]",
+                    extra=_log_extra(request))
+        headers = {'WWW-Authenticate': 'Basic realm="Authentication Required"'} \
+            if err.http_status == 401 else None
+        return JSONResponse(
+            {'success': False, 'code': err.http_status, 'message': err.message,
+             'data': {'error_code': err.code, 'details': err.details or None}},
+            status_code=err.http_status, headers=headers)
 
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": settings.cors_origins,
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
-        }
-    })
+    async def handle_http_exception(request: Request,
+                                    exc: StarletteHTTPException) -> JSONResponse:
+        if exc.status_code == 404:
+            message = '资源不存在'
+        elif exc.status_code == 405:
+            message = '方法不被允许'
+        else:
+            message = str(exc.detail)
+        logger.info(f"HTTP {exc.status_code}: {request.method} {request.url.path}",
+                    extra=_log_extra(request))
+        return api_response(None, exc.status_code, message)
 
+    async def handle_validation(request: Request,
+                                exc: RequestValidationError) -> JSONResponse:
+        logger.info(f"400 validation: {request.method} {request.url.path}",
+                    extra=_log_extra(request))
+        return api_response(None, 400, '请求参数错误')
+
+    async def handle_exception(request: Request, exc: Exception) -> JSONResponse:
+        logger.error(f"[{module_for_path(request.url.path)}] Unhandled exception: {exc}",
+                     exc_info=True, extra=_log_extra(request))
+        return api_response(None, 500, '服务器内部错误')
+
+    app.add_exception_handler(AppError, handle_app_error)
+    app.add_exception_handler(StarletteHTTPException, handle_http_exception)
+    app.add_exception_handler(RequestValidationError, handle_validation)
+    app.add_exception_handler(Exception, handle_exception)
+
+    # ── 动态模块导入（先注册模型，建表才能看到全部表）────
+    loaded = []
+    for name in MODULES:
+        try:
+            mod = importlib.import_module(f'app.{name}')
+        except Exception as e:  # noqa: BLE001 - 未迁移模块（Flask 残码）跳过不致命
+            logger.warning(f'模块 app.{name} 未注册（未迁移或依赖缺失）: {e}')
+            continue
+        loaded.append((name, mod))
+
+    # ── 数据库（建表 → 存量改名 → 模块迁移钩子 → 播种）───
     init_db(app)
 
-    @app.errorhandler(Exception)
-    def handle_exception(e):
-        """
-        全局异常处理
+    # ── 路由挂载 + 后台线程钩子 ─────────────────────────
+    for name, mod in loaded:
+        router = getattr(mod, 'router', None)
+        if router is not None:
+            app.include_router(router)
+        starter = getattr(mod, 'start_background', None)
+        if callable(starter):
+            starter(app)
 
-        Args:
-            e: 异常实例
+    app.include_router(auth_router)
 
-        Returns:
-            tuple: 错误响应和状态码
-        """
-        logger.error(f"Unhandled exception: {str(e)}", exc_info=True)
-        if isinstance(e, HTTPException):
-            return api_response(None, e.code, e.description)
-        return api_response(None, 500, "服务器内部错误")
+    @app.get('/')
+    async def root():
+        return {'message': f'Welcome to {settings.app_name}', 'version': settings.app_version}
 
-    @app.errorhandler(400)
-    def handle_bad_request(e):
-        """
-        400错误处理
+    @app.get('/health')
+    async def health_check():
+        return {'status': 'healthy'}
 
-        Args:
-            e: HTTPException实例
-
-        Returns:
-            tuple: 错误响应和状态码
-        """
-        return api_response(None, 400, str(e.description))
-
-    @app.errorhandler(404)
-    def handle_not_found(e):
-        """
-        404错误处理
-
-        Args:
-            e: HTTPException实例
-
-        Returns:
-            tuple: 错误响应和状态码
-        """
-        return api_response(None, 404, "资源不存在")
-
-    # gzip 压缩：JSON/文本响应超过 1KB 时压缩传输
-    @app.after_request
-    def compress_response(response):
-        accept_encoding = request.headers.get('Accept-Encoding', '')
-        if 'gzip' not in accept_encoding.lower():
-            return response
-        if response.direct_passthrough:
-            return response  # 文件流等直通响应不压缩
-        if response.status_code < 200 or response.status_code >= 300:
-            return response
-        if response.headers.get('Content-Encoding'):
-            return response
-        content_type = response.headers.get('Content-Type', '')
-        if not (content_type.startswith('application/json') or content_type.startswith('text/')):
-            return response
-        body = response.get_data()
-        if len(body) < 1024:
-            return response
-        response.set_data(gzip.compress(body, compresslevel=6))
-        response.headers['Content-Encoding'] = 'gzip'
-        response.headers['Vary'] = 'Accept-Encoding'
-        return response
-
-    app.register_blueprint(auth_bp)
-    app.register_blueprint(posts_bp)
-    app.register_blueprint(images_bp)
-    app.register_blueprint(admin_bp)
-    app.register_blueprint(workspaces_bp)
-    app.register_blueprint(export_bp)
-
-    @app.route("/")
-    def root():
-        """
-        根路径，返回欢迎信息
-
-        Returns:
-            dict: 欢迎信息和版本号
-        """
-        return jsonify({
-            "message": f"Welcome to {settings.app_name}",
-            "version": settings.app_version
-        })
-
-    @app.route("/health")
-    def health_check():
-        """
-        健康检查端点
-
-        Returns:
-            dict: 健康状态
-        """
-        return jsonify({"status": "healthy"})
-
-    logger.info(f"{settings.app_name} v{settings.app_version} initialized (backend={app.config['SQLALCHEMY_DATABASE_URI'].split('://')[0]})")
+    logger.info(f"{settings.app_name} v{settings.app_version} initialized "
+                f"(fastapi, backend={app.state.engine.url.get_backend_name()})")
     return app
 
 
 app = create_app()
 
 
-if __name__ == "__main__":
-    app.run(
-        host=settings.host,
-        port=settings.port,
-        debug=settings.debug
-    )
+if __name__ == '__main__':
+    import uvicorn
+    uvicorn.run(app, host=settings.host, port=settings.port)

@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.mytodo.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.mytodo.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 12
+        versionName "2.1"
+    }
+
+    buildTypes {
+        release {
+            // R8 全量压缩+资源收缩:包体与dex加载显著优化(零第三方依赖无反射风险)
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            // 个人应用:release 直接用 debug 签名,与已装 debug 版签名一致,覆盖安装不丢数据
+            signingConfig signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+    packaging {
+        dex {
+            // dex 以未压缩方式存储：安装后运行加载更快，APK 相应变大
+            useLegacyPackaging = false
+        }
+    }
+}
+
+dependencies {
+    // 零第三方依赖：kotlin-stdlib 由 Kotlin 插件自动引入
+}

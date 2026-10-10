@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>MyTodo 四象限 - 设置</title>
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="wrap">
+    <header class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none">
+          <line x1="12" y1="7.4" x2="12" y2="5.2" stroke="rgba(255,255,255,.92)" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="12" cy="4.3" r="1.35" fill="#fff"/>
+          <rect x="5" y="7.4" width="14" height="11.6" rx="4" fill="#fff"/>
+          <circle cx="9.4" cy="12.8" r="1.55" fill="#1e40af"/>
+          <circle cx="14.6" cy="12.8" r="1.55" fill="#1e40af"/>
+          <path d="M9.6 16.2h4.8" stroke="#1e40af" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1>MyTodo 四象限 · 设置</h1>
+        <p class="desc">popup 与后台服务均从此处读取服务器地址与访问令牌。</p>
+      </div>
+    </header>
+
+    <form id="opt-form">
+      <label class="field">
+        <span class="label">服务器地址</span>
+        <input id="server-url" type="text" placeholder="http://127.0.0.1:8070" spellcheck="false" autocomplete="off">
+        <span class="hint">MyTodo 后端地址（不含 /api/v1），默认本机 8070 端口</span>
+      </label>
+
+      <label class="field">
+        <span class="label">访问令牌（Token）</span>
+        <span class="secret-row">
+          <input id="token" type="password" spellcheck="false" autocomplete="new-password" placeholder="默认预填 lizy 的永久 token">
+          <button type="button" class="eye" data-for="token" title="点击查看">👁</button>
+        </span>
+        <span class="hint">以 Authorization: Bearer 方式发送；默认预填 lizy 的永久 token</span>
+      </label>
+
+      <label class="field">
+        <span class="label">响应加密密钥</span>
+        <span class="secret-row">
+          <input id="secret-key" type="password" spellcheck="false" autocomplete="new-password" placeholder="LizySecret">
+          <button type="button" class="eye" data-for="secret-key" title="点击查看">👁</button>
+        </span>
+        <span class="hint">需与服务端设置页"Token 接口加密"的密钥一致,用于解密接口响应</span>
+      </label>
+
+      <label class="field field-check">
+        <span class="check-row">
+          <input id="robot-enabled" type="checkbox">
+          <span class="label">网页悬浮机器人</span>
+        </span>
+        <span class="hint">在所有网页右下角显示悬浮机器人，点击即可展开四象限待办面板（可拖拽换位；保存后刷新已打开的网页生效）</span>
+      </label>
+
+      <div class="btns">
+        <button type="submit" id="save-btn" class="primary">保存</button>
+        <button type="button" id="test-btn">测试连接</button>
+      </div>
+      <div id="status" class="status"></div>
+    </form>
+  </div>
+
+  <!-- 顺序不可变：config → storage → api → options -->
+  <script src="js/config.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/notify.js"></script>
+  <script src="js/api.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
