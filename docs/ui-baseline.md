@@ -4,7 +4,8 @@
 > **不重设计**——各模块的个性色与布局结构保持不变，只对齐档位。
 >
 > 个性色现状（2026-10 校准）：blog=stone（顶栏"新建"主按钮为 amber 实底）、diary=rose、subs=amber
-> （历史现状，门户卡标注 violet 仅为图标底）、vault/pwsvc=emerald、apihub=amber、config=teal、logs=sky。
+> （历史现状，门户卡标注 violet 仅为图标底）、vault/pwsvc=emerald、apihub=amber、config=teal、logs=sky、
+> todo=indigo、confcenter=cyan；门户"剧情图谱"卡 violet、"刷题"卡 blue（均为图标底）。
 > 个性色只用于：图标底、徽章、主按钮、选中态；其余一律中性 stone。
 
 ## 档位表（Tailwind 类为准）

@@ -10,8 +10,7 @@ import {
   subsStatsOverview, subsStatsCategorySummary, subsRemindersUpcoming, subsRemindersAll,
   subsMembers,
 } from '../api'
-import { fmtPrice, daysRemaining, fmtDuration, Icon, CategoryTag, Modal } from '../kit'
-import { adjustForDark } from '../kit'
+import { fmtPrice, daysRemaining, fmtDuration, Icon, Modal, adjustForDark } from '../kit'
 import { useHolidays } from '../useHolidays'
 
 // ─── 指标卡 ───────────────────────────────────────────────
@@ -166,7 +165,7 @@ function RankingCard({ dark, onGo }) {
     <div className="p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2 text-sm font-semibold">{Icon.stats} 会员支出排行榜</div>
-        <button onClick={load} className={Icon.refresh ? 'w-8 h-8 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center' : ''}>{Icon.refresh}</button>
+        <button onClick={load} className="w-8 h-8 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">{Icon.refresh}</button>
       </div>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {RANK_DIMS.map(d => (
@@ -284,8 +283,8 @@ function ExpiryCalendar({ dark, onGo, onRefresh }) {
     return soon ? '#f59e0b' : '#10b981'
   }
 
-  const cell = dateStr => {
-    if (!dateStr) return <div key={'e' + Math.random()} className="h-[72px]" />
+  const cell = (dateStr, i) => {
+    if (!dateStr) return <div key={'e' + i} className="h-[72px]" />
     const list = byDate[dateStr]
     const isToday = dateStr === todayStr
     const info = getDayInfo(dateStr)

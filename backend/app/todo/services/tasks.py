@@ -14,6 +14,7 @@ from ..models import Category, Task
 from ..schemas import TaskCreate, TaskMoveIn, TaskOut, TaskReorderIn, TaskUpdate
 from ..timeutil import ensure_aware, iso, local_today, now_utc, uuid7
 from . import get_settings, log_event
+
 ACTIVE_STATUSES = ("pending", "in_progress")
 
 
@@ -36,6 +37,7 @@ def _check_notify_complete(enabled: bool, when: Optional[str], channels: list[st
         if not channels:
             missing.append("notify_channels")
         raise HTTPException(422, f"启用通知需要同时提供: {','.join(missing)}")
+
 STEP = 1024.0
 
 
@@ -571,8 +573,7 @@ def list_tasks(
         stmt = stmt.where(Task.is_important == imp, Task.is_urgent == urg)
     if q:
         like = f"%{q.lower()}%"
-        from sqlalchemy import or_
-        stmt = stmt.where(or_(_lower(Task.title).like(like), _lower(Task.description).like(like)))
+        stmt = stmt.where(or_(func.lower(Task.title).like(like), func.lower(Task.description).like(like)))
 
     order_col = {
         "position": Task.position,
@@ -582,8 +583,3 @@ def list_tasks(
     }.get(sort, Task.position)
     stmt = stmt.order_by(order_col)
     return list(session.scalars(stmt))
-
-
-def _lower(col):
-    from sqlalchemy import func
-    return func.lower(col)

@@ -1,4 +1,4 @@
-// 系统配置能力包 API 层：统一走 shared/client.js 的 apiFetch（Basic Auth 唯一持有处）。
+// 系统配置能力包 API 层：统一走 shared/client.js 的 apiFetch（会话 Cookie 认证）。
 // 覆盖：数据库后端（SQLite/PostgreSQL 一键切换）+ 日志上报配置。
 
 import { apiFetch } from '../shared/client'

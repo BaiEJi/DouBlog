@@ -13,7 +13,6 @@ from sqlalchemy import DateTime, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
-from app.shared.timestamps import _iso
 
 
 class ConfEntry(Base):
@@ -35,7 +34,3 @@ class ConfEntry(Base):
         # 按 ns 浏览的单列索引（复合主键虽可作前缀，显式建索引与规范一致）
         Index('ix_confcenter_entries_namespace', 'namespace'),
     )
-
-    def payload(self) -> dict:
-        """缓存/响应共用的 {type, data(原始存储文本), updated_at} 载荷。"""
-        return {'type': self.type, 'data': self.data, 'updated_at': _iso(self.updated_at)}

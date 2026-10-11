@@ -13,7 +13,7 @@ from app.shared.auth import require_basic
 from app.shared.response import api_response
 
 from .. import cache as response_cache
-from ..models import Board, BoardNode, Character, Chapter, ChapterCharacter, ChapterRelation, Game
+from ..models import Board, BoardNode, Character, Chapter, ChapterCharacter, ChapterRelation
 from ..schemas import (
     BoardOut, BoardSave, ChapterCharacterOut, ChapterOut, CharacterOut, MergedBoardOut,
     MergedNodeOut, MergedRelationOut, MergedStateOut, NodeOut, NodePositionUpdate,
@@ -225,9 +225,9 @@ async def merged_board(game_id: int, chapter_ids: str):
                     alias=s.alias, role=s.role, status=s.status,
                     alive=s.alive_override, faction=s.faction_override or "")
 
-        char_ids = set(node_map) | {c for k in rel_map for c in k[:2]}
+        board_char_ids = set(node_map) | {c for k in rel_map for c in k[:2]}
         # 状态里也可能有未上板的人物（被移出但保留状态），一并取档案用于解析
-        char_ids |= set(state_map)
+        char_ids = board_char_ids | set(state_map)
         chars = session.scalars(select(Character).where(Character.id.in_(char_ids))).all() if char_ids else []
         char_by_id = {c.id: c for c in chars}
 
@@ -243,7 +243,7 @@ async def merged_board(game_id: int, chapter_ids: str):
             anchor_chapter_id=chapters[-1].id,
             nodes=list(node_map.values()),
             relations=list(rel_map.values()),
-            characters=[CharacterOut.model_validate(c) for c in chars if c.id in (set(node_map) | {k for r in rel_map for k in r[:2]})],
+            characters=[CharacterOut.model_validate(c) for c in chars if c.id in board_char_ids],
             states=[resolved_state(s) for s in state_map.values()],
         )
         body = envelope_body(_dump(out))

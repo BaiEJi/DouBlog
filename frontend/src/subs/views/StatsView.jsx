@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { subsStatsTrend, subsStatsByCategory } from '../api'
 import { AreaTrend, DonutPie } from '../charts'
-import { fmtPrice, Icon, adjustForDark, btn } from '../kit'
+import { fmtPrice, adjustForDark } from '../kit'
 
 const PALETTE = ['#0ea5e9', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#f97316']
 const DARK_PALETTE = ['#38bdf8', '#fbbf24', '#34d399', '#f87171', '#a78bfa', '#2dd4bf', '#f472b6', '#fb923c']

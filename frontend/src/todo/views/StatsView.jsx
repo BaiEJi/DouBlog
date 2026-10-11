@@ -19,8 +19,8 @@ const LEVELS = [
 const levelOf = c => (c <= 0 ? 0 : c === 1 ? 1 : c === 2 ? 2 : c < 5 ? 3 : 4)
 const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
 
-/** 年度热力图：周列（周一开头）× 日行，indigo 色阶 */
-function Heatmap({ year, days, dark }) {
+/** 年度热力图：周列（周一开头）× 日行，indigo 色阶（色阶类自带 dark: 变体） */
+function Heatmap({ year, days }) {
   const [hover, setHover] = useState(null)
   const grid = useMemo(() => {
     const countMap = new Map((days || []).map(d => [d.date, d.count]))
@@ -198,7 +198,7 @@ export default function StatsView({ toast, dark }) {
             </button>
           </div>
         }>
-        <Heatmap year={heatmapYear} days={heatmap?.days || []} dark={dark} />
+        <Heatmap year={heatmapYear} days={heatmap?.days || []} />
       </Card>
 
       {/* 近 30 天趋势 */}

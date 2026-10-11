@@ -45,7 +45,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
 │   ├── PageHeader.jsx              # 模块顶栏 v2 模板：第一行(返回+标题+副标+right) + 可选第二行(统一药丸 Tab，accent 个性色)；HeaderTabs/BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
-├── portal/PortalPage.jsx           # /        统一入口（自定义分组工作台 + 11 卡含"剧情图谱"直达 /todo/gamemap）
+├── portal/PortalPage.jsx           # /        统一入口（12 卡含"剧情图谱" /todo/gamemap 与"刷题" /todo?v=practice 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组）
 ├── blog/                           # /blog /post/:id /create /admin
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
 │   ├── pages/                      # HomePage PostDetail CreatePost EditPost AdminPage
@@ -56,7 +56,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── DiaryPage.jsx               # 侧栏（视图/日记本/标签）+ 主区布局
 │   ├── PublicShare.jsx             # /diary/s/:token 免登录只读页
 │   └── components/                 # QuickCapture EntryCard Editor CalendarView
-│                                   #   HeatmapView StatsView ShareDialog
+│                                   #   HeatmapView StatsView ShareDialog SummaryCard
 ├── vault/                          # /vault（零知识密码库 + 密码服务子视图）
 │   ├── api.js                      # vault* + pwsvc* 封装
 │   ├── VaultPage.jsx               # 锁屏/侧栏/三面板外壳
@@ -64,7 +64,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页）
 ├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx
 ├── config/                        # /config：api.js + ConfigPage.jsx（统一 PageHeader 顶栏）
-├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×13 + gamemap/（剧情图谱子模块：antd6+@xyflow 保留栈，GamemapShell + board/×10 + pages/×5）
+├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×11 + gamemap/（剧情图谱子模块：antd6+@xyflow 保留栈，GamemapShell + board/ + pages/）+ practice/（刷题视图）+ steamidler/（Steam 挂机视图）
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
@@ -81,17 +81,12 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 **全项目唯一的后端地址定义处**（认证=会话 Cookie，自动携带）。新增任何请求必须走它，禁止在组件里再写 `btoa(...)`/裸 fetch/硬编码端口。
 
 ```js
-API_BASE                 // http://{hostname}:60100
-apiFetch(path, options)  // 自动附加 Authorization 与 Content-Type；JSON body 直接传对象
-fetchAllPosts({pageSize=100, maxPosts=2000})  // 循环分页拉全量；err.status 携带 HTTP 状态码
-fetchWorkspaces()        // GET  /api/workspaces            知识库列表(含文章数)
-createWorkspace(name)    // POST /api/workspaces            新建知识库
-fetchPostTree(wsId?)     // GET  /api/posts/tree            按库取树(缺省默认库)
-fetchDbStatus()          // GET  /api/admin/database        当前后端/连接配置/数据量
-testDbConnection(p)      // POST /api/admin/database/test   测试目标后端连通性
-switchDatabase(p)        // POST /api/admin/database/switch 迁移并切换（返回统一信封）
-searchPosts(kw, wsId?)   // GET  /api/posts?keyword=        全文搜索
+API_BASE                 // http://{hostname}:60100（全项目唯一持有处）
+apiFetch(path, options)  // 自动附加 Content-Type；JSON body 直接传对象。
+                         // 认证=会话 Cookie（credentials:'include'），401 统一跳 /login
 ```
+
+业务函数在各能力包自己的 api.js（见下）；`err.status` 携带 HTTP 状态码。
 
 **文章详情 SWR 预取缓存**（提速核心，改详情加载逻辑时必读）：
 
@@ -245,7 +240,7 @@ bash shell/frontend/start.sh         # 一键：build + preview（生产模式�
 bash shell/frontend/start.sh dev     # 一键：dev server
 ```
 
-**改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍首页/详情/新建/编辑四页（详见 AGENTS.md 验证清单）。
+**改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
 
 - **页面宽度约定（全站统一）**：模块页容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10 mx-auto`（1920 屏内容区 1620px）；模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮‹门户 + text-2xl 标题 + 右侧 slot；侧栏型页用 BackButton）；日记时间线内层 1100px 为阅读宽度设计、vault 锁屏居中卡豁免
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
@@ -255,10 +250,6 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 ## 8. 已知限制
 
-1. 单包无路由级 lazy / 无 vendor 分包，首屏体积大（历史优化清单遗留项）
-2. mermaid/KaTeX 静态导入三个页面，无法按需加载
-3. highlight.js 全量语言包导入（未用 `lib/core` 按需注册）
-4. （已修复）凭据不再进前端 bundle——统一登录会话 Cookie（2026-10-10 移除）
-5. 无 404 兜底页（`/archive` 死链已从导航移除，路由仍未注册）
-6. 生产模式下管理页切换数据库后需手动重启后端（页面有提示）
-7. 开发模式下连续改动源文件后，Vite 依赖重优化窗口内 mermaid 偶发不渲染（刷新即恢复，仅 dev，生产预打包不受影响）
+1. 无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
+2. 生产模式下管理页切换数据库后需手动重启后端（页面有提示）
+3. 开发模式下连续改动源文件后，Vite 依赖重优化窗口内 mermaid 偶发不渲染（刷新即恢复，仅 dev，生产预打包不受影响）

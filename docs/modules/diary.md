@@ -71,7 +71,7 @@
 | # | 方法/路径 | 参数 | 响应 / 错误 |
 |---|---|---|---|
 | 1 | `GET /api/diary/entries` | `?view=timeline(默认)\|archive\|trash\|pinned`；`?date=` 或 `?start=&end=`（YYYY-MM-DD，非法 400）；`?search=`（仅正文 LIKE %kw%，**不搜标签、无 ?tag= 参数**）；`?mood=`；`?journal_id=`（trash 视图下后两者被忽略）；`?limit=`（默认 500，上限 500）`?offset=` | `{total, items:[entry]}`。entry 含 content（注意：日记列表**带正文**，与文章列表不含正文的约定不同）。排序：timeline/pinned = 置顶优先→日期倒序→**当天总结在随记前**→id 倒序；archive/trash = 日期倒序、id 倒序 |
-| 2 | `POST /api/diary/entries` | body：`entry_date`（必填合法日期）、`content`（必填 str ≤20 万）、`mood?`、`kind?`（note/summary，默认 note）、`journal_id`（**kind=note 时必填且须存在**，否则 400）、`weather?` / `location?`（白名单键，塞私货字段被丢弃） | 201 创建成功，返回 entry；word_count 服务端算 |
+| 2 | `POST /api/diary/entries` | body：`entry_date`（必填合法日期）、`content`（必填 str ≤20 万）、`mood?`、`kind?`（仅 note=默认；**传 summary 得 400**——总结只能走 POST /api/diary/summary upsert，防绕过"每天一篇/恒无本"不变量）、`journal_id`（**kind=note 时必填且须存在**，否则 400）、`weather?` / `location?`（白名单键，塞私货字段被丢弃） | 201 创建成功，返回 entry；word_count 服务端算 |
 | 3 | `PUT /api/diary/entries/{id}` | 两种模式：`?action=pin\|unpin\|archive\|unarchive\|restore`（archive 会同时取消置顶；非法 action 400；**有 action 时忽略 body**）；或 body 部分更新（entry_date/content/mood/journal_id/weather/location 任选；kind 不可改） | entry；404 日记不存在 |
 | 4 | `DELETE /api/diary/entries/{id}` | 默认软删（进回收站、取消置顶）→ `{id, trashed:true}`；`?hard=1` 彻底删除（**必须先软删**否则 400，硬删前清 share_token/share_expires）→ `{id, purged:true}` | 404 不存在 |
 | 5 | `POST /api/diary/quick` | body：`content`（必填非空 ≤2 万）、`journal_id`（必填且存在）、`mood?` | 201 已记录；entry_date 取**服务端**当天 |
@@ -145,27 +145,27 @@
   - `HeatmapView`：GitHub 式年热力图（周×日格、5 档色阶按 max 归一、月份标签、悬浮详情、点格跳当天）；
   - `StatsView`：6 指标卡（连续≥3 高亮）+ 纯 SVG 柱状（每月字数）/折线（心情月均，缺值断开）+ 年度回顾大卡（年份切换）；
   - `ShareDialog`：有效期 1 天/7 天/30 天/一年 → 生成链接一键复制 → 可撤销；
-  - `kit.jsx`：MOODS 心情模型（含显示色）、WMO 天气码映射、Icon 图标集、Chip / Confirm / Fade 轻组件。
+  - `kit.jsx`：MOODS 心情模型（含显示色）、WMO 天气码图标、Icon 图标集、Chip / Confirm 轻组件。
 - **PublicShare.jsx**（`/diary/s/:token`）：**免登录只读页**——不走 apiFetch（无 Basic 头），`fetch(API_BASE)` 直连；Markdown 渲染 + 过期/撤销"蜡烛"空态。
 - **api.js**：全部经 `@/shared/client` 的 apiFetch（唯一持凭据处）；例外两个——`diaryPublicShare` 裸 fetch 直连、`diaryExportZip` blob 下载触发浏览器存盘。
 - **api-entry.js**：天气采集（纯前端，open-meteo 免 key；仅在用户点按钮时请求定位权限，坐标只发给天气 API 换数据，不外发内容）。
 - `index.css` 已含 `@source "./diary";`（白名单模式，漏加工具类会静默不生成）。
 - 个性色 rose：仅用于图标底/徽章/心情色等点缀，其余中性 stone（见 `docs/ui-baseline.md`）。
 
-## 6. 测试（`backend/tests/diary/test_diary.py`，26 用例，自包含临时 SQLite）
+## 6. 测试（`backend/tests/diary/test_diary.py`，27 用例，自包含临时 SQLite）
 
 | 覆盖点 | 用例 |
 |---|---|
 | 预置本 | test_preset_journals（三本存在、带计数、无虚拟本） |
 | 随记必选本 | test_note_requires_journal（缺 journal_id/不存在 id 均 400；创建响应无 tags 字段）、test_note_assigned_to_journal（归属 + ?journal_id 过滤） |
 | 每日总结 | test_summary_upsert_once_per_day（201→200 upsert 同 id、总结恒无本、响应带当天随记、坏日期 400）、test_timeline_summary_first_then_notes（排序：总结最前、随记 id 倒序）、test_summary_edit_and_flow（总结可 PUT/置顶/软删，删后重写 created=true） |
-| CRUD/校验 | test_update_flow（改内容/换本）、test_validation_errors（坏日期/坏心情/坏 kind 均 400） |
+| CRUD/校验 | test_update_flow（改内容/换本）、test_validation_errors（坏日期/坏心情/坏 kind、以及 kind=summary 想绕过 upsert 均 400） |
 | 置顶/归档/回收站 | test_pin_and_order（置顶最前 + pinned 视图）、test_archive_flow（archive 视图 + unarchive）、test_trash_restore_purge（软删→trash 视图、未软删 hard=1 400、restore、hard 200、再删 404） |
 | 快速录入 | test_quick_capture_requires_journal（201 落当天、缺本/空白 400） |
 | 过滤/搜索 | test_filters_search_mood_date（search/mood/start） |
 | 日历/热力图/回忆 | test_month_dates_shape（count 聚合 + 当天最好心情）、test_heatmap（max 归一 + 当天计数）、test_onthisday（往年今日入列，2/29 边界自动跳过） |
 | 统计/趋势/年度 | test_stats_and_streaks（连续 3 天 + 断档最长连续）、test_trends_months_backfilled（6 月补零、末月有值、mood_avg 键在）、test_yearend_no_tags（**断言无 top_tags**） |
-| 分享 | test_share_lifecycle（创建/公开读取无 id 无 tags/坏 token 404/撤销 404/expires_hours=0 400）、test_share_blocked_after_trash（软删即 404） |
+| 分享 | test_share_lifecycle（创建/公开读取无 id 无 tags/坏 token 404/撤销 404/expires_hours=0 400）、test_share_blocked_after_trash（软删即 404）、test_share_expired_same_message（过期与坏 token 返回同一 404 文案，不泄露存在性） |
 | 本子管理 | test_journals_crud_and_guard（409 拒删非空、entry_count、重名 409、清空后可删） |
 | 元数据/导出/模板 | test_weather_location_persist（白名单清洗 junk 丢弃）、test_export_zip（zip 结构 + frontmatter mood）、test_templates_and_prompt（模板含 body、同日期同问题） |
 | 鉴权 | test_requires_auth（entries/quick/summary 无凭据 401） |
@@ -178,7 +178,7 @@
 4. **hard=1 必须先软删**；硬删会连带撤销分享，软删期间分享直接 404（restore 后恢复可见）。
 5. **删本守卫只数未删除条目**：回收站内仍挂在本子上的条目不拦——SQLite 默认不强制外键可删成，PG 有 FK 约束会 500（把回收站条目彻底删除后再删本即可）。
 6. **quick 的 entry_date 取服务端本地日期**，前端录入框用浏览器日期，服务器时区不同时可能差一天。
-7. **PUT 可给总结设置 journal_id**（部分更新无 kind 联动校验），会破坏"总结无本"不变量——前端不会这么发，接口层未拦。
+7. **PUT 部分更新无 kind 联动校验**：可给总结设置 journal_id，也可把随记的 `journal_id: null` 直接落库——会破坏"总结无本/随记有本"不变量。前端不会这么发，接口层未拦。
 8. 导出 zip 不含回收站条目；总结与无本条目统一落 `默认/` 目录。
 9. 分享过期比较用 naive UTC（`_utcnow`），与 SQLite/PG 双后端时间语义一致，但对墙钟时区无感知。
 10. word_count 按 Markdown 源文本计（语法符号也计入）；引导问题轮换与那年今日随机挑选均为确定性算法，同一天结果恒定。

@@ -33,7 +33,8 @@ const CARD = 'group text-left p-6 rounded-3xl border transition-all duration-200
 
 const ICON_BOX = 'w-11 h-11 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-105'
 
-const SYSTEMS = [  {
+const SYSTEMS = [
+  {
     to: '/blog',
     title: '博客 · 知识库',
     desc: '树形文章、Markdown、双链与多知识库',
@@ -85,7 +86,19 @@ const SYSTEMS = [  {
       </svg>
     ),
   },
-    {
+  {
+    to: '/todo?v=practice',
+    title: '刷题 · 算法练习',
+    desc: 'LeetCode / 洛谷 · 题解与代码 · 艾宾浩斯复习',
+    box: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M7 4.5 3 10l4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M13 4.5 17 10l-4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     to: '/subs',
     title: '订阅管理',
     desc: '会员订阅 · 支出统计 · 到期日历',
@@ -173,30 +186,7 @@ const SYSTEMS = [  {
   },
 ]
 
-// ─── 顺序持久化（localStorage 存卡 to 路径数组） ─────────
-
-const ORDER_KEY = 'doublog_portal_order'
-
-function readSavedOrder() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(ORDER_KEY) || 'null')
-    if (Array.isArray(raw)) return raw.filter(x => typeof x === 'string')
-  } catch { /* 数据损坏/存储禁用时回落默认顺序 */ }
-  return null
-}
-
-/** 按存储顺序排列；未记录的卡按 SYSTEMS 相对顺序 append 在后 */
-function orderedSystems(saved) {
-  if (!saved || !saved.length) return [...SYSTEMS]
-  const rest = new Map(SYSTEMS.map(s => [s.to, s]))
-  const out = []
-  for (const to of saved) {
-    const s = rest.get(to)
-    if (s) { out.push(s); rest.delete(to) }
-  }
-  for (const s of rest.values()) out.push(s)
-  return out
-}
+// ─── 分组布局持久化（localStorage 存 [{id,name,cards:[to...]}]）──
 
 /** 按 to 找系统定义 */
 const SYS_BY_TO = Object.fromEntries(SYSTEMS.map(s => [s.to, s]))

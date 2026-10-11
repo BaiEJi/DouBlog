@@ -9,8 +9,8 @@
 选 key(加权轮询) → 请求构建(模板+凭证注入+剥离入站凭证) → 上游转发(超时/换key重试) →
 响应(透传/信封 + 错误归一化双通道) → 异步日志(writer 线程)。
 
-请求执行模型：原同步逻辑（含阻塞的上游 http.client 调用）整体放进
-run_db 的同步闭包，在共享 SDK 线程池执行；响应对象直接返回。
+请求执行模型：同步管道（含阻塞的上游 http.client 调用）经 _run_gw 提交到模块 SDK 池
+apihub-gw（32 workers，不走 run_db 的共享 DB 池——网关常规路径不触库）；响应对象直接返回。
 """
 
 import asyncio
@@ -19,15 +19,17 @@ import math
 import re
 import threading
 import time
+from datetime import timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import case, func, select
 
-from app.apihub.core import (Injection, LevelSpec, TemplateError, apply_providers,
-                             generate_token, hash_token, mask_secret, merge_probe, render,
-                             token_hint, validate_auth_config)
+from app.apihub.core import (DEFAULT_PROBE, Injection, LevelSpec, TemplateError,
+                             apply_providers, generate_token, hash_token, level_key,
+                             mask_secret, merge_probe, render, token_hint,
+                             validate_auth_config)
 from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog, ApihubKey,
                                ApihubRule, ApihubToken, ApihubUpstream)
 from app.apihub.pool import UpstreamConnectError, UpstreamProtocolError, UpstreamTimeout
@@ -36,7 +38,7 @@ from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.pools import get_pool
 from app.shared.response import api_response
-from app.shared.timestamps import _utcnow
+from app.shared.timestamps import _iso, _utcnow
 
 router = APIRouter(prefix='/api/apihub', tags=['apihub'])
 
@@ -120,6 +122,23 @@ def _client_ip(request: Request):
     if fwd:
         return fwd.split(',')[0].strip()
     return request.client.host if request.client else ''
+
+
+def _disable_denied_key(state, key_id: int, status: int):
+    """上游回 401/403：该 key 判定失效，落库禁用并刷新快照。
+
+    运行在 apihub-gw 池（非 run_db 环境），触库分支就地清理线程会话。"""
+    try:
+        k = db.session.get(ApihubKey, key_id)
+        if k is not None and k.status == 1:
+            k.status = 2
+            k.disabled_reason = f'upstream {status} (credential denied)'
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+    finally:
+        db.session.remove()
+    state.reload()
 
 
 def _json_path(obj, path):
@@ -293,18 +312,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
             continue
 
         if r.status in (401, 403):
-            # 非 run_db 环境：触库分支就地清理线程会话
-            try:
-                k = db.session.get(ApihubKey, key.id)
-                if k is not None and k.status == 1:
-                    k.status = 2
-                    k.disabled_reason = f'upstream {r.status} (credential denied)'
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-            finally:
-                db.session.remove()
-            state.reload()
+            _disable_denied_key(state, key.id, r.status)
             last_error = f'auth_{r.status}'
             continue
 
@@ -316,7 +324,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
              None if ok else f'upstream_code:{err_code}')
         quota_remaining = (token['quota_total'] - state.store.quota_used.get(token['id'], 0)) \
             if token['quota_total'] is not None else None
-        return _gw_response(api['response_cfg'], r, latency, quota_remaining)
+        return _gw_response(api['response_cfg'], r, latency, quota_remaining, ok, err_code, err_msg)
 
     if quota_reserved:
         state.store.quota_used[token['id']] -= 1
@@ -326,7 +334,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     return _gw_err(503, 'upstream_error', f'所有尝试失败: {last_error}')
 
 
-def _gw_response(response_cfg, r, latency_ms, quota_remaining):
+def _gw_response(response_cfg, r, latency_ms, quota_remaining, ok, err_code, err_msg):
     cfg = response_cfg or {}
     charset = cfg.get('charset')
     if cfg.get('envelope', 'passthrough') != 'wrap':
@@ -343,7 +351,6 @@ def _gw_response(response_cfg, r, latency_ms, quota_remaining):
             data = text
     except (ValueError, UnicodeDecodeError):
         data = r.content.decode(charset or 'utf-8', errors='replace')
-    ok, err_code, err_msg = _eval_response(cfg, r.status, r.content, charset)
     meta = {'upstream_status': r.status, 'latency_ms': latency_ms}
     if quota_remaining is not None:
         meta['quota_remaining'] = quota_remaining
@@ -432,18 +439,7 @@ def _gw_passthrough_sync(request: Request, slug: str, upstream_path: str, body: 
             continue
 
         if r.status in (401, 403):
-            # 非 run_db 环境：触库分支就地清理线程会话
-            try:
-                k = db.session.get(ApihubKey, key.id)
-                if k is not None and k.status == 1:
-                    k.status = 2
-                    k.disabled_reason = f'upstream {r.status} (credential denied)'
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-            finally:
-                db.session.remove()
-            state.reload()
+            _disable_denied_key(state, key.id, r.status)
             last_error = f'auth_{r.status}'
             continue
 
@@ -504,9 +500,11 @@ def probe_api(app, api_id, source='manual'):
                'ok': False, 'status_code': None, 'latency_ms': None,
                'detail': {}, 'new_status': 'unknown'}
     try:
-        url = _url_for(up, key, probe['path'], {}) if key else None
         if key is None:
+            # 无 key：空凭证渲染 base_url（模板需 {cred.x} 时抛错 → 探活失败，符合预期）
             url = render(up['base_url'], {'cred': {}}).rstrip('/') + '/' + probe['path'].lstrip('/')
+        else:
+            url = _url_for(up, key, probe['path'], {})
         inj = apply_providers(up['providers'], cred)
         headers = {str(k): str(v) for k, v in (probe.get('headers') or {}).items()}
         headers.update(inj.headers)
@@ -519,7 +517,7 @@ def probe_api(app, api_id, source='manual'):
                                verify=up['transport'].get('verify', True))
         outcome['status_code'] = r.status
         outcome['latency_ms'] = int((time.monotonic() - started) * 1000)
-        status_ok = r.status in (probe['expect_status'] or DEFAULT_EXPECT)
+        status_ok = r.status in (probe['expect_status'] or DEFAULT_PROBE['expect_status'])
         regex_ok = True
         if probe.get('expect_body_regex'):
             text = r.content.decode('utf-8', errors='replace') if len(r.content) < 65536 else ''
@@ -560,9 +558,6 @@ def probe_api(app, api_id, source='manual'):
         snap['last_probe_at'] = probed_at
         snap['last_latency_ms'] = outcome['latency_ms']
     return outcome
-
-
-DEFAULT_EXPECT = [200, 201, 204, 301, 302]
 
 
 @router.post('/probes/run', dependencies=_ADMIN_AUTH)
@@ -649,6 +644,8 @@ async def update_upstream(uid: int, request: Request):
         u = db.session.get(ApihubUpstream, uid)
         if u is None:
             return api_response(None, 404, '上游不存在')
+        if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', str(body.get('slug') or '')):
+            return api_response(None, 400, 'slug 非法（字母数字_-，≤64）')
         errors = validate_auth_config(body.get('auth_config') or {})
         if errors:
             return api_response(None, 400, 'auth_config 无效: ' + '; '.join(errors))
@@ -707,8 +704,8 @@ async def list_keys(uid: int, request: Request):
                 masked = {'_broken': True}
             items.append({'id': k.id, 'weight': k.weight, 'status': k.status,
                           'disabled_reason': k.disabled_reason, 'credential': masked,
-                          'last_used_at': k.last_used_at.isoformat() if k.last_used_at else None,
-                          'last_ok_at': k.last_ok_at.isoformat() if k.last_ok_at else None})
+                          'last_used_at': _iso(k.last_used_at),
+                          'last_ok_at': _iso(k.last_ok_at)})
         return api_response(items)
     return await run_db(_run)
 
@@ -782,7 +779,7 @@ def _api_dict(app, a):
         'probe': a.probe, 'enabled': a.enabled,
         'health': {'status': st['status'], 'fails': st['fails'], 'succs': st['succs']},
         'health_status': a.health_status,
-        'last_probe_at': a.last_probe_at.isoformat() if a.last_probe_at else None,
+        'last_probe_at': _iso(a.last_probe_at),
         'last_latency_ms': a.last_latency_ms,
     }
 
@@ -955,16 +952,6 @@ def _validate_rule(body):
     return None
 
 
-def _rule_level_key(r):
-    if r.scope == 'token_api':
-        return f'rl:ta:{r.token_id}:{r.api_id}'
-    if r.scope == 'api':
-        return f'rl:a:{r.api_id}'
-    if r.scope == 'token':
-        return f'rl:t:{r.token_id}'
-    return 'rl:g'
-
-
 @router.get('/admin/rules', dependencies=_ADMIN_AUTH)
 async def list_rules(request: Request):
     app = request.app
@@ -976,7 +963,8 @@ async def list_rules(request: Request):
         for r in rows:
             d = r.to_dict()
             if r.enabled:
-                lv = LevelSpec(scope=r.scope, key=_rule_level_key(r), algorithm=r.algorithm,
+                lv = LevelSpec(scope=r.scope, key=level_key(r.scope, r.api_id, r.token_id),
+                               algorithm=r.algorithm,
                                rate_per_sec=r.rate_per_sec or 0.0, burst=r.burst or 1,
                                window_s=r.window_s or 1, max_count=r.max_count or 1)
                 d['usage'] = state.limiter.snapshot(lv)
@@ -1058,7 +1046,7 @@ async def list_logs(request: Request):
             'key_id': r.key_id, 'mode': r.mode, 'method': r.method, 'path_digest': r.path_digest,
             'status_code': r.status_code, 'latency_ms': r.latency_ms, 'ok': r.ok,
             'error_type': r.error_type, 'rl_scope': r.rl_scope,
-            'created_at': r.created_at.isoformat() if r.created_at else None,
+            'created_at': _iso(r.created_at),
         } for r in rows])
     return await run_db(_run)
 
@@ -1068,7 +1056,6 @@ async def stats_overview(request: Request):
     app = request.app
 
     def _run():
-        from datetime import timedelta
         state = get_state(app)
         since = _utcnow() - timedelta(hours=24)
         total = db.session.execute(select(func.count()).select_from(ApihubCallLog)

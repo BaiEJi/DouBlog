@@ -8,7 +8,7 @@ import { analyzeSecurity, daysAgo, expiryInfo } from './core'
 import { pwnedCount } from './hibp'
 import { Favicon, I } from './ui'
 
-function Group({ icon, title, tone, items, empty, children, onSelect, gref, neutral }) {
+function Group({ icon, title, tone, items, empty, children, gref, neutral }) {
   return (
     <section ref={gref} className="p-4 sm:p-5 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.012] dark:bg-white/[0.015] scroll-mt-4">
       <div className="flex items-center gap-2 mb-3">
@@ -83,7 +83,7 @@ export default function SecurityCenter({ items, onSelect }) {
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const groupRefs = useRef({})
 
-  // 去重密码集合（同密码只查一次）
+  // 含密码的条目（HIBP 查询时按密码去重，同密码只查一次）
   const withPw = useMemo(() => items.filter(i => i.data.password?.value), [items])
 
   const runCheck = useCallback(async () => {
@@ -169,9 +169,9 @@ export default function SecurityCenter({ items, onSelect }) {
               {offline && !checking && <span className="text-[11.5px] text-amber-600 dark:text-amber-400">部分查询不可达（离线/被墙），结果可能不完整</span>}
             </div>
             <Group gref={el => groupRefs.current.pwned = el}
-              icon={I.alert || I.shield} title="已泄露密码" tone="text-stone-400"
+              icon={I.alert} title="已泄露密码" tone="text-stone-400"
               items={pwnedItems} neutral={!checked}
-              empty={checked ? "没有密码出现在已知泄露库中 🎉" : "尚未检查——点击上方按钮开始"} onSelect={onSelect}>
+              empty={checked ? "没有密码出现在已知泄露库中 🎉" : "尚未检查——点击上方按钮开始"}>
               {pwnedItems.map(i => (
                 <ItemChip key={i.id} item={i} note={`出现于泄露库 ${pwned[i.id].toLocaleString()} 次，立即改密`} onSelect={onSelect} />
               ))}
@@ -179,14 +179,14 @@ export default function SecurityCenter({ items, onSelect }) {
           </div>
 
           <div ref={el => groupRefs.current.first = el} className="contents">
-            <Group gref={el => groupRefs.current.weak = el} icon={I.key} title="弱密码" tone="text-stone-400" items={s.weak} empty="没有弱密码 🎉" onSelect={onSelect}>
+            <Group gref={el => groupRefs.current.weak = el} icon={I.key} title="弱密码" tone="text-stone-400" items={s.weak} empty="没有弱密码 🎉">
               {s.weak.map(i => (
                 <ItemChip key={i.id} item={i} note="强度不足（熵 < 60 位）" onSelect={onSelect} />
               ))}
             </Group>
           </div>
 
-          <Group gref={el => groupRefs.current.reused = el} icon={I.key} title="复用密码" tone="text-stone-400" items={s.reused} empty="没有复用的密码" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.reused = el} icon={I.key} title="复用密码" tone="text-stone-400" items={s.reused} empty="没有复用的密码">
             {s.reused.map((g, gi) => (
               <div key={gi} className="mb-2 p-2.5 rounded-lg bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.05] dark:border-white/[0.05]">
                 <p className="text-[12px] text-red-500/90 mb-1">同一密码用于 {g.items.length} 个账号</p>
@@ -197,27 +197,27 @@ export default function SecurityCenter({ items, onSelect }) {
             ))}
           </Group>
 
-          <Group gref={el => groupRefs.current.old = el} icon={I.clock} title="过旧密码（超过 180 天未改）" tone="text-stone-400" items={s.old} empty="所有密码都在半年内更新过" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.old = el} icon={I.clock} title="过旧密码（超过 180 天未改）" tone="text-stone-400" items={s.old} empty="所有密码都在半年内更新过">
             {s.old.map(i => {
               const age = daysAgo(i.password_updated_at || i.created_at)
               return <ItemChip key={i.id} item={i} note={`密码已 ${age} 天未修改`} onSelect={onSelect} />
             })}
           </Group>
 
-          <Group gref={el => groupRefs.current.expired = el} icon={I.clock} title="密码到期提醒（超过自定义周期）" tone="text-stone-400" items={s.expired} empty="没有条目超过自定义提醒周期" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.expired = el} icon={I.clock} title="密码到期提醒（超过自定义周期）" tone="text-stone-400" items={s.expired} empty="没有条目超过自定义提醒周期">
             {s.expired.map(i => {
               const info = expiryInfo(i)
               return <ItemChip key={i.id} item={i} note={`已 ${info.days} 天 / 设定 ${info.limit} 天`} onSelect={onSelect} />
             })}
           </Group>
 
-          <Group gref={el => groupRefs.current.no2fa = el} icon={I.shield} title="未开启两步验证" tone="text-stone-400" items={s.no2fa} empty="有密码的账号均已配置 2FA 或 Passkey" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.no2fa = el} icon={I.shield} title="未开启两步验证" tone="text-stone-400" items={s.no2fa} empty="有密码的账号均已配置 2FA 或 Passkey">
             {s.no2fa.map(i => (
               <ItemChip key={i.id} item={i} note="未开启两步验证" onSelect={onSelect} />
             ))}
           </Group>
 
-          <Group gref={el => groupRefs.current.duplicate = el} icon={I.edit} title="重复账号" tone="text-stone-400" items={s.duplicate} empty="没有疑似重复的账号" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.duplicate = el} icon={I.edit} title="重复账号" tone="text-stone-400" items={s.duplicate} empty="没有疑似重复的账号">
             {s.duplicate.map((arr, gi) => (
               <div key={gi} className="mb-2 p-2.5 rounded-lg bg-black/[0.02] dark:bg-white/[0.03] border border-black/[0.05] dark:border-white/[0.05]">
                 <p className="text-[12px] text-amber-600 dark:text-amber-400 mb-1">相同服务 + 用户名出现 {arr.length} 次</p>
@@ -226,7 +226,7 @@ export default function SecurityCenter({ items, onSelect }) {
             ))}
           </Group>
 
-          <Group gref={el => groupRefs.current.missingRecovery = el} icon={I.key} title="缺少恢复方式" tone="text-stone-400" items={s.missingRecovery} empty="所有账号都有恢复邮箱/手机或恢复密钥" onSelect={onSelect}>
+          <Group gref={el => groupRefs.current.missingRecovery = el} icon={I.key} title="缺少恢复方式" tone="text-stone-400" items={s.missingRecovery} empty="所有账号都有恢复邮箱/手机或恢复密钥">
             {s.missingRecovery.map(i => (
               <ItemChip key={i.id} item={i} note="未记录任何恢复途径" onSelect={onSelect} />
             ))}

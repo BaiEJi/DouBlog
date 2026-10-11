@@ -2,7 +2,6 @@
 知识库新功能测试：图片上传 / 最近浏览 / 双链反链 / Markdown 导出
 """
 import io
-import json
 import os
 import zipfile
 
@@ -45,8 +44,6 @@ def test_upload_image_rejects_bad_extension(client, auth_headers):
                     files={'file': ('evil.svg', io.BytesIO(b'<svg/>'), 'image/svg+xml')},
                     headers=auth_headers)
     assert r.status_code == 400
-    # 普通响应包一层 json（错误处理中间件），只断言失败
-    assert r.json() is None or r.json().get('success') is False or r.status_code == 400
 
 
 def test_upload_image_requires_auth(client):
@@ -115,8 +112,6 @@ def test_backlinks_by_name_and_title(client, auth_headers):
 
 
 def test_backlinks_workspace_scoped(client, auth_headers):
-    ws1 = client.post('/api/workspaces', json={'name': 'ws-one'}, headers=headers_dummy()) \
-        .json()['data']['id'] if False else None
     # 建两个库，跨库同名文章不互链
     r = client.post('/api/workspaces', json={'name': 'kb-one'}, headers=auth_headers)
     ws_a = r.json()['data']['id']
@@ -130,11 +125,6 @@ def test_backlinks_workspace_scoped(client, auth_headers):
     r = client.get(f'/api/posts/id/{target}/backlinks', headers=auth_headers)
     titles = {i['title'] for i in r.json()['data']['items']}
     assert titles == {'同库链'}
-
-
-def headers_dummy():
-    import base64
-    return {'Authorization': 'Basic ' + base64.b64encode(b'admin:lizy111A').decode()}
 
 
 def test_backlinks_404(client, auth_headers):

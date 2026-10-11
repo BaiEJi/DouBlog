@@ -36,12 +36,6 @@ async def search(q: str = Query(min_length=1), scope: str = "all",
             hits += [SearchHit(game_id=g.id, chapter_id=None, kind="game", title=g.name,
                                snippet=snippet(g.description, q), ref_id=g.id) for g in games]
 
-        game_filter = []
-        if game_id:
-            game_filter = [Game.id == game_id]
-        if scope != "all" and game_id:
-            games = [g for g in session.scalars(select(Game).where(*game_filter)).all()]
-
         # 章节
         stmt = select(Chapter).where(or_(Chapter.title.contains(q), Chapter.summary.contains(q),
                                          Chapter.notes.contains(q)))

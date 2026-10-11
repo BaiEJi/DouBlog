@@ -209,7 +209,6 @@ export const Icon = {
   settings: I(<><circle cx="10" cy="10" r="2.2" /><path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4M4.9 4.9l1.7 1.7M13.4 13.4l1.7 1.7M15.1 4.9l-1.7 1.7M6.6 13.4l-1.7 1.7" /></>),
   calendar: I(<><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 9.5h18M8 3v3M16 3v3" /></>),
   warning: I(<><path d="M12 3L1.8 20h20.4L12 3z" /><path d="M12 10v4M12 17.2v.1" /></>),
-  crown: I(<><path d="M3 8l4 4 5-7 5 7 4-4-1.5 11h-15L3 8z" /></>),
   fire: I(<><path d="M12 2s5 4.5 5 9.5a5 5 0 0 1-10 0c0-2 1-3.8 2.2-5.2C9.6 7.7 11 9 11 10.5 11 8 12 4.5 12 2z" /></>, 14),
   trophy: I(<><path d="M7 4h10v5a5 5 0 0 1-10 0V4z" /><path d="M7 5H4v1.5A3.5 3.5 0 0 0 7.5 10M17 5h3v1.5A3.5 3.5 0 0 1 16.5 10" /><path d="M12 14v3M8.5 20h7M10 17h4l1 3H9l1-3z" /></>, 14),
   plus: I(<path d="M12 5v14M5 12h14" />),

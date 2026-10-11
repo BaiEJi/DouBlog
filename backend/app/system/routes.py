@@ -11,10 +11,9 @@
 touch app/_reload_stamp.py 自动重启；生产模式返回 restart_required。
 """
 
-import logging
 import os
 import threading
-from urllib.parse import quote_plus
+import time
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import create_engine, text
@@ -22,21 +21,21 @@ from sqlalchemy import create_engine, text
 from app.config import settings
 from app.db import db, load_db_config, save_db_config, get_database_url, run_db, SUPPORTED_BACKENDS
 from app.shared.auth import require_basic
+from app.shared.modules import mod_logger
 from app.shared.response import api_response
 
 router = APIRouter(prefix='/api/admin', dependencies=[Depends(require_basic)])
 
-logger = logging.getLogger(__name__)
+# 模块日志走 mod_logger（sys_name=doublog.system 记录级覆盖）
+logger = mod_logger('system')
 
 # 防并发切换
 _switch_lock = threading.Lock()
 
 
 def _pg_connection_url(pg: dict) -> str:
-    return (
-        f"postgresql+psycopg2://{quote_plus(pg['user'])}:{quote_plus(str(pg.get('password', '')))}"
-        f"@{pg['host']}:{pg['port']}/{pg['dbname']}"
-    )
+    """PG 连接串与运行时同一拼装逻辑（db.get_database_url），避免双写漂移"""
+    return get_database_url({'backend': 'postgres', 'postgres': pg})
 
 
 def _merged_cfg(target: str, overrides: dict | None) -> dict:
@@ -105,7 +104,7 @@ def _request_reload_after_response():
     放在延时线程中确保响应先送达。
     """
     def _worker():
-        threading.Event().wait(1.0)
+        time.sleep(1.0)
         stamp = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '_reload_stamp.py')
         try:
             with open(stamp, 'a', encoding='utf-8') as f:
@@ -135,9 +134,11 @@ async def database_status():
             # 文章数不含虚拟根（id=0）
             posts = conn.execute(text('SELECT COUNT(*) FROM blog_posts WHERE id != 0')).scalar() or 0
             audits = conn.execute(text('SELECT COUNT(*) FROM blog_audit_logs')).scalar() or 0
+        url = get_database_url(cfg)
         return {
             'backend': cfg['backend'],
-            'database_url_masked': get_database_url(cfg).split('@')[-1] if cfg['backend'] == 'postgres' else get_database_url(cfg),
+            # PG 只显示 @ 之后部分（掩掉凭据），SQLite 显示文件路径
+            'database_url_masked': url.split('@')[-1] if cfg['backend'] == 'postgres' else url,
             'data_dir': settings.data_dir,
             'postgres': cfg['postgres'],
             'counts': {'posts': posts, 'audit_logs': audits},
@@ -276,7 +277,6 @@ async def put_logging_config(request: Request):
 async def test_logging_send():
     """发一条 WARNING 测试日志（sys_name=doublog.system），到日志查询页验证链路。"""
     from app.shared.modules import mod_logger
-    import time as _t
-    marker = f'log-send-test-{int(_t.time())}'
+    marker = f'log-send-test-{int(time.time())}'
     mod_logger('system').warning('日志上报链路测试 %s', marker)
     return api_response({'marker': marker, 'hint': '到 /logs 页搜索 marker 验证'})

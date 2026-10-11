@@ -95,9 +95,8 @@ async def _serve_image(request: Request, filepath: str):
     if not raw_path:
         return api_response(None, 404, '文件不存在')
 
-    if path_type == 'absolute':
-        base_dir = settings.base_dir
-    elif path_type == 'relative':
+    # relative/absolute 基准相同（项目根）；绝对/相对路径的区分在 _resolve_within_fence 内处理
+    if path_type in ('absolute', 'relative'):
         base_dir = settings.base_dir
     else:
         base_dir = settings.images_dir

@@ -99,14 +99,14 @@ export default function ApiHubPage() {
         activeTab={tab}
         onTabChange={k => { setTab(k); setErr(null) }} />
       <div className="px-4 sm:px-6 xl:px-10 py-6 max-w-[1700px] mx-auto">
-      <Err e={err} />
-      {tab === 'overview' && <Overview setErr={setErr} />}
-      {tab === 'upstreams' && <Upstreams setErr={setErr} />}
-      {tab === 'apis' && <Apis setErr={setErr} />}
-      {tab === 'tokens' && <Tokens setErr={setErr} />}
-      {tab === 'rules' && <Rules setErr={setErr} />}
-      {tab === 'logs' && <Logs setErr={setErr} />}
-    </div>
+        <Err e={err} />
+        {tab === 'overview' && <Overview setErr={setErr} />}
+        {tab === 'upstreams' && <Upstreams setErr={setErr} />}
+        {tab === 'apis' && <Apis setErr={setErr} />}
+        {tab === 'tokens' && <Tokens setErr={setErr} />}
+        {tab === 'rules' && <Rules setErr={setErr} />}
+        {tab === 'logs' && <Logs setErr={setErr} />}
+      </div>
     </div>
   )
 }
@@ -510,11 +510,13 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
     request_cfg: row.request_cfg || { body: { type: 'json' } },
     response_cfg: row.response_cfg || { envelope: 'passthrough' },
     probe: row.probe || DEFAULT_PROBE, enabled: row.enabled ?? true,
+    timeout_ms: row.timeout_ms ?? null,   // 表单不编辑该项，编辑时原值透传（防被清空）
   }))
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const save = async () => {
     try {
-      await apihubSaveApi({ ...form, id: row.id, upstream_id: +form.upstream_id, enabled: !!form.enabled })
+      await apihubSaveApi({ ...form, id: row.id, upstream_id: +form.upstream_id, enabled: !!form.enabled,
+        timeout_ms: form.timeout_ms == null ? null : +form.timeout_ms })
       onSaved()
     } catch (e) { setErr(e) }
   }

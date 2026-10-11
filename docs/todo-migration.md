@@ -13,7 +13,7 @@
 | 端点前缀 | `/api/v1/*` | **`/api/todo/*`**（去掉 v1；避开 sdklogs 的 /api/v1 冲突） |
 | 响应形状 | 裸 JSON / pydantic Out 模型 | **Doublog 信封** `api_response(data)`（前端新 api 层 unwrap `.data`） |
 | 前端 | React18+TS+antd+recharts+dayjs :8071 | `frontend/src/todo/` Tailwind 重建（复用 apiFetch/暗色/dnd-kit/SVG 图表模式） |
-| chrome 扩展/android | 仓库目录 | 平迁至 `DouBlog/chrome-extension/`、`DouBlog/android/`（内容不改） |
+| chrome 扩展/android | 仓库目录 | 平迁至 `DouBlog/extensions/todo/{chrome-extension,android}`（内容不改） |
 | 数据 | MyTodo backend/data/todo.db（2500 任务/5695 事件/4 分类/1 设置行） | 导入脚本迁入 Doublog 库 todo_* 表 |
 
 ## 2. 端点映射（MyTodo `/api/v1/X` → Doublog `/api/todo/X`）
@@ -31,7 +31,7 @@ notifications（/api/todo/notifications）：POST /test（email 渠道实测发�
 
 ## 3. 后端移植规则（app/todo/）
 
-- 包结构：`models.py`（五表，`app.db.Base`，表名 todo_*，列/索引/CheckConstraint 照搬）＋`schemas.py`（pydantic 入参模型照搬；Out 模型可保留用于序列化）＋`services/`（tasks/migrations/day/stats/plans/notify/__init__ 六文件**逻辑原样照搬**，仅改 import 与表名/模型引用）＋`timeutil.py`（uuid7/UTC↔本地 照搬）＋`limits.py`（每日容量上限 照搬）＋`routes.py`（全部端点，router 级 `dependencies=[Depends(require_basic)]`）＋`__init__.py`（导出 `router`、`start_background(app)`、`ensure_migrations` 可省）
+- 包结构：`models.py`（五表，`app.db.Base`，表名 todo_*，列/索引/CheckConstraint 照搬）＋`schemas.py`（pydantic 入参模型照搬；Out 模型可保留用于序列化）＋`services/`（`__init__` 含设置读写/事件日志 + tasks/migrations/day/stats/plans/notify 七文件**逻辑原样照搬**，仅改 import 与表名/模型引用）＋`timeutil.py`（uuid7/UTC↔本地 照搬）＋`limits.py`（每日容量上限 照搬）＋`routes.py`（全部端点，router 级 `dependencies=[Depends(require_basic)]`）＋`__init__.py`（导出 `router`、`start_background(app)`、`ensure_migrations` 可省）。施工后增补：`seed.py`（默认类别种子拆出）与 `readcache.py`（/today 响应缓存，2026-10 性能专项，见 docs/modules/todo.md 第 7 节）
 - **错误转换**：MyTodo `HTTPException(code, msg)` → `return api_response(None, code, msg)`（Doublog 全局 404 处理器会覆盖 detail，必须显式返回）；422 校验类同
 - pydantic 422（body 校验失败）会由 Doublog 处理器出 400 信封——可接受，前端 api 层按 400 处理
 - 会话：Doublog `run_db` 执行模型（DB 端点 async def + 同步闭包进 doublog-db 池）；services 里的 Session 对象 = `db.session`

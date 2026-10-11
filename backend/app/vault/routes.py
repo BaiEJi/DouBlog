@@ -28,13 +28,17 @@ from app.vault.models import VaultAccount, VaultItem, VaultAttachment, VaultAudi
 router = APIRouter(prefix='/api/vault', dependencies=[Depends(require_basic)], tags=['vault'])
 
 # blob / 包裹材料的结构约束：仅接受 {n: base64(12B), ct: base64} 形态
-_B64_LEN = (4, 64, 200000)
+# （12B nonce → base64 恰 16 字符；上限给手动构造留余量）
+_BOX_N_MAX = 64
+_BOX_CT_MAX = 200_000
 
 
-def _valid_box(box):
+def _valid_box(box, ct_max=_BOX_CT_MAX):
+    """密文盒结构校验；附件传 ct_max=None（无上限，超大密文由 413 限额单独拦截）"""
     return (isinstance(box, dict)
-            and isinstance(box.get('n'), str) and 16 <= len(box['n']) <= _B64_LEN[1]
-            and isinstance(box.get('ct'), str) and 8 <= len(box['ct']) <= _B64_LEN[2])
+            and isinstance(box.get('n'), str) and 16 <= len(box['n']) <= _BOX_N_MAX
+            and isinstance(box.get('ct'), str) and len(box['ct']) >= 8
+            and (ct_max is None or len(box['ct']) <= ct_max))
 
 
 def _audit(action, item_id=None):
@@ -379,10 +383,8 @@ async def add_attachment(item_id: int, request: Request):
         if err:
             return err
         box = data.get('blob')
-        # 附件盒校验：结构同 _valid_box 但 ct 上限放宽（大文件密文先给 413 而非 400）
-        if not (isinstance(box, dict)
-                and isinstance(box.get('n'), str) and 16 <= len(box['n']) <= _B64_LEN[1]
-                and isinstance(box.get('ct'), str) and 8 <= len(box['ct'])):
+        # 附件盒校验：结构同 _valid_box 但 ct 无上限（大文件密文先给 413 而非 400）
+        if not _valid_box(box, ct_max=None):
             return api_response(None, 400, 'blob 需为 {n, ct} 密文结构')
         if len(box['ct']) > ATTACHMENT_MAX_CIPHER_CHARS:
             return api_response(None, 413, f'附件密文超过上限（明文约 {ATTACHMENT_MAX_BYTES // 1024 // 1024}MB）')
@@ -471,7 +473,7 @@ async def import_vault(request: Request):
 
     def _impl():
         # 双接受：'doublog-vault-backdown' 是历史导出笔误串，保留兼容老备份文件
-        if data.get('format') != 'doublog-vault-backdown' and data.get('format') != 'doublog-vault-backup':
+        if data.get('format') not in ('doublog-vault-backup', 'doublog-vault-backdown'):
             return api_response(None, 400, '不是有效的 DouBlog Vault 备份文件')
         backup_account = data.get('account') or {}
         backup_items = data.get('items')

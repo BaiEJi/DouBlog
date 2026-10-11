@@ -1,6 +1,6 @@
 import { apiFetch } from '@/shared/client'
 
-export { apiFetch, API_BASE } from '@/shared/client'
+export { API_BASE } from '@/shared/client'   // PwsvcView 展示 curl 示例用
 
 // 密码库与密码服务 API。
 

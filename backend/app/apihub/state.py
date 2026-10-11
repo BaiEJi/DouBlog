@@ -4,14 +4,15 @@
 内存限流器、key 选择器、探活状态机、上游连接池、日志批量写线程、探活调度线程。
 """
 
+import os
 import queue
 import threading
 import time
 
 from sqlalchemy import select
 
-from app.apihub.core import CryptoBox, HealthMonitor, KeyCfg, KeySelector, LevelSpec, \
-    RateLimiter, merge_probe, strictest
+from app.apihub.core import CryptoBox, HealthMonitor, KeyCfg, KeySelector, \
+    LevelSpec, RateLimiter, level_key, merge_probe, strictest
 from app.apihub.models import ApihubApi, ApihubCallLog, ApihubKey, ApihubRule, ApihubToken, \
     ApihubUpstream
 from app.apihub.pool import UpstreamPool
@@ -140,16 +141,8 @@ class Store:
                 'max_count': r['max_count'] or 1,
             } for r in rs])
             src = rs[0]
-            if scope == 'token_api':
-                lk = f'rl:ta:{token_id}:{api_id}'
-            elif scope == 'api':
-                lk = f'rl:a:{api_id}'
-            elif scope == 'token':
-                lk = f'rl:t:{token_id}'
-            else:
-                lk = 'rl:g'
             levels.append(LevelSpec(
-                scope=scope, key=lk, algorithm=src['algorithm'],
+                scope=scope, key=level_key(scope, api_id, token_id), algorithm=src['algorithm'],
                 rate_per_sec=best.get('rate_per_sec', 0.0), burst=best.get('burst', 1),
                 window_s=best.get('window_s', 1), max_count=best.get('max_count', 1)))
         # 缓存无锁写：key 含快照版本，并发下至多重复构建一次（幂等）
@@ -230,7 +223,6 @@ class ApiHubState:
     """每 app 一份的运行态聚合。"""
 
     def __init__(self, app):
-        import os
         key_path = os.path.join(settings.data_dir, 'apihub.key')
         os.makedirs(settings.data_dir, exist_ok=True)
         if os.path.isfile(key_path):

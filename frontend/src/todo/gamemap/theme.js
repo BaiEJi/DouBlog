@@ -55,25 +55,22 @@ export const lightTheme = {
   },
 }
 
+/** 人物头像的确定性调色板（按 ID 哈希取用）：渐变双色 / MiniMap 纯色共用 */
+const AVATAR_PALETTES = [
+  ['#7c5cff', '#38b6ff'], ['#ff6b9d', '#ff9f43'], ['#2ed573', '#1e90ff'],
+  ['#f368e0', '#845ef7'], ['#ffa502', '#ff6348'], ['#00d2d3', '#3d8bfd'],
+  ['#5f27cd', '#341f97'], ['#ee5253', '#f368e0'],
+]
+
 /** 人物头像的确定性渐变色（按 ID 哈希） */
 export function avatarGradient(id) {
-  const palettes = [
-    ['#7c5cff', '#38b6ff'], ['#ff6b9d', '#ff9f43'], ['#2ed573', '#1e90ff'],
-    ['#f368e0', '#845ef7'], ['#ffa502', '#ff6348'], ['#00d2d3', '#3d8bfd'],
-    ['#5f27cd', '#341f97'], ['#ee5253', '#f368e0'],
-  ]
-  const [a, b] = palettes[id % palettes.length]
+  const [a, b] = AVATAR_PALETTES[id % AVATAR_PALETTES.length]
   return `linear-gradient(135deg, ${a}, ${b})`
 }
 
 /** 同一调色板的纯色版（MiniMap 等不支持渐变的地方用） */
 export function avatarColor(id) {
-  const palettes = [
-    ['#7c5cff', '#38b6ff'], ['#ff6b9d', '#ff9f43'], ['#2ed573', '#1e90ff'],
-    ['#f368e0', '#845ef7'], ['#ffa502', '#ff6348'], ['#00d2d3', '#3d8bfd'],
-    ['#5f27cd', '#341f97'], ['#ee5253', '#f368e0'],
-  ]
-  return palettes[id % palettes.length][0]
+  return AVATAR_PALETTES[id % AVATAR_PALETTES.length][0]
 }
 
 /** 阵营名 → 确定性纯色（同名阵营同色，用于徽章和分组着色） */

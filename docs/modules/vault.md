@@ -18,7 +18,7 @@
 - **安全中心**八组清单：已泄露/弱（熵<60）/复用/过旧（>180 天）/到期提醒/未开 2FA（含 Passkey 视为已开）/重复账号（同服务+用户名）/缺恢复方式——全部客户端分析。
 - **安全附件**（`vault_attachments` 表）：前端 VEK 加密 `{filename, mime, data}` 后整包上传，服务端只见密文 + 客户端上报的明文 size；明文 ≤5MB、密文 base64 ≤8MB 双端校验；下载时解密还原文件名；软删条目附件冻结保留（恢复语义），purge 级联删除。
 - **密码历史**：编辑器改密自动归档（`core.js applyPasswordChange`，旧密码 + createdAt/replacedAt/reason 进密文内 history），详情页时间线展示。
-- **生成器**：随机密码（8-128 位、四字符集、默认排除易混淆 I/l/O/0/1）+ 口令短语（3-10 词、256 词 EFF 风格词表）+ 熵/强度评估；无偏随机（拒绝采样 + Fisher-Yates）。
+- **生成器**：随机密码（8-128 位、四字符集、默认排除易混淆 I/l/O/0/1）+ 口令短语（3-10 词、1004 词 EFF 风格词表）+ 熵/强度评估；无偏随机（拒绝采样 + Fisher-Yates）。
 - **密码到期提醒**：条目密文内 `expiry_days`（0-3650，null=不提醒）；判定纯客户端（`core.js expiryInfo()`），概览横条 + 详情徽标 + 安全中心分组；**服务端完全不感知到期与否**。
 - **自动锁定**：5/15/30/60 分钟闲置或"关闭浏览器"（密钥仅内存，刷新即锁）；锁定清除 VEK、条目缓存并回锁屏。
 - **Recovery Key**：256-bit（64 hex，4 位一组展示）仅初始化/轮换时显示一次；可轮换（旧钥立即作废）。
@@ -117,9 +117,9 @@
 - **`components/PwsvcView.jsx`**：密码服务子视图（侧栏"密码服务"入口），项目/类型/用户/当前轮换密码/校验日志/限流管理，UI 明确标注"非零知识"；见 `docs/modules/pwsvc.md`。
 - 枚举存储英文、展示中文；`index.css` 有 `@source "./vault"` 白名单与 `.vault-input` 类（锁屏/设置输入框复用）。
 
-## 6. 测试（`backend/tests/vault/test_vault.py`，14 用例）
+## 6. 测试（`backend/tests/vault/test_vault.py`，18 用例）
 
-自包含（conftest 临时 SQLite + TestClient + Basic 头）：
+自包含（conftest 临时 SQLite + TestClient + Basic 头，不访问外网）：
 
 1. `test_account_init_and_get` — 初始化/读取 KDF 参数与包裹材料；响应无明文口令字段
 2. `test_account_init_twice_rejected` — 二次初始化 409
@@ -135,6 +135,10 @@
 12. `test_attachment_limits_and_validation` — 非法 blob/size 400；明文>5MB、密文>8MB 413；上限内 201
 13. `test_attachment_lifecycle_with_item` — 软删后列表/上传 400、恢复后回归、purge 级联、条目 404
 14. `test_attachment_audit_logged` — attachment_added/attachment_removed 落审计
+15. `test_list_fast_path_matches_contract` — 列表直拼响应：信封/条目字段集合与值/trash 过滤与契约一致
+16. `test_export_fast_path_roundtrip` — export 核心查询路径字段与导入往返不变
+17. `test_perf_indexes_created` — 两个性能索引存在（新建库与存量库同名同构）
+18. `test_retry_locked_recovers` — 写锁重试：锁类 OperationalError 重试成功、非锁类原样抛出
 
 ## 7. 已知边界
 

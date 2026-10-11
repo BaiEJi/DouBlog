@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、待办四象限（`/todo`，MyTodo 迁入，含**剧情图谱**子模块 /todo/gamemap）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，12 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/todo/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/todo?v=practice`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、管理（`/admin`）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -38,7 +38,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台）**�
 - **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（不丢已接收日志）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
 - **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——WARNING+ 自动回灌自身 `/api/v1/logs`，日志查询页可直接检索本服务告警与异常堆栈；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
 - **配置中心**（`/confcenter`）：namespace→key→value 扁平 KV；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
-- **四象限待办**（`/todo`，MyTodo 迁入）：看板内含**剧情图谱**子模块（/todo/gamemap，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
+- **四象限待办**（`/todo`，MyTodo 迁入）：看板内含**剧情图谱**子模块（/todo/gamemap，gamemap 迁入）与**刷题练习**视图（/todo?v=practice，题解/艾宾浩斯复习）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
 - **移动端适配**：知识库切换、阅读、搜索在手机可用（导航自适应换行）
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
 - **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
@@ -89,19 +89,14 @@ DouBlog/
 │   ├── vite.config.js        # 端口 60101
 │   └── src/
 │       ├── main.jsx / index.css
-│       ├── app/App.jsx        # 壳：路由表 + 主题 + 全局行为
-│       ├── shared/           # client.js（凭据/端口唯一处）+ md.js（渲染管线）
-│       ├── portal/           # / 工作台门户
-│       ├── blog/             # /blog /post /create /admin：api + pages×5 + editor×2
-│       ├── diary/ vault/ logs/   # 各能力包（api + 页面 + 组件；diary 另有 components×9：录入/总结卡/随记卡/编辑器/日历/热力图/统计/分享/确认）
-│       ├── md.js             # markdown-it 配置与定制渲染 + 双链 + mermaid 统一入口
-│       ├── useEditorShortcuts.js    # 编辑器快捷键
-│       ├── useEditorEnhancements.js # 图片上传/同步滚动/块模板
-│       ├── subs/               # 订阅管理（CrownFlow 迁移）：api + kit + charts + useHolidays + SubsPage + views×5
-│       ├── DiaryPage.jsx      # 私人日记（随记分本/每日总结/日历/热力图/统计）
-│       ├── VaultPage.jsx      # 密码库（零知识加密/三面板/生成器/安全中心）
-│       ├── LogsPage.jsx       # 日志检索（lizysdk 接收端查询页）
-│       └── vault/             # crypto/core/ui + 详情/编辑器/生成器/安全中心/密码服务(PwsvcView)组件
+│       ├── app/              # 壳：App.jsx（路由表 + 主题 + 全局行为）+ LoginPage.jsx
+│       ├── shared/           # 公共层：client.js（后端地址唯一处）+ md.js（渲染管线）+ PageHeader.jsx
+│       ├── portal/           # / 工作台门户（dnd 分组布局）
+│       ├── blog/             # /blog /post /create /admin：api + pages×5 + editor×2（快捷键/图片上传）
+│       ├── diary/            # /diary：DiaryPage + PublicShare + api + kit + components×8
+│       ├── vault/            # /vault：VaultPage + api + components（crypto/core/ui/密码服务）
+│       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
+│       └── todo/             # /todo：TodoPage + views + gamemap/（剧情图谱）+ practice/（刷题）+ steamidler/
 ├── data/                     # 运行时数据（gitignore）
 │   ├── blog.db               # SQLite 数据库
 │   ├── pwsvc.key             # 密码服务 seed 加密密钥（自动生成）
@@ -189,7 +184,7 @@ bash shell/backend/stop.sh           # 停止
 ### 前端
 
 - 端口：`vite.config.js` 中 `server.port = 60101`
-- 后端地址与凭据：`src/api.js`
+- 后端地址：`src/shared/client.js`（全项目唯一持有处；凭据不进前端，认证走会话 Cookie）
 
 ## API 概览
 
@@ -273,6 +268,6 @@ python -m pytest tests/ -q
 
 - 单用户系统：会话 Cookie 未设 Secure、secret_key 为默认值、无服务端会话撤销——公网部署前需加固（详见 docs/modules/system.md 已知边界）
 - 文章层级上限 3 层（`MAX_LEVEL = 2`）
-- 导航"归档"链接 `/archive` 未注册路由（死链），且无 404 兜底页
+- 无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
 - 路径参数类型差异：非整数路径段（如 `/api/posts/id/abc`）返回 400「请求参数错误」（Flask 时代为 404）
 - gzip 现作用于一切 ≥1KB 响应（按 Accept-Encoding；Flask 时代仅 JSON/文本）

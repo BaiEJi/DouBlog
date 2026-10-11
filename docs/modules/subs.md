@@ -162,10 +162,10 @@ routes.py 模块注释的口径表述：
 
 实现落点：
 
-- `_overlap_days(sub_start, sub_end, q_start, q_end)`：`max(起点) ~ min(终点)` 无重叠为 0，否则
-  `(end − start).days + 1`（**闭区间 +1**）
-- `_spend_in_range(sub, q_start, q_end)`：`convert_to_base(calculate_daily_rate(...)) × 重叠天数`，
-  全程 `Decimal`，输出统一 `quantize('0.01')` 转 float
+- `_spend_rows(subs)`：把订阅列表**预计算**成 `_SpendRow`（namedtuple：日期序数 / 原币与基准币日均
+  `Decimal` / 分类引用等），统计五接口共用，避免逐期 × 逐订阅重复解析与 ORM 访问
+- `_overlap_ord(s, e, qs, qe)`：序数版整数重叠天数 `min(终点) − max(起点) + 1`（**闭区间 +1**，
+  ≤0 即无重叠）；各统计接口输出统一 `quantize('0.01')` 转 float
 - overview / category-summary 的"本月/年度"分别取**整月（1 日~月末）与整年（1-01~12-31）**区间
   （`_month_year_bounds`），**不是月初至今**——月中查看时未来天数也计入（日均口径天然如此）
 - `stats/spending` 的 `by_currency` 按**原币种**累计（不折算）；`daily_average` = 总额（折基准币）÷ 范围天数（含端点 +1）
@@ -199,7 +199,7 @@ routes.py 模块注释的口径表述：
 - `calculate_daily_rate(price, cycle, custom_days, start_date)` → `Decimal(str(price)) / Decimal(天数)`（原币种日均）
 - `convert_to_base(amount, currency)`：基准币原值；未知币种原值；否则 `× settings.subs_exchange_rates[currency]`
 - 常量：`VALID_CURRENCIES = ('CNY','USD','EUR','GBP','JPY')`、`VALID_BILLING_CYCLES =
-  ('monthly','quarterly','yearly','custom')`、`CURRENCY_SYMBOLS`（前端 kit.jsx 有一份同值映射）
+  ('monthly','quarterly','yearly','custom')`（币种符号映射在前端 kit.jsx）
 
 ### 4.5 配置（`config.py`）
 
@@ -216,7 +216,7 @@ routes.py 模块注释的口径表述：
 ### 5.1 SubsPage.jsx（壳）
 
 220px 侧栏（返回入口 `/`、模块标题、四项导航：概览/会员/统计/设置——概览带**即将到期计数橙色徽标**、
-会员带 `活跃/总数` 计数、主题切换按钮）+ 移动端顶栏横滚 + `max-w-[1240px] px-4 sm:px-6` 主区内嵌
+会员带 `活跃/总数` 计数、主题切换按钮）+ 移动端顶栏横滚 + `max-w-[1700px] px-4 sm:px-6 xl:px-10` 主区内嵌
 `<Routes>`（`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）+ 全局 Toast。
 页面底色全站统一 `bg-stone-50 dark:bg-[#100f0e]`。
 
@@ -257,7 +257,7 @@ routes.py 模块注释的口径表述：
   `import { Solar } from 'lunar-javascript'`，随 `App.jsx` 路由级 `lazy(() => import('@/subs/SubsPage'))`
   打进 `/subs` 懒加载 chunk（~122KB gzip）——**勿在别处引入**
 - **新增前端目录必须在 `index.css` 补 `@source "./目录";`**（本仓 `source(none)` 显式白名单模式，漏加则该目录
-  独有工具类含 `dark:` 变体全部静默不生成）——`@source "./subs";` 已在（index.css 第 10 行）；
+  独有工具类含 `dark:` 变体全部静默不生成）——`@source "./subs";` 已在（index.css 第 11 行）；
   **subs 首版暗色表头白底即漏加此行所致**，改动后需自查明暗两态
 
 ## 6. 测试（`backend/tests/subs/test_subs.py`，15 用例，自包含临时 SQLite）
@@ -270,7 +270,7 @@ routes.py 模块注释的口径表述：
 | 聚合（1） | `test_member_aggregation`（CNY 30 + USD 10×7.0 = total_spending 100、时长 60、latest 取最新有效订阅、列表同带聚合） |
 | 统计（3） | `test_stats_overview_and_summary`（月/年支出=整月口径 30、category-summary 合计）；`test_stats_spending_and_by_category`（USD 7×7.0 折算、by_currency 原币、占比、日均、by-category 明细降序、缺参/倒置/非法日期 400）；`test_stats_trend_granularities`（month=12 段/quarter=4 段标签、week/day 标签、金额核对、非法粒度/缺日期 400） |
 | 提醒（1） | `test_reminders`（3 天内提醒/30 天不提醒/已过期不出现、reminder_days 收紧后为空、all 含未到期不含过期、升序） |
-| 备份与每日任务（3） | `test_backup_run_and_stats`（手动备份 ok、统计列表、**快照文件可用 sqlite3 打开且含 subs_members 表**）；`test_backup_cleanup_old_files`（伪造超期 mtime 文件被清）；`test_daily_spending_log`（直接调函数，含活跃数与总支出文案、无订阅/重复执行不炸） |
+| 备份与每日任务（3） | `test_backup_run_and_stats`（手动备份 ok、统计列表、**快照文件可用 sqlite3 打开且含 subs_members 表**）；`test_backup_cleanup_old_files`（伪造超期 mtime 文件被清）；`test_daily_spending_log`（直接调函数，含活跃数/未分类桶/总支出文案、无订阅/重复执行不炸） |
 
 ## 7. 已知边界
 

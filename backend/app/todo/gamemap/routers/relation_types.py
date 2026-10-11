@@ -9,7 +9,7 @@ from app.shared.response import api_response
 
 from .. import cache as response_cache
 from ..models import GameRelationOverride, RelationType
-from ..schemas import EffectiveRelationType
+from ..schemas import EffectiveRelationType, RelationTypeCreate
 from ._base import _dump, _guard
 
 router = APIRouter(prefix="/api/todo/gamemap", tags=["gamemap-relation-types"],
@@ -60,14 +60,14 @@ async def list_game_types(game_id: int):
 # ---- 管理端：全局类型 CRUD（第一版提供基础接口） ----
 
 @router.post("/relation-types")
-async def create_type(data: dict):
+async def create_type(data: RelationTypeCreate):
     def _impl():
         session = db.session
-        rt = RelationType(game_id=data.get("game_id"), key=data["key"], name=data.get("name", data["key"]),
-                          color=data.get("color", "#5B8FF9"), line_style=data.get("line_style", "solid"),
-                          directional=data.get("directional", False),
-                          default_description=data.get("default_description", ""),
-                          order_index=data.get("order_index", 0))
+        rt = RelationType(game_id=data.game_id, key=data.key, name=data.name or data.key,
+                          color=data.color, line_style=data.line_style,
+                          directional=data.directional,
+                          default_description=data.default_description,
+                          order_index=data.order_index)
         session.add(rt)
         session.commit()
         response_cache.invalidate_all()

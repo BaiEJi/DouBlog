@@ -3,7 +3,7 @@
  */
 import { useEffect, useState } from 'react'
 import { diaryDates } from '../api'
-import { moodOf, Icon } from '../kit'
+import { MOODS, moodOf, Icon } from '../kit'
 
 const WEEK = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -70,19 +70,11 @@ export default function CalendarView({ onPickDate }) {
         })}
       </div>
       <div className="flex flex-wrap gap-3 mt-4 text-[11px] text-stone-400">
-        {[...moodEntries()].map(([k, label, color]) => (
-          <span key={k} className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: color }} />{label}</span>
+        {MOODS.map(m => (
+          <span key={m.key} className="inline-flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />{m.label}</span>
         ))}
         <span className="ml-auto">点有记录的日期查看当天日记</span>
       </div>
     </div>
   )
-}
-
-function* moodEntries() {
-  yield ['great', '很棒', '#f59e0b']
-  yield ['good', '不错', '#84a860']
-  yield ['ok', '一般', '#a8a29e']
-  yield ['low', '低落', '#7d9bb3']
-  yield ['bad', '糟糕', '#d8849c']
 }

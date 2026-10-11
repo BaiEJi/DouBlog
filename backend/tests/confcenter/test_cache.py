@@ -13,9 +13,8 @@ import os
 
 from app.confcenter import cache as cache_mod
 from app.config import settings
-from tests.confcenter.conftest import FakeRedis
+from tests.confcenter.conftest import AUTH, FakeRedis
 
-AUTH = {'Authorization': 'Basic ' + __import__('base64').b64encode(b"admin:lizy111A").decode()}
 KEY = 'confcenter:app:k1'
 
 

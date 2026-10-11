@@ -6,7 +6,6 @@ import { useEditorShortcuts } from '../editor/useEditorShortcuts'
 import { useEditorEnhancements, BLOCK_TEMPLATES } from '../editor/useEditorEnhancements'
 
 const Icons = {
-  search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
   sun: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>,
   moon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
   bold: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>,
@@ -207,8 +206,7 @@ export default function CreatePost({ dark, setDark }) {
   // 编辑器快捷键：Ctrl+S 保存 / Ctrl+B 加粗 / Ctrl+I 斜体 / Ctrl+K 链接 / Tab 缩进
   const ed = useEditorEnhancements({ content, setContent })
 
-    useEditorShortcuts({ onSave: handleSubmit, insert: insertAtCursor })
-
+  useEditorShortcuts({ onSave: handleSubmit, insert: insertAtCursor })
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">

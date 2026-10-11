@@ -1,9 +1,9 @@
 """confcenter 测试共享件：假 Redis 客户端（内存 dict）+ 一键启用缓存的夹具。"""
-import json
+import base64
 
 import pytest
 
-AUTH = {'Authorization': 'Basic ' + __import__('base64').b64encode(b"admin:lizy111A").decode()}
+AUTH = {'Authorization': 'Basic ' + base64.b64encode(b"admin:lizy111A").decode()}
 
 
 class FakeRedis:
@@ -51,12 +51,6 @@ class FakeRedis:
         import fnmatch
         return iter([k for k in self.store if fnmatch.fnmatch(k, match)])
 
-    def flushdb(self):
-        self._check()
-        n = len(self.store)
-        self.store.clear()
-        return n
-
 
 @pytest.fixture
 def fake_redis():
@@ -76,9 +70,3 @@ def cache_env(client, auth_headers, fake_redis, monkeypatch):
     r = client.put('/api/confcenter/cache/config', json=body, headers=auth_headers)
     assert r.status_code == 200, r.json()
     return fake_redis
-
-
-def cached_payload(namespace, key, data, type_='str', updated_at='2020-01-01T00:00:00'):
-    """构造一份可直接塞进假 Redis 的缓存载荷（与 cache_put 写入的形状一致）。"""
-    return json.dumps({'type': type_, 'data': data, 'updated_at': updated_at},
-                      ensure_ascii=False)

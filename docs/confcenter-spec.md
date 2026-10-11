@@ -35,10 +35,11 @@ GET    /api/confcenter/{namespace}/{key}          # 读单条：data 按解析�
 PUT    /api/confcenter/{namespace}/{key}          # upsert {type:'str'|'json', data}（201 新建 / 200 覆盖；json 非法 400）
 DELETE /api/confcenter/{namespace}/{key}          # 200；不存在 404
 # Redis 缓存管理（系统配置页用）
-GET    /api/confcenter/cache/status               # {enabled, reachable, url_masked, hits, misses}（不可达时 enabled=false 不报错）
-PUT    /api/confcenter/cache/config               # {enabled, host, port, db, password, ttl_seconds}（写入 data/redis_config.json）
-POST   /api/confcenter/cache/test                 # 测试连通（PING），返回 {ok, message}
-POST   /api/confcenter/cache/flush                # FLUSHDB 该 db（或按前缀 SCAN+DEL），管理用
+GET    /api/confcenter/cache/status               # {enabled, configured, reachable, library_available, url_masked, ttl_seconds, hits, misses}（enabled=已启用且探活可达；不可达时不报错）
+GET    /api/confcenter/cache/config               # 当前配置回显（配置 Modal 用；单用户管理端原样返回）
+PUT    /api/confcenter/cache/config               # {enabled, host, port, db, password, ttl_seconds}，允许部分缺省沿用（密码留空=沿用已存）；写入 data/redis_config.json
+POST   /api/confcenter/cache/test                 # 用请求体候选配置（缺省=当前配置）测试连通（PING），返回 {ok, message}
+POST   /api/confcenter/cache/flush                # 按 confcenter:* 前缀 SCAN+DEL（不整库 FLUSHDB，不误伤同 db 其他业务键），管理用
 ```
 
 key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT body 校验：type 只能 str/json；type=json 时 data 必须可 json.loads。
@@ -54,18 +55,20 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 
 ## 5. 前端（frontend/src/confcenter/）
 
-- `ConfCenterPage.jsx`：左侧 namespace 列表（含计数）+ 右侧 KV 表格（key / 类型徽章 str|json / 值预览（json 折叠显示）/ 更新时间 / 操作）；新建/编辑 Modal（type 切换 str|json：str=多行文本框原样；json=JsonArea 失焦校验，非法标红禁止保存）；删除两步确认；搜索框（q）
-- 顶部 Redis 状态条：`缓存 已启用/未启用`（调 cache/status；未启用显示"去配置"）+ 缓存配置 Modal（enabled/host/port/db/password/ttl + 测试连接 + 保存 + 清空缓存）
-- `api.js` 走 apiFetch + unwrap；个性色 **cyan**；遵循 docs/ui-baseline.md
+- `ConfCenterPage.jsx`：左侧 namespace 列表（含计数）+ 右侧 KV 表格（key / 类型徽章 str|json / 值预览（json 折叠显示）/ 更新时间 / 操作）；新建/编辑 Modal（type 段选 str|json：str=多行文本原样；json=同一文本域失焦校验，非法标红禁止保存）；删除两步确认（第一步入列，3.5s 自动撤销）；搜索框 q（300ms 防抖）+ 分页
+- 顶部 Redis 状态条三态（调 cache/status）：绿=已启用（探活可达）/ 琥珀=已配置但连接异常（降级直连）/ 灰=未启用，附 url_masked 与命中计数；未配置时按钮文案「去配置」
+- 缓存配置 Modal（GET /cache/config 回显，密码不回显、留空=沿用已存）：enabled/host/port/db/password/ttl + 测试连接 + 保存 + 清空缓存
+- `api.js` 走 apiFetch + unwrap（模块内全部端点均有包装，组件不裸调 fetch）；个性色 **cyan**；遵循 docs/ui-baseline.md
 - 值预览：str 显示原文（截断 + title 全文）；json 显示 pretty（≤3 行折叠）
 
-## 6. 测试（tests/confcenter/）
+## 6. 测试（tests/confcenter/，39 例，FakeRedis 内存假客户端——不连真实 Redis）
 
 - CRUD：upsert 新建 201/覆盖 200/读回（str 保字符串形状、json 解析回对象）/**type 变更**（json→str 后读回字符串）/删除/404
-- 校验：非法 type 400；json 非法 400（"[1,2" 拒绝）；key/namespace 非法字符 400
-- **缓存**：monkeypatch 假 Redis 客户端（内存 dict）验证 命中/未命中回填/写后失效（DEL 被调用）/未启用直连 DB/连接抛错降级
-- 浏览：namespaces 聚合、entries 过滤分页
-- 鉴权：无凭据 401
+- 校验：非法 type 400；json 非法 400（"[1,2" 拒绝）；key/namespace 非法字符与超长 400；含 `/` 的段结构性 404
+- **缓存五路径**：命中（不查库、hits+1）/未命中回填（SETEX 键/TTL/载荷）/写删后失效（DEL 被调用）/未启用直连 DB（零交互零计数）/连接抛错静默降级（进程内只 warn 一次，test 探活自愈）；另覆盖 损坏载荷视同未命中、redis 库缺失降级
+- 缓存管理端点：配置落盘与回显、非法配置 400、test（候选配置试连）、flush 前缀 SCAN+DEL（不误伤同 db 其他业务键）、status 密码掩码
+- 浏览：namespaces 聚合、entries 过滤分页（非法分页参数回退默认）
+- 鉴权：无凭据/错凭据 401（全端点）
 
 ## 7. 验收
 

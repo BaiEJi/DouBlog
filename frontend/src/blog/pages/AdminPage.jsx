@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { BackButton } from '../../shared/PageHeader'
-import { fetchDbStatus, testDbConnection, switchDatabase, fetchExportZip , fetchLoggingConfig, saveLoggingConfig, testLoggingSend } from '@/blog/api'
+import { fetchDbStatus, testDbConnection, switchDatabase, fetchExportZip, fetchLoggingConfig, saveLoggingConfig, testLoggingSend } from '@/blog/api'
 
 // ─── 小组件 ──────────────────────────────────────────────
 
@@ -265,7 +265,8 @@ export default function AdminPage({ dark, setDark }) {
             )}
           </>
         )}
-              {/* 日志上报配置 */}
+
+        {/* 日志上报配置 */}
         <LoggingCard />
       </main>
     </div>

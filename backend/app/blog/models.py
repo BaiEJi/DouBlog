@@ -165,7 +165,7 @@ class AuditLog(Base):
 
     id = mapped_column(Integer, primary_key=True, autoincrement=True)
     action = mapped_column(String(20), nullable=False, comment='操作: create/update/delete')
-    resource_type = mapped_column(String(20), nullable=False, comment='资源: post/image')
+    resource_type = mapped_column(String(20), nullable=False, comment='资源: post/workspace（image 为历史预留）')
     resource_id = mapped_column(Integer, nullable=True, comment='资源ID')
     detail = mapped_column(Text, nullable=True, comment='操作详情JSON')
     ip_address = mapped_column(String(50), nullable=True, comment='请求IP')

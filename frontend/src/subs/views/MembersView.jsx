@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { subsMembers, subsCreateMember, subsUpdateMember, subsDeleteMember, subsCategories } from '../api'
 import {
-  fmtPrice, daysRemaining, Icon, CategoryTag, StatusTag, Modal, Confirm, Toast,
+  fmtPrice, daysRemaining, Icon, CategoryTag, StatusTag, Modal, Confirm,
   Field, inputCls, btn, adjustForDark,
 } from '../kit'
 
@@ -186,7 +186,7 @@ export default function MembersView({ dark, toast }) {
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative">
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="搜索会员名称…" allowclear="true"
+            placeholder="搜索会员名称…"
             className={inputCls + ' w-48 pl-7'} />
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="6.5" /><path d="M21 21l-4.8-4.8" strokeLinecap="round" /></svg>
         </div>

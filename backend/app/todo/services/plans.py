@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from ..models import Plan, Task
 from ..schemas import PlanCreate, PlanOut, PlanUpdate
 from ..timeutil import get_zone, iso, local_today, now_utc, uuid7
+from . import get_settings
 
 #: 未来预生成天数(月历全月可见;统计按实例所属日期计,不会灌水"今日新建")
 PREGENERATE_DAYS = 90
@@ -107,7 +108,7 @@ def describe_rule(plan: Plan) -> str:
 
 # ---------- 物化 ----------
 
-def materialize_plans(session: Session, today: date, tz_name: str = "Asia/Shanghai", *, explicit: bool = False) -> int:
+def materialize_plans(session: Session, today: date, tz_name: str = "Asia/Shanghai") -> int:
     """把窗口内的计划实例落成真实任务(幂等),返回新建条数。
 
     窗口:[max(start, today-CATCHUP_DAYS), today+PREGENERATE_DAYS]。
@@ -166,8 +167,6 @@ def materialize_plans(session: Session, today: date, tz_name: str = "Asia/Shangh
 
 def _purge_future_instances(session: Session, plan_id: int | str, today: date) -> None:
     """编辑/停用后,清掉未来的未完成实例(过去的保留作历史)。"""
-    from ..timeutil import ensure_aware
-
     rows = session.scalars(
         select(Task).where(
             Task.plan_id == plan_id,
@@ -265,7 +264,7 @@ def create_plan(session: Session, p: PlanCreate, today: date, tz_name: str) -> P
     )
     session.add(plan)
     session.flush()
-    materialize_plans(session, today, tz_name, explicit=True)
+    materialize_plans(session, today, tz_name)
     return plan
 
 
@@ -301,13 +300,12 @@ def update_plan(session: Session, plan_id: str, p: PlanUpdate, today: date, tz_n
         changed = True
     if changed:
         plan.updated_at = now_utc()
-        # 规则/日期/象限变更:清未来未完成实例重新生成;仅改标题等则同步未来实例文案
+        # 规则/日期/类别变更或停用:清未来未完成实例重新生成;仅改标题等则同步未来实例文案
         disabling = "enabled" in fields and plan.enabled is False
         if (
             "rule" in fields
             or "start_date" in fields
             or "end_date" in fields
-            or "quadrant" in fields
             or "category_id" in fields
             or disabling
         ):
@@ -323,7 +321,7 @@ def update_plan(session: Session, plan_id: str, p: PlanUpdate, today: date, tz_n
                 if "description" in fields:
                     t.description = plan.description
                 t.updated_at = now_utc()
-        materialize_plans(session, today, tz_name, explicit=True)
+        materialize_plans(session, today, tz_name)
     return plan
 
 
@@ -365,7 +363,6 @@ def life_today(session: Session, view: date) -> dict:
     # 计划已删除的历史实例:照样展示,否则打卡记录凭空消失
     for t in sorted(orphans, key=lambda x: x.title):
         items.append({"title": t.title, "plan": None, "task": serialize_life_task(t)})
-    # 今天有安排但实例尚未物化(理论上窗口覆盖,兜底) → 现场补
     return {"date": iso(view), "items": items}
 
 
@@ -384,9 +381,7 @@ def serialize_life_task(t: Optional[Task]) -> Optional[dict]:
 
 
 def local_today_view(session: Session) -> date:
-    from . import get_settings as _gs
-
-    return local_today(_gs(session)["timezone"])
+    return local_today(get_settings(session)["timezone"])
 
 
 def plan_report(session: Session, days: int = 30) -> dict:

@@ -10,11 +10,7 @@ export default function EntryCard({ entry, onEdit, onAction, onDelete, onShare, 
   const [menu, setMenu] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const mood = moodOf(entry.mood)
-  const html = useMemo(() => {
-    const props = { __html: md.render(entry.content || '') }
-    return props
-  }, [entry.content])
-  const d = new Date(entry.entry_date + 'T00:00:00')
+  const html = useMemo(() => ({ __html: md.render(entry.content || '') }), [entry.content])
   const dateStr = entry.entry_date.slice(5)
 
   const jname = journal ? `${journal.emoji || ''} ${journal.name}`.trim() : ''

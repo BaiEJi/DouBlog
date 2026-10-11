@@ -54,14 +54,6 @@ def calculate_daily_rate(price, billing_cycle: str, custom_days, start_date: str
     return Decimal(str(price)) / Decimal(days)
 
 
-def get_base_currency() -> str:
-    return settings.subs_base_currency
-
-
-def get_exchange_rates() -> dict:
-    return dict(settings.subs_exchange_rates)
-
-
 def convert_to_base(amount, from_currency: str) -> Decimal:
     """换算为基准币；未知币种按原值返回"""
     if from_currency == settings.subs_base_currency:
@@ -71,8 +63,6 @@ def convert_to_base(amount, from_currency: str) -> Decimal:
         return Decimal(str(amount))
     return Decimal(str(amount)) * Decimal(str(rate))
 
-
-CURRENCY_SYMBOLS = {'CNY': '¥', 'USD': '$', 'EUR': '€', 'GBP': '£', 'JPY': '¥'}
 
 VALID_CURRENCIES = ('CNY', 'USD', 'EUR', 'GBP', 'JPY')
 

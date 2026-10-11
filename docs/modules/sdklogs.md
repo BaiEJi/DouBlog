@@ -2,7 +2,7 @@
 
 > 模块：`backend/app/sdklogs/`（models.py + routes.py）+ 前端 `frontend/src/logs/`（LogsPage.jsx + api.js）
 > 契约入口：`app/sdklogs/__init__.py` 导出 `router` + `start_background(app)`；运行态挂 `app.state.sdklogs_pipeline`
-> 生成日期：**2026-10-10**（依据当日代码；含 tests/sdklogs/ 20 用例 + tests/shared/ 3 例日志集成）
+> 生成日期：**2026-10-10**（依据当日代码；含 tests/sdklogs/ 23 用例 + tests/shared/ 3 例日志集成）
 
 ---
 
@@ -76,7 +76,7 @@ acked（index，是否已确认）。
 
 | 端点 | 说明 |
 |---|---|
-| `POST /api/v1/logs` | 单条（body = 一个 JSON 对象；数组/多条 → 400）。坏日志 → `202 {accepted:0, dead_lettered:1}` |
+| `POST /api/v1/logs` | 单条（body = 一个 JSON 对象或恰好一个元素的数组；多条 → 400）。坏日志 → `202 {accepted:0, dead_lettered:1}` |
 | `POST /api/v1/logs/batch` | 批量：JSON 数组或 JSONL 文本（`Content-Type: text/plain`），单批 ≤1000 条。逐条校验，好日志入队、坏日志进死信 → `202 {accepted:n, dead_lettered:m}` |
 
 请求体解析（`_ingest_payload`）：content-type 含 `json` 或 body 呈数组形（`[...]`）→ `json.loads`；
@@ -140,7 +140,7 @@ token 错误 401（AuthError）。
 
 ## 5. 前端（`frontend/src/logs/`）
 
-- `api.js`：13 个函数全部经 `shared/client.js` 的 `apiFetch`（Basic/会话凭据唯一持有处）——
+- `api.js`：11 个函数全部经 `shared/client.js` 的 `apiFetch`（Basic/会话凭据唯一持有处）——
   sdklogSearch / sdklogSysnames / sdklogHistogram / sdklogContext / sdklogPatterns / sdklogTrace /
   sdklogExport（blob 下载以携带认证头）/ sdklogAlerts / sdklogAlertConfig / sdklogAlertCheck / sdklogAlertAck
 - `LogsPage.jsx`（`/logs`，完整查询页，能力对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：

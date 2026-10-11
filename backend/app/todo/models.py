@@ -144,7 +144,3 @@ class Plan(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-
-
-# 数据复制时的表顺序(满足外键依赖);users 表按迁移规范删除
-TABLE_ORDER = (Category, Task, TaskEvent, AppSetting, Plan)

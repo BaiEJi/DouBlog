@@ -20,12 +20,11 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
   const [wxState, setWxState] = useState('')  // '' | getting | done | denied
   const taRef = useRef(null)
 
-  const realJournals = journals.filter(j => !j.virtual)
   // 跟随侧栏选择：选中具体本子 → 用它；选“全部” → 退化到第一本
   useEffect(() => {
-    setJid(activeJournal ?? realJournals[0]?.id ?? null)
+    setJid(activeJournal ?? journals[0]?.id ?? null)
   }, [activeJournal, journals])
-  const curJournal = realJournals.find(j => j.id === jid)
+  const curJournal = journals.find(j => j.id === jid)
 
   useEffect(() => {
     diaryTemplates().then(d => d.success && setTemplates(d.data))
@@ -65,10 +64,9 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
         onChange={e => setContent(e.target.value)}
         onKeyDown={e => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit()
-          if (e.key === 'Enter' && e.shiftKey && !content) { /* 空回车不拦 */ }
         }}
         rows={content ? Math.min(10, content.split('\n').length + 1) : 2}
-        placeholder={realJournals.length ? "此刻在想什么…（Ctrl+Enter 保存）" : "请先在左侧创建日记本"}
+        placeholder={journals.length ? "此刻在想什么…（Ctrl+Enter 保存）" : "请先在左侧创建日记本"}
         className="w-full bg-transparent outline-none resize-none text-[14px] leading-relaxed placeholder:text-stone-400 diary-serif"
       />
       {/* 提示语 */}
@@ -79,7 +77,7 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
       )}
       <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-black/[0.05] dark:border-white/[0.06]">
         {/* 日记本（必选） */}
-        {realJournals.length > 0 && (
+        {journals.length > 0 && (
           <div className="relative">
             <button onClick={() => { setShowJ(s => !s); setShowTpl(false) }}
               title="选择要写入的日记本（必选）"
@@ -91,7 +89,7 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
             </button>
             {showJ && (
               <div className="absolute z-20 mt-1 py-1 w-40 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
-                {realJournals.map(j => (
+                {journals.map(j => (
                   <button key={j.id}
                     onClick={() => { setJid(j.id); setShowJ(false); taRef.current?.focus() }}
                     className={'w-full text-left px-3 h-8 text-xs flex items-center gap-1.5 ' +

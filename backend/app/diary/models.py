@@ -11,6 +11,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 from app.shared.timestamps import _iso
 
+#: 预置日记本（迁移时确保存在；随记必须归属其一或自建本）
+PRESET_JOURNALS = [('日常', '🏡', 0), ('工作', '💼', 1), ('感悟', '🌱', 2)]
+
 
 class DiaryJournal(Base):
     """日记本（分册）：工作 / 生活等，条目归属其一"""
@@ -87,7 +90,7 @@ class Diary(Base):
         return result
 
     def to_public_dict(self):
-        """分享页（免登录）只读视图：内容 + 日期 + 心情 + 标签，不含任何管理字段"""
+        """分享页（免登录）只读视图：内容 + 日期 + 心情 + 字数，不含任何管理字段"""
         return {
             'entry_date': self.entry_date,
             'mood': self.mood,
@@ -140,11 +143,11 @@ def ensure_migrations(engine):
     # 预置日记本（日常/工作/感悟）确保存在；存量无本随记归入"日常"
     with engine.begin() as conn:
         daily_id = None
-        for name, emoji in (('日常', '🏡'), ('工作', '💼'), ('感悟', '🌱')):
+        for name, emoji, sort in PRESET_JOURNALS:
             row = conn.execute(text('SELECT id FROM diary_journals WHERE name = :n'), {'n': name}).scalar()
             if not row:
                 conn.execute(text('INSERT INTO diary_journals (name, emoji, sort) VALUES (:n, :e, :s)'),
-                             {'n': name, 'e': emoji, 's': {'日常': 0, '工作': 1, '感悟': 2}[name]})
+                             {'n': name, 'e': emoji, 's': sort})
                 if name == '日常':
                     daily_id = conn.execute(text('SELECT id FROM diary_journals WHERE name = :n'),
                                             {'n': name}).scalar()

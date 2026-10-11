@@ -24,11 +24,11 @@ export default function Dashboard({ dark = true }) {
   const list = games.data || []
 
   const chapters = useQuery({
-    queryKey: ['dash-chapters'], enabled: !!list.length,
+    queryKey: ['dash-chapters', list[0]?.id], enabled: !!list.length,
     queryFn: () => api(`/games/${list[0].id}/chapters`),
   })
   const chars = useQuery({
-    queryKey: ['dash-chars'], enabled: !!list.length,
+    queryKey: ['dash-chars', list[0]?.id], enabled: !!list.length,
     queryFn: () => api(`/games/${list[0].id}/characters`),
   })
 
@@ -91,7 +91,7 @@ export default function Dashboard({ dark = true }) {
                 <List.Item style={{ cursor: 'pointer', padding: '10px 4px' }} onClick={() => nav(`${GM}/games/${g.id}`)}>
                   <List.Item.Meta
                     avatar={<Avatar style={{ background: avatarGradient(g.id) }}>{g.name[0]}</Avatar>}
-                    title={<span>{g.name} <Tag {...{ color: (STATUS_TAG[g.play_status] || STATUS_TAG.playing).color }}>{(STATUS_TAG[g.play_status] || STATUS_TAG.playing).text}</Tag></span>}
+                    title={<span>{g.name} <Tag color={(STATUS_TAG[g.play_status] || STATUS_TAG.playing).color}>{(STATUS_TAG[g.play_status] || STATUS_TAG.playing).text}</Tag></span>}
                     description={<span style={{ color: titleColor }}>{g.description?.slice(0, 40) || '暂无简介'}</span>} />
                   <ThunderboltOutlined style={{ color: '#ffb020' }} />
                 </List.Item>

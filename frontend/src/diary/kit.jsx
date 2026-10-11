@@ -1,7 +1,6 @@
 /**
  * 日记公共小件：心情模型 / 天气码映射 / 图标 / 轻组件（供各视图复用）。
  */
-import { useState } from 'react'
 
 export const MOODS = [
   { key: 'great', label: '很棒', emoji: '😄', color: '#f59e0b' },
@@ -19,7 +18,6 @@ const WMO = {
   75: ['大雪', '❄️'], 80: ['阵雨', '🌦️'], 81: ['强阵雨', '🌧️'], 82: ['暴雨', '⛈️'], 95: ['雷暴', '⛈️'],
 }
 export const weatherIcon = code => (WMO[code] || ['—', '🌡️'])[1]
-export const weatherText = code => (WMO[code] || [''])[0]
 
 export const Icon = {
   timeline: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>,
@@ -32,7 +30,6 @@ export const Icon = {
   archive: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>,
   share: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.8l7.6-3.6M8.2 13.2l7.6 3.6"/></svg>,
   edit: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 20h4L20 8l-4-4L4 16v4zM13 7l4 4"/></svg>,
-  plus: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>,
   location: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>,
   arrowL: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M15 5l-7 7 7 7"/></svg>,
   arrowR: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 5l7 7-7 7"/></svg>,
@@ -69,10 +66,4 @@ export function Confirm({ text, onOk, onCancel, danger }) {
       </div>
     </div>
   )
-}
-
-/** 折叠动画容器（简单条件渲染 + fade） */
-export function Fade({ show, children }) {
-  if (!show) return null
-  return <div className="animate-fade-in">{children}</div>
 }

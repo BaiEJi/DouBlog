@@ -498,7 +498,7 @@ async def migrate_one(task_id: str, p: MigrateIn):
         t = mig.migrate_task(session, task_id, p.to_date, p.reason)
         session.commit()
         readcache.bump()
-        return api_response(_dump(task_svc.serialize_task(t, local_today(get_settings(session)["timezone"]))))
+        return api_response(_dump(task_svc.serialize_task(t, _today(session))))
     return await run_db(_guard(_impl))
 
 
@@ -566,7 +566,7 @@ async def heatmap(year: int):
 @stats_router.get("/streak")
 async def streak():
     def _impl():
-        return api_response(stats_svc.compute_streak(db.session, stats_svc._tz(db.session)))
+        return api_response(stats_svc.compute_streak(db.session, _tz(db.session)))
     return await run_db(_impl)
 
 

@@ -94,7 +94,7 @@ POST   /api/pwsvc/projects/<id>/api-key     重置 API Key（旧 key 立即失�
 
 POST   /api/pwsvc/projects/<id>/types       创建类型
 GET    /api/pwsvc/projects/<id>/types       类型列表（含用户数，UI 用）
-PUT    /api/pwsvc/types/<id>                改策略（新密码下一窗口起按新策略）
+PUT    /api/pwsvc/types/<id>                改策略（立即生效：当前窗口即按新策略重推导，旧密码立刻失效）
 DELETE /api/pwsvc/types/<id>
 
 POST   /api/pwsvc/projects/<id>/users       创建用户 {username, type_id}
@@ -137,7 +137,8 @@ Response:
 - 本模块**不是**零知识：服务端必须能推导密码（否则无法提供校验 API）——这是功能定位决定的
   （与密码库本体的零知识加密是两套威胁模型，UI 中明确标注）
 - 静态数据保护：seed AES-256-GCM 加密落盘；API Key 只存哈希；密码本体**从不落盘**
-- 在线爆破无意义（≥90 位熵的随机密码）+ 常数时间比较；不做限流（文档标注为已知边界）
+- 在线爆破无意义（≥90 位熵的随机密码）+ 常数时间比较；另设每项目进程内令牌桶限流
+  （页面可配 0-10000 次/分钟，超额 429 且不落日志——现行实现，详见模块文档）
 - API Key 泄露影响面：仅能"验密码"，不能读密码（读密码仅管理员 UI）
 - 服务器被完全攻破 = 攻击者可推导该项目全部轮换密码（服务固有属性，文档声明）
 

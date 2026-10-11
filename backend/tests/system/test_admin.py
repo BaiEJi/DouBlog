@@ -35,9 +35,8 @@ def _create_post(client, headers, title, name, parent_id=None):
 
 @pytest.fixture(autouse=True)
 def _prod_semantics(monkeypatch):
-    """对齐 Flask 时代测试环境语义：测试进程不在 reloader 下
-    （WERKZEUG_RUN_MAIN 未设置）→ switch 返回 restart_required=True、
-    不 touch 重启戳文件。"""
+    """测试进程不在 uvicorn --reload 下：置 debug=False 模拟生产语义
+    → switch 返回 restart_required=True、不 touch 重启戳文件。"""
     from app.config import settings
     monkeypatch.setattr(settings, 'debug', False)
 
@@ -118,12 +117,14 @@ def test_switch_to_unreachable_postgres_rejected(client, auth_headers, app):
 
 # ─── 真实 SQLite ↔ PostgreSQL 往返（pgserver 可选）──────
 
-pgserver = pytest.importorskip('pgserver', reason='未安装 pgserver，跳过真实 PG 集成测试')
-
 
 @pytest.fixture(scope='module')
 def pg(tmp_path_factory):
-    """起一个内嵌 PostgreSQL 实例（module 级共享）"""
+    """起一个内嵌 PostgreSQL 实例（module 级共享）。
+
+    importorskip 放在 fixture 内而非模块级：未装 pgserver 时只跳过
+    请求本 fixture 的真实往返用例，上方 8 个无 PG 依赖的用例照常运行。"""
+    pgserver = pytest.importorskip('pgserver', reason='未安装 pgserver，跳过真实 PG 集成测试')
     server = pgserver.get_server(str(tmp_path_factory.mktemp('pgdata')))
     yield {
         'host': '127.0.0.1',
@@ -153,7 +154,8 @@ def test_real_switch_roundtrip(client, auth_headers, pg, app):
 
     import json as _json
     from app.db import db_config_path
-    assert _json.load(open(db_config_path(), encoding='utf-8'))['backend'] == 'postgres'
+    with open(db_config_path(), encoding='utf-8') as f:
+        assert _json.load(f)['backend'] == 'postgres'
 
     # 3. 模拟重启：新 app 绑定 PG —— 空库自动播种（1 默认知识库 / 0 文章），sqlite 数据不动
     from app.main import create_app
@@ -205,7 +207,8 @@ def test_logging_config_endpoints(client, auth_headers, tmp_path, monkeypatch):
     import json as _json, os as _os
     cfg_path = _os.path.join(st.data_dir, 'logs_config.json')
     assert _os.path.exists(cfg_path)
-    stored = _json.load(open(cfg_path, encoding='utf-8'))
+    with open(cfg_path, encoding='utf-8') as f:
+        stored = _json.load(f)
     assert stored['enabled'] is False and stored['level'] == 'INFO'
     d3 = client.get('/api/admin/logging', headers=auth_headers).json()['data']
     assert d3['enabled'] is False

@@ -17,7 +17,6 @@ GET /api/export/markdown
 
 import io
 import json
-import logging
 import os
 import re
 import zipfile
@@ -28,13 +27,15 @@ from fastapi.responses import Response
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
+from app.shared.modules import mod_logger
 from app.config import settings
 from app.blog.models import Post, Workspace
 from app.shared.response import api_response
 
 router = APIRouter(prefix='/api/export', dependencies=[Depends(require_basic)])
 
-logger = logging.getLogger(__name__)
+# 模块日志走 mod_logger：记录级 sys_name=doublog.blog（AGENTS 全局要求）
+logger = mod_logger('blog')
 
 # 虚拟根文章的 id（树形结构的顶级占位节点，不属于任何真实内容）
 ROOT_POST_ID = 0

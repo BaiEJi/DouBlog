@@ -52,12 +52,6 @@ def local_day_bounds_utc(d: date, tz_name: str) -> tuple[datetime, datetime]:
     return start_local.astimezone(timezone.utc), (start_local + timedelta(days=1)).astimezone(timezone.utc)
 
 
-def parse_date(s: str | None) -> date | None:
-    if s is None or s == "" or s == "today":
-        return None if s is None or s == "" else None  # "today" 由调用方处理
-    return date.fromisoformat(s)
-
-
 def iso(d: date | datetime | None) -> str | None:
     if d is None:
         return None

@@ -37,6 +37,8 @@ export async function pwnedCount(password) {
     if (hash in c) return c[hash]
     const prefix = hash.slice(0, 5)
     const suffix = hash.slice(5)
+    // 外部 k-anonymity 查询：刻意用原生 fetch 而非 apiFetch——
+    // 这是第三方接口，不得携带本站会话凭据/前缀
     const res = await fetch(`https://api.pwnedpasswords.com/range/${prefix}`, {
       headers: { 'Add-Padding': 'true' },   // 全部后缀都返回，掩蔽真实查询
     })

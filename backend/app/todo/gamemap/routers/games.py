@@ -96,7 +96,7 @@ async def delete_game(game_id: int):
         game = session.get(Game, game_id)
         if not game:
             raise HTTPException(404, "游戏不存在")
-        session.delete(game)  # 级联由数据库/显式清理负责
+        session.delete(game)  # 有章节/人物时 ORM 置空 NOT NULL 外键 → 500（源行为锁定，见测试）
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})

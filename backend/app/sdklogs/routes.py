@@ -59,6 +59,8 @@ class _QuietIngestLog:
 logging.getLogger('uvicorn.access').addFilter(_QuietIngestLog())
 
 LEVELS = {'DEBUG': 10, 'INFO': 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50}
+#: 数值 → 级别名（stats/直方图聚合反查用，与 LEVELS 同源不重复维护）
+_LEVEL_NAMES = {num: name for name, num in LEVELS.items()}
 RESERVED_KEYS = {'level', 'timestamp', 'file', 'line', 'sys_name', 'message', 'trace_id'}
 #: 性能快路径总开关（压测 A/B 对照用：SDKLOGS_FASTPATH=0 回退到全 ORM 路径，
 #: 行为完全一致，仅关掉检索静态 SQL / 写者 executemany / TTL 缓存三组优化）
@@ -194,6 +196,11 @@ def parse_ts(raw: str):
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _clip(value, n: int):
+    """可选字符串列截断入库（None/空保留 None，非字符串统一转 str；file/trace_id 用）。"""
+    return str(value)[:n] if value else None
+
+
 # ─── 摄入管道：校验/规范化 → 队列 → 单写者批量落库/死信 ─────
 
 def normalize_record(raw: dict, received_at=None):
@@ -231,14 +238,16 @@ def normalize_record(raw: dict, received_at=None):
             fields[k] = str(v)
 
     line = raw.get('line')
+    if isinstance(line, str) and line.isdigit():
+        line = int(line)
     return {
         'ts': ts,
         'level': LEVELS[level_text],
         'level_text': level_text,
         'sys_name': sys_name.strip(),
-        'file': (raw['file'][:255] if isinstance(raw['file'], str) else str(raw['file'])[:255]) if raw.get('file') else None,
-        'line': line if isinstance(line, int) else (int(line) if isinstance(line, str) and line.isdigit() else None),
-        'trace_id': (raw['trace_id'][:64] if isinstance(raw['trace_id'], str) else str(raw['trace_id'])[:64]) if raw.get('trace_id') else None,
+        'file': _clip(raw.get('file'), 255),
+        'line': line if isinstance(line, int) else None,
+        'trace_id': _clip(raw.get('trace_id'), 64),
         'message': message,
         'fields': fields,
         'received_at': received_at if received_at is not None else _utcnow(),
@@ -323,7 +332,7 @@ class _Pipeline:
         except OSError:
             pass
 
-    def _batch_rows2(self):
+    def _batch_rows(self):
         """攒批：满 batch_size 或自首条起 flush_ms 到期才返回；返回 (行列表, 队列元素数)。
         队列元素可能是单行 dict 或整批 list（submit_list），统一摊平。"""
         rows = []
@@ -349,7 +358,7 @@ class _Pipeline:
     def _run(self):
         """单写者主循环：攒批 → 落库（重试 2 次）→ 死信；空转时低频轮询。"""
         while not self._stop.is_set() or not self.q.empty():
-            rows, n_items = self._batch_rows2()
+            rows, n_items = self._batch_rows()
             if not rows:
                 self._stop.wait(0.2)
                 continue
@@ -433,12 +442,6 @@ def get_pipeline(app) -> _Pipeline:
     return p
 
 
-def stop_pipeline(app, timeout: float = 5.0):
-    p = getattr(app.state, 'sdklogs_pipeline', None)
-    if p is not None:
-        p.stop(timeout)
-
-
 @atexit.register
 def _drain_pipelines():
     """进程退出前尽力排空各 app 的写者队列（强杀时为尽力而为，设计已接受）。"""
@@ -452,29 +455,28 @@ def _drain_pipelines():
 
 # ─── 摄入端点（SDK 调用；可选 Bearer token，不挂 Basic Auth）────
 
+_TOKEN_CACHE = ['', []]                          # [原始配置串, 切分结果]
+
+
 def _check_token(request: Request):
-    """配置了 token 则校验 Authorization: Bearer <token>；未配置直接放行。"""
+    """配置了 token 则校验 Authorization: Bearer <token>；未配置/全空白直接放行，不符抛 AuthError。"""
     raw = settings.logs_auth_token
     if not raw:
-        return None
+        return
     tokens = _TOKEN_CACHE[1]                     # 按原始配置串缓存切分结果
     if _TOKEN_CACHE[0] != raw or not _FASTPATH:
         tokens = [t.strip() for t in raw.split(',') if t.strip()]
         _TOKEN_CACHE[0] = raw
         _TOKEN_CACHE[1] = tokens
     if not tokens:
-        return None
+        return
     header = request.headers.get('Authorization', '')
-    if header.startswith('Bearer ') and header[7:].strip() in tokens:
-        return None
-    raise AuthError(message='日志上传 token 无效')
+    if not (header.startswith('Bearer ') and header[7:].strip() in tokens):
+        raise AuthError(message='日志上传 token 无效')
 
 
-_TOKEN_CACHE = ['', []]                          # [原始配置串, 切分结果]
-
-
-async def _ingest_payload(request: Request):
-    """请求体 → 记录列表：JSON 单对象 / JSON 数组 / JSONL 文本。"""
+async def _ingest_payload(request: Request) -> list:
+    """请求体 → 记录列表：JSON 单对象 / JSON 数组 / JSONL 文本；非法直接抛 ParamError。"""
     ct = (request.headers.get('content-type') or '').lower()
     raw = (await request.body()).decode('utf-8') or ''
     if 'json' in ct or (raw.lstrip()[:1] == '[' and raw.rstrip()[-1:] == ']'):
@@ -482,16 +484,13 @@ async def _ingest_payload(request: Request):
             obj = json.loads(raw)
         except ValueError:
             raise ParamError(message='非法 JSON')
-        return (obj if isinstance(obj, list) else [obj]), None
+        return obj if isinstance(obj, list) else [obj]
     # JSONL：整包一次数组解析（比逐行 loads 快 ~20-30%）；失败退回逐行以定位坏行
     lines = [l.strip() for l in raw.splitlines() if l.strip()]
     if not lines:
-        return [], None
+        return []
     try:
-        records = json.loads('[' + ','.join(lines) + ']')
-        if not isinstance(records, list):
-            raise ValueError
-        return records, None
+        return json.loads('[' + ','.join(lines) + ']')
     except ValueError:
         pass
     records = []
@@ -500,17 +499,13 @@ async def _ingest_payload(request: Request):
             records.append(json.loads(line))
         except ValueError:
             raise ParamError(message=f'非法 JSONL 行: {line[:80]!r}')
-    return records, None
+    return records
 
 
 @router.post('/logs')
 async def ingest_one(request: Request):
-    err = _check_token(request)
-    if err is not None:
-        return err
-    records, err = await _ingest_payload(request)
-    if err is not None:
-        return err
+    _check_token(request)
+    records = await _ingest_payload(request)
     if len(records) != 1:
         raise ParamError(message='单条端点仅接受一个 JSON 对象')
     p = get_pipeline(request.app)
@@ -524,12 +519,8 @@ async def ingest_one(request: Request):
 
 @router.post('/logs/batch')
 async def ingest_batch(request: Request):
-    err = _check_token(request)
-    if err is not None:
-        return err
-    records, err = await _ingest_payload(request)
-    if err is not None:
-        return err
+    _check_token(request)
+    records = await _ingest_payload(request)
     if not records:
         raise ParamError(message='空批次')
     if len(records) > BATCH_MAX:
@@ -712,10 +703,10 @@ async def stats(request: Request):
                       for r in db.session.query(SdkLog.sys_name, func.count(SdkLog.id))
                       .filter(SdkLog.ts >= since).group_by(SdkLog.sys_name)
                       .order_by(func.count(SdkLog.id).desc()).limit(10)]
-            by_level = {name: 0 for name in LEVELS}
+            by_level = dict.fromkeys(LEVELS, 0)
             for row in db.session.query(SdkLog.level, func.count(SdkLog.id)) \
                     .filter(SdkLog.ts >= since).group_by(SdkLog.level):
-                by_level[next(name for name, num in LEVELS.items() if num == row[0])] = row[1]
+                by_level[_LEVEL_NAMES[row[0]]] = row[1]
             return by_sys, by_level, db.session.query(SdkLog).count()
         by_sys, by_level, total_rows = await run_db(_impl)
         _cache_put(request.app, 'stats', (by_sys, by_level, total_rows))
@@ -724,7 +715,7 @@ async def stats(request: Request):
     counters = dict(p.stats) if p else {'accepted': 0, 'dropped': 0, 'failed': 0, 'dead_letter': 0}
     return api_response({
         'h24_by_sys': by_sys,
-        'h24_by_level': {k: v for k, v in by_level.items()},
+        'h24_by_level': by_level,
         'queue_size': p.q.qsize() if p else 0,
         'total_rows': total_rows,
         **counters,
@@ -732,9 +723,6 @@ async def stats(request: Request):
 
 
 # ─── 直方图 / 上下文 / 模式分组 / 导出 / trace（查询页探索能力）──
-
-LEVEL_ORDER = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
-
 
 @router.get('/logs/histogram', dependencies=[Depends(require_basic)])
 async def histogram(request: Request):
@@ -767,17 +755,15 @@ async def histogram(request: Request):
         rows = (db.session.query(SdkLog.ts, SdkLog.level)
                 .filter(SdkLog.ts >= start, SdkLog.ts <= end, *filters)
                 .order_by(SdkLog.ts).limit(100000).all())
-        counts = [{'DEBUG': 0, 'INFO': 0, 'WARNING': 0, 'ERROR': 0, 'CRITICAL': 0}
-                  for _ in range(buckets_n)]
-        level_name = {10: 'DEBUG', 20: 'INFO', 30: 'WARNING', 40: 'ERROR', 50: 'CRITICAL'}
+        counts = [dict.fromkeys(LEVELS, 0) for _ in range(buckets_n)]
         for ts, level in rows:
             idx = min(buckets_n - 1, max(0, int((ts - start).total_seconds() // bucket_secs)))
-            counts[idx][level_name.get(level, 'INFO')] += 1
+            counts[idx][_LEVEL_NAMES.get(level, 'INFO')] += 1
         buckets = []
         for i, c in enumerate(counts):
             b_start = start + timedelta(seconds=i * bucket_secs)
             buckets.append({'start': b_start.isoformat(), 'total': sum(c.values()), 'counts': c})
-        totals = {name: sum(c[name] for c in counts) for name in LEVEL_ORDER}
+        totals = {name: sum(c[name] for c in counts) for name in LEVELS}
         return api_response({'buckets': buckets, 'bucket_secs': bucket_secs,
                              'start': start.isoformat(), 'end': end.isoformat(),
                              'totals': totals, 'total': sum(totals.values())})
@@ -1198,7 +1184,7 @@ def ensure_migrations(engine):
     """幂等迁移：删除被复合索引 (sys_name, ts) 前缀覆盖的冗余单列索引
     ix_sdklogs_logs_sys_name（白付每次行插入约 1/6 的索引维护，实测写吞吐 +13.6%；
     新库由模型直接不再创建，存量库在此删除；DROP INDEX IF EXISTS 两方言通用）。"""
-    from sqlalchemy import inspect, text
+    from sqlalchemy import inspect
     try:
         names = {ix['name'] for ix in inspect(engine).get_indexes('sdklogs_logs')}
         if 'ix_sdklogs_logs_sys_name' in names:

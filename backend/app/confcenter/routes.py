@@ -109,7 +109,7 @@ def _run_write(fn):
 
 
 def _row_payload(row) -> dict:
-    """SELECT 行 → {type, data, updated_at} 载荷（与模型 payload() 同形）。"""
+    """SELECT 行 → {type, data, updated_at} 载荷（单条读响应与缓存写入共用此形状）。"""
     return {'type': row[0], 'data': row[1], 'updated_at': _iso(row[2])}
 
 

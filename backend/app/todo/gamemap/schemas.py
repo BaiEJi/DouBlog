@@ -175,6 +175,17 @@ class RelationTypeOut(ORMModel):
     enabled: bool
 
 
+class RelationTypeCreate(BaseModel):
+    game_id: int | None = None  # 空 = 全局默认，否则为游戏自定义
+    key: str
+    name: str = ""  # 缺省用 key
+    color: str = "#5B8FF9"
+    line_style: str = "solid"
+    directional: bool = False
+    default_description: str = ""
+    order_index: int = 0
+
+
 class EffectiveRelationType(RelationTypeOut):
     overridden: bool = False  # 是否被游戏覆盖
 

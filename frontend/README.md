@@ -15,6 +15,6 @@ npm run lint       # ESLint
 
 ## 快速上手
 
-- 所有后端请求必须走 `src/api.js`（项目内唯一的凭据/端口定义处）
-- Markdown 渲染统一走 `src/md.js`，勿在页面里自建 markdown-it 实例
+- 所有后端请求必须走各能力包的 `api.js`（底层 `src/shared/client.js`，项目内唯一的端口定义处；凭据不进前端，会话 Cookie 认证）
+- Markdown 渲染统一走 `src/shared/md.js`，勿在页面里自建 markdown-it 实例
 - 验收门槛：`npm run build` 零报错 + 首页/详情/新建/编辑四页浏览器走查

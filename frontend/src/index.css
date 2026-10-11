@@ -946,8 +946,7 @@ html.transitioning *::after {
   color: #79c0ff !important;
 }
 
-.dark 
-/* ─── Mermaid 渲染占位：替代首帧原始代码闪现 ─────────────── */
+/* ─── Mermaid 渲染占位：替代首帧原始代码闪现（明暗两态；暗色覆盖见下）── */
 .code-block .mermaid:not([data-processed]) {
   min-height: 120px;
   color: transparent;

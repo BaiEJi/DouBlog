@@ -86,13 +86,14 @@ def _valid_date(raw, field):
 
 
 def _valid_price(raw, field='价格'):
+    """价格校验，返回 (规范化字符串, 错误信息)"""
     try:
         v = float(raw)
     except (ValueError, TypeError):
-        return None, None, f'{field}必须为有效数字'
+        return None, f'{field}必须为有效数字'
     if v < 0:
-        return None, None, f'{field}不能为负数'
-    return v, str(v), None
+        return None, f'{field}不能为负数'
+    return str(v), None
 
 
 def _validate_subscription_payload(data: dict, partial: bool = False):
@@ -117,7 +118,7 @@ def _validate_subscription_payload(data: dict, partial: bool = False):
     if 'price' in keys:
         if data.get('price') is None:
             return None, '价格不能为空'
-        price_f, price_s, err = _valid_price(data['price'])
+        price_s, err = _valid_price(data['price'])
         if err:
             return None, err
         out['price'] = price_s
@@ -508,15 +509,6 @@ async def delete_subscription(sub_id: int):
 
 # ─── 统计分析 ─────────────────────────────────────────────
 
-def _overlap_days(sub_start, sub_end, q_start, q_end) -> int:
-    """闭区间重叠天数（字符串粗筛后仅解析真正重叠的两端）"""
-    start = max(sub_start, q_start)
-    end = min(sub_end, q_end)
-    if start > end:
-        return 0
-    return parse_date(end).toordinal() - parse_date(start).toordinal() + 1
-
-
 def _overlap_ord(s_ord: int, e_ord: int, q_ord: int, qe_ord: int) -> int:
     """闭区间重叠天数（序数版：配合 _SpendRow 预计算，热路径零解析零 ORM 访问；≤0 即无重叠）"""
     return min(e_ord, qe_ord) - max(s_ord, q_ord) + 1
@@ -558,13 +550,6 @@ def _spend_rows(subs) -> list:
             currency=sub.currency,
         ))
     return rows
-
-
-def _spend_in_range(sub, q_start, q_end) -> Decimal:
-    """订阅在查询范围内的折算基准币支出"""
-    daily = calculate_daily_rate(sub.price, sub.billing_cycle, sub.custom_days, sub.start_date)
-    daily_base = convert_to_base(daily, sub.currency)
-    return daily_base * Decimal(_overlap_days(sub.start_date, sub.end_date, q_start, q_end))
 
 
 def _month_year_bounds():
@@ -942,7 +927,7 @@ async def backup_run():
     def _impl():
         """手动触发一次数据库备份（当前 SQLite 库；PG 后端返回 skipped）"""
         result = subs_backup.backup_database()
-        code = 200 if result['status'] == 'ok' else 409 if result['status'] == 'error' else 200
+        code = 409 if result['status'] == 'error' else 200   # ok / skipped 均 200
         return api_response(result, code,
                             '备份完成' if result['status'] == 'ok' else result.get('reason', ''))
     return await run_db(_impl)

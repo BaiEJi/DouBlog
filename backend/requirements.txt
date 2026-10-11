@@ -9,4 +9,7 @@ Pillow==10.2.0
 pytest==8.0.0
 cryptography
 redis==5.2.1              # 配置中心 KV 缓存（可选，未配置/不可达时自动直连 DB）
+PyYAML==6.0.3             # practice 模块 Obsidian 导入（frontmatter 解析）
+steam[client]>=1.4.0      # Steam 挂机模块（todo/steamidler；gevent 限在 worker 线程独立 hub，禁 monkey.patch_all）
+requests>=2.31            # Steam Web API 调用
 lizysdk @ git+https://github.com/BaiEJi/LizySDK.git   # 日志/异常/并发池体系（本地开发可 pip install -e ../basekit）

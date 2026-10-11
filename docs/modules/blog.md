@@ -72,7 +72,7 @@
 - **虚拟根**：id=0 的 Post 行，所有查询 `Post.id != ROOT_ID`（`services/tree_order.ROOT_ID`）；树接口组树时 `parent_id in (0, None)` 视为顶级。
 - **层级上限**：`MAX_LEVEL = 2`（level 0/1/2 共 3 层）；创建时父文章**单次查询**复用于层级/归属校验与 children_order 追加（父 level+1 超限 → 400），移动时校验新父 `level >= MAX_LEVEL` → 400。
 - **slug**：根到本节点 `name` 路径。创建时由父文章已存 slug 直推（空 slug 存量行回退 `build_full_slug` 逐级回溯兜底）；列表/详情用 `_fetch_ancestors`+`_slug_from_rows` **按需祖先链**（≤3 层 IN 小查询，页内全为顶级时零额外查询）；`build_slug_map`（全表一次查询 + 内存回溯缓存）保留为批量工具，热路径不再使用。
-- **级联**：改名或移动后 `update_slug_for_subtree`——单次查询全表 → BFS 收集受影响子树 → 内存算新 slug → 仅更新有变化行。`/path/<slug>` 按 slug 列查询，不级联则失效。
+- **级联**：改名或移动后 `update_slug_for_subtree`——单次查询全表 → 收集受影响子树 → 内存算新 slug → 逐行写回（改名/移动会改整棵子树路径前缀，受影响行必然全变）。`/path/<slug>` 按 slug 列查询，不级联则失效。
 - **排序归属**：顶级顺序写 `workspaces.children_order`（`PUT /reorder` 带 `parent_id=0` + `workspace_id`）；子级写父文章 `children_order`。`children_order` 里的悬挂 id（已删文章）不影响树渲染（按 id 过滤缺失项）。
 - **name 校验**：`validate_slug` = 英文字母开头 + 仅字母/数字/连字符 + 总长 3-100（`^[a-zA-Z][a-zA-Z0-9-]*$` + len 检查；前端 `NAME_RE = /^[a-zA-Z][a-zA-Z0-9-]{2,99}$/` 与之等价）。
 
@@ -136,10 +136,11 @@
 
 - **执行模型**：端点一律 `async def` + `return await run_db(_impl)`——同步 SQLAlchemy 逻辑提交共享 SDK 线程池，任务结束（含异常）在工作线程内 rollback/remove（骨架契约，非本模块特有）。JSON body 由 `_json_body` 读取（坏/缺 body 回退空 dict，走原错误文案）；query 整数由 `_query_int` 解析（缺省/非法回退默认值）。
 - **services/ 四文件**：
-  - `tree_order.py`：`ROOT_ID=0` + children_order 数组的 get/set/append/remove/insert（纯 JSON 读写，不查库）
-  - `view_count.py`：`increment_view`（`UPDATE view_count+1, last_viewed_at=now` **立即 commit**，无缓存层，返回新计数）、`get_view_count`（`increment_view` 内部用）、`get_all_view_counts`（批量 IN 查询，保留 API）；列表/树/详情读取方直接用行上 `view_count`（同一事务快照内与回查等值），不再单独回查
+  - `tree_order.py`：`ROOT_ID=0` + children_order 数组的 get/set/append/remove（纯 JSON 读写，不查库）
+  - `view_count.py`：`increment_view`（`UPDATE view_count+1, last_viewed_at=now` **立即 commit**，无缓存层，返回新计数）、`get_view_count`（`increment_view` 内部用）、`get_all_view_counts`（批量 IN 查询，保留 API，压测工具使用）；列表/树/详情读取方直接用行上 `view_count`（同一事务快照内与回查等值），不再单独回查
   - `audit.py`：`log_action`（不单独 commit，跟随主操作事务）；`request_ip` 在事件循环线程读 `request.client.host` 后显式传入 DB 线程（工作线程无请求代理）
   - `migrations.py`：见 2.5（列级幂等钩子）
+- **模块日志**：`mod_logger('blog')`（记录级 sys_name=doublog.blog 覆盖，AGENTS 全局要求）——目前仅导出 depth 兜底 warning 一处使用
 - **列表/树不含正文**：`to_dict(include_content=False)` / `to_tree_dict()`，且列表/树/recent 查询 `defer(Post.content)`——**DB 段就不搬正文**（响应体积与查询负载双省），路由层不再补 content，勿回退。
 - **N+1 防护**：列表/详情 slug 用 `_fetch_ancestors`+`_slug_from_rows` 按需祖先链（≤3 层 IN 小查询）；树接口同库一次查询内存组树 + slug 缓存；详情子文章 slug 按 `本文 slug + '/' + name` 不变式直推；移动校验 `is_descendant` 一次查询建 `parent_of` 映射内存回溯。
 - **删除语义**：非 recursive 时子文章提升为该库顶级（追加库 order）；recursive 递归删全部子孙；均写审计。
@@ -188,11 +189,11 @@
 
 ---
 
-## 6. 测试（`backend/tests/blog/`，56 用例，全部自包含临时 SQLite）
+## 6. 测试（`backend/tests/blog/`，57 用例，全部自包含临时 SQLite）
 
 | 文件 | 数量 | 覆盖点 |
 |---|---|---|
-| `test_posts.py` | 30 | 创建（201/401/缺 name/非法格式/库内重名/3 层上限）；列表与树**不含 content**（含 5000 字正文条目断言）+ 树嵌套 slug；分页 total/total_pages；keyword 命中正文 + 跨库/带库过滤；详情（id 含正文/slug/children 排序 slug/404）；浏览计数实时自增（1→2→3，列表读到同值）+ `no_view=1` 不计；改名/移动 **slug 级联**（子孙路径更新、level 更新）；自父/子孙父 400；内容更新；删除（默认提升子级为顶级/recursive 级联 404）；图片围栏（正常 200/白名单外 404/绝对越界+URL 编码穿越+相对穿越三类 404）；gzip（大列表 Content-Encoding=gzip/`/health` 不压）；拖拽 reorder 生效 |
+| `test_posts.py` | 31 | 创建（201/401/缺 name/非法格式/库内重名/3 层上限）；列表与树**不含 content**（含 5000 字正文条目断言）+ 树嵌套 slug；分页 total/total_pages；keyword 命中正文 + 跨库/带库过滤；详情（id 含正文/slug/children 排序 slug/path 按路径与 404）；浏览计数实时自增（1→2→3，列表读到同值）+ `no_view=1` 不计；改名/移动 **slug 级联**（子孙路径更新、level 更新）；自父/子孙父 400；内容更新；删除（默认提升子级为顶级/recursive 级联 404）；图片围栏（正常 200/白名单外 404/绝对越界+URL 编码穿越+相对穿越三类 404）；gzip（大列表 Content-Encoding=gzip/`/health` 不压）；拖拽 reorder 生效 |
 | `test_workspaces.py` | 15 | 默认库自动创建（名/计数）+ 树缺省库；CRUD/重命名/重名 400/空名 400；删空库 200/非空 400（含篇数文案）/末库 400/未认证 401；库间隔离（树/列表/post_count 三视角）；同名文章跨库可建、同库拒；跨库父子 400/跨库移动 400；顶级排序写库（reorder parent_id=0 + 悬挂 id 不影响渲染） |
 | `test_kb_features.py` | 11 | 上传（1px PNG 成功且 URL 可取回/svg 400/未认证 401/空文件 400）；recent（浏览顺序倒序 + no_view 不进列表/limit）；backlinks（name 与 title 双寻址 + alias/同库隔离跨库不互链/404）；导出 zip（结构 index.md+子文件+独立文章+images/、frontmatter、`../images/` 深度重写、双链原样、图片字节一致）；导出未认证 401 |
 

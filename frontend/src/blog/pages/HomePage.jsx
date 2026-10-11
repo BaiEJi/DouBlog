@@ -4,7 +4,7 @@ import { BackButton } from '../../shared/PageHeader'
  * （自 app/App.jsx 拆出；导航与布局由本页自绘，博客不出现其他系统入口。）
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { fetchAllPosts, fetchWorkspaces, createWorkspace, searchPosts, prefetchPost, fetchRecentPosts } from '../api'
 
 const Icons = {
@@ -17,6 +17,7 @@ const Icons = {
   pin: <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/></svg>,
   folder: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
   arrow: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>,
+  chevron: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>,
 }
 
 // ─── Post Card ──────────────────────────────────────────
@@ -392,7 +393,7 @@ export default function HomePage({ dark, setDark }) {
       </nav>
 
       {/* Main */}
-      <main className="flex-1 w-full px-4 sm:px-6 xl:px-10 py-6">
+      <main className="flex-1 w-full max-w-[1700px] mx-auto px-4 sm:px-6 xl:px-10 py-6">
         <div className="mb-10 animate-fade-in-up">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-4">
             思考，记录，沉淀。
@@ -464,4 +465,3 @@ export default function HomePage({ dark, setDark }) {
   )
 }
 
-// ─── ScrollToTop：SPA 导航回到顶部（锚点跳转除外）────────

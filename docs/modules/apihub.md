@@ -41,7 +41,8 @@ API Hub 是 DouBlog 的能力包之一（`app/apihub/`，导出 `router` + `star
 - **错误归一化双通道**：HTTP 状态码 + `response_cfg.error_mapping` 的 body code 通道
   （`body_code_path/success_codes/body_message_path`），适配"HTTP 200 + body code 表错"的
   国内 API 风格；透传模式与信封模式共用同一判定。
-- **异步调用日志**：每次网关调用（含 429/503 拒绝路径）入内存队列，由单写者 daemon 线程
+- **异步调用日志**：进入限流/转发阶段的每次网关调用（含限流 429、unhealthy 与全部失败的
+  503/504 拒绝路径；401/403/404 与配额 429 不落日志）入内存队列，由单写者 daemon 线程
   批量落库（2s / 100 条 flush），配额计数随批写回 `apihub_tokens`。
 
 **网关管道**（`routes.py`）：令牌鉴权（哈希查内存快照）→ 授权（有效期/scope/IP/健康）→
@@ -94,7 +95,7 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 
 | 资源 | 端点 |
 |---|---|
-| 上游 | `GET/POST /admin/upstreams`、`PUT/DELETE /admin/upstreams/{uid}`（删除前校验无 API 引用；级联删 key） |
+| 上游 | `GET/POST /admin/upstreams`、`PUT/DELETE /admin/upstreams/{uid}`（POST/PUT 均 slug 校验 `[a-zA-Z0-9_-]{1,64}`；删除前校验无 API 引用；级联删 key） |
 | 密钥池 | `GET/POST /admin/upstreams/{uid}/keys`（列表回脱敏指纹）、`PUT/DELETE /admin/upstreams/keys/{kid}` |
 | API | `GET/POST /admin/apis`、`PUT/DELETE /admin/apis/{aid}`（共用 `_upsert_api`，slug 校验 `[a-zA-Z0-9_-]{1,64}`） |
 | 平台令牌 | `GET/POST /admin/tokens`（创建回明文 `key` 仅一次）、`PUT/DELETE /admin/tokens/{tid}`（PUT 支持 `quota_used_reset`） |
@@ -116,6 +117,8 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
   无注入动作（凭证变量供 URL/路径模板用）。
 - `RateLimiter`：进程内多级限流（令牌桶 `TokenBucket` + 固定窗口 `FixedWindow`），
   check 依次判定 L1..Ln 任一拒绝短路；空闲桶 600s / 每 60s 清扫一次；`snapshot` 供规则列表。
+  桶键格式统一走 `level_key(scope, api_id, token_id)`（state 构建层级与 routes 用量快照共用，
+  防两处漂移）。
 - `KeySelector`：weight 展开表（签名缓存，>256 清空）+ round-robin 游标 + 连续失败冷却
   （threshold 3 → cooldown 10s，成功清零）。
 - `HealthMonitor`：状态机（RLock 可重入），`apply_result` 推进状态、`schedule_next` 定下次
@@ -151,8 +154,11 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 - `router = APIRouter(prefix='/api/apihub')`；管理端 `_ADMIN_AUTH = [Depends(require_basic)]`，
   gw 路由不挂。
 - **执行模型**：gw 两个入口是 `async def`，但整条同步管道（含阻塞的 http.client 上游调用）
-  包进闭包交 `run_db` 在共享 SDK 线程池 **doublog-db**（16 workers）执行，响应对象直接返回
-  （FastAPI 对同步 Response 正常工作）。
+  包进闭包经 `_run_gw` 提交到模块 SDK 池 **apihub-gw**（`get_pool('apihub-gw', workers=32)`）
+  执行，响应对象直接返回（FastAPI 对同步 Response 正常工作）。网关常规路径（鉴权/限流/
+  配额/转发/日志入队）不触数据库，**不走 run_db 的共享 doublog-db 池**（免每请求
+  scoped_session 固定开销、不与其余模块抢 16 个共享 worker）；仅 401/403 禁用 key 分支触库
+  （`_disable_denied_key`，分支内就地清理线程会话）。
 - 探活：`probe_api(app, api_id, source)` 同步探测（构建探测请求 → 状态机 → 写 health_logs +
   回写 api 行）；手动 `POST /probes/run` 与调度线程共用 SDK 池 `get_pool('apihub-probe', workers=10)`。
 - 调度线程 `start_apihub_loop(app)`（`start_background` 钩子）：daemon，每秒检查到期探活并
@@ -194,9 +200,10 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 
 ## 7. 已知边界
 
-1. **gw 调用经 doublog-db 共享池执行**：上游转发（阻塞 http.client）占用 doublog-db（16
-   workers）线程直至返回/超时（上游默认 timeout 30s）——多个慢上游并发会占满共享池，
-   拖慢全站所有 `run_db` 请求（该池同时服务全部模块的 DB 操作）。
+1. **gw 并发受 apihub-gw 池（32 workers）约束**：上游转发（阻塞 http.client）占用 worker
+   直至返回/超时（上游默认 timeout 30s）——32 个慢上游并发占满后，后续 gw 调用在池队列
+   排队等待（不拒绝、不报错）。使用独立模块池正是为了不占用全站共享的 doublog-db
+   （run_db）16 workers，慢上游不影响其他模块的 DB 操作。
 2. **限流/配额/探活均为进程内状态**：单进程 uvicorn 部署假设；多实例需外置（限流器接口已
    抽象，独立原型报告建议 Redis 化）。
 3. **固定窗口跨边界重置**是算法特性（非超卖）；令牌桶/窗口清扫仅清空闲条目。
@@ -213,3 +220,6 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
    延迟可见（异步批量落库）。
 10. **passthrough 不做错误归一化**（透传上游原文），且不受 token_api/api 两层限流（无 API
     上下文）；探活不鉴权模拟仅按上游 providers 注入（用轮询到的第一把可用 key）。
+11. **"有备选 key"按该上游 key 总数（含禁用）判定**：2 把 key 中 1 把已被 401 自动禁用时，
+    仅剩的可用 key 连续 3 次连接错误仍会进入冷却（10s 内该上游 503）——"唯一 key 永不
+    自我熔断"仅指 store 中只有 1 把 key 的情形。

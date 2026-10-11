@@ -15,7 +15,7 @@
 
 ## 项目是什么
 
-单用户博客/知识库：**FastAPI 后端**（uvicorn 单进程，60100，SQLite 默认 / PostgreSQL 可一键切换，**只换连接读新数据不迁移**，前端总配置页 `/config`）+ **React 19 前端**（60101，Vite + Tailwind 4）。日志/异常/并发池统一走 lizysdk（basekit）。所有模块同库存储，表名规则 `模块名_表名`（存量库启动自动改名）。文章按**知识库（Workspace）**分组隔离（库间树/列表互不可见，name 库内唯一，不支持跨库移动），支持 3 层树形结构（虚拟根 id=0，顶级顺序存 `blog_workspaces.children_order`）、拖拽排序、Markdown 全功能渲染（markdown-it 12 插件 + KaTeX + Mermaid + highlight.js）。知识库特性：**双链 `[[wiki]]` + 反向链接、图片上传（粘贴/拖拽）、最近浏览、Markdown zip 导出备份、SWR 预取**。**无 Redis、无限流**；后台线程：日志保留清理 + 订阅每日备份/支出摘要 + apihub 探活（均 daemon 随进程，TESTING 空转）——浏览计数实时写库。
+单用户博客/知识库：**FastAPI 后端**（uvicorn 单进程，60100，SQLite 默认 / PostgreSQL 可一键切换，**只换连接读新数据不迁移**，前端总配置页 `/config`）+ **React 19 前端**（60101，Vite + Tailwind 4）。日志/异常/并发池统一走 lizysdk（basekit）。所有模块同库存储，表名规则 `模块名_表名`（存量库启动自动改名）。文章按**知识库（Workspace）**分组隔离（库间树/列表互不可见，name 库内唯一，不支持跨库移动），支持 3 层树形结构（虚拟根 id=0，顶级顺序存 `blog_workspaces.children_order`）、拖拽排序、Markdown 全功能渲染（markdown-it 12 插件 + KaTeX + Mermaid + highlight.js）。知识库特性：**双链 `[[wiki]]` + 反向链接、图片上传（粘贴/拖拽）、最近浏览、Markdown zip 导出备份、SWR 预取**。**无 Redis（例外：confcenter 可选 Redis 读穿缓存，见 17y）、无限流（apihub 网关的多级限流是其模块自身功能）**；后台线程：日志保留清理 + 订阅每日备份/支出摘要 + apihub 探活（均 daemon 随进程，TESTING 空转）——浏览计数实时写库。
 
 **必读文档索引**（都在仓库根目录）：
 
@@ -39,7 +39,7 @@
 1. **端口**：后端 `60100`、前端 `60101`；**api-hub 子服务 `8300`**（见第 17 条）
 2. **凭据与登录**：`admin` / `lizy111A`（后端 `backend/app/config.py`）。**统一登录**：前端 `/login` 登录一次 → HttpOnly 会话 Cookie（30 天）全站生效；`require_basic` 依赖=Cookie 优先、Basic 兼容（API/测试通道）；前端 bundle **不持有任何凭据**（`shared/client.js` 仅 credentials:include + 401 跳 /login）；免认证例外：图片 GET / sdklogs 摄入 / diary 分享 / apihub gw(sk-)；vault 主密码解锁是加密步骤不是登录
 3t. **请求级 trace**：main.py 纯 ASGI 中间件每请求绑 lizysdk trace_id（响应头 X-Trace-Id 透传/回写；所有日志行自动携带——经 shared/logging_setup 的 LogRecord 工厂注入，勿用 handler filter 方案，SDK 队列 handler 会绕过）
-3h. **统一页头/宽度**：模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮 + 标题 + 右 slot；侧栏型 diary/subs 用 BackButton）；容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10`；门户含 11 卡（"剧情图谱"直达 /todo/gamemap）
+3h. **统一页头/宽度**：模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮 + 标题 + 右 slot；侧栏型 diary/subs/vault/logs 用 BackButton）；容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10`；门户含 12 卡（"剧情图谱"直达 /todo/gamemap，"刷题"直达 /todo?v=practice）
 3. **双数据库**：运行时后端由 `data/db_config.json` 决定（sqlite/postgres）；切换走 `POST /api/admin/database/switch`——**只换连接不迁移数据**（空库自动建表播种，PG 库不存在自动创建；dev 模式 touch `_reload_stamp.py` 触发 uvicorn 重启，生产需手动重启）；**前端总配置页 `/config`**（数据库 + 日志上报）与 `/admin` 均可操作
 3z. **FastAPI 骨架契约**（详见 `docs/fastapi-migration.md`，改骨架前必读）：`app/db.py`（`Base` 自带 `Model.query` 描述符 / scoped session / `run_db`）/ `app/shared/`（`api_response` 信封、`require_basic` 依赖、`pools.get_pool`）；**模块包三契约**：`__init__.py` 导出 `router` + 可选 `start_background(app)`（`app.state.testing` 空转）+ 可选 `ensure_migrations(engine)`；模块运行态挂 `app.state.<mod>`（禁模块级单例，测试多 app）；`init_db` 顺序 = 存量 RENAME **先于** create_all；Flask 原版快照 `backend/tools/flask-snapshot/`（只读）；压测工具 `backend/tools/bench/`（`launch.py` 支持 flask/fastapi 两实现对照）
 4. **虚拟根节点**：id=0 的 Post 行；所有查询过滤 `id != 0`；建库时自动播种（`db.py`）
@@ -50,7 +50,7 @@
 9. **图片接口**：GET（realpath 目录围栏 + 扩展名白名单）+ **POST `/api/images/upload`**（multipart `file`，白名单不含 svg，≤10MB，uuid 文件名落盘 `data/images/`）；编辑器粘贴/拖拽/按钮均走它
 10. **双链**：渲染在前端（`md.js` 的 `wiki_link` inline 规则 + `applyWikiLinks`，`buildWikiMap` 从树构建映射，name 优先于 title）；后端 `/api/posts/id/<id>/backlinks` 同库扫描正文；改寻址规则时**前后端两处必须一致**
 11. **导出**（`app/blog/routes/export.py`）：**必须排除虚拟根 id=0**——存量库根挂在默认知识库下，不排除会树递归死循环（另有 depth 32 兜底）；图片 URL 三种引用形式都要重写为相对 `images/` 路径
-12. **日记模块独立**：`diaries` 表 + `/api/diary/*`，与文章体系零耦合；日期一律 `YYYY-MM-DD` 字符串（避免跨后端时区问题）；字数后端保存时算（CJK 逐字+西文按词），别信任前端计数
+12. **日记模块独立**：`diary_diaries` 表 + `/api/diary/*`，与文章体系零耦合；日期一律 `YYYY-MM-DD` 字符串（避免跨后端时区问题）；字数后端保存时算（CJK 逐字+西文按词），别信任前端计数
 13. **Vault 零知识密码库**：服务端只存密文（blob={n,ct} 与包裹 VEK），API 层不存在明文敏感参数，禁止加"服务端搜索/密码分析"类接口；加密在 `frontend/src/vault/components/crypto.js`（Argon2id@noble/hashes + WebCrypto AES-GCM），VEK 仅内存；UI 枚举（类型/分类等）存储英文值、展示中文映射；审计只记 action+item_id；**密码到期提醒**（`expiry_days` 在加密 blob 内，判定在 `vault/components/core.js expiryInfo()`）是纯客户端功能，服务端不感知到期与否
 13e. **日记超集**（app/diary/）：分册/置顶/归档/回收站(软删+hard)/分享(免登录 token，过期即 404)/快速录入/热力图/那年今日/趋势/年度回顾/导出/模板+引导问题；存量库靠 diary 模块 `ensure_migrations` 幂等补列
 13f. **模块化日志上报**：`shared/modules.py` 每模块 sys_name=doublog.<m>（路径前缀映射）；**依赖 basekit(lizysdk) 的记录级 sys_name 覆盖**（formatter extra 支持，改 SDK 格式器需回归 basekit 测试）；上报配置在 `data/logs_config.json`，管理页 PUT /api/admin/logging 即时重装配；mod_logger 必须显式持模块名（防 doublog.doublog 双前缀）
@@ -58,11 +58,11 @@
 13g. **Subs 订阅管理**（`app/subs/` + `subs/SubsPage.jsx`，CrownFlow 全量迁移，路径前缀 `/api/subs`）：三表 `subs_categories/subs_members/subs_subscriptions`（日期一律 YYYY-MM-DD 字符串）；**月/年支出与趋势按「日均×重叠天数（闭区间+1）」计算，整月/整年口径**（不是"至今"），跨币种按 `settings.subs_exchange_rates` 静态汇率折 CNY——改口径须同步 api.md 第 13 节；custom 计费周期必须带 custom_days>0（PUT 部分更新也做组合校验）；分类删除前查会员关联；**每日线程**（start_daily_loop：02:00 备份当前 SQLite 库（sqlite3 backup API 出 WAL 一致快照 → data/backups/，90 天保留，PG 后端 skipped，`SUBS_BACKUP_ENABLED=0` 关闭）+ 10:00 当日支出摘要写模块日志）——测试直接调 run_daily_spending_log/backup_database，别 sleep 等线程；前端唯一新增依赖 `lunar-javascript`（仅到期日历农历显示，懒加载 chunk ~122KB gzip，勿在别处引入）；**新增前端目录必须在 `index.css` 补一行 `@source "./目录";`**——本仓是 `source(none)` 显式白名单模式，漏加则该目录独有工具类（含 `dark:` 变体）全部**静默不生成**（subs 首版暗色表头白底即此坑）
 13a. **Pwsvc 密码服务**（`app/pwsvc/routes.py` + `vault/PwsvcView.jsx`，**非零知识**，UI 已标注）：轮换密码**不存储**，由 `derive(seed, window, policy)` 纯函数推导（HMAC-SHA256 + 拒绝采样 + 洗牌，seed 为 32 字节/256-bit）——**改算法会令所有密码漂移**，测试里有黄金向量锁死，改前必读 `docs/pwsvc-design.md`；**每用户独立 seed**（AES-256-GCM 落盘，密钥 `data/pwsvc.key` 自动生成）；宽限 = 上一窗口仅在进入新窗口 **30s 内**有效（`min(30, rotation)`）；`/api/pwsvc/validate` 用 `X-Api-Key`（只存 SHA-256 哈希，明文仅创建/重置时返回一次）；密码明文**禁止落库与写日志**；**限流是进程内令牌桶**（多进程部署时每进程各算各的额度）；校验日志 `pwsvc_validate_logs` 保留 30 天、被 429 的请求不落日志；存量库升级靠 pwsvc 模块 `ensure_migrations` 幂等 ALTER 补列
 14. **SWR 预取**：链接 hover/focus → `prefetchPost`（`?no_view=1` **不计浏览量、不进最近浏览**）；详情页命中缓存即渲染、后台重拉覆盖；编辑保存/删除后 `invalidatePost`
-15. **响应超 1KB 自动 gzip**（`main.py` after_request）
+15. **响应超 1KB 自动 gzip**（main.py `GZipMiddleware(minimum_size=1024, compresslevel=6)`）
 15a. **SQLite WAL 坑**：`journal_mode=WAL` 必须在 `init_db` 无并发窗口强制设置并校验返回值（并发下切换会**静默失败**回到 delete 模式 → 读写互斥锁死）；每连接 PRAGMA（busy_timeout/synchronous/cache_size/temp_store）走 connect 监听器。压测工具在 `backend/tools/sdklogs_loadtest.py`（改写入/存储路径后跑一遍对照）
 16. **测试完全自包含**（临时 SQLite，无外部依赖）；PG 切换集成测试可选 `pip install pgserver`（未装自动跳过）
 17y. **配置中心模块**（app/confcenter/ + /confcenter 页，cyan）：扁平 KV namespace→key→value；value={type:str|json,data} 显式类型（json 写校验 400、type 可变更）；Redis 读穿缓存三态降级（库缺失/未启用/连接失败→直连 DB，只 warn 一次）；缓存配置 data/redis_config.json；**字面量路由必须先于 /{ns}/{key} 注册**；测试 39 例（FakeRedis）
-17z. **Todo 模块**（app/todo/ + frontend/src/todo/，MyTodo 迁入）：四象限待办+迁移链+规律生活计划（物化任务）+统计+邮件提醒；表 todo_* 五表（users/token 鉴权未迁，走统一登录）；前缀 /api/todo（信封）；真实数据已导入（tools/import_mytodo.py，2500 任务）；**extensions/todo/{chrome-extension,android} 为平迁客户端，仍指向旧服务 8070+token 协议**（未改造，见 docs/modules/todo.md）；**子模块 gamemap**（app/todo/gamemap/ 13 表 gamemap_* + src/todo/gamemap/ 保留 antd6/@xyflow 技术栈——**根 main.jsx 无 StrictMode**（xyflow dev 双渲染坑，勿恢复）、画布勿改回内置 EdgeRenderer；todo 域测试合计 87 例
+17z. **Todo 模块**（app/todo/ + frontend/src/todo/，MyTodo 迁入）：四象限待办+迁移链+规律生活计划（物化任务）+统计+邮件提醒；表 todo_* 五表（users/token 鉴权未迁，走统一登录）；前缀 /api/todo（信封）；真实数据已导入（tools/import_mytodo.py，2500 任务）；**extensions/todo/{chrome-extension,android} 为平迁客户端，仍指向旧服务 8070+token 协议**（未改造，见 docs/modules/todo.md）；**子模块 gamemap**（app/todo/gamemap/ 13 表 gamemap_* + src/todo/gamemap/ 保留 antd6/@xyflow 技术栈——**根 main.jsx 无 StrictMode**（xyflow dev 双渲染坑，勿恢复）、画布勿改回内置 EdgeRenderer；todo 域测试合计 166 例（含 practice 61——20 轮评审 100 问题修复）（含 steamidler 18）
 17. **API Hub 模块**（`app/apihub/`，能力包同款结构）：聚合异构上游 API，网关入口 `/api/apihub/gw/*` 走**平台令牌 sk-（SHA-256 落库，不挂 Basic Auth）**，管理端 `/api/apihub/admin/*` 走 Basic Auth；四级限流/计次配额（预占-退还）/密钥池/探活。运行态挂 `app.state.apihub`（持真实 app 引用）；凭证 AES-GCM 密文落库，主密钥 `data/apihub.key`；上游连接池为标准库 http.client keepalive（每目标封顶 128 并发，超时≠连接错误不重试）；探活调度 daemon 线程 TESTING 空转。前端 `/apihub` 单页（门户卡片）。测试 `tests/test_apihub_core.py` + `tests/test_apihub_api.py`；接口契约见 api.md 第 14 章
 
 ### 本机环境注意（Windows）
@@ -80,7 +80,7 @@
 ```bash
 cd backend
 ./venv/Scripts/python.exe run.py            # 启动（60100，uvicorn 单进程，dev 自动 --reload）—— Windows Git Bash
-./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（349 用例，并行 ≈90s；xdist 已装入 venv）
+./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（429 用例，并行 ≈2 分钟；xdist 已装入 venv）
 ./venv/Scripts/pip.exe install -r requirements.txt
 ```
 
@@ -107,7 +107,7 @@ bash shell/frontend/start.sh dev      # 开发模式
 
 ### 硬性规则
 
-1. **前端发请求只走各能力包 `api.js`（底层 `src/shared/client.js` 的 apiFetch，会话 Cookie 认证）**：新增接口调用就往对应模块 api.js 加函数。禁止在组件里出现 `btoa(`、裸 `fetch(`、硬编码 `:60100`
+1. **前端发请求只走各能力包 `api.js`（底层 `src/shared/client.js` 的 apiFetch，会话 Cookie 认证）**：新增接口调用就往对应模块 api.js 加函数。禁止在组件里出现 `btoa(`、裸 `fetch(`、硬编码 `:60100`（豁免：登录流三处——App.jsx AuthGate / LoginPage / 门户登出可用裸 fetch + `API_BASE`，因 apiFetch 的 401 兜底整页跳转会与 SPA 路由守卫冲突）
 2. **后端响应统一走 `api_response`**（`app/shared/response.py`），新接口必须挂 `Depends(require_basic)`（免认证端点显式豁免：sdklogs 摄入 / diary share / apihub gw / 图片下载）
 3. **新后端行为必须带测试**：在 `backend/tests/` 加用例（conftest 提供隔离的临时 SQLite，无外部依赖）
 4. **SQLite 连接保持现状**：WAL + busy_timeout 已配好；不要引入需要单独迁移服务的东西
@@ -167,7 +167,7 @@ bash shell/frontend/start.sh dev      # 开发模式
 
 1. AuditLog 无清理策略
 3. 移动子树不重算子孙 `level` 列（slug 已级联，level 陈旧仅影响展示）
-4. 前端 `/archive` 死链（导航有链接但未注册路由）、无 404 兜底页
+4. 前端无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
 5. 生产模式下数据库切换需手动重启；切换期间的并发写入可能丢失（单用户可忽略）
 
 修复以上任一项后：从本列表和 `README.md`/`backend.md`/`frontend.md` 的"已知限制"中**同时移除**对应条目。

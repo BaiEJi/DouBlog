@@ -10,7 +10,7 @@ import {
   pwsvcListLogs,
 } from '../api'
 import { API_BASE } from '../api'
-import { CopyButton, I, makeClipboardCopier } from './ui'
+import { CopyButton, I } from './ui'
 
 const ROTATIONS = [
   { v: 30, l: '30 秒' }, { v: 60, l: '60 秒' }, { v: 120, l: '2 分钟' },
@@ -170,7 +170,7 @@ function TypeEditor({ pid, initial, onDone, onCancel }) {
 }
 
 // ─── API Key 一次性展示 ──────────────────────────────────
-function ApiKeyOnce({ apiKey, name, onConfirm, onReset }) {
+function ApiKeyOnce({ apiKey, name, copier, onConfirm }) {
   const [saved, setSaved] = useState(false)
   const curl = `curl -X POST ${API_BASE}/api/pwsvc/validate \\
   -H "X-Api-Key: ${apiKey}" \\
@@ -183,8 +183,8 @@ function ApiKeyOnce({ apiKey, name, onConfirm, onReset }) {
       </p>
       <div className="p-3 rounded-xl bg-stone-50 dark:bg-white/[0.03] border border-black/[0.07] dark:border-white/[0.07] font-mono text-xs break-all select-all">{apiKey}</div>
       <div className="mt-3 flex items-center gap-2">
-        <CopyButton value={apiKey} copier={() => navigator.clipboard.writeText(apiKey)} label="复制 Key" done="已复制 ✓" />
-        <CopyButton value={curl} copier={() => navigator.clipboard.writeText(curl)} label="复制 curl 示例" done="已复制 ✓" />
+        <CopyButton value={apiKey} copier={copier} label="复制 Key" done="已复制 ✓" />
+        <CopyButton value={curl} copier={copier} label="复制 curl 示例" done="已复制 ✓" />
       </div>
       <pre className="mt-3 p-3 rounded-xl bg-stone-900 text-stone-200 text-[11px] leading-relaxed overflow-x-auto">{curl}</pre>
       <label className="flex items-center gap-2 mt-4 text-[12.5px] text-stone-500 cursor-pointer">
@@ -203,12 +203,8 @@ export default function PwsvcView({ copier }) {
   const [current, setCurrent] = useState(null)      // 当前项目详情
   const [types, setTypes] = useState([])
   const [users, setUsers] = useState(null)
-  const [typeEditor, setTypeEditor] = useState(null)  // null | {} | type
   const [keyOnce, setKeyOnce] = useState(null)       // {api_key, name}
   const [newProject, setNewProject] = useState(false)
-  const [newUser, setNewUser] = useState(false)
-  const [typeName, setTypeName] = useState('')
-  const [err, setErr] = useState('')
 
   const loadProjects = async () => {
     const d = await pwsvcListProjects().catch(() => null)
@@ -294,7 +290,7 @@ export default function PwsvcView({ copier }) {
 
       {/* API Key 一次性展示 */}
       {keyOnce && (
-        <ApiKeyOnce apiKey={keyOnce.api_key} name={keyOnce.name}
+        <ApiKeyOnce apiKey={keyOnce.api_key} name={keyOnce.name} copier={copier}
           onConfirm={() => setKeyOnce(null)} />
       )}
     </div>
@@ -341,8 +337,6 @@ function NewProjectModal({ onClose, onCreated }) {
 function ProjectDetail({ project, users, types, copier, onTypesChange, onUsersChange, onBack, onResetKey }) {
   const [typeEditor, setTypeEditor] = useState(null)
   const [newUser, setNewUser] = useState(false)
-  const [typeName, setTypeName] = useState('')
-  const [err, setErr] = useState('')
   const [limit, setLimit] = useState(project.rate_limit ?? 120)   // 校验限流（次/分钟）
   const [limitInput, setLimitInput] = useState(String(project.rate_limit ?? 120))
   const [limitErr, setLimitErr] = useState('')
@@ -483,7 +477,7 @@ function LogsPanel({ pid }) {
 
   if (!data) return <p className="text-[12.5px] text-stone-400">加载中…</p>
 
-  const { items, total, stats, per_page: perPage } = data
+  const { items, total, stats } = data
   const s1 = stats?.h1 ?? { ok: 0, fail: 0 }
   const s24 = stats?.h24 ?? { ok: 0, fail: 0 }
   const brute = s1.fail >= 50   // 近 1 小时失败 ≥50 次视为疑似爆破

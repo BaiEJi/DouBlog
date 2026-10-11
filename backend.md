@@ -62,9 +62,12 @@ backend/
 │   ├── vault/                 # 密码库（零知识）：models + routes
 │   ├── pwsvc/                 # 密码服务（轮换密码）：models + routes（derive/限流/日志）+ ensure_migrations
 │   ├── sdklogs/               # 日志接收（lizysdk 服务端）：models(sdklogs_*) + routes（写者线程/死信/保留）
+│   ├── subs/                  # 订阅管理（CrownFlow 迁移）：models + routes（每日备份/支出摘要线程）
 │   ├── apihub/                # API Hub（统一 API 网关）：models/core/pool/http连接池/state/routes
+│   ├── todo/                  # 四象限待办（MyTodo 迁入，含 gamemap/practice/steamidler 子模块）
+│   ├── confcenter/            # 配置中心：扁平 KV + Redis 读穿缓存
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
-└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ system/ + test_apihub_*.py
+└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ todo/ + test_apihub_*.py
 ```
 
 **模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
@@ -191,11 +194,12 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 
 1. FastAPI 实例（`docs/redoc/openapi` 关闭——单用户内部服务不暴露 schema）；`app.state.testing`（`DOUBLOG_TESTING=1` 时后台线程空转）
 2. `CORSMiddleware`：`/api/*` 放开 `*`，方法 GET/POST/PUT/DELETE/OPTIONS，头 Content-Type/Authorization
-3. `GZipMiddleware(minimum_size=1024)`：≥1KB 响应按 Accept-Encoding 压缩（不再限 JSON/文本）
-4. 动态模块导入（**先于 init_db**——模型先注册进 Base.metadata 建表才完整）：按 `MODULES` 顺序 `importlib` 导入 `app/<mod>`，导入失败（未迁移/依赖缺失）捕获跳过并 WARNING——中间态可启动
-5. `init_db(app)`（读 db_config.json → 存量改名 → 建表 + 模块迁移钩子 + 播种虚拟根 + SQLite PRAGMA）→ 逐模块挂 `router` + 调 `start_background(app)`
-6. 统一异常信封：`AppError`（lizysdk）→ `{success:false, code:http_status, message, data:{error_code, details}}`（401 附 `WWW-Authenticate`）；`StarletteHTTPException`（404→"资源不存在"）；`RequestValidationError`→400；未知异常→500 + 日志（`exc_info`）；错误日志按路径标注 `sys_name=doublog.<module>`，`/api/v1/logs` 路径带 `no_remote` 防自摄回环
-7. `/` 与 `/health` 免认证
+3. `GZipMiddleware(minimum_size=1024, compresslevel=6)`：≥1KB 响应按 Accept-Encoding 压缩（不再限 JSON/文本）
+4. **trace 纯 ASGI 中间件**（微秒级，非 BaseHTTPMiddleware）：每请求绑 lizysdk trace_id，响应头回写 `X-Trace-Id`（请求头已带则透传延续链路）；该请求所有日志行自动携带——经 `shared/logging_setup` 的 **LogRecord 工厂注入**（SDK 队列 handler 会绕过 handler filter，勿改回）
+5. 动态模块导入（**先于 init_db**——模型先注册进 Base.metadata 建表才完整）：按 `MODULES` 顺序 `importlib` 导入 `app/<mod>`，导入失败（未迁移/依赖缺失）捕获跳过并 WARNING——中间态可启动
+6. `init_db(app)`（读 db_config.json → 存量改名 → 建表 + 模块迁移钩子 + 播种虚拟根 + SQLite PRAGMA）→ 逐模块挂 `router` + 调 `start_background(app)`
+7. 统一异常信封：`AppError`（lizysdk）→ `{success:false, code:http_status, message, data:{error_code, details}}`（401 附 `WWW-Authenticate`）；`StarletteHTTPException`（404→"资源不存在"）；`RequestValidationError`→400；未知异常→500 + 日志（`exc_info`）；错误日志按路径标注 `sys_name=doublog.<module>`，`/api/v1/logs` 路径带 `no_remote` 防自摄回环
+8. `/` 与 `/health` 免认证
 
 > 请求日志用 uvicorn access log，无自定义中间件重复记录。
 
@@ -350,21 +354,21 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 338 个用例（todo 域 85 = MyTodo 51 + gamemap 34；confcenter 39；并行 ≈85s）
+cd backend && python -m pytest tests/ -q -n 8   # 429 个用例（todo 域 166 = 基础 + gamemap + practice 61 + steamidler 18；confcenter 39；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**
-- **覆盖**：auth 11 例（含会话登录 6）；posts 30 例 + kb_features 11 例——创建校验（必填/格式/唯一/层级）、列表与树**无正文**、详情含正文、**浏览计数实时自增**、分页、改名/移动的 **slug 级联**、自父/子孙父拒绝、删除（提升/recursive）、图片围栏（正常 200、扩展名 404、三类穿越 404）、gzip、拖拽排序
+- **覆盖**：shared 14 例（auth 11（含会话登录 6）+ lizysdk 日志集成 3）；posts 31 例 + kb_features 11 例——创建校验（必填/格式/唯一/层级）、列表与树**无正文**、详情含正文、**浏览计数实时自增**、分页、改名/移动的 **slug 级联**、自父/子孙父拒绝、删除（提升/recursive）、图片围栏（正常 200、扩展名 404、三类穿越 404）、gzip、拖拽排序
 - **admin 9 例**：状态/连通性（含不可达 400）/切换校验（同后端拒绝、不可达拒绝）+ **真实 SQLite↔PostgreSQL 往返集成测试**（`pgserver` 内嵌 PG 起真实实例：切换 → 逐字段校验（parent_id 回填/level/浏览计数/虚拟根/知识库归属/序列重置）→ 未重启防护 → 切回 → 数据完整）
 - **workspaces 15 例**：CRUD、空库/末库删除保护、**库间树与列表隔离**、同名文章跨库可建/同库拒绝、跨库父子/移动拒绝、默认库自动创建与回填、顶级排序归属知识库
-- **sdklogs 20 例 + shared 日志集成 3 例**（含 sysnames 下拉数据源——lizysdk 落盘/自摄回灌/no_remote 防回环，uvicorn 线程伺服本 app 实现真实 HTTP 回灌）：摄入往返（时区换算/级别规范化/kv 剥离与转 str/trace_id 成列）、RFC3339 偏移、批量（数组+JSONL+超限 400）、坏日志进死信、token 鉴权三态、全部过滤维度、分页与 count、stats、保留策略（含 0=永久）、规范化边界
-- **pwsvc 20 例**：黄金向量防漂移、30s 宽限（含短周期封顶 min(30, rotation)）、API Key 生命周期（重置即失效/伪造 401）、全链路校验、禁用用户、重置 seed 旧密码全失效、策略变更、删除级联与 409、唯一性/参数校验、**无明文落盘断言**；**校验日志**（写入字段/倒序分页/统计与 fail_top/30 天清理/不含密码）、**限流**（额度内 200 超出 429/0=不限/参数校验/429 不落日志/页面改配置生效）
+- **sdklogs 23 例 + shared 日志集成 3 例**（含 sysnames 下拉数据源——lizysdk 落盘/自摄回灌/no_remote 防回环，uvicorn 线程伺服本 app 实现真实 HTTP 回灌）：摄入往返（时区换算/级别规范化/kv 剥离与转 str/trace_id 成列）、RFC3339 偏移、批量（数组+JSONL+超限 400）、坏日志进死信、token 鉴权三态、全部过滤维度、分页与 count、stats、保留策略（含 0=永久）、规范化边界
+- **pwsvc 21 例**：黄金向量防漂移、30s 宽限（含短周期封顶 min(30, rotation)）、API Key 生命周期（重置即失效/伪造 401）、全链路校验、禁用用户、重置 seed 旧密码全失效、策略变更、删除级联与 409、唯一性/参数校验、**无明文落盘断言**；**校验日志**（写入字段/倒序分页/统计与 fail_top/30 天清理/不含密码）、**限流**（额度内 200 超出 429/0=不限/参数校验/429 不落日志/页面改配置生效）
 - **subs 15 例**（CrownFlow 迁移）：分类 CRUD/重名 409/删除保护；会员 CRUD/校验/列表全维度筛选排序
   （keyword/category/status/sort+非法值 400）/首条订阅原子性；订阅 CRUD/十类校验分支（价格/周期/币种/日期/
   custom 天数含 PUT 组合校验）；会员聚合（多币种折算 total_spending/时长/最新订阅）；统计五接口
   （overview 整月口径/by-category 明细/trend 四粒度标签/参数与非法值）；提醒（reminder_days 阈值/all 不含过期）；
   备份（快照文件可读回查/超期清理）；每日支出摘要日志
-- **apihub 40 例**（core 22 + api 18）、vault 14 例、diary 26 例、todo 51 例（CRUD/计划物化/容量/通知/鉴权，详见 docs/modules/todo.md）
+- **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 166 例（CRUD/计划物化/容量/通知/鉴权/gamemap/practice/steamidler，详见 docs/modules/todo.md）
 - PG 集成测试可选依赖 venv 内 `pip install pgserver`，未安装自动跳过
 - 新增后端行为**必须**附带测试（见 AGENTS.md）
 

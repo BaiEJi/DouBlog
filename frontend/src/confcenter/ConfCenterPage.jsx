@@ -11,10 +11,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
 import {
   confNamespaces, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
-  confCacheStatus, confCacheSave, confCacheTest, confCacheFlush,
+  confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
 } from './api'
-// GET /cache/config（配置 Modal 回显端点）api.js 未包装——这里按同一套 apiFetch + unwrap 取
-import { apiFetch } from '../shared/client'
 
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
 const inputCls = 'px-3 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
@@ -25,27 +23,15 @@ const LBL = 'text-xs text-stone-500 dark:text-stone-400'
 /** namespace / key 命名约束（与后端一致，防注入） */
 const NAME_RE = /^[A-Za-z0-9_.:-]+$/
 
-// ─── 响应形状归一（浏览分页信封 / namespace 聚合，兼容裸数组） ──
+// ─── 响应形状归一（后端契约见 ./api：分页信封 / namespace 聚合数组） ──
 
 function normEntries(d) {
-  if (Array.isArray(d)) return { rows: d, total: d.length, page: 1, page_size: d.length || 50 }
-  const rows = d?.items ?? d?.entries ?? []
+  const rows = d?.items ?? []
   return { rows, total: d?.total ?? rows.length, page: d?.page ?? 1, page_size: d?.page_size ?? 50 }
 }
 
 function normNamespaces(d) {
-  if (Array.isArray(d)) {
-    return d.map(x => typeof x === 'string'
-      ? { namespace: x, count: null }
-      : { namespace: x.namespace ?? x.name, count: x.count ?? x.entry_count ?? x.entries ?? null })
-  }
-  if (d && typeof d === 'object') {
-    return Object.entries(d).map(([namespace, v]) => ({
-      namespace,
-      count: typeof v === 'number' ? v : v?.count ?? v?.entry_count ?? null,
-    }))
-  }
-  return []
+  return (Array.isArray(d) ? d : []).map(x => ({ namespace: x.namespace, count: x.count }))
 }
 
 function fmtTime(s) {
@@ -163,16 +149,14 @@ function CacheModal({ status, onClose, onSaved, say }) {
     let alive = true
     ;(async () => {
       try {
-        const r = await apiFetch('/api/confcenter/cache/config')
-        const body = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(body.message || `请求失败(${r.status})`)
-        if (alive && body.data) setCfg(c => ({
+        const data = await confCacheConfig()
+        if (alive && data) setCfg(c => ({
           ...c,
-          enabled: !!body.data.enabled,
-          host: body.data.host ?? c.host,
-          port: body.data.port ?? c.port,
-          db: body.data.db ?? c.db,
-          ttl_seconds: body.data.ttl_seconds ?? c.ttl_seconds,
+          enabled: !!data.enabled,
+          host: data.host ?? c.host,
+          port: data.port ?? c.port,
+          db: data.db ?? c.db,
+          ttl_seconds: data.ttl_seconds ?? c.ttl_seconds,
           password: '',
         }))
       } catch {

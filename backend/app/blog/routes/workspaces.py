@@ -16,7 +16,7 @@ from app.blog.services.audit import log_action, request_ip
 router = APIRouter(prefix='/api/workspaces', dependencies=[Depends(require_basic)])
 
 
-def _get_or_404(workspace_id):
+def _get_workspace(workspace_id):
     ws = db.session.query(Workspace).filter(Workspace.id == workspace_id).first()
     return ws
 
@@ -85,7 +85,7 @@ async def update_workspace(workspace_id: int, request: Request):
     ip = request_ip(request)
 
     def _impl():
-        ws = _get_or_404(workspace_id)
+        ws = _get_workspace(workspace_id)
         if not ws:
             return api_response(None, 404, '知识库不存在')
 
@@ -118,7 +118,7 @@ async def delete_workspace(workspace_id: int, request: Request):
     ip = request_ip(request)
 
     def _impl():
-        ws = _get_or_404(workspace_id)
+        ws = _get_workspace(workspace_id)
         if not ws:
             return api_response(None, 404, '知识库不存在')
 

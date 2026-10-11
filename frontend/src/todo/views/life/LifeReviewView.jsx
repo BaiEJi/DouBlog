@@ -41,10 +41,9 @@ export default function LifeReviewView({ toast, dark }) {
   const isToday = date === todayStr()
   const catOf = id => categories.find(c => c.id === id)
   const catColor = id => {
-    const c = catColorOf(id)
+    const c = catOf(id)?.color || '#94a3b8'
     return dark ? adjustForDark(c) : c
   }
-  const catColorOf = id => (catOf(id)?.color || '#94a3b8')
 
   const trendData = useMemo(
     () => (report?.trend ?? []).map(d => ({ x: d.date.slice(5), xFull: d.date, a: d.scheduled, b: d.completed })),

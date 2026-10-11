@@ -3,8 +3,6 @@ Workspace（知识库）API tests
 
 覆盖：CRUD、删除保护、库间隔离、库内唯一性、跨库限制、顶级排序归属
 """
-import pytest
-
 
 def _ws(client, headers):
     return client.get('/api/workspaces', headers=headers).json()['data']

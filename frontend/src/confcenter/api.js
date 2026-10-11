@@ -44,6 +44,9 @@ export const confDeleteEntry = (namespace, key) =>
 /** {enabled, reachable, url_masked, hits, misses}（不可达时 enabled=false 不报错） */
 export const confCacheStatus = () => json('/api/confcenter/cache/status')
 
+/** 当前缓存配置（配置 Modal 回显；单用户管理端原样返回，含密码） */
+export const confCacheConfig = () => json('/api/confcenter/cache/config')
+
 /** {enabled, host, port, db, password, ttl_seconds} → 写入 data/redis_config.json */
 export const confCacheSave = (cfg) =>
   json('/api/confcenter/cache/config', { method: 'PUT', body: JSON.stringify(cfg) })

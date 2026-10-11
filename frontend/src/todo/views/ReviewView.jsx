@@ -124,7 +124,7 @@ export default function ReviewView({ toast }) {
           <div className="flex flex-col gap-3">
             <StatTile title="总创建" value={rangeStats?.totals.created ?? 0} suffix="项" />
             <StatTile title="总完成" value={rangeStats?.totals.completed ?? 0} suffix="项" />
-            <StatTile title="总迁入" value={rangeStats?.totals.migrated_in ?? 0} suffix="项" />
+            <StatTile title="总迁入" value={rangeStats?.totals.migrated ?? 0} suffix="项" />
           </div>
           <div className="md:col-span-3">
             <GroupedBars data={weekData}

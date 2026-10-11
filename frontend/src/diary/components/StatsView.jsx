@@ -27,7 +27,7 @@ function useWidth() {
   return [ref, w]
 }
 
-export default function StatsView({ onGoHeatmap }) {
+export default function StatsView() {
   const [stats, setStats] = useState(null)
   const [trends, setTrends] = useState(null)
   const [ye, setYe] = useState(null)
@@ -183,8 +183,11 @@ function Line({ data, max }) {
   const pts = data.map((d, i) => d.v == null ? null : [i * step + step / 2, H - 8 - (d.v / max) * (H - 20)])
   const seg = []
   let cur = []
-  pts.forEach(p => { p ? cur.push(p) : (cur.length && seg.push(cur), cur = []) })
-  cur.length && seg.push(cur)
+  for (const p of pts) {
+    if (p) cur.push(p)
+    else if (cur.length) { seg.push(cur); cur = [] }
+  }
+  if (cur.length) seg.push(cur)
   const labelEvery = step >= 34 ? 1 : 2
   return (
     <div ref={ref} className="w-full">

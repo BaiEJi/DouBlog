@@ -126,7 +126,6 @@ function NodeDrawer(p) {
         <>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             阶段性信息（称呼/身份/生死/阵营）只影响本章；时间范围视图按所选章节回放。
-            {isMerged ? '' : ''}
           </Typography.Text>
           <Form form={stateForm} layout="vertical" style={{ marginTop: 12 }} onValuesChange={() => setDirty(true)}>
             <Form.Item name="alias" label="本章称呼" initialValue={st?.alias}>

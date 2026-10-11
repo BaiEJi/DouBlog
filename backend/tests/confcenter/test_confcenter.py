@@ -1,7 +1,5 @@
 """配置中心 CRUD / 校验 / 浏览 / 鉴权测试（docs/confcenter-spec.md 第 6 节）。"""
-import base64
-
-AUTH = {'Authorization': 'Basic ' + base64.b64encode(b"admin:lizy111A").decode()}
+from tests.confcenter.conftest import AUTH
 
 
 def _put(client, namespace, key, type_, data, expect=201):

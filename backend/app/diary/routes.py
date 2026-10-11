@@ -3,7 +3,7 @@
 
 独立于文章体系的私人日记：
 - 条目 CRUD：GET/POST /api/diary/entries、PUT/DELETE /api/diary/entries/<id>
-- 视图：?view=timeline|archive|trash|pinned，过滤 ?date= ?search= ?tag= ?mood= ?journal_id= ?start= ?end=
+- 视图：?view=timeline|archive|trash|pinned，过滤 ?date= ?search= ?mood= ?journal_id= ?start= ?end=
 - 日记本（分册）：GET/POST/PUT/DELETE /api/diary/journals
 - 快速录入：POST /api/diary/quick（外部脚本/快捷指令一句话打卡）
 - 日历/热力图：GET /api/diary/dates?year=&month=、GET /api/diary/heatmap?year=
@@ -73,9 +73,6 @@ PROMPTS = [
     '睡前放空一分钟，此刻脑子里剩下什么？',
     '这周最期待的一件事是什么？',
 ]
-
-#: 预置日记本（迁移时确保存在；随记必须归属其一或自建本）
-PRESET_JOURNALS = [('日常', '🏡'), ('工作', '💼'), ('感悟', '🌱')]
 
 #: 内置模板（标题 + Markdown 骨架）
 TEMPLATES = [
@@ -175,6 +172,9 @@ def _validate_payload(data: dict, partial: bool = False):
     kind = data.get('kind') or 'note'
     if kind not in ('note', 'summary'):
         return None, 'kind 仅 note / summary'
+    if not partial and kind == 'summary':
+        # 总结每天一篇、恒无本，只能经 POST /summary upsert 创建（防绕过不变量）
+        return None, '总结请走 POST /api/diary/summary'
 
     if 'journal_id' in data:
         jid = data.get('journal_id')
@@ -228,7 +228,7 @@ def _longest_streak(dates):
 async def list_entries(request: Request):
     """
     视图与过滤（可组合）：?view=timeline(默认未归档)|archive|trash|pinned，
-    ?date= / ?start=&end= / ?search=（正文+标签） / ?tag= / ?mood= / ?journal_id=。
+    ?date= / ?start=&end= / ?search=（仅正文 LIKE） / ?mood= / ?journal_id=。
     排序：置顶优先，日期倒序、id 倒序；?limit= ?offset=（默认全量上限 500）。
     """
     def _impl():
@@ -296,7 +296,7 @@ async def create_entry(request: Request):
         payload, err = _validate_payload(data)
         if err:
             raise ParamError(message=err)
-        entry = Diary(kind=payload.get('kind') or 'note', **{k: v for k, v in payload.items() if k != 'kind'})
+        entry = Diary(**payload)   # kind 已限 note（列默认值即 note）
         db.session.add(entry)
         db.session.commit()
         return api_response(entry.to_dict(), 201, '创建成功')
@@ -305,7 +305,7 @@ async def create_entry(request: Request):
 
 @_authed_router.post('/quick')
 async def quick_capture(request: Request):
-    """一句话快速录入（外部脚本/快捷指令）：今天新开一篇，心情与标签可选。"""
+    """一句话快速录入（外部脚本/快捷指令）：今天新开一篇，心情可选。"""
     data = await _json_body(request)
 
     def _impl():
@@ -713,7 +713,7 @@ async def public_share(token: str):
         if not entry or entry.deleted_at:
             raise NotFoundError(message='分享不存在或已失效')
         if entry.share_expires and entry.share_expires < _utcnow():
-            raise NotFoundError(message='分享已过期')
+            raise NotFoundError(message='分享不存在或已失效')   # 与找不到 token 同文案，不泄露存在性
         return api_response({'entry': entry.to_public_dict()})
     return await run_db(_impl)
 

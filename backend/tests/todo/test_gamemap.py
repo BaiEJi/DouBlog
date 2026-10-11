@@ -9,11 +9,9 @@ search、uploads 白名单+越界 404、鉴权 401、seed 幂等、响应缓存�
 - 前缀 /api/todo/gamemap;鉴权走 Basic(上层 conftest 的 auth_headers)
 - pydantic body 校验失败出 400(Doublog 全局处理器)
 - 已知源行为锁定:delete chapter(带板)/delete game(有子行)因 ORM 置空 NOT NULL 外键
-  报 IntegrityError → 500(逐列照搬模型,行为与源一致,见 test_chapter_delete_with_board)
+  报 IntegrityError → 500(逐列照搬模型,行为与源一致,见 test_chapter_delete_with_board_is_integrity_error)
 - 响应缓存为进程内模块级(单进程假设);测试用例间用 autouse fixture 清空避免跨库串台
 """
-import base64
-
 import pytest
 
 
@@ -741,10 +739,11 @@ def test_relation_types_effective_and_override(client):
     g = make_game(client)
     g2 = make_game(client, "他游戏")
 
-    # 建游戏自定义类型
+    # 建游戏自定义类型(name 缺省用 key;缺 key → 400 pydantic 校验)
     r = client.post("/api/todo/gamemap/relation-types",
                     json={"game_id": g["id"], "key": "rival", "name": "对手", "color": "#FF6B00"})
     assert r.status_code == 200 and r.json()["data"]["id"] > 0
+    assert client.post("/api/todo/gamemap/relation-types", json={"name": "无key"}).status_code == 400
 
     # effective:本游戏 = 7 全局 + 1 自定义;他游戏不含
     mine = client.get(f"/api/todo/gamemap/games/{g['id']}/relation-types").json()["data"]

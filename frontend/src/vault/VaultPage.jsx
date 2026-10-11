@@ -6,7 +6,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { BackButton } from '../shared/PageHeader'
-import md from '@/shared/md'
 import {
   vaultGetAccount, vaultInitAccount, vaultRotateKeys,
   vaultListItems, vaultCreateItem, vaultUpdateItem, vaultMarkUsed,
@@ -74,6 +73,8 @@ export default function VaultPage({ dark, setDark }) {
   const [prefs, setPrefs] = useState(loadPrefs)
   const [busy, setBusy] = useState(false)
   const [confirmPurge, setConfirmPurge] = useState(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const lastActivity = useRef(0)
 
   const copier = useMemo(() => {
     const opt = CLIPBOARD_OPTIONS.find(o => o.key === prefs.clipboard)
@@ -117,7 +118,6 @@ export default function VaultPage({ dark, setDark }) {
       clearInterval(timer)
     }
   }, [phase, prefs.lock, lockNow])
-  const lastActivity = useRef(0)
 
   // ─── 数据同步 ──────────────────────────────────────────
   const reloadItems = useCallback(async (vek) => {
@@ -198,7 +198,6 @@ export default function VaultPage({ dark, setDark }) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [phase])
-  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // ─── 派生数据 ──────────────────────────────────────────
   const security = useMemo(() => analyzeSecurity(items), [items])
@@ -464,8 +463,8 @@ export default function VaultPage({ dark, setDark }) {
           {confirmPurge && (
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
               <div className="absolute inset-0 bg-black/30 dark:bg-black/60" onClick={() => setConfirmPurge(null)} />
-          <div className="relative w-full max-w-xs bg-white dark:bg-stone-900 border border-black/[0.08] dark:border-white/[0.08] rounded-2xl shadow-xl p-5">
-            <h3 className="text-base font-semibold mb-2">彻底删除？</h3>
+              <div className="relative w-full max-w-xs bg-white dark:bg-stone-900 border border-black/[0.08] dark:border-white/[0.08] rounded-2xl shadow-xl p-5">
+                <h3 className="text-base font-semibold mb-2">彻底删除？</h3>
                 <p className="text-[12px] text-stone-400 leading-relaxed mb-5">「{confirmPurge.data?.service}」将被永久删除，无法恢复（密文一并销毁）。</p>
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setConfirmPurge(null)} className="px-3.5 py-1.5 text-sm rounded-lg text-stone-500 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">取消</button>
@@ -691,7 +690,7 @@ function Overview({ items, security, identities, onSelect, onGoSection, onNew })
             {security.expired.slice(0, 8).map(i => {
               const info = expiryInfo(i)
               return (
-                <button key={i.id} onClick={() => onSelect(i.id)}
+                <button key={i.id} onClick={() => onSelect(i)}
                   className="px-2.5 h-7 rounded-full bg-white/70 dark:bg-white/[0.06] border border-amber-500/20 text-[12px] text-stone-700 dark:text-stone-200 hover:border-amber-500/50 transition-colors">
                   {i.data.service || i.data.app_name || '未命名'}
                   <span className="text-amber-600 dark:text-amber-400 ml-1.5">已 {info.days} 天 / 设定 {info.limit} 天</span>

@@ -28,21 +28,6 @@ def setup_logging_for_app():
         send_timeout=1.5,
     )
 
-    class _ContextSnapshot(logging.Filter):
-        """（保留给直接调用 root 记录的路径）"""
-
-        def filter(self, record):
-            ctx = peek_context()
-            if not ctx:
-                return True
-            existing = getattr(record, 'bk_fields', None)
-            if existing:
-                for k, v in ctx.items():
-                    existing.setdefault(k, v)
-            else:
-                record.bk_fields = dict(ctx)
-            return True
-
     # 全局注入：LogRecord 工厂在**记录创建线程**运行（标准 Logger/SDK PipeLogger
     # 的 makeRecord 都走它），把 lizysdk context（trace_id 等）快照进 bk_fields。
     # 不能用 handler filter——SDK 的 _PipeQueueHandler 覆写 handle() 绕过 filters；

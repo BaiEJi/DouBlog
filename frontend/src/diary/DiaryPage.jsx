@@ -51,7 +51,7 @@ export default function DiaryPage({ dark, setDark }) {
   }, [])
   const loadEntries = useCallback(async () => {
     const params = { view: view === 'trash' ? undefined : 'timeline' }
-    if (activeJournal != null && activeJournal !== undefined) params.journal_id = activeJournal
+    if (activeJournal !== undefined) params.journal_id = activeJournal
     if (mood) params.mood = mood
     if (pickDate) params.date = pickDate
     if (search) params.search = search
@@ -131,10 +131,10 @@ export default function DiaryPage({ dark, setDark }) {
             (activeJournal === undefined ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
           📚 全部随记
           <span className="ml-auto text-[11px] text-stone-300 dark:text-stone-600 tabular-nums">
-            {journals.filter(j => !j.virtual).reduce((a, j) => a + (j.entry_count || 0), 0)}
+            {journals.reduce((a, j) => a + (j.entry_count || 0), 0)}
           </span>
         </button>
-        {journals.filter(j => !j.virtual).map(j => (
+        {journals.map(j => (
           <button key={String(j.id)} onClick={() => setActiveJournal(j.id)}
             className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors group ' +
               (activeJournal === j.id ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>

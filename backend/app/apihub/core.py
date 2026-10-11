@@ -5,7 +5,6 @@
 
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -251,6 +250,18 @@ def strictest(rules: list) -> dict:
             return r['max_count'] / max(1, r['window_s'])
         return r['rate_per_sec']
     return min(rules, key=allowance) if rules else None
+
+
+def level_key(scope: str, api_id=None, token_id=None) -> str:
+    """限流桶键：state.build_levels 构建层级与 routes 规则列表 usage 快照共用，
+    保证两处键格式永远一致（改格式只动这里）。"""
+    if scope == 'token_api':
+        return f'rl:ta:{token_id}:{api_id}'
+    if scope == 'api':
+        return f'rl:a:{api_id}'
+    if scope == 'token':
+        return f'rl:t:{token_id}'
+    return 'rl:g'
 
 
 class RateLimiter:

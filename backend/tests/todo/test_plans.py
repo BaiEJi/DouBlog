@@ -2,7 +2,6 @@
 
 移植自 MyTodo test_plans.py;日期一律相对"今天"动态计算,保证落在预生成窗口内。
 """
-import pytest
 from datetime import date, timedelta
 
 from app.todo.services.plans import (

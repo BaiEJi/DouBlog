@@ -123,11 +123,9 @@ def _setup_env(client, auth_headers, upstream_base, *, slug_suffix='', providers
     return api_id, data['id'], data['key']
 
 
-def _gw(client, slug, sk, json_body=None, method='POST', path=None):
-    headers = {'Authorization': f'Bearer {sk}'}
-    if method == 'POST':
-        return client.post(f'/api/apihub/gw/apis/{slug}', headers=headers, json=json_body or {})
-    return client.get(f'/api/apihub/gw/{path}', headers=headers)
+def _gw(client, slug, sk, json_body=None):
+    return client.post(f'/api/apihub/gw/apis/{slug}',
+                       headers={'Authorization': f'Bearer {sk}'}, json=json_body or {})
 
 
 # ─── 管理端 ─────────────────────────────────────────────────────────
@@ -358,7 +356,6 @@ class TestGateway:
         api_id, _t, sk = _setup_env(client, auth_headers, upstream_base, slug_suffix='stat')
         _gw(client, 'a-stat', sk)
         _gw(client, 'a-stat', sk)
-        state = app_state = None
         # 触发 writer 落库（间隔 2s，等待）
         time.sleep(2.5)
         r = client.get('/api/apihub/logs?api_id=%d' % api_id, headers=auth_headers)

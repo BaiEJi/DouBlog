@@ -149,7 +149,7 @@ function Attachments({ item, vek, copier }) {
         <>
           {rows.map(row => (
             <div key={row.a.id} className="flex items-center gap-2 py-1.5">
-              <span className="w-4 h-4 shrink-0 text-stone-400">{I.paperclip || '📎'}</span>
+              <span className="w-4 h-4 shrink-0 text-stone-400">{I.paperclip}</span>
               <span className="text-sm truncate flex-1" title={row.meta.filename}>{row.meta.filename}</span>
               <span className="text-[11px] text-stone-400 tabular-nums shrink-0">{fmtSize(row.a.size)}</span>
               <button onClick={() => download(row)} className="px-1.5 h-6 rounded-md text-[11px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">下载</button>
@@ -171,7 +171,7 @@ function Attachments({ item, vek, copier }) {
 
 export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onRestore, onPurge, onToggleFav, inTrash }) {
   const d = item.data
-  const domain = domainOf(d.urls?.[0]?.value) || (d.app_name ? '' : '')
+  const domain = domainOf(d.urls?.[0]?.value)
   const entropy = passwordEntropy(d.password?.value)
   const strength = strengthLabel(entropy)
   const pwAge = daysAgo(item.password_updated_at || item.created_at)

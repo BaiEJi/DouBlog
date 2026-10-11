@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import or_, func
 from sqlalchemy.orm import defer
 from app.db import db, run_db
-from app.blog.models import Post, Workspace
+from app.blog.models import Post, Workspace, AuditLog
 from app.shared.timestamps import _iso
 from app.config import settings
 from app.shared.auth import require_basic
@@ -52,29 +52,6 @@ def _query_int(request: Request, name: str, default=None):
         return int(raw)
     except (TypeError, ValueError):
         return default
-
-
-def calculate_level(parent_id, session):
-    """
-    计算文章层级
-
-    Args:
-        parent_id: 父文章ID
-        session: 数据库会话
-
-    Returns:
-        int: 层级值，-1表示超过最大层级限制
-    """
-    if parent_id is None or parent_id == ROOT_ID:
-        return 0
-
-    parent = session.query(Post).filter(Post.id == parent_id).first()
-    if parent:
-        new_level = parent.level + 1
-        if new_level > MAX_LEVEL:
-            return -1
-        return new_level
-    return 0
 
 
 def build_full_slug(post_id, session):
@@ -180,7 +157,7 @@ def update_slug_for_subtree(post_id, session):
     rows = session.query(Post.id, Post.name, Post.parent_id).filter(Post.id != ROOT_ID).all()
     by_id = {row.id: row for row in rows}
 
-    # 收集受影响子树（BFS）
+    # 收集受影响子树（栈遍历，等价收集整棵子树）
     children_map: dict[int, list] = {}
     for row in rows:
         children_map.setdefault(row.parent_id, []).append(row.id)
@@ -191,7 +168,7 @@ def update_slug_for_subtree(post_id, session):
         affected.append(current)
         queue.extend(children_map.get(current, []))
 
-    # 内存计算新slug并只更新有变化的行
+    # 内存算新 slug 后逐行写回（改名/移动会改变整棵子树的前缀，各受影响行必然变化）
     for pid in affected:
         row = by_id[pid]
         parts = [row.name]
@@ -300,7 +277,6 @@ async def get_posts(request: Request):
             item_dict = item.to_dict(include_content=False)
             item_dict['slug'] = _slug_from_rows(rows, item.id)
             item_dict['children_count'] = children_counts.get(item.id, 0)
-            item_dict['view_count'] = item.view_count
             result_items.append(item_dict)
 
         return api_response({
@@ -369,10 +345,9 @@ async def get_post_tree(request: Request):
         for post in posts:
             post_dict = post.to_tree_dict()
             post_dict['slug'] = build_slug_in_memory(post.id)
-            post_dict['view_count'] = post.view_count
             post_map[post.id] = post_dict
 
-        # 组装树结构
+        # 组装树结构（view_count 等概览字段已在 to_tree_dict 内随行带出）
         tree = []
         for post in posts:
             post_dict = post_map[post.id]
@@ -603,7 +578,7 @@ async def create_post(request: Request):
             return api_response(None, 400, '该英文名已被使用，请使用其他名称')
 
         # 父文章单次查询，复用于层级/归属校验、slug 前缀与 children_order 追加
-        # （替代原 calculate_level + parent_ws + append_child 三处重复回查）
+        # （层级判断内联于此，避免对同一父行重复回查）
         parent = None
         if parent_id != ROOT_ID:
             parent = session.query(Post).filter(Post.id == parent_id).first()
@@ -1002,8 +977,6 @@ async def get_audit_logs(request: Request):
     Returns:
         分页后的操作日志列表
     """
-    from app.blog.models import AuditLog
-
     def _impl():
         page = _query_int(request, 'page', 1)
         page_size = min(_query_int(request, 'page_size', 20), settings.max_page_size)

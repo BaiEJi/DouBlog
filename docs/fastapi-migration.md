@@ -18,7 +18,8 @@
 ```
 uvicorn (单进程, run.py, 端口 60100, dev 模式 --reload 监听 app/)
  └─ FastAPI app (app/main.py:create_app)
-     ├─ 中间件：GZipMiddleware(≥1KB) → CORSMiddleware(/api/*)
+     ├─ 中间件：trace（纯 ASGI，每请求绑 lizysdk trace_id，响应头 X-Trace-Id 透传/回写）
+     │   → GZipMiddleware(≥1KB) → CORSMiddleware(/api/*)
      ├─ 异常处理器：AppError / HTTPException / RequestValidationError / Exception → 统一信封
      │   （AppError → {success:False, code:http_status, message, data:{error_code, details}}；
      │     401 附 WWW-Authenticate；404 → "资源不存在"）

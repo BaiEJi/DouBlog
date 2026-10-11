@@ -2,6 +2,7 @@
 订阅管理（subs，CrownFlow 迁移）测试：分类/会员/订阅 CRUD 与校验、
 会员聚合字段、支出统计（含汇率折算/趋势粒度）、到期提醒、备份与每日任务。
 """
+import base64
 import os
 from datetime import date, datetime, timedelta
 
@@ -9,7 +10,7 @@ import pytest
 
 from app.config import settings
 
-AUTH = {'Authorization': 'Basic ' + __import__('base64').b64encode(b'admin:lizy111A').decode()}
+AUTH = {'Authorization': 'Basic ' + base64.b64encode(b'admin:lizy111A').decode()}
 
 
 @pytest.fixture
@@ -455,7 +456,7 @@ def test_daily_spending_log(client, auth_headers, app):
     msg = run_daily_spending_log(app)
     assert '活跃订阅 1 个' in msg
     assert '今日总支出: ¥1.' in msg or '今日总支出: ¥0.' in msg   # 日均 30/31≈0.97 或 30/30
-    assert '视频' not in msg or True
+    assert '未分类' in msg                                         # 会员未设分类 → 归入未分类桶
     # 无订阅时
     _member(client, '空君')
     # （不去断言第二条输出，仅保证函数可重复执行）

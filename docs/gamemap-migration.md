@@ -24,19 +24,19 @@
 
 **依赖决策**：关系画布核心是 @xyflow/react + 自绘 SVG EdgeLayer（有 React19 边静默不渲染的坑），antd6 重度使用（Modal/Table/Drawer/Upload/ConfigProvider）——Tailwind 重写等于重写画布，风险不可接受。**保留 antd 等依赖**（仅 gamemap 子模块使用；版本照源 package.json；主线负责 npm install）。antd 的 ConfigProvider 只包 gamemap 子树，不影响其他模块；暗色用 Doublog 的 dark class 联动 antd darkTheme。
 
-- 搬运：board/ 10 文件（Workspace/panels/shared/DetailDrawer/PhotoCodex/tables/Toolbar/HUD/ui-store）+ pages（Dashboard/GameLibrary/RelationConfig/SearchPage）+ theme.ts + api.ts
+- 搬运：board/ 10 文件（Workspace/panels/shared/DetailDrawer/PhotoCodex/tables/Toolbar/HUD/ui-store + canvas.css）+ pages（Dashboard/GameLibrary/RelationConfig/SearchPage，GameWorkspace 为 re-export 壳）+ theme.ts + api.ts
 - 适配：
   - api.ts → api.js（JSX 项目）：fetch('/api'+path) → apiFetch('/api/todo/gamemap'+path) + 信封 unwrap `.data`（401 由 apiFetch 统一跳登录）
-  - 路由：内部用嵌套 Routes（/todo/gamemap、/todo/gamemap/games/:gameId、/todo/gamemap/games/:gameId/chapters/:chapterId、/todo/gamemap/relations、/todo/gamemap/search）；URL query（?scope=&ch=）保持
-  - **去掉 AppShell 外壳**（自有 Sider）与 DbSwitcher：改为 GamemapShell（顶栏：← 返回 /todo + 标题"剧情图谱" + Doublog 主题切换联动 + 内部导航 游戏/关系类型/搜索）；antd ConfigProvider 包内容区
-  - 暗色：读 document.documentElement.classList.contains('dark') + MutationObserver 联动 antd theme；初始跟随 Doublog
+  - 路由：内部用嵌套 Routes（/todo/gamemap、/todo/gamemap/games、/todo/gamemap/games/:gameId、/todo/gamemap/games/:gameId/chapters/:chapterId、/todo/gamemap/relations、/todo/gamemap/search）；URL query（?scope=&ch=&ids=）保持
+  - **去掉 AppShell 外壳**（自有 Sider）与 DbSwitcher：改为 GamemapShell（统一 PageHeader：大返回 → 门户，右槽"‹ 待办"链 /todo + Doublog 主题切换；tabs 内部导航 概览/游戏库/关系类型/搜索）；antd ConfigProvider 包内容区
+  - 暗色（落地形态）：TodoPage 把 dark/setDark 以 props 传入 GamemapShell，ConfigProvider 按 dark 选 antd dark/light 算法（未用 MutationObserver——props 直传更简单可靠）
   - 上传/静态文件路径：/api/todo/gamemap/uploads、/api/todo/gamemap/files/...
 - TodoPage.jsx 顶栏加"图谱"入口（链接到 /todo/gamemap）；**不碰 App.jsx/PortalPage/index.css**（主线接线）
 - 已知坑照 README：xyflow 非受控 defaultNodes、不能 StrictMode、防重叠 50ms 时序 hack 保持原样；未引用的 hud.css/模板资产不搬
 
-## 4. 测试（backend/tests/todo/test_gamemap.py 或拆多文件）
+## 4. 测试（backend/tests/todo/test_gamemap.py 单文件，34 例）
 
-覆盖：games CRUD+导出导入往返、chapters/characters CRUD+批量导入、boards merged 聚合+拖动 PATCH+乐观锁 409、relation_types CRUD、events 时间线、photos CRUD、search、uploads 白名单+越界 404、鉴权 401、seed 幂等。≈35 例。
+覆盖：games CRUD+导出导入往返、chapters/characters CRUD+批量导入、boards merged 聚合+拖动 PATCH+乐观锁 409、relation_types CRUD（含缺 key 400）、events 时间线、photos CRUD、search、uploads 白名单+越界 404、鉴权 401、seed 幂等、响应缓存写失效。另锁定两条源缺陷行为（带板章节/有子游戏删除 → 500）。
 
 ## 5. 验收
 

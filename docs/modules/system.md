@@ -18,9 +18,9 @@
 | **时间戳** | `shared/timestamps.py::_iso/_utcnow`：SQLite（naive）与 PG（timestamptz 带偏移）双后端输出一致的序列化 |
 | **模块 sys_name 映射** | `shared/modules.py`：请求路径前缀 → 模块名 → `doublog.<module>` 记录级覆盖；mod_logger / 日志上报配置持久化 |
 | **应用工厂** | `main.py::create_app`：CORS（凭据模式）+ GZip + 统一异常信封 + 动态模块注册表 + init_db |
-| **前端总配置页** | `/config` ConfigPage（数据库 + 日志上报两卡）；`/` 门户 8 卡 + 登出；`/login` 登录页；client.js Cookie 化（**不再持有任何凭据**） |
+| **前端总配置页** | `/config` ConfigPage（数据库 + 日志上报两卡）；`/` 门户 12 卡 + 登出；`/login` 登录页；client.js Cookie 化（**不再持有任何凭据**） |
 
-模块注册顺序（`main.py::MODULES`）：`blog → diary → vault → pwsvc → sdklogs → subs → apihub → system`；auth 路由（`/api/auth/*`，属 shared 层）在所有模块路由之后单独挂载。
+模块注册顺序（`main.py::MODULES`）：`blog → diary → vault → pwsvc → sdklogs → subs → apihub → system → todo → confcenter`；auth 路由（`/api/auth/*`，属 shared 层）在所有模块路由之后单独挂载。
 
 ---
 
@@ -92,7 +92,7 @@ CORSMiddleware(
 | 端点 | 说明 |
 |---|---|
 | `GET /api/admin/database` | 当前状态：`backend`、`database_url_masked`（PG 只显示 `@` 之后部分）、`data_dir`、`postgres` 连接配置、`counts`（`posts` **不含虚拟根 id=0**、`audit_logs`）、`running_under_reloader`（= settings.debug）。统计 SQL 用新表名 `blog_posts`/`blog_audit_logs` |
-| `POST /api/admin/database/test` | `{target: "sqlite"\|"postgres", postgres?: {host,port,user,password,dbname}}`。sqlite 恒 ok；PG 连接（connect_timeout 3s）成功返回版本串；库不存在会走自动建库探测（提示「切换时会自动创建」/「已自动创建数据库」）；失败 400 含驱动错误首行。**不切换** |
+| `POST /api/admin/database/test` | `{target: "sqlite"\|"postgres", postgres?: {host,port,user,password,dbname}}`。sqlite 恒 ok；PG 连接（connect_timeout 3s）成功返回版本串；库不存在时**自动建库**（连 `postgres` 系统库 CREATE DATABASE 后重试），成功提示「连接成功（已自动创建数据库）」；失败 400 含驱动错误首行。**不切换**（但可能已在目标 PG 上建出库） |
 | `POST /api/admin/database/switch` | 校验：`target` 合法（否则 400）、与当前不同（否则 400「当前已在使用 xxx」）、模块级 `threading.Lock` 非阻塞抢占（并发切换 → **429「已有切换操作进行中」**）。PG 目标先 `_ensure_postgres_database`（连 `postgres` 系统库查 `pg_database`，不存在则 AUTOCOMMIT `CREATE DATABASE`，再重试连接）；通过后 `save_db_config` 落盘 |
 
 **生效方式**：
@@ -126,8 +126,8 @@ CORSMiddleware(
 lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', workers=16)`（run_db 专用）；`get_pool(module, workers=None)` 首建缓存（`doublog-<module>` 命名）；`shutdown_pools()` 幂等回收。结构性单写者/调度线程保留 threading，执行体经池。
 
 ### shared/modules.py
-- `MODULE_BY_PREFIX`：路径前缀 → 模块（`/api/subs` subs、`/api/diary` diary、`/api/vault` vault、`/api/pwsvc` pwsvc、`/api/v1` sdklogs、`/api/admin` system、`/api/apihub` apihub、`/api/auth` **shared**、`/api/workspaces|posts|images|export` blog；未命中 → main）
-- `ALL_MODULES`（含 shared/main 共 10 个，管理页下拉数据源）、`MODULES_WITH_DB`（7 个，init_db 调其 `ensure_migrations`）
+- `MODULE_BY_PREFIX`：路径前缀 → 模块（`/api/subs` subs、`/api/diary` diary、`/api/vault` vault、`/api/pwsvc` pwsvc、`/api/v1` sdklogs、`/api/admin` system、`/api/apihub` apihub、`/api/todo` todo、`/api/confcenter` confcenter、`/api/auth` **shared**、`/api/workspaces|posts|images|export` blog）；未命中 → main
+- `ALL_MODULES`（含 shared/main 共 12 个，管理页下拉数据源）、`MODULES_WITH_DB`（9 个，init_db 调其 `ensure_migrations`）
 - `sys_name_for(m)` = `doublog.<m>`；`mod_logger(module)` 返回 `_SysNameAdapter`——**显式持有模块名**注入 `extra.sys_name`（用 logger 名拼前缀会得 `doublog.doublog.x` 双前缀，禁止）
 - 日志上报配置：`load_logs_config/save_logs_config`（文件 > 环境默认，`data/logs_config.json`，线程锁保护写）
 
@@ -149,7 +149,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - 顶部保证 `app/_reload_stamp.py` 存在并 import（进入 uvicorn reload 监听列表）
 - `setup_logging_for_app()` 模块导入期装配日志；`create_app()`：
   1. FastAPI（docs/redoc/openapi 全关）；`app.state.testing`（`DOUBLOG_TESTING=1`）
-  2. CORS 凭据模式（第 2.4 节）+ `GZipMiddleware(minimum_size=1024)`
+  2. CORS 凭据模式（第 2.4 节）+ `GZipMiddleware(minimum_size=1024, compresslevel=6)` + 请求级 trace 纯 ASGI 中间件（每请求绑 lizysdk trace_id，日志自动携带；上游带 `X-Trace-Id` 则透传，否则生成并回写响应头）
   3. 四类异常处理器统一信封：`AppError`（lizysdk）→ `{success:False, code:http_status, message, data:{error_code, details}}`，**401 附 `WWW-Authenticate: Basic realm=...`**；`StarletteHTTPException`（404→「资源不存在」、405→「方法不被允许」）；`RequestValidationError`→400「请求参数错误」；未知异常→500「服务器内部错误」+ `exc_info` 日志。错误日志经 `_log_extra` 按路径标注 `sys_name=doublog.<module>`；`/api/v1/logs` 路径额外 `no_remote=True` 防摄入错误自摄回环
   4. 动态模块注册：按 `MODULES` 顺序 importlib 导入（**先注册模型后建表**）；导入失败捕获 WARNING 跳过（中间态可启动）
   5. `init_db(app)` → 逐模块 `include_router(router)` + `start_background(app)`（存在才调）→ `include_router(auth_router)` → `/`（欢迎语）与 `/health`（免认证）
@@ -171,11 +171,11 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 ### AuthGate + 应用壳（`app/App.jsx`）
 - AuthGate 守卫逻辑见 2.5 节；`PageFallback`（居中细进度条）
 - 主题状态：`localStorage['doublog_dark']` > `prefers-color-scheme`；`documentElement.classList.toggle('dark')` + 350ms transitioning 类防闪烁
-- 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create /admin`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`
+- 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create /admin`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`、`/confcenter`、`/todo/*`
 - 全局行为：ScrollToTop（锚点除外）、代码块复制按钮事件委托（clipboard API + execCommand 降级）
 
 ### PortalPage（`/`，`portal/PortalPage.jsx`）
-8 张系统卡（博客/日记/订阅管理/密码库/API Hub/系统配置/日志查询/管理，各带个性色图标底 + hover 位移），`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`；头部「工作台」大标语 + 主题切换 + **登出按钮**（logout 后跳 /login）。
+12 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/管理，各带个性色图标底 + hover 位移；「剧情图谱」直达 `/todo/gamemap`、「刷题」直达 `/todo?v=practice`），`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`；卡片分组布局存 localStorage 可自定义（默认单组全卡）；头部「工作台」大标语 + 主题切换 + **登出按钮**（logout 后跳 /login）。
 
 ### client.js（Cookie 化）
 `API_BASE = http://{hostname}:60100`（后端地址全项目唯一持有处）；`apiFetch`：自动 Content-Type（FormData 除外）、`credentials:'include'`、401 统一重定向 `/login?next=`（登录接口与 /login 页排除，防环）。**不含任何凭据/btoa**。
@@ -188,7 +188,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - 状态 2：GET /api/admin/database 信封与计数；未认证 401
 - 连通性 3：sqlite 恒 ok；PG 不可达 400「连接失败」；非法 target 400
 - 切换校验 2：同后端 400「当前已在」；不可达 PG 400「无法连接」
-- 真实往返 1：`pgserver`（未装 importorskip）内嵌 PG——sqlite 造数 → 切 PG（断言响应**无 migrated 字段**、db_config.json 落盘）→ 新 app 绑 PG（空库自动播种默认知识库/0 文章，PG 写一篇）→ 未重启连续切回 → sqlite 原数据原封不动
+- 真实往返 1：`pgserver`（`importorskip` 在 `pg` fixture 内——未装时**只跳过本例**，上方 8 个无 PG 依赖用例照常运行）内嵌 PG——sqlite 造数 → 切 PG（断言响应**无 migrated 字段**、db_config.json 落盘）→ 新 app 绑 PG（空库自动播种默认知识库/0 文章，PG 写一篇）→ 未重启连续切回 → sqlite 原数据原封不动
 - 日志上报 1：GET 默认 → PUT 改三项（落盘 + 重读）→ 非法值 400 ×3 → test 发送返回 marker
 - 辅助：`_prod_semantics`（debug=False 对齐非 reloader 语义）、`_ensure_count_tables`（blog 未迁移中间态护栏）、`_has_blog_routes`（FastAPI 惰性 _IncludedRouter 展开探针）
 
@@ -196,7 +196,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - **test_auth.py（11 例）**：Basic 通道 5（登录成功/无凭据 401/错误凭据 401/check 成功/check 401）+ 会话 6（JSON 登录签发 HttpOnly Cookie；Cookie 登录一次后受保护端点免 Basic；JSON 错误凭据 401 且无 Set-Cookie；logout 清除后 check 401；**篡改令牌 401 且 Basic 通道不受影响**；Basic 兼容通道与既有测试共存）
 - **test_logging_integration.py（3 例）**：AppError 异常信封（sdklogs 摄入非法 JSON→400 PARAM_INVALID；token 错→401 CREDENTIALS_ERROR）；自摄回灌（uvicorn 线程伺服本 app 真实 HTTP，WARNING 10s 内可查且 sys_name=doublog、本地文件同步落盘）；no_remote 闸门（摄入路径错误落盘但 /logs 搜不到）
 
-> 本模块域合计 23 例；后端全量当前 214 例（根文档写 208，已过时——见根文档陈旧点报告）。
+> 本模块域合计 23 例；后端全量当前 429 例（collect-only 实测；AGENTS.md 常用命令注释写 367 已过时，属跨模块文档同步问题）。
 
 ---
 
@@ -211,3 +211,4 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 7. **require_basic 命名是历史包袱**：实际是「Cookie 优先 + Basic 兼容」统一认证依赖，阅读代码勿望文生义
 8. **登录 ≠ vault 解锁**：见 2.5 节；已登录会话对 vault 密文无能为力（零知识设计，服务端无法也不应提供「登录即解锁」）
 9. AuthGate 对后端不可达放行（网络错误不挡页面），认证真正裁决在后端 401 + apiFetch 重定向——前端守卫只是体验层
+10. `GET /api/admin/database` 返回的 `postgres` 配置**含明文 password**（前端表单不回显、以空占位「留空使用已存密码」，但响应体中可见）；如需收敛应在后端掩码并让 `_merged_cfg` 识别掩码占位——涉及 `/admin` 旧入口同批消费方，暂列观察项

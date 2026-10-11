@@ -57,8 +57,6 @@ _bucket_lock = threading.Lock()
 
 def _allow(pid: int, limit: int) -> bool:
     """令牌桶限流：limit=0 表示不限流；桶容量=限额，允许短时突发到限额"""
-    if limit is None:
-        limit = 0
     if limit <= 0:
         return True
     now = time.monotonic()
@@ -80,36 +78,48 @@ def _reset_bucket(pid):
         _buckets.pop(pid, None)
 
 
-def _log_validate(pid: int, username: str, valid: bool, ip: str,
-                  last_validated: tuple | None = None):
-    """记一条校验日志并顺手清理过期（永不含密码内容）。
+def _run_write_retry(write) -> None:
+    """执行一笔幂等写事务，对 database is locked 小步重试。
 
-    可选 last_validated=(uid, ts) 把"校验成功时间"的 UPDATE 并入同一笔写事务。
-    全 Core 语句（created_at 列 default 生效），免 ORM 脏跟踪/autoflush 开销。
     SQLite 单写者下偶发 database is locked（busy_timeout 5s 打满，多为 WAL
-    checkpoint 瞬时 convoy）：整笔回滚后小步重试，幂等。
+    checkpoint 瞬时 convoy）：整笔回滚后重试（≤3 次、50ms 起退避），
+    非 locked 的 OperationalError 不重试直接抛出。
     """
     for attempt in range(4):
         try:
-            if last_validated is not None:
-                uid, ts = last_validated
-                db.session.execute(update(PwsvcUser)
-                                   .where(PwsvcUser.id == uid)
-                                   .values(last_validated_at=ts))
-            db.session.execute(insert(PwsvcValidateLog).values(
-                project_id=pid, username=username[:100],
-                valid=bool(valid), ip=(ip or '')[:64]))
-            cutoff = _utcnow() - timedelta(days=LOG_RETENTION_DAYS)
-            db.session.execute(delete(PwsvcValidateLog).where(
-                PwsvcValidateLog.project_id == pid,
-                PwsvcValidateLog.created_at < cutoff))
-            db.session.commit()
+            write()
             return
         except OperationalError as e:
             db.session.rollback()
             if 'locked' not in str(e).lower() or attempt == 3:
                 raise
             time.sleep(0.05 * (attempt + 1))
+
+
+def _log_validate(pid: int, username: str, valid: bool, ip: str,
+                  last_validated: tuple | None = None):
+    """记一条校验日志并顺手清理过期（永不含密码内容）。
+
+    可选 last_validated=(uid, ts) 把"校验成功时间"的 UPDATE 并入同一笔写事务。
+    全 Core 语句（created_at 列 default 生效），免 ORM 脏跟踪/autoflush 开销。
+    """
+
+    def _write():
+        if last_validated is not None:
+            uid, ts = last_validated
+            db.session.execute(update(PwsvcUser)
+                               .where(PwsvcUser.id == uid)
+                               .values(last_validated_at=ts))
+        db.session.execute(insert(PwsvcValidateLog).values(
+            project_id=pid, username=username[:100],
+            valid=bool(valid), ip=(ip or '')[:64]))
+        cutoff = _utcnow() - timedelta(days=LOG_RETENTION_DAYS)
+        db.session.execute(delete(PwsvcValidateLog).where(
+            PwsvcValidateLog.project_id == pid,
+            PwsvcValidateLog.created_at < cutoff))
+        db.session.commit()
+
+    _run_write_retry(_write)
 
 # ─── 确定性推导（标准库 hmac/hashlib，黄金向量见测试）─────
 
@@ -655,17 +665,13 @@ async def current_password(uid: int):
         # 同 /validate：推导完成后先结束只读事务再写 last_viewed_at，
         # 避免读快照升级写时撞 WAL BUSY_SNAPSHOT（database is locked）
         db.session.rollback()
-        for attempt in range(4):
-            try:
-                db.session.execute(update(PwsvcUser).where(PwsvcUser.id == uid)
-                                   .values(last_viewed_at=datetime.now(timezone.utc)))
-                db.session.commit()
-                break
-            except OperationalError as e:
-                db.session.rollback()
-                if 'locked' not in str(e).lower() or attempt == 3:
-                    raise
-                time.sleep(0.05 * (attempt + 1))
+
+        def _write():
+            db.session.execute(update(PwsvcUser).where(PwsvcUser.id == uid)
+                               .values(last_viewed_at=datetime.now(timezone.utc)))
+            db.session.commit()
+
+        _run_write_retry(_write)
         return api_response({
             'password': password,
             'expires_in': expires_in,

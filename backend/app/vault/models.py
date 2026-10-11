@@ -40,6 +40,7 @@ class VaultAccount(Base):
             'created_at': _iso(self.created_at),
         }
 
+
 class VaultItem(Base):
     """Vault 条目：敏感内容全部在加密 blob 内；明文列仅非敏感元数据。"""
     __tablename__ = 'vault_items'

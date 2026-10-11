@@ -64,11 +64,9 @@ export function useHolidays(year) {
   }, [targetYear, fetchYear])
 
   const getDayInfo = useCallback(date => {
-    const d = new Date(date + 'T00:00:00')
-    const dateStr = date
-    const dow = d.getDay()
+    const dow = new Date(date + 'T00:00:00').getDay()
     const isWeekend = dow === 0 || dow === 6
-    const info = holidays[dateStr]
+    const info = holidays[date]
     if (info) {
       return {
         isWeekend, isHoliday: !!info.holiday, isRestDay: !!info.holiday,

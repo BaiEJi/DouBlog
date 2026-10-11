@@ -43,6 +43,7 @@ export function AreaTrend({ data, height = 300, color = '#d97706', renderTip }) 
   const pts = data.map((d, i) => [px(i), py(d.v)])
   const line = pts.map(p => p.join(',')).join(' ')
   const area = `${PAD_L},${PAD_T + plotH} ${line} ${PAD_L + plotW},${PAD_T + plotH}`
+  // x 轴标签抽稀步长：每点像素宽 ≥38 全显、≥19 隔一个、更密则保证约 52px 一个标签
   const labelEvery = step >= 38 ? 1 : step >= 19 ? 2 : Math.ceil(52 / step)
 
   return (

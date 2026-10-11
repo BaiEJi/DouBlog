@@ -125,7 +125,7 @@ export const TaskCardContent = memo(function TaskCardContent({
           <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.4" /><circle cx="10" cy="10" r="1.4" /><circle cx="15.5" cy="10" r="1.4" /></svg>
         </button>
         {menuOpen && (
-          <CardMenu task={task} dark={dark}
+          <CardMenu task={task}
             onEdit={onEdit} onReschedule={onReschedule} onMoveQuadrant={onMoveQuadrant} onDelete={onDelete}
             onClose={() => setMenuOpen(false)} />
         )}

@@ -5,13 +5,10 @@
 无缓存层、无刷盘任务。
 """
 
-import logging
 from datetime import datetime, timezone
 
 from app.db import db
 from app.blog.models import Post
-
-logger = logging.getLogger(__name__)
 
 
 def increment_view(post_id: int) -> int:

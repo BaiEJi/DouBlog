@@ -1,5 +1,5 @@
 /**
- * 日记编辑器（全屏弹层）：日期/心情/标签/本子 + 模板 + 引导问题 + 天气获取 +
+ * 日记编辑器（全屏弹层）：日期/心情/本子 + 模板 + 引导问题 + 天气获取 +
  * Markdown 预览切换 + 停止输入自动保存（新篇首存 POST，此后 PUT）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -137,7 +137,7 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
                 className={'h-8 px-2 text-xs bg-white dark:bg-white/[0.04] border rounded-lg outline-none ' +
                   (journalId == null ? 'border-red-500/50' : 'border-black/10 dark:border-white/10')}>
                 <option value="" disabled>选择日记本（必选）</option>
-                {journals.filter(j => !j.virtual).map(j => (
+                {journals.map(j => (
                   <option key={String(j.id)} value={j.id}>{j.emoji} {j.name}</option>
                 ))}
               </select>

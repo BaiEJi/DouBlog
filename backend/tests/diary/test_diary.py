@@ -137,6 +137,7 @@ def test_validation_errors(client, auth_headers):
         {'content': 'x', 'entry_date': '2026-13-40'},
         {'content': 'x', 'entry_date': '2026-09-19', 'mood': 'happy'},
         {'content': 'x', 'entry_date': '2026-09-19', 'kind': 'other'},
+        {'content': 'x', 'entry_date': '2026-09-19', 'kind': 'summary'},   # 总结只能走 /summary upsert
     ):
         assert client.post('/api/diary/entries',
                            json={**bad, 'journal_id': _journals(client)['日常']},
@@ -289,6 +290,19 @@ def test_share_blocked_after_trash(client, auth_headers):
                         headers=AUTH).json()['data']['token']
     client.delete(f"/api/diary/entries/{d['id']}", headers=AUTH)
     assert client.get(f'/api/diary/share/{token}').status_code == 404
+
+
+def test_share_expired_same_message(client, auth_headers, monkeypatch):
+    """过期分享与不存在的 token 返回同一 404 文案（不泄露存在性）"""
+    from datetime import datetime
+    import app.diary.routes as routes
+    d = _create(client, content='会过期的分享')
+    token = client.post(f"/api/diary/entries/{d['id']}/share", json={'expires_hours': 1},
+                        headers=AUTH).json()['data']['token']
+    monkeypatch.setattr(routes, '_utcnow', lambda: datetime(2999, 1, 1))
+    expired = client.get(f'/api/diary/share/{token}')
+    assert expired.status_code == 404
+    assert expired.json()['message'] == client.get('/api/diary/share/nope').json()['message']
 
 
 def test_journals_crud_and_guard(client, auth_headers):

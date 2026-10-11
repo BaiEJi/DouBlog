@@ -12,15 +12,15 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..models import Category, Task, TaskEvent
 from ..timeutil import local_day_bounds_utc, local_today, to_local
+from . import get_settings
 
 
 def _tz(session: Session) -> str:
-    from . import get_settings
     return get_settings(session)["timezone"]
 
 
@@ -61,8 +61,6 @@ def day_task_counts(session: Session, tz: str, day: date) -> dict[str, int]:
 
     两计数条件不同(创建看 created_at 区间,完成看 completed_at 区间),全部放进
     CASE 条件、WHERE 只留公共谓词,合并为一次全表扫描(原先两次)。"""
-    from sqlalchemy import case
-
     start, end = local_day_bounds_utc(day, tz)
     row = session.execute(
         select(
