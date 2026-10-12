@@ -17,6 +17,8 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, 'data_dir', str(tmp_path))
     monkeypatch.setattr(settings, 'images_dir', str(tmp_path / 'images'))
     monkeypatch.setattr(settings, 'logs_send_json', False)   # 测试不外发日志
+    # 强制 SQLite：生产默认后端（postgres）不进测试，保持自包含
+    monkeypatch.setattr(settings, 'database_backend', 'sqlite')
     monkeypatch.setenv('DOUBLOG_TESTING', '1')
 
     from app.main import create_app

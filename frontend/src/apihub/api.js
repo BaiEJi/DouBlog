@@ -31,6 +31,8 @@ export const apihubDeleteKey = (kid) => json(`/api/apihub/admin/upstreams/keys/$
 export const apihubSaveApi = (a) => a.id
   ? json(`/api/apihub/admin/apis/${a.id}`, { method: 'PUT', body: JSON.stringify(a) })
   : json('/api/apihub/admin/apis', { method: 'POST', body: JSON.stringify(a) })
+export const apihubToggleApi = (id, enabled) =>
+  json(`/api/apihub/admin/apis/${id}/enabled`, { method: 'PUT', body: JSON.stringify({ enabled }) })
 export const apihubDeleteApi = (id) => json(`/api/apihub/admin/apis/${id}`, { method: 'DELETE' })
 
 export const apihubCreateToken = (t) =>

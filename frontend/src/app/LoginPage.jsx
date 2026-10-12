@@ -21,7 +21,8 @@ export default function LoginPage({ dark, setDark }) {
   const [busy, setBusy] = useState(false)
 
   const next = params.get('next') || '/'
-  const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/'
+  // next=/login（历史脏 URL，如 /login?next=%2Flogin）会导致"登录成功又回到登录页"，兜底回门户
+  const safeNext = next.startsWith('/') && !next.startsWith('//') && next !== '/login' ? next : '/'
 
   async function submit(e) {
     e.preventDefault()

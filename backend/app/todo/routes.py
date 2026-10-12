@@ -50,7 +50,7 @@ from .services import plans as plan_svc
 from .services import stats as stats_svc
 from .services import tasks as task_svc
 from .services.notify import CHANNEL_LABELS, IMPLEMENTED_CHANNELS, dispatch
-from .timeutil import local_today, now_utc, uuid7
+from app.shared.timeutil import local_today, now_utc, uuid7
 
 # ---------- 子路由(全部挂 require_basic) ----------
 

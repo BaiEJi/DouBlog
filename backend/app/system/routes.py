@@ -280,3 +280,56 @@ async def test_logging_send():
     marker = f'log-send-test-{int(time.time())}'
     mod_logger('system').warning('日志上报链路测试 %s', marker)
     return api_response({'marker': marker, 'hint': '到 /logs 页搜索 marker 验证'})
+
+
+# ─── 登录账号管理（system_accounts 表，2026-10-12）────────────────
+
+@router.get('/account')
+async def account_get():
+    """当前登录账号（只回用户名，不含哈希）"""
+    from app.system.models import SystemAccount
+
+    def _run():
+        row = db.session.query(SystemAccount).order_by(SystemAccount.id).first()
+        if row is None:
+            return api_response(None, 404, '账号未初始化')
+        return api_response(row.to_dict())
+    return await run_db(_run)
+
+
+@router.put('/account')
+async def account_update(request: Request):
+    """修改用户名/密码：必须验旧密码；username 与 new_password 可只改其一。
+
+    密码只存 PBKDF2 哈希；变更即刻生效（Basic 通道立即用新凭据）。
+    会话 Cookie（HMAC）不因改密失效——30 天内已登录设备不受影响，需要踢出时改用户名。
+    """
+    import re as _re
+
+    from app.system.accounts import hash_password, verify_account
+    from app.system.models import SystemAccount
+
+    body = await _json_body(request)
+
+    def _run():
+        row = db.session.query(SystemAccount).order_by(SystemAccount.id).first()
+        if row is None:
+            return api_response(None, 404, '账号未初始化')
+        if not verify_account(row.username, str(body.get('old_password') or '')):
+            return api_response(None, 401, '旧密码错误')
+        new_user = str(body.get('username') or '').strip()
+        new_pwd = str(body.get('new_password') or '')
+        if not new_user and not new_pwd:
+            return api_response(None, 400, '无可变更字段（username / new_password 至少其一）')
+        if new_user and not _re.fullmatch(r'[a-zA-Z0-9_-]{3,64}', new_user):
+            return api_response(None, 400, '用户名非法（字母数字_-，3-64 位）')
+        if new_pwd and len(new_pwd) < 8:
+            return api_response(None, 400, '新密码至少 8 位')
+        if new_user:
+            row.username = new_user
+        if new_pwd:
+            row.password_hash = hash_password(new_pwd)
+        db.session.commit()
+        logger.warning(f'登录账号已变更: username={row.username}（密码哈希已更新，明文不落日志）')
+        return api_response(row.to_dict())
+    return await run_db(_run)

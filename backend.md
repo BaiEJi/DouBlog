@@ -30,7 +30,7 @@
 
 | 决策 | 说明 |
 |---|---|
-| SQLite 默认 + PG 可切换 | SQLite(WAL) 单文件零运维；PostgreSQL 经配置页/API 一键切换（只换连接读目标库现有数据），配置持久化于 `data/db_config.json` |
+| PG 默认 + SQLite 可切换 | PostgreSQL（117.72.98.99:50002/app_dev）默认；SQLite(WAL) 经配置页/API 一键切换（只换连接读目标库现有数据），配置持久化于 `data/db_config.json` |
 | 知识库（Workspace） | 文章的顶层分组：库间数据隔离、name 库内唯一、顶级排序存在 `workspaces.children_order` |
 | 无外部依赖 | 浏览计数实时写库；无限流、无 Redis、无定时任务 |
 | 虚拟根节点 | id=0 的特殊行统一管理顶级文章的父子关系与排序 |
@@ -64,10 +64,13 @@ backend/
 │   ├── sdklogs/               # 日志接收（lizysdk 服务端）：models(sdklogs_*) + routes（写者线程/死信/保留）
 │   ├── subs/                  # 订阅管理（CrownFlow 迁移）：models + routes（每日备份/支出摘要线程）
 │   ├── apihub/                # API Hub（统一 API 网关）：models/core/pool/http连接池/state/routes
-│   ├── todo/                  # 四象限待办（MyTodo 迁入，含 gamemap/practice/steamidler 子模块）
+│   ├── todo/                  # 四象限待办（MyTodo 迁入）
+│   ├── gamemap/               # 剧情图谱（gamemap 迁入）：13 表 + routers 9 组 + response_cache
+│   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
+│   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
 │   ├── confcenter/            # 配置中心：扁平 KV + Redis 读穿缓存
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
-└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ todo/ + test_apihub_*.py
+└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
 ```
 
 **模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
@@ -234,9 +237,9 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 | `debug` | `True` | **生产必须关**（uvicorn --reload 与调试暴露面） |
 | `secret_key` | dev 值 | **会话令牌 HMAC 签名密钥**（生产必改） |
 | `cors_origins` | `*` | ⚠️ 死配置（中间件用 allow_origin_regex `:60101` + allow_credentials） |
-| `auth_username` / `auth_password` | `admin` / `lizy111A` | Basic Auth 凭据 |
-| `database_backend` | `sqlite` | 默认后端；运行时以 `data/db_config.json` 为准 |
-| `postgres_*` | `localhost/5432/postgres//doublog` | PG 连接默认值（host/port/user/password/dbname） |
+| `auth_username` / `auth_password` | `admin` / `lizy111A` | 仅首次播种默认——凭据实际存 `system_accounts` 表（PBKDF2 哈希，2026-10-12 迁入；`/config` 页可改，见 docs/modules/system.md 第 0 节） |
+| `database_backend` | `postgres` | 默认后端；运行时以 `data/db_config.json` 为准（测试 conftest 强制 sqlite） |
+| `postgres_*` | `117.72.98.99/50002/lizy/lizy111pg/app_dev` | PG 连接默认值（host/port/user/password/dbname） |
 | `data_dir` / `images_dir` | `<根>/data[/images]` | 数据与图片目录 |
 | `max_page_size` / `default_page_size` | `100` / `20` | 分页 |
 
@@ -354,7 +357,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 429 个用例（todo 域 166 = 基础 + gamemap + practice 61 + steamidler 18；confcenter 39；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 429 个用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**
@@ -368,7 +371,7 @@ cd backend && python -m pytest tests/ -q -n 8   # 429 个用例（todo 域 166 =
   custom 天数含 PUT 组合校验）；会员聚合（多币种折算 total_spending/时长/最新订阅）；统计五接口
   （overview 整月口径/by-category 明细/trend 四粒度标签/参数与非法值）；提醒（reminder_days 阈值/all 不含过期）；
   备份（快照文件可读回查/超期清理）；每日支出摘要日志
-- **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 166 例（CRUD/计划物化/容量/通知/鉴权/gamemap/practice/steamidler，详见 docs/modules/todo.md）
+- **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 53 例（CRUD/计划物化/容量/通知/鉴权，docs/modules/todo.md）、gamemap 34 例（docs/modules/gamemap.md）、practice 61 例（docs/modules/practice.md）、steamidler 18 例（docs/modules/steamidler.md）
 - PG 集成测试可选依赖 venv 内 `pip install pgserver`，未安装自动跳过
 - 新增后端行为**必须**附带测试（见 AGENTS.md）
 

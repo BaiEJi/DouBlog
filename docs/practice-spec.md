@@ -1,7 +1,7 @@
 # 刷题（practice）子模块开发规范
 
 > 基于 10 个调研代理 + 257 行开发 Prompt。作为 todo 子模块（同 gamemap/steamidler 模式）。
-> 后端 `app/todo/practice/`；前端 `src/todo/practice/`；表 `practice_*`；前缀 `/api/todo/practice/*`。
+> 后端 `app/practice/`；前端 `src/practice/`；表 `practice_*`；前缀 `/api/practice/*`。
 
 ## 架构决策（基于调研结论，不再讨论）
 
@@ -9,7 +9,7 @@
 |---|---|
 | 挂载 | todo 子模块，`practice_router` 并入 `app/todo/__init__.py` |
 | 表名 | `practice_*`（扁平，同 gamemap/steamidler 先例） |
-| 前缀 | `/api/todo/practice/*`（`/api/todo` 已覆盖 sys_name） |
+| 前缀 | `/api/practice/*`（`/api/todo` 已覆盖 sys_name） |
 | 复习算法 | 固定序列 [1,2,4,7,15,30,60,120]，三键打卡；interval 存天数不存档位下标 |
 | scheduled_date | **Date 列**（本地日历日，同 todo_tasks.task_date），非 UTC 时间戳 |
 | 连续 forgot | 打卡事务内查上一条 done 的 result（同 cycle），不维护计数列 |
@@ -139,7 +139,7 @@ def do_review(session, review_row, result, today):
 ### 个性色
 跟随 todo 主色 **indigo**（同 parent accent）
 
-## 测试（61 用例，tests/todo/test_practice.py，全部 Mock 不连外网）
+## 测试（61 用例，tests/practice/test_practice.py，全部 Mock 不连外网）
 1. 鉴权 401 × 5 端点
 2. 题目 CRUD 全流程（创建→列表→详情→PATCH→软删→404）
 3. 乐观锁 409

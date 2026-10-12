@@ -21,6 +21,9 @@ const SubsPage = lazy(() => import('@/subs/SubsPage'))
 const ConfigPage = lazy(() => import('@/config/ConfigPage'))
 const ConfCenterPage = lazy(() => import('@/confcenter/ConfCenterPage'))
 const TodoPage = lazy(() => import('@/todo/TodoPage'))
+const GamemapShell = lazy(() => import('@/gamemap/GamemapShell'))
+const PracticePage = lazy(() => import('@/practice/PracticePage'))
+const SteamIdlerPage = lazy(() => import('@/steamidler/SteamIdlerPage'))
 const PortalPage = lazy(() => import('@/portal/PortalPage'))
 const LoginPage = lazy(() => import('@/app/LoginPage'))
 
@@ -143,6 +146,9 @@ export default function App() {
             <Route path="/config" element={<ConfigPage dark={dark} setDark={toggleDark} />} />
             <Route path="/confcenter" element={<ConfCenterPage dark={dark} setDark={toggleDark} />} />
             <Route path="/todo/*" element={<TodoPage dark={dark} setDark={toggleDark} />} />
+            <Route path="/gamemap/*" element={<GamemapShell dark={dark} setDark={toggleDark} />} />
+            <Route path="/practice" element={<PracticePage dark={dark} setDark={toggleDark} />} />
+            <Route path="/steamidler" element={<SteamIdlerPage dark={dark} setDark={toggleDark} />} />
           </Routes>
         </AuthGate>
       </Suspense>

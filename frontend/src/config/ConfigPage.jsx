@@ -3,11 +3,12 @@
  * - 数据库：所有模块共用的数据库后端（本地 SQLite / 远端 PostgreSQL 一键切换，
  *   切换只换连接读目标库现有数据，两侧互不影响）
  * - 日志上报：lizysdk 日志管道的外发开关/地址/级别
+ * - 登录账号：用户名/密码管理（system_accounts 表，PBKDF2 哈希，改密需验旧密码）
  */
 import { useCallback, useEffect, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
 import {
-  fetchDbStatus, testDbConnection, switchDatabase,
+  fetchAccount, fetchDbStatus, testDbConnection, switchDatabase, updateAccount,
   fetchLoggingConfig, saveLoggingConfig, testLoggingSend,
 } from './api'
 
@@ -243,6 +244,75 @@ function LoggingCard() {
   )
 }
 
+function AccountCard() {
+  const [cur, setCur] = useState(null)
+  const [form, setForm] = useState({ username: '', new_password: '', old_password: '' })
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    fetchAccount()
+      .then(d => setCur(d))
+      .catch(e => setMsg({ tone: 'err', text: e.message }))
+  }, [])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const canSubmit = !busy && form.old_password && (form.username || form.new_password)
+
+  async function onSave() {
+    setBusy(true); setMsg(null)
+    try {
+      const payload = { old_password: form.old_password }
+      if (form.username) payload.username = form.username.trim()
+      if (form.new_password) payload.new_password = form.new_password
+      const d = await updateAccount(payload)
+      setCur(d)
+      setForm({ username: '', new_password: '', old_password: '' })
+      setMsg({ tone: 'ok', text: '已保存，即刻生效（curl/脚本请改用新凭据；已登录的浏览器会话不受影响）' })
+    } catch (e) {
+      setMsg({ tone: 'err', text: e.message })
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <section className={CARD}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-stone-900 dark:text-stone-100">登录账号</h2>
+          <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+            当前用户名 <span className="font-mono">{cur?.username ?? '…'}</span>
+            ——凭据存数据库（仅哈希落库），改密需验证旧密码
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <label className="block">
+          <span className={LABEL}>新用户名（留空不改，3-64 位字母数字_-）</span>
+          <input className={INPUT} value={form.username} placeholder={cur?.username || 'admin'}
+                 onChange={e => set('username', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className={LABEL}>新密码（留空不改，≥8 位）</span>
+          <input className={INPUT} type="password" value={form.new_password}
+                 onChange={e => set('new_password', e.target.value)} />
+        </label>
+        <label className="block">
+          <span className={LABEL}>旧密码（必填）</span>
+          <input className={INPUT} type="password" value={form.old_password}
+                 onChange={e => set('old_password', e.target.value)} />
+        </label>
+      </div>
+      <div className="flex items-center justify-between gap-3 mt-4">
+        <Banner tone={msg?.tone}>{msg?.text}</Banner>
+        <button onClick={onSave} disabled={!canSubmit}
+          className={`${BTN} bg-amber-500 hover:bg-amber-600 text-white ml-auto shrink-0`}>
+          {busy ? '保存中…' : '保存变更'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
 export default function ConfigPage({ dark, setDark }) {
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e]">
@@ -259,6 +329,7 @@ export default function ConfigPage({ dark, setDark }) {
       <main className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 xl:px-10 py-8 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         <DbCard />
         <LoggingCard />
+        <AccountCard />
       </main>
     </div>
   )

@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..models import AppSetting, TaskEvent
-from ..timeutil import now_utc, uuid7
+from app.shared.timeutil import now_utc, uuid7
 
 _LOCAL_TZ = "Asia/Shanghai"  # 固定上海时间
 

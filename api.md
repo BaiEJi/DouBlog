@@ -447,6 +447,25 @@ POST /api/admin/database/switch
 
 **常见 400**：`当前已在使用 xxx` / `无法连接 PostgreSQL：...`
 
+### 6.4 登录账号（system_accounts 表，2026-10-12）
+
+> 凭据存数据库（单行表），密码只存 PBKDF2-SHA256 哈希；`config.py` 的
+> `auth_username/auth_password` 仅作首次播种默认（空表时写入）与中间态回退。
+> 登录/Basic 校验即时读表——改密后旧密码立即失效（新密码即刻生效）。
+
+```
+GET /api/admin/account
+→ { "username": "admin", "updated_at": "2026-10-12T23:57:06" }   # 不含哈希
+
+PUT /api/admin/account
+{ "old_password": "lizy111A",          // 必填（验证当前密码）
+  "username": "新用户名",               // 可选：3-64 位字母数字_-
+  "new_password": "新密码" }            // 可选：≥8 位；二者至少其一
+→ 200 { "username": ... }              # 401 旧密码错误 / 400 参数非法
+```
+
+注意：已签发的会话 Cookie（HMAC，30 天）不因改密失效——需要踢出已登录设备时改用户名。
+
 ## 7. 图片 API
 
 > 图片文件存放于 `data/images/`；**编辑器粘贴/拖拽/按钮上传走 `POST /api/images/upload`**（随机文件名落盘），历史用法是直接把文件放入目录。Markdown 中的图片路径由前端自动改写为本接口 URL（见 `frontend/src/md.js`）。
@@ -805,6 +824,7 @@ POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
 上游      GET/POST /api/apihub/admin/upstreams   PUT/DELETE /api/apihub/admin/upstreams/{id}
 密钥池    GET/POST /api/apihub/admin/upstreams/{id}/keys   PUT/DELETE /api/apihub/admin/upstreams/keys/{kid}
 API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/apis/{id}
+一键启停  PUT /api/apihub/admin/apis/{id}/enabled   {"enabled": bool}（关闭后 gw/openapi 立即 503「已关闭，不可用」；/doc 不受影响）
 平台令牌  GET/POST /api/apihub/admin/tokens      PUT/DELETE /api/apihub/admin/tokens/{id}
 限流规则  GET/POST /api/apihub/admin/rules       PUT/DELETE /api/apihub/admin/rules/{id}
 探活      POST /api/apihub/probes/run            {"api_ids": [id,…]}  # 空=全部
@@ -819,6 +839,39 @@ API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/ap
 - **平台令牌**：`sk-` 前缀 SHA-256 落库，**明文仅创建响应返回一次**；属性：expires_at / allowed_api_ids / allowed_ips / quota_total（计次，预占-退还语义）
 - **限流规则**：scope = token_api|api|token|global（同层多条取最严格）；algorithm = token_bucket(rate_per_sec+burst) | fixed_window(window_s+max_count)；列表附当前用量 usage
 - **探活 probe**（JSON）：path（默认=API 自身路径）/expect_status/expect_body_regex/interval_s（>0 定时探，down 态间隔×5）/failure_threshold/success_threshold
+- **OpenAPI 发布字段**（2026-10-12，API 增删改均支持）：`group1`（一级分组，空=不发布）、`group2`（二级，需先有一级，**最多二级**）、
+  `pub_name`（对外 api 名称，空=slug，分组内唯一，`doc` 为保留字）、`doc_md`（Markdown 文档补充段落）
+
+### 14.3 OpenAPI 发布入口（2026-10-12；顶级路径，鉴权 = apihub 平台令牌 sk-）
+
+```
+# 对外调用（method/query/body 原样转发；路径模板变量以 query 参数注入）
+ANY  /openapi/{一级分组}/{二级分组}/{api名称}        # 二级可空：/openapi/{一级}/{api名称}
+GET  /openapi/{一级分组}/{二级分组}/{api名称}/doc    # 完整 Markdown 文档（公开无鉴权）
+```
+
+- api 名称 = `pub_name`（管理端可自设），缺省 slug；服务内 API 由 `tools/apihub_register_self.py`
+  统一发布为 `self/<模块名>/...`（一级=自我服务，二级=模块）
+- **服务内 API 不走用户身份验证**：上游回源经内部服务令牌 `X-Apihub-Token`（密钥文件
+  `data/internal_token` 自动生成，`require_basic` 见此头即信任）；调用方鉴权完全由 apihub
+  平台令牌（sk-）承担，不接触内部凭据
+- 路径变量：内部路径模板 `/api/todo/tasks/{path.task_id}` 的变量以**同名 query 参数**注入
+  （`?task_id=123`），该参数不再转发；缺变量 400 `template_error`
+- 四级限流/计次配额/健康阻断/密钥池与 gw invoke 完全一致（共用 api 级规则）；调用日志 `mode='openapi'`
+- 方法不符 405（带 `Allow`）；`/doc` 返回 `text/markdown`：元信息（分组/上游/方法/模板/地址）+
+  认证说明 + 路径变量表 + 限流 + curl 示例 + `doc_md` 自定义段落
+
+**实测示例**（self 注册后）：
+
+```
+GET /openapi/self/todo/todo-get-todo-tasks        (Authorization: Bearer sk-…)
+→ {"success":true,"code":200,...}                  # 与直连响应逐字节一致
+
+DELETE /openapi/self/todo/todo-delete-todo-tasks-task_id?task_id=<uuid>
+→ 200 {"success":true,...,"data":{"ok":true}}      # 路径变量经 query 注入
+
+GET  /openapi/self/blog/blog-get-posts/doc         # 公开，text/markdown
+```
 
 ## 15. Todo API（四象限待办，MyTodo 迁入）
 
@@ -851,11 +904,6 @@ POST   /api/todo/migrations/bulk         {task_ids, to_date, reason}
 POST   /api/todo/migrations/decide       {task_id, decision: keep|delete|unshelve}
 POST   /api/todo/migrations/auto         自动迁移 {migrated: n}
 
-# Steam 挂机子模块（/api/todo/steamidler/*）
-POST /login/begin {username,password} · POST /login/code · GET /login/status?attempt_id=
-GET /accounts · DELETE /accounts/{steamid} · GET /accounts/{steamid}/log|games
-POST /accounts/{steamid}/idle {appids:[]} | /stop | /shared_secret | /auto_resume · GET /meta
-
 # 统计
 GET    /api/todo/stats/daily             ?date=
 GET    /api/todo/stats/range             ?from=&to=
@@ -867,83 +915,91 @@ GET/PUT /api/todo/settings               字段级增量（timezone/象限文案
 POST   /api/todo/notifications/test      {channel} 实测发送（email）
 GET/POST /api/todo/plans - GET /plans/today - GET /plans/report?days= - PATCH/DELETE /plans/{id}
 
-# 剧情图谱子模块（/api/todo/gamemap/*，13 表 gamemap_*）
-GET/POST /api/todo/gamemap/games · GET /games/{id}/export · POST /games/import · GET /games/{id}/stats
-GET/POST /api/todo/gamemap/games/{gid}/chapters|characters · characters 批量 POST /batch
-GET    /api/todo/gamemap/games/{gid}/boards/chapters/{cid}   # 单章看板
-GET    /api/todo/gamemap/games/{gid}/boards/merged?chapter_ids=   # 跨章聚合看板
-PATCH  /api/todo/gamemap/games/{gid}/boards/chapters/{cid}/nodes/{cid2}  # 拖动保存
-PUT    /api/todo/gamemap/games/{gid}/boards/chapters/{cid}   # 整板保存（乐观锁 409）
-GET/POST/PATCH/DELETE /api/todo/gamemap/chapters/{cid}/events · /games/{gid}/characters/{cid}/photos
-GET/POST /api/todo/gamemap/relation-types · GET /games/{gid}/relation-types ·
+## 16. Gamemap API（剧情图谱，独立顶级模块；13 表 gamemap_*）
+GET/POST /api/gamemap/games · GET /games/{id}/export · POST /games/import · GET /games/{id}/stats
+GET/POST /api/gamemap/games/{gid}/chapters|characters · characters 批量 POST /batch
+GET    /api/gamemap/games/{gid}/boards/chapters/{cid}   # 单章看板
+GET    /api/gamemap/games/{gid}/boards/merged?chapter_ids=   # 跨章聚合看板
+PATCH  /api/gamemap/games/{gid}/boards/chapters/{cid}/nodes/{cid2}  # 拖动保存
+PUT    /api/gamemap/games/{gid}/boards/chapters/{cid}   # 整板保存（乐观锁 409）
+GET/POST/PATCH/DELETE /api/gamemap/chapters/{cid}/events · /games/{gid}/characters/{cid}/photos
+GET/POST /api/gamemap/relation-types · GET /games/{gid}/relation-types ·
        PUT /games/{gid}/relation-types/{type_id}/override（游戏级 override；全局类型无 PATCH/DELETE）
-GET    /api/todo/gamemap/search?q= · POST /api/todo/gamemap/uploads
-GET    /api/todo/gamemap/files/{name}                        # 附件下载（免认证，目录围栏）
+GET    /api/gamemap/search?q= · POST /api/gamemap/uploads
+GET    /api/gamemap/files/{name}                        # 附件下载（免认证，目录围栏）
 
-# 刷题子模块（/api/todo/practice/*，22 端点，6 表 practice_*，规范 docs/practice-spec.md）
+## 17. Practice API（刷题，独立顶级模块；22 端点，6 表 practice_*，规范 docs/practice-spec.md）
 # 题目（revision 乐观锁 409；列表/队列摘要 defer 不回传 description_md/pitfall_md 大字段，恒 null）
-GET    /api/todo/practice/problems            多维筛选 ?q=（标题/题号 icontains，超 200 截断）
+GET    /api/practice/problems            多维筛选 ?q=（标题/题号 icontains，超 200 截断）
                                                ?tags=id1,id2&tags_op=and|or ?difficulty=1,3 ?status= ?source=
                                                ?language= ?from=&to=（创建日期区间 YYYY-MM-DD）?only_due_review=true
                                                ?sort=created_desc|solved_desc|difficulty_asc|review_asc
                                                ?page=（钳 1-1000）?page_size=（钳 1-100）→ {items[每题摘要：tags/
                                                solution_count/code_languages/next_review], total, page, page_size}
-POST   /api/todo/practice/problems            201 {title*, source=leetcode|luogu|nowcoder|sword|other,
+POST   /api/practice/problems            201 {title*, source=leetcode|luogu|nowcoder|sword|other,
                                                source_no?, difficulty 1-3, url?, description_md?, pitfall_md?,
                                                status=todo|solved|reviewing|mastered, first_solved_at?, tag_ids?,
                                                tag_names?（按名建/挂）, solutions?:[{name*, approach_md?,
                                                time_complexity?, space_complexity?, is_preferred?, codes?:[{language*,
                                                code*, note?}]}]}；非 todo 态自动补 first_solved_at=今天；
                                                status=reviewing 建题即加入复习（首条 pending 明天到期）
-GET    /api/todo/practice/problems/{id}       详情（题目字段扁平 + tags + solutions(含 codes) + next_review）
-PATCH  /api/todo/practice/problems/{id}       更新（body 必带 revision，冲突 409；tag_ids 整体替换关联；
+GET    /api/practice/problems/{id}       详情（题目字段扁平 + tags + solutions(含 codes) + next_review）
+PATCH  /api/practice/problems/{id}       更新（body 必带 revision，冲突 409；tag_ids 整体替换关联；
                                                进/出 reviewing 自动建/取消 pending 复习行）
-DELETE /api/todo/practice/problems/{id}       软删（级联硬删解法/代码/复习行/标签关联）
-POST   /api/todo/practice/problems/{id}/review     三键打卡 {result: remembered|fuzzy|forgot}（无 pending 404）；
+DELETE /api/practice/problems/{id}       软删（级联硬删解法/代码/复习行/标签关联）
+POST   /api/practice/problems/{id}/review     三键打卡 {result: remembered|fuzzy|forgot}（无 pending 404）；
                                                     艾宾浩斯 [1,2,4,7,15,30,60,120]：remembered 进下一档（顶档→
                                                     毕业 status=mastered）；fuzzy 原档重复；forgot 回 1 天，连续
                                                     2 次 forgot→题目回 todo → {graduated, demoted, result,
                                                     next_interval_days, next_scheduled_date, next_review?}；并发 409
-POST   /api/todo/practice/problems/{id}/unreview   退出复习（仅 reviewing：pending 置 cancelled，题目回 solved）；
+POST   /api/practice/problems/{id}/unreview   退出复习（仅 reviewing：pending 置 cancelled，题目回 solved）；
                                                     非 reviewing 幂等返回 {cancelled: 0}
 
 # 解法 / 代码（solution 独立乐观锁；code 行无独立锁——校验/递增的都是父级 solution.revision）
-POST   /api/todo/practice/problems/{pid}/solutions  201 建解法（is_preferred 单题至多一个）
-                                                    PATCH/DELETE /api/todo/practice/solutions/{sid}（revision 409）
-POST   /api/todo/practice/solutions/{sid}/codes     201 {language*, code*, note?}（language 16 项白名单 400；
+POST   /api/practice/problems/{pid}/solutions  201 建解法（is_preferred 单题至多一个）
+                                                    PATCH/DELETE /api/practice/solutions/{sid}（revision 409）
+POST   /api/practice/solutions/{sid}/codes     201 {language*, code*, note?}（language 16 项白名单 400；
                                                     同解法同语言重复 409）
-                                                    PATCH/DELETE /api/todo/practice/codes/{cid}（revision 传父级
+                                                    PATCH/DELETE /api/practice/codes/{cid}（revision 传父级
                                                     solution.revision）
 
 # 标签
-GET/POST /api/todo/practice/tags              GET 含每标签 problem_count；POST 201 {name*, color?, sort_order?}
+GET/POST /api/practice/tags              GET 含每标签 problem_count；POST 201 {name*, color?, sort_order?}
                                                （color 缺省色板轮询；重名 400）· PATCH/DELETE /tags/{tid}
                                                （删除自动解除全部题目关联）
 
 # 一键抓题（纯网络代理，不落库；草稿进程内缓存 1h）
-POST   /api/todo/practice/fetch               {source: leetcode|luogu|auto, url|slug|source_no} → 标准化草稿
+POST   /api/practice/fetch               {source: leetcode|luogu|auto, url|slug|source_no} → 标准化草稿
                                                {source, source_no, title, difficulty, url, description_md,
                                                tag_names[], pitfall_md}；LeetCode 走国际站 GraphQL（纯数字题号
                                                400 引导粘完整链接；会员题 400）；洛谷走 x-lentille-request 新 API；
                                                网络异常收敛为中文分类文案 400
 
 # 复习 / 统计 / 导入导出
-GET    /api/todo/practice/review/today        今日队列（pending 且 scheduled_date≤今天，到期升序）→
+GET    /api/practice/review/today        今日队列（pending 且 scheduled_date≤今天，到期升序）→
                                                {today, items[{review_id, scheduled_date, prev_interval_days,
                                                cycle, seq, overdue_days, problem: 摘要}]}
-GET    /api/todo/practice/stats/overview      {total, by_status, by_difficulty, by_source, languages, trend[近 30 天
+GET    /api/practice/stats/overview      {total, by_status, by_difficulty, by_source, languages, trend[近 30 天
                                                逐日新增], tags[{id,name,color,total,mastered}], review{pending,
                                                due_today, done, cancelled, completion_rate}}
-POST   /api/todo/practice/import              JSON {tags[], problems[]}（≤5000 题，按 id upsert 无损还原）或
+POST   /api/practice/import              JSON {tags[], problems[]}（≤5000 题，按 id upsert 无损还原）或
                                                multipart zip（Obsidian vault：上传 ≤20MB / 条目 ≤2000 / 单条目解压
                                                ≤10MB / 累计解压 ≤50MB；按 source+source_no 或标题去重跳过）→
                                                JSON {imported_tags, imported_problems} / zip {imported_problems,
                                                skipped, invalid}
-GET    /api/todo/practice/export              ?output_format=json|md——json 全量导出走信封（含标签/解法/代码/复习
+GET    /api/practice/export              ?output_format=json|md——json 全量导出走信封（含标签/解法/代码/复习
                                                流水）；md 返回二进制 zip（attachment，practice 唯一非信封响应）
 ```
 
-## 16. 配置中心 API（confcenter）
+## 18. Steamidler API（Steam 挂机，独立顶级模块）
+
+```
+POST /api/steamidler/login/begin {username,password} · POST /login/code · GET /login/status?attempt_id=
+GET  /api/steamidler/accounts · DELETE /accounts/{steamid} · GET /accounts/{steamid}/log|games
+POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secret | /auto_resume · GET /meta
+```
+
+## 19. 配置中心 API（confcenter）
 
 > 模块代码 `app/confcenter/`，前端页面 `/confcenter`。全部接口挂统一登录。
 > 扁平 KV：namespace+key 唯一定位 value；value = {type, data}（str 原样 / json 校验）；type 可变更。
@@ -960,7 +1016,7 @@ POST   /api/confcenter/cache/test              # 连通性测试（可带候选�
 POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
 ```
 
-## 17. 错误码与数据模型
+## 20. 错误码与数据模型
 
 ### 6.1 HTTP 状态码
 

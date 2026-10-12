@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，12 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/todo/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/todo?v=practice`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，13 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、管理（`/admin`）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -38,7 +38,10 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，12 
 - **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（不丢已接收日志）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
 - **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——WARNING+ 自动回灌自身 `/api/v1/logs`，日志查询页可直接检索本服务告警与异常堆栈；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
 - **配置中心**（`/confcenter`）：namespace→key→value 扁平 KV；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
-- **四象限待办**（`/todo`，MyTodo 迁入）：看板内含**剧情图谱**子模块（/todo/gamemap，gamemap 迁入）与**刷题练习**视图（/todo?v=practice，题解/艾宾浩斯复习）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
+- **四象限待办**（`/todo`，MyTodo 迁入）：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
+- **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
+- **刷题练习**（`/practice`，独立模块）：题解/代码/标签管理、艾宾浩斯复习、一键抓题（LeetCode/洛谷）
+- **Steam 挂机**（`/steamidler`，独立模块，steam-idler 迁入）：账号登录挂机、时长统计、运行日志
 - **移动端适配**：知识库切换、阅读、搜索在手机可用（导航自适应换行）
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
 - **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
@@ -51,7 +54,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，12 
 | ORM / 数据库 | SQLAlchemy 2.0 / SQLite（WAL 模式） |
 | 认证 | 统一登录：会话 Cookie（HMAC 签名，30 天）+ Basic 兼容（`require_basic` 双通道） |
 | 日志/异常/并发池 | lizysdk（basekit）：logs / errors(AppError) / pools |
-| 数据库 | SQLite（WAL，默认）/ PostgreSQL（psycopg2，可切换） |
+| 数据库 | PostgreSQL 17（psycopg2，默认 117.72.98.99:50002/app_dev）/ SQLite（WAL，可切换） |
 | 前端框架 | React 19 + React Router 7 |
 | 构建 | Vite 8 |
 | 样式 | Tailwind CSS 4 |
@@ -79,8 +82,8 @@ DouBlog/
 │   │   ├── main.py           # FastAPI 应用工厂 + gzip/CORS + 统一异常信封 + 动态模块注册
 │   │   ├── config.py         # 配置
 │   │   ├── db.py             # 纯 SQLAlchemy：双后端 + 表名规范(模块名_表名,存量自动改名) + run_db
-│   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / logging_setup
-│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/(含 gamemap 子模块) confcenter/  # 能力包（models+routes；导出 router/start_background/ensure_migrations）
+│   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / timeutil(todo+practice 共用) / logging_setup / modules
+│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/  # 能力包（models+routes；导出 router/start_background/ensure_migrations）
 │   └── tests/                # pytest（与能力包镜像分层，自包含）
 ├── extensions/todo/           # MyTodo 客户端平迁：chrome-extension/ + android/（仍指旧 8070）
 ├── frontend/                 # 前端 (React)
@@ -96,7 +99,10 @@ DouBlog/
 │       ├── diary/            # /diary：DiaryPage + PublicShare + api + kit + components×8
 │       ├── vault/            # /vault：VaultPage + api + components（crypto/core/ui/密码服务）
 │       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
-│       └── todo/             # /todo：TodoPage + views + gamemap/（剧情图谱）+ practice/（刷题）+ steamidler/
+│       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
+│       ├── gamemap/          # /gamemap：GamemapShell（antd6/@xyflow 保留栈）+ board/ + pages/
+│       ├── practice/         # /practice：PracticePage + PracticeView + components/
+│       └── steamidler/       # /steamidler：SteamIdlerPage + SteamIdlerView + components/
 ├── data/                     # 运行时数据（gitignore）
 │   ├── blog.db               # SQLite 数据库
 │   ├── pwsvc.key             # 密码服务 seed 加密密钥（自动生成）
@@ -111,7 +117,7 @@ DouBlog/
 
 - Python 3.10+
 - Node.js 18+
-- PostgreSQL（可选）：默认使用 SQLite 零配置；需要 PG 时在管理页一键切换
+- PostgreSQL 17（默认）：`117.72.98.99:50002/app_dev`（用户 `lizy`）；也可在管理页一键切回本地 SQLite（零配置）
 
 ### 1. 启动后端（端口 60100）
 
@@ -175,9 +181,9 @@ bash shell/backend/stop.sh           # 停止
 | `debug` | `True` | 调试模式（生产必须关闭） |
 | `cors_origins` | `*` | ⚠️ 死配置：中间件实际用 `allow_origin_regex ^https?://.*:60101$` + 凭据模式，不读此项 |
 | `auth_enabled` | `True` | 是否启用认证 |
-| `auth_username` / `auth_password` | `admin` / `lizy111A` | 登录凭据 |
-| `database_backend` | `sqlite` | 默认后端（运行时以 `data/db_config.json` 为准） |
-| `postgres_host/port/user/password/dbname` | `localhost/5432/postgres//doublog` | PG 连接默认值 |
+| `auth_username` / `auth_password` | `admin` / `lizy111A` | **仅首次播种默认**——凭据实际存 `system_accounts` 表（PBKDF2 哈希），`/config` 页可改 |
+| `database_backend` | `postgres` | 默认后端（运行时以 `data/db_config.json` 为准） |
+| `postgres_host/port/user/password/dbname` | `117.72.98.99/50002/lizy/lizy111pg/app_dev` | PG 连接默认值 |
 | `data_dir` / `images_dir` | `<根目录>/data[/images]` | 数据与图片目录 |
 | `max_page_size` | `100` | 分页上限 |
 
@@ -209,6 +215,8 @@ bash shell/backend/stop.sh           # 停止
 | `GET` | `/api/images[...]?type=` | 图片服务（见下） |
 | `POST` | `/api/images/upload` | 上传图片（multipart `file`，返回可写入 Markdown 的 url） |
 | `GET` | `/api/export/markdown` | 导出全库 Markdown + 图片 zip 备份 |
+| `ANY` | `/openapi/{一级分组}/{二级分组}/{api名称}` | **OpenAPI 发布入口**（apihub 平台令牌 sk-；服务内 API 已发布为 `self/<模块>/**`；路径变量经同名 query 参数传入） |
+| `GET` | `/openapi/{…}/{api名称}/doc` | OpenAPI 的完整 Markdown 文档（公开） |
 | `GET/POST` | `/api/diary/entries` | 随记列表（?date/?search/?journal_id/?mood，总结在前随记挂后）/ 新建随记（**journal_id 必填**） |
 | `PUT/DELETE` | `/api/diary/entries/<id>` | 更新（自动保存）/ 删除 |
 | `POST` | `/api/diary/summary` | **每日总结 upsert**（每天一篇，body: entry_date+content[+mood]，返回 created 标志） |

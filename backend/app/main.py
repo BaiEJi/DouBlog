@@ -34,7 +34,8 @@ from app.shared.response import api_response  # noqa: E402
 from lizysdk.errors import AppError  # noqa: E402
 
 #: 业务模块注册表（按此顺序 import；未迁移/导入失败的模块跳过并告警）
-MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo', 'confcenter')
+MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
+           'todo', 'gamemap', 'practice', 'steamidler', 'confcenter')
 
 setup_logging_for_app()
 logger = logging.getLogger('doublog.main')
@@ -105,12 +106,13 @@ def create_app() -> FastAPI:
     async def handle_app_error(request: Request, err: AppError) -> JSONResponse:
         logger.info(f"AppError {err.code}: {err.message} [{request.method} {request.url.path}]",
                     extra=_log_extra(request))
-        headers = {'WWW-Authenticate': 'Basic realm="Authentication Required"'} \
-            if err.http_status == 401 else None
+        # 401 不附带 WWW-Authenticate: Basic——浏览器 fetch 收到该头会弹出原生
+        # Basic 认证框叠在页面 UI 上（前端表现为"双层"）。SPA 有自己的登录页，
+        # curl / 单测 / SDK 发送端本就主动携带 Basic 头，无人依赖浏览器原生弹框。
         return JSONResponse(
             {'success': False, 'code': err.http_status, 'message': err.message,
              'data': {'error_code': err.code, 'details': err.details or None}},
-            status_code=err.http_status, headers=headers)
+            status_code=err.http_status)
 
     async def handle_http_exception(request: Request,
                                     exc: StarletteHTTPException) -> JSONResponse:

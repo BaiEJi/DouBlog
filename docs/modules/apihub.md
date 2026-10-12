@@ -197,6 +197,56 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 - mock 上游：`ThreadingHTTPServer`（module 级 fixture，随机端口）——`/echo`（回显方法/query/
   敏感头/body）、`/protected`（Bearer good-key 校验 401）、`/biz`（HTTP 200 + body code 表错）、
   `/slow`（sleep 1.2s）、`/health`。
+- **test_apihub_selfreg.py（6 例）**：自注册脚本（tools/apihub_register_self.py）纯函数——
+  路由枚举完整性（FastAPI 0.14x 惰性 `_IncludedRouter` 展平、排除 apihub 自身）、slug
+  合法/唯一（超长路径哈希后缀防撞）、`{param}` → `{path.param}` 模板转换（含 `{slug:path}`
+  转换器）、按方法分级限流参数、13 业务模块全覆盖。
+- **test_apihub_openapi.py（17 例，2026-10-12）**：内部令牌旁路（X-Apihub-Token 对/错）、
+  分组校验（二级需一级/字符集/'doc' 保留/组内重名/字段回读）、/openapi 转发（401/404/405/
+  query+body 透传/路径变量提取/上游凭证注入/缺变量 400/一级分组）、/doc（公开+text/markdown+
+  全要素）、api 级限流 429 头、ensure_migrations 幂等补列。
+
+## 6.3 OpenAPI 发布（2026-10-12）
+
+**服务内 API 以 OpenAPI 形式对外提供**，调用方只持 apihub 平台令牌（sk-），不接触内部凭据：
+
+- **二级分组**：API 增加 `group1/group2/pub_name/doc_md` 四列（存量库由模块 `ensure_migrations`
+  幂等 ALTER 补列）；一级为空 = 不发布；二级需先有一级（最多二级）；分组内 pub_name 唯一，
+  缺省 slug；`doc` 为文档路由保留字
+- **公开入口**（`routes.py openapi_router`，模块 `__init__` 与 /api/apihub 合并挂载）：
+  `ANY /openapi/{g1}/{g2}/{name}`（二级可空）与 `GET .../doc`（公开）。转发透明——
+  method/query/body 原样转发；**路径模板变量以同名 query 参数注入**（`?task_id=x` 填
+  `{path.task_id}`，该参数不再转发，缺变量 400）；四级限流/配额/健康/密钥池与 gw invoke
+  共用；日志 `mode='openapi'`
+- **/doc**：`text/markdown`——元信息表（分组/上游/方法/模板/调用与文档地址）+ 认证说明 +
+  路径变量表 + 限流（读 api 级规则实时值）+ curl 示例 + `doc_md` 自定义段落
+- **内部服务令牌**（`app/shared/auth.py`）：`data/internal_token` 首次访问自动生成
+  （32B hex）；`require_basic` 见有效 `X-Apihub-Token` 头即信任（服务到服务，不以用户身份
+  执行）。泄漏该令牌 = 绕过全站认证，等同密钥文件管理（同 pwsvc.key/apihub.key 模式）
+- 前端 `/apihub` API 列表新增「OpenAPI 分组」列（组名即 doc 链接，指向后端源）；编辑表单
+  含分组/名称/文档补充区块与对外路径实时预览；**「状态」列行内一键启停**（`PUT /admin/apis/{id}/enabled`，
+  2026-10-12）——关闭后 gw/openapi 调用立即 503「已关闭，不可用」（/doc 仍公开），关闭行半透明
+
+## 6.5 自注册（本服务全量 API 接入网关，2026-10-12；同日升级 OpenAPI 发布）
+
+`tools/apihub_register_self.py` 把 DouBlog 自身注册为一个上游，**全部模块 API 经网关可用**：
+
+- **枚举**：进程内导入 FastAPI app 展平路由树（`_IncludedRouter.original_router`），取全部
+  `/api/*` 端点（排除 apihub 自身防网关递归）；`{param}`（含 `:path` 转换器）转 apihub
+  模板 `{path.param}`；slug = `模块-方法-路径`（超 64 字符截断 + sha1 后缀防撞）
+- **注册**（经管理端 API，幂等可重跑）：上游 `doublog`（base_url=本机 60100，
+  **max_retry=0**——写接口重放会重复写入）+ **内部服务令牌注入**（`X-Apihub-Token`
+  api_key_header，密文落库；凭证结构变更时自动重建密钥池）+ 每端点一条 API（2026-10-12
+  实测 246 个/13 模块），**全部发布为 OpenAPI：一级分组 `self`（自我服务）/ 二级分组=模块名**
+- **限流**（token_bucket，四级中配三层）：每 API 读写分级（GET/HEAD 20rps·burst40，
+  写方法 5rps·burst10）+ 令牌级（doublog-self 50rps·burst100）+ 全局（100rps·burst200）
+- **令牌**：签发 `doublog-self`（sk- 明文仅签发时输出一次；重签 `--recreate-token`）
+- **验证**：`tools/apihub_verify_self.py <sk-令牌>`（45 项检查全过，2026-10-12 实测）——
+  13 模块 gw 转发与直连逐字节一致、写操作与路径参数/乐观锁、透明代理、429 触发与恢复、
+  伪造/缺失令牌 401；**OpenAPI 段**：13 模块 /openapi/self/<模块>/<slug> 与直连一致、
+  401/405/404/400 分支、POST+DELETE 路径变量经 query、/doc 公开且含全要素、
+  X-Apihub-Token 直连后端免用户鉴权
+- 前端 `/apihub` 页可查看这批注册（246 API 带 self/<模块> 分组）；探活可按需在管理页为单条 API 配置
 
 ## 7. 已知边界
 

@@ -45,7 +45,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
 │   ├── PageHeader.jsx              # 模块顶栏 v2 模板：第一行(返回+标题+副标+right) + 可选第二行(统一药丸 Tab，accent 个性色)；HeaderTabs/BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
-├── portal/PortalPage.jsx           # /        统一入口（12 卡含"剧情图谱" /todo/gamemap 与"刷题" /todo?v=practice 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组）
+├── portal/PortalPage.jsx           # /        统一入口（13 卡含"剧情图谱" /gamemap、"刷题" /practice、"Steam 挂机" /steamidler 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组 + 跨组重复卡去重自愈）
 ├── blog/                           # /blog /post/:id /create /admin
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
 │   ├── pages/                      # HomePage PostDetail CreatePost EditPost AdminPage
@@ -64,7 +64,10 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页）
 ├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx
 ├── config/                        # /config：api.js + ConfigPage.jsx（统一 PageHeader 顶栏）
-├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×11 + gamemap/（剧情图谱子模块：antd6+@xyflow 保留栈，GamemapShell + board/ + pages/）+ practice/（刷题视图）+ steamidler/（Steam 挂机视图）
+├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×11（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
+├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
+├── practice/                      # /practice（刷题）：PracticePage（统一 PageHeader）+ PracticeView + components/
+├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（统一 PageHeader）+ SteamIdlerView + components/
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
@@ -195,10 +198,19 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### ApiHubPage.jsx（apihub/，统一 API 调用平台 UI）
 
 单页 `/apihub`（门户卡片入口），六个内部 Tab：总览（24h 统计卡+健康徽标+一键探活）、
-上游（CRUD+密钥池弹窗，credential 脱敏展示）、API（CRUD+单条探活结果弹窗）、平台令牌
-（签发弹窗明文仅显示一次+复制）、限流规则（四级+算法动态表单+实时余量进度条）、
-调用日志（按 API 筛选，限流触发标紫并注明层级）。配置类字段（auth_config/
-request_cfg/response_cfg/probe）用 JsonArea 组件（失焦校验标红不改值）。
+上游（CRUD+密钥池弹窗，credential 脱敏展示）、API（按 OpenAPI 分组分区块展示：每个
+`group1/group2` 一个可折叠卡——组头=折叠箭头+分组路径+API 数徽章+`/openapi/{g1}/{g2}`
+前缀链接，未设 group1 的归「未分组（不发布）」排最后；≥8 条的组默认折叠、手动状态存
+localStorage `doublog_apihub_group_fold`，工具条搜索框按 slug/名称/method/路径过滤
+（命中组路径保留整组，无命中组隐藏，搜索中强制展开）、全部展开/收起批量按钮；行操作
+探活/分组/编辑/删除，其中「分组」为轻量弹窗——只编辑一级/二级分组/对外 api 名称/文档
+补充四字段+对外路径实时预览+前端轻校验，保存走 PUT 全量 upsert（未编辑字段从行数据
+透传，防 `_upsert_api` 整行覆写清空））、平台令牌（签发弹窗明文仅显示一次+复制）、
+限流规则（四级+算法动态表单+实时余量进度条）、调用日志（按 API 筛选，限流触发标紫并
+注明层级）。配置类字段（auth_config/request_cfg/response_cfg/probe）用 JsonArea 组件
+（失焦校验标红不改值）。全页 select 用 selectCls（inputCls + `[color-scheme:light]
+dark:[color-scheme:dark]`，展开的原生选项列表跟随明暗）；弹窗暗色用实底深色卡
+（dark:bg-[#1c1b1a]，与 subs/diary kit 一致）。
 api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-）是外部调用方的事，不在页面内。
 
 ### ConfigPage.jsx（config/，系统配置总入口 UI）

@@ -27,3 +27,9 @@ export const saveLoggingConfig = (payload) =>
 
 export const testLoggingSend = () =>
   json('/api/admin/logging/test', { method: 'POST' })
+
+// ── 登录账号（system_accounts 表）───────────────────────
+export const fetchAccount = () => json('/api/admin/account')
+
+export const updateAccount = (payload) =>
+  json('/api/admin/account', { method: 'PUT', body: JSON.stringify(payload) })

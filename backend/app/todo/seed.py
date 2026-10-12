@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Category
-from .timeutil import now_utc, uuid7
+from app.shared.timeutil import now_utc, uuid7
 
 DEFAULT_CATEGORIES = [
     ("工作", "#3B82F6", "💼", 0),

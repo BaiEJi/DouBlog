@@ -21,7 +21,11 @@ MODULE_BY_PREFIX = (
     ('/api/v1', 'sdklogs'),
     ('/api/admin', 'system'),
     ('/api/apihub', 'apihub'),
+    ('/openapi', 'apihub'),
     ('/api/todo', 'todo'),
+    ('/api/gamemap', 'gamemap'),
+    ('/api/practice', 'practice'),
+    ('/api/steamidler', 'steamidler'),
     ('/api/confcenter', 'confcenter'),
     ('/api/auth', 'shared'),
     ('/api/workspaces', 'blog'),
@@ -30,10 +34,12 @@ MODULE_BY_PREFIX = (
     ('/api/export', 'blog'),
 )
 
-ALL_MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo', 'confcenter', 'shared', 'main')
+ALL_MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo',
+               'gamemap', 'practice', 'steamidler', 'confcenter', 'shared', 'main')
 
 #: 有数据库表的模块（init_db 逐个调用其 ensure_migrations 钩子）
-MODULES_WITH_DB = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'todo', 'confcenter')
+MODULES_WITH_DB = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub',
+                   'system', 'todo', 'gamemap', 'practice', 'steamidler', 'confcenter')
 
 SYS_PREFIX = 'doublog'
 

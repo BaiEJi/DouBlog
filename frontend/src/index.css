@@ -5,9 +5,12 @@
 @source "./confcenter";
 @source "./config";
 @source "./diary";
+@source "./gamemap";
 @source "./logs";
 @source "./portal";
+@source "./practice";
 @source "./shared";
+@source "./steamidler";
 @source "./subs";
 @source "./todo";
 @source "./vault";

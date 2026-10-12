@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..limits import DAY_TOTAL_LIMIT, QUADRANT_DAILY_LIMIT
 from ..models import Category, Task
 from ..schemas import TaskCreate, TaskMoveIn, TaskOut, TaskReorderIn, TaskUpdate
-from ..timeutil import ensure_aware, iso, local_today, now_utc, uuid7
+from app.shared.timeutil import ensure_aware, iso, local_today, now_utc, uuid7
 from . import get_settings, log_event
 
 ACTIVE_STATUSES = ("pending", "in_progress")

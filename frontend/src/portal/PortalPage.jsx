@@ -60,7 +60,7 @@ const SYSTEMS = [
     ),
   },
   {
-    to: '/todo/gamemap',
+    to: '/gamemap',
     title: '剧情图谱',
     desc: '游戏人物关系画布 · 剧情时间线 · 图鉴',
     box: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
@@ -87,7 +87,7 @@ const SYSTEMS = [
     ),
   },
   {
-    to: '/todo?v=practice',
+    to: '/practice',
     title: '刷题 · 算法练习',
     desc: 'LeetCode / 洛谷 · 题解与代码 · 艾宾浩斯复习',
     box: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
@@ -95,6 +95,18 @@ const SYSTEMS = [
       <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
         <path d="M7 4.5 3 10l4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M13 4.5 17 10l-4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    to: '/steamidler',
+    title: 'Steam 挂机',
+    desc: '账号挂机 · 时长统计 · 运行日志',
+    box: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M6.8 6h6.4A3.3 3.3 0 0 1 16.5 9.3v1.2a3 3 0 0 1-5.3 1.9l-.5-.6H9.3l-.5.6a3 3 0 0 1-5.3-1.9V9.3A3.3 3.3 0 0 1 6.8 6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M6.9 9v2.6M5.6 10.3h2.6M12.9 9.6h.01M14.2 11h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -197,7 +209,7 @@ const DEFAULT_GROUP_NAME = '常用'
 
 const gid = () => 'g_' + Math.random().toString(36).slice(2, 9)
 
-/** 读取持久化分组布局；兼容旧平铺顺序 key；新增模块自动追加到末组；损坏数据回退默认 */
+/** 读取持久化分组布局；兼容旧平铺顺序 key；跨组重复卡去重自愈；新增模块自动追加到末组；损坏数据回退默认 */
 function readLayout() {
   let groups = null
   try {
@@ -223,8 +235,10 @@ function readLayout() {
       : SYSTEMS.map(s => s.to)
     groups = [{ id: gid(), name: DEFAULT_GROUP_NAME, cards }]
   }
+  // 跨组重复的卡只保留首次出现（历史脏数据自愈，防 React key 冲突）
+  const seen = new Set()
+  groups = groups.map(g => ({ ...g, cards: g.cards.filter(t => !seen.has(t) && seen.add(t)) }))
   // 新增模块（未出现在任何组）追加到末组
-  const seen = new Set(groups.flatMap(g => g.cards))
   for (const s of SYSTEMS) {
     if (!seen.has(s.to)) groups[groups.length - 1].cards.push(s.to)
   }

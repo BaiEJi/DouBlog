@@ -211,7 +211,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     if api is None:
         return _gw_err(404, 'not_found', f"API '{slug}' 不存在")
     if not api['enabled']:
-        return _gw_err(503, 'api_disabled', f"API '{slug}' 已停用")
+        return _gw_err(503, 'api_disabled', f"API '{slug}' 已关闭，不可用")
     up = state.store.upstreams.get(api['upstream_id'])
     if up is None or up['status'] != 1:
         return _gw_err(503, 'upstream_disabled', '上游已禁用')
@@ -777,6 +777,8 @@ def _api_dict(app, a):
         'description': a.description or '', 'method': a.method, 'path_tpl': a.path_tpl,
         'request_cfg': a.request_cfg, 'response_cfg': a.response_cfg, 'timeout_ms': a.timeout_ms,
         'probe': a.probe, 'enabled': a.enabled,
+        'group1': getattr(a, 'group1', '') or '', 'group2': getattr(a, 'group2', '') or '',
+        'pub_name': getattr(a, 'pub_name', '') or '', 'doc_md': getattr(a, 'doc_md', '') or '',
         'health': {'status': st['status'], 'fails': st['fails'], 'succs': st['succs']},
         'health_status': a.health_status,
         'last_probe_at': _iso(a.last_probe_at),
@@ -788,6 +790,7 @@ class _SnapRow:
     """快照 dict 的属性行视图（_api_dict 兼容 ORM 行/快照两种来源）。"""
     __slots__ = ('id', 'upstream_id', 'name', 'slug', 'description', 'method', 'path_tpl',
                  'request_cfg', 'response_cfg', 'timeout_ms', 'probe', 'enabled',
+                 'group1', 'group2', 'pub_name', 'doc_md',
                  'health_status', 'last_probe_at', 'last_latency_ms')
 
     def __init__(self, cfg: dict):
@@ -843,6 +846,27 @@ def _upsert_api(app, aid, body):
     a.timeout_ms = body.get('timeout_ms')
     a.probe = merge_probe(body.get('probe')) if body.get('probe') else None
     a.enabled = bool(body.get('enabled', True))
+    # ── OpenAPI 发布字段（二级分组 + 对外名称 + 文档）──
+    g1 = str(body.get('group1') or '')
+    g2 = str(body.get('group2') or '')
+    pub = str(body.get('pub_name') or '')
+    doc = str(body.get('doc_md') or '')
+    if g2 and not g1:
+        return api_response(None, 400, '二级分组需要一级分组（最多二级）')
+    for label, v in (('group1', g1), ('group2', g2), ('pub_name', pub)):
+        if v and not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', v):
+            return api_response(None, 400, f'{label} 非法（字母数字_-，≤64）')
+    if len(doc) > 65535:
+        return api_response(None, 400, 'doc_md 过长（≤64KB）')
+    if g1 and (pub or body['slug']) == 'doc':
+        return api_response(None, 400, 'api 名称 "doc" 为文档路由保留字')
+    dup_pub = db.session.execute(select(ApihubApi).where(
+        ApihubApi.group1 == g1, ApihubApi.group2 == g2,
+        ApihubApi.pub_name == (pub or body['slug']),
+        ApihubApi.id != (aid or -1))).scalar()
+    if g1 and dup_pub is not None:
+        return api_response(None, 400, f'分组内名称 "{pub or body["slug"]}" 已被占用')
+    a.group1, a.group2, a.pub_name, a.doc_md = g1, g2, pub, doc
     db.session.commit()
     get_state(app).reload()
     return api_response(_api_dict(app, a))
@@ -860,6 +884,23 @@ async def delete_api(aid: int, request: Request):
         db.session.commit()
         get_state(app).reload()
         return api_response({'ok': True})
+    return await run_db(_run)
+
+
+@router.put('/admin/apis/{aid}/enabled', dependencies=_ADMIN_AUTH)
+async def toggle_api(aid: int, request: Request):
+    """一键启停（管理页行内开关）：关闭后 gw/openapi 调用立即 503 已关闭，不可用。"""
+    body = await _silent_json(request) or {}
+    app = request.app
+
+    def _run():
+        a = db.session.get(ApihubApi, aid)
+        if a is None:
+            return api_response(None, 404, 'API 不存在')
+        a.enabled = bool(body.get('enabled'))
+        db.session.commit()
+        get_state(app).reload()
+        return api_response(_api_dict(app, a))
     return await run_db(_run)
 
 
@@ -1114,3 +1155,244 @@ def start_apihub_loop(app):
             time.sleep(1)
 
     threading.Thread(target=_loop, name='apihub-scheduler', daemon=True).start()
+
+
+# ─── OpenAPI 发布入口（/openapi/**，顶级路径；调用方鉴权 = apihub 平台令牌 sk-）──
+#
+# 设计（2026-10-12）：
+# - 路由 /openapi/{一级分组}/{二级分组}/{api名称}（二级可空 → 一级直挂）；
+#   api 名称取 pub_name（管理端可自设），缺省 slug
+# - 请求透明：method/query/body 原样转发；路径模板变量从 query 参数提取注入
+#   （如 ?task_id=123 填 /api/todo/tasks/{path.task_id}）
+# - 四级限流 / 配额 / 健康阻断 / 密钥池与 gw invoke 一致；调用日志 mode='openapi'
+# - GET .../doc 返回完整 Markdown 文档（自动骨架 + 管理端自定义 doc_md），公开无鉴权
+# - 名称 'doc' 保留（_upsert_api 校验），避免与文档路由冲突
+
+openapi_router = APIRouter(tags=['apihub-openapi'])
+
+_PATH_VAR_RE = re.compile(r'\{path\.(\w+)\}')
+
+
+def _openapi_url(request: Request, api: dict) -> str:
+    base = str(request.base_url).rstrip('/')
+    name = api['pub_name'] or api['slug']
+    g = f"{api['group1']}/{api['group2']}" if api['group2'] else api['group1']
+    return f"{base}/openapi/{g}/{name}"
+
+
+def _openapi_doc_md(request: Request, api: dict, up: dict | None, rules: list) -> str:
+    """完整 Markdown 文档：元信息 + 调用方式 + 参数 + 限流 + 示例 + 自定义段落"""
+    url = _openapi_url(request, api)
+    vars_ = _PATH_VAR_RE.findall(api['path_tpl'])
+    api_rules = [r for r in rules if r['scope'] == 'api' and r['api_id'] == api['id'] and r['enabled']]
+    group_disp = f"{api['group1']}/{api['group2']}" if api['group2'] else api['group1']
+    lines = [
+        f"# {api['pub_name'] or api['slug']}",
+        '',
+        f"> {api['description'] or api['name']}",
+        '',
+        '| 项目 | 值 |',
+        '|---|---|',
+        f"| 分组 | `{group_disp}` |",
+        f"| 上游 | {up['name'] if up else api['upstream_id']}（`{up['base_url'] if up else ''}`） |",
+        f"| 方法 | `{api['method']}` |",
+        f"| 内部路径模板 | `{api['path_tpl']}` |",
+        f"| 调用地址 | `{url}` |",
+        f"| 文档地址 | `{url}/doc` |",
+        '',
+        '## 认证',
+        '',
+        '请求头携带 API Hub 平台令牌（`Authorization: Bearer sk-...`）；',
+        '上游侧身份验证由网关注入，调用方无需（也不应）携带内部凭据。',
+        '',
+        '## 请求',
+        '',
+        '- **查询参数**：原样转发给上游；若内部路径含路径变量（见下表），',
+        '  同名 query 参数会被提取填入路径，不再转发',
+    ]
+    if vars_:
+        lines += ['-', '', '  | 路径变量 | 来源 |', '  |---|---|']
+        lines += [f'  | `{v}` | query 参数 `{v}=<值>` |' for v in vars_]
+    else:
+        lines += ['- 本接口无路径变量']
+    lines += [
+        '',
+        '- **请求体**：原样转发（JSON 请带 `Content-Type: application/json`）',
+        '- **响应**：上游状态码与响应体透传；附加响应头 `X-Hub-Latency-Ms`',
+        '',
+        '## 限流',
+        '',
+    ]
+    if api_rules:
+        for r in api_rules:
+            if r['algorithm'] == 'token_bucket':
+                lines.append(f"- API 级：{r['rate_per_sec']}/s（突发 {r['burst']}）")
+            else:
+                lines.append(f"- API 级：{r['max_count']} 次 / {r['window_s']}s")
+        lines.append('- 令牌级 / 全局规则叠加（同层取最严）；超限返回 `429`（`Retry-After` 头）')
+    else:
+        lines.append('- 本 API 未配置 API 级规则；仍受令牌级 / 全局规则约束')
+    example = [f"curl -X {api['method']} '{url}' \\", "  -H 'Authorization: Bearer sk-...'"]
+    if api['method'] not in ('GET', 'HEAD'):
+        example += [" \\", "  -H 'Content-Type: application/json' \\", "  -d '{\"key\": \"value\"}'"]
+    lines += ['', '## 调用示例', '', '```bash', *example, '```', '']
+    if api.get('doc_md'):
+        lines += ['## 详细说明', '', api['doc_md'], '']
+    return '\n'.join(lines)
+
+
+def _openapi_doc_response(request: Request, g1: str, g2: str, name: str):
+    state = get_state(request.app)
+    api = state.store.apis_openapi.get((g1, g2, name))
+    if api is None:
+        group_disp = f'{g1}/{g2}' if g2 else g1
+        return _gw_err(404, 'not_found', f"OpenAPI '{group_disp}/{name}' 不存在")
+    up = state.store.upstreams.get(api['upstream_id'])
+    md = _openapi_doc_md(request, api, up, state.store.rules)
+    return Response(md, media_type='text/markdown; charset=utf-8')
+
+
+@openapi_router.get('/openapi/{g1}/{g2}/{name}/doc')
+async def openapi_doc_2(g1: str, g2: str, name: str, request: Request):
+    return await _run_gw(lambda: _openapi_doc_response(request, g1, g2, name))
+
+
+@openapi_router.get('/openapi/{g1}/{name}/doc')
+async def openapi_doc_1(g1: str, name: str, request: Request):
+    return await _run_gw(lambda: _openapi_doc_response(request, g1, '', name))
+
+
+def _openapi_call_sync(request: Request, g1: str, g2: str, name: str, body: bytes):
+    state = get_state(request.app)
+    t0 = time.monotonic()
+    token = _authenticate(request)
+    if token is None:
+        return _gw_err(401, 'unauthorized', '缺少/无效平台令牌（Authorization: Bearer sk-...）')
+    api = state.store.apis_openapi.get((g1, g2, name))
+    if api is None:
+        group_disp = f'{g1}/{g2}' if g2 else g1
+        return _gw_err(404, 'not_found', f"OpenAPI '{group_disp}/{name}' 不存在")
+    if not api['enabled']:
+        return _gw_err(503, 'api_disabled', f"OpenAPI '{name}' 已关闭，不可用")
+    up = state.store.upstreams.get(api['upstream_id'])
+    if up is None or up['status'] != 1:
+        return _gw_err(503, 'upstream_disabled', '上游已禁用')
+    if state.monitor.state_of(api['id'], api['health_status'])['status'] == 'down':
+        _log(state, token, api, up, None, 'openapi', api['method'], name, None, t0, False, 'unhealthy')
+        return _gw_err(503, 'unhealthy', f"OpenAPI '{name}' 健康状态为 down")
+
+    method = 'GET' if request.method.upper() == 'HEAD' else request.method.upper()
+    if method != api['method']:
+        return _gw_err(405, 'method_not_allowed',
+                       f"该 OpenAPI 方法为 {api['method']}（收到 {method}）",
+                       headers={'Allow': api['method']})
+    if token['allowed_api_ids'] is not None and api['id'] not in token['allowed_api_ids']:
+        return _gw_err(403, 'forbidden', '该令牌无权调用此 API')
+    if token['allowed_ips']:
+        ip = _client_ip(request)
+        if ip not in token['allowed_ips']:
+            return _gw_err(403, 'forbidden', f'客户端 IP {ip} 不在白名单')
+
+    cr = state.limiter.check(state.store.build_levels(api['id'], token['id']))
+    if not cr.allowed:
+        _log(state, token, api, up, None, 'openapi', api['method'], name, 429, t0, False,
+             'rate_limited', rl_scope=cr.scope)
+        return _gw_err(429, 'rate_limited', f"限流触发（层级 {cr.scope}）", headers={
+            'Retry-After': str(max(1, math.ceil(cr.retry_after))),
+            'X-RateLimit-Scope': cr.scope or '',
+            'X-RateLimit-Limit': str(int(cr.limit)),
+            'X-RateLimit-Remaining': str(int(cr.remaining)),
+        })
+
+    quota_reserved = False
+    if token['quota_total'] is not None:
+        used = state.store.quota_used.get(token['id'], 0)
+        if used >= token['quota_total']:
+            return _gw_err(429, 'quota_exceeded', f'配额已用尽: {used}/{token["quota_total"]}')
+        state.store.quota_used[token['id']] = used + 1   # 预占-退还
+        quota_reserved = True
+
+    # 路径模板变量从 query 提取（?var=值 → /{path.var}），其余 query 原样转发
+    query = dict(request.query_params)
+    path_vars = {}
+    for var in _PATH_VAR_RE.findall(api['path_tpl']):
+        if not query.get(var):
+            if quota_reserved:
+                state.store.quota_used[token['id']] -= 1
+            return _gw_err(400, 'template_error', f'缺少路径变量 {var}（以 query 参数传入）')
+        path_vars[var] = query.pop(var)
+
+    inbound = {k: v for k, v in request.headers.items() if k.lower() not in STRIP_HEADERS}
+    timeout_s = (api['timeout_ms'] or up['timeout_ms']) / 1000.0
+
+    attempts = max(1, up['max_retry'] + 1)
+    last_error = 'no_attempt'
+    for _attempt in range(attempts):
+        key = state.selector.next_key(up['id'], state.store.keys.get(up['id'], []))
+        if key is None:
+            last_error = (f'no_available_key(prev:{last_error})'
+                          if last_error != 'no_attempt' else 'no_available_key')
+            break
+        try:
+            url = _url_for(up, key, api['path_tpl'], path_vars)
+            inj = apply_providers(up['providers'], key.cred)
+            headers = _build_headers(inbound, inj)
+            if body:
+                headers.setdefault('Content-Type', request.headers.get('content-type')
+                                   or 'application/json')
+            r = state.pool.request(method, url, headers, query, body or b'',
+                                   timeout_s, verify=up['transport'].get('verify', True))
+        except TemplateError as e:
+            if quota_reserved:
+                state.store.quota_used[token['id']] -= 1
+            return _gw_err(400, 'template_error', str(e))
+        except UpstreamTimeout:
+            last_error = 'timeout'
+            continue
+        except ValueError as e:
+            last_error = str(e)[:60]
+            continue
+        except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
+            if len(state.store.keys.get(up['id'], [])) > 1:
+                state.selector.note_failure(key.id, cooldown_s=10)
+            last_error = f'conn_error:{type(e).__name__}'
+            continue
+
+        if r.status in (401, 403):
+            _disable_denied_key(state, key.id, r.status)
+            last_error = f'auth_{r.status}'
+            continue
+
+        state.selector.note_success(key.id)
+        latency = int((time.monotonic() - t0) * 1000)
+        _log(state, token, api, up, key.id, 'openapi', api['method'],
+             f'{g1}/{g2 or "-"}/{name}'[:250], r.status, t0, r.status < 400,
+             None if r.status < 400 else f'http_{r.status}')
+        resp = Response(r.content, status_code=r.status, media_type='text/html')
+        for h in PASSTHROUGH_RESP_HEADERS & set(r.headers):
+            resp.headers[h] = r.headers[h]
+        resp.headers['X-Hub-Latency-Ms'] = str(latency)
+        return resp
+
+    if quota_reserved:
+        state.store.quota_used[token['id']] -= 1
+    _log(state, token, api, up, None, 'openapi', api['method'],
+         f'{g1}/{g2 or "-"}/{name}'[:250], None, t0, False, last_error)
+    if last_error == 'timeout':
+        return _gw_err(504, 'upstream_timeout', '上游超时')
+    return _gw_err(503, 'upstream_error', f'所有尝试失败: {last_error}')
+
+
+@openapi_router.api_route('/openapi/{g1}/{g2}/{name}',
+                          methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
+async def openapi_call_2(g1: str, g2: str, name: str, request: Request):
+    body = await request.body() or b''
+    return await _run_gw(lambda: _openapi_call_sync(request, g1, g2, name, body))
+
+
+@openapi_router.api_route('/openapi/{g1}/{name}',
+                          methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
+async def openapi_call_1(g1: str, name: str, request: Request):
+    body = await request.body() or b''
+    return await _run_gw(lambda: _openapi_call_sync(request, g1, '', name, body))
+

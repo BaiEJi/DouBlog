@@ -16,7 +16,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..models import Category, Task, TaskEvent
-from ..timeutil import local_day_bounds_utc, local_today, to_local
+from app.shared.timeutil import local_day_bounds_utc, local_today, to_local
 from . import get_settings
 
 

@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Plan, Task
 from ..schemas import PlanCreate, PlanOut, PlanUpdate
-from ..timeutil import get_zone, iso, local_today, now_utc, uuid7
+from app.shared.timeutil import get_zone, iso, local_today, now_utc, uuid7
 from . import get_settings
 
 #: 未来预生成天数(月历全月可见;统计按实例所属日期计,不会灌水"今日新建")

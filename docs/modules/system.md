@@ -2,7 +2,25 @@
 
 > 覆盖范围：`backend/app/system/**`、`backend/app/shared/**`、`backend/app/db.py`、`backend/app/main.py`、`backend/app/config.py`，以及对应前端 `frontend/src/config/**`、`frontend/src/app/**`（App 壳 + LoginPage）、`frontend/src/portal/**`、`frontend/src/shared/client.js`；测试 `backend/tests/system/`、`backend/tests/shared/`。
 >
-> **生成日期：2026-10-10**（依据当日代码现状；统一登录系统已上线）。
+> **生成日期：2026-10-10**（依据当日代码现状；统一登录系统已上线；2026-10-12 凭据迁入 system_accounts 表）。
+
+---
+
+## 0. 登录账号存储（system_accounts 表，2026-10-12）
+
+- **表**：`system_accounts`（单行；username + password_hash + updated_at）——凭据从
+  `config.py` 硬编码迁入数据库；`config.py` 的 `auth_username/auth_password` 仅作
+  **首次播种默认**（system 模块 `ensure_migrations` 空表时写入，幂等不覆盖）与
+  system 模块未注册时的中间态回退
+- **哈希**：PBKDF2-SHA256（200k 迭代 + 随机盐，`app/system/accounts.py` 标准库实现，
+  格式 `pbkdf2_sha256$iters$salt$hash`）；明文不落库不落日志
+- **校验**：`shared/auth.verify_password` → 延迟导入 `system.accounts.verify_account`
+  （避免 shared↔system 模块环），登录与 Basic 两路即时读表——**改密后旧密码立即失效**
+- **管理**：`GET/PUT /api/admin/account`（PUT 验旧密码；username 3-64 位字母数字_-、
+  new_password ≥8 位，二者可只改其一）；前端 `/config` 登录账号卡（三输入框 + 保存）
+- **会话不失效**：会话 Cookie 是 HMAC 签名（secret_key 仍在 config.py），改密不影响
+  已登录设备；需要踢出时改用户名
+- **测试**：`tests/system/test_account.py` 12 例（播种/幂等/两路校验/改密改用户名/弱口令与非法用户名拒绝/旧密码错误 401）
 
 ---
 
@@ -175,7 +193,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - 全局行为：ScrollToTop（锚点除外）、代码块复制按钮事件委托（clipboard API + execCommand 降级）
 
 ### PortalPage（`/`，`portal/PortalPage.jsx`）
-12 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/管理，各带个性色图标底 + hover 位移；「剧情图谱」直达 `/todo/gamemap`、「刷题」直达 `/todo?v=practice`），`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`；卡片分组布局存 localStorage 可自定义（默认单组全卡）；头部「工作台」大标语 + 主题切换 + **登出按钮**（logout 后跳 /login）。
+13 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/管理，各带个性色图标底 + hover 位移；「剧情图谱」直达 `/gamemap`、「刷题」直达 `/practice`、「Steam 挂机」直达 `/steamidler`），`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`；卡片分组布局存 localStorage 可自定义（默认单组全卡）；头部「工作台」大标语 + 主题切换 + **登出按钮**（logout 后跳 /login）。
 
 ### client.js（Cookie 化）
 `API_BASE = http://{hostname}:60100`（后端地址全项目唯一持有处）；`apiFetch`：自动 Content-Type（FormData 除外）、`credentials:'include'`、401 统一重定向 `/login?next=`（登录接口与 /login 页排除，防环）。**不含任何凭据/btoa**。

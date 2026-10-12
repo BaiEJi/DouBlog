@@ -38,14 +38,14 @@ class Settings:
     images_dir: str = os.path.join(data_dir, 'images')
 
     # 数据库后端默认值：'sqlite' | 'postgres'（实际以 data/db_config.json 为准）
-    database_backend: str = 'sqlite'
+    database_backend: str = 'postgres'
 
     # PostgreSQL 连接默认值（切换时可在请求体中覆盖）
-    postgres_host: str = 'localhost'
-    postgres_port: int = 5432
-    postgres_user: str = 'postgres'
-    postgres_password: str = ''
-    postgres_dbname: str = 'doublog'
+    postgres_host: str = '117.72.98.99'
+    postgres_port: int = 50002
+    postgres_user: str = 'lizy'
+    postgres_password: str = 'lizy111pg'
+    postgres_dbname: str = 'app_dev'
 
     # 分页配置
     max_page_size: int = 100

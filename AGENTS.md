@@ -15,7 +15,7 @@
 
 ## 项目是什么
 
-单用户博客/知识库：**FastAPI 后端**（uvicorn 单进程，60100，SQLite 默认 / PostgreSQL 可一键切换，**只换连接读新数据不迁移**，前端总配置页 `/config`）+ **React 19 前端**（60101，Vite + Tailwind 4）。日志/异常/并发池统一走 lizysdk（basekit）。所有模块同库存储，表名规则 `模块名_表名`（存量库启动自动改名）。文章按**知识库（Workspace）**分组隔离（库间树/列表互不可见，name 库内唯一，不支持跨库移动），支持 3 层树形结构（虚拟根 id=0，顶级顺序存 `blog_workspaces.children_order`）、拖拽排序、Markdown 全功能渲染（markdown-it 12 插件 + KaTeX + Mermaid + highlight.js）。知识库特性：**双链 `[[wiki]]` + 反向链接、图片上传（粘贴/拖拽）、最近浏览、Markdown zip 导出备份、SWR 预取**。**无 Redis（例外：confcenter 可选 Redis 读穿缓存，见 17y）、无限流（apihub 网关的多级限流是其模块自身功能）**；后台线程：日志保留清理 + 订阅每日备份/支出摘要 + apihub 探活（均 daemon 随进程，TESTING 空转）——浏览计数实时写库。
+单用户博客/知识库：**FastAPI 后端**（uvicorn 单进程，60100，PostgreSQL 默认（`117.72.98.99:50002/app_dev`）/ SQLite 可一键切换，**只换连接读新数据不迁移**，前端总配置页 `/config`）+ **React 19 前端**（60101，Vite + Tailwind 4）。日志/异常/并发池统一走 lizysdk（basekit）。所有模块同库存储，表名规则 `模块名_表名`（存量库启动自动改名）。文章按**知识库（Workspace）**分组隔离（库间树/列表互不可见，name 库内唯一，不支持跨库移动），支持 3 层树形结构（虚拟根 id=0，顶级顺序存 `blog_workspaces.children_order`）、拖拽排序、Markdown 全功能渲染（markdown-it 12 插件 + KaTeX + Mermaid + highlight.js）。知识库特性：**双链 `[[wiki]]` + 反向链接、图片上传（粘贴/拖拽）、最近浏览、Markdown zip 导出备份、SWR 预取**。**无 Redis（例外：confcenter 可选 Redis 读穿缓存，见 17y）、无限流（apihub 网关的多级限流是其模块自身功能）**；后台线程：日志保留清理 + 订阅每日备份/支出摘要 + apihub 探活（均 daemon 随进程，TESTING 空转）——浏览计数实时写库。
 
 **必读文档索引**（都在仓库根目录）：
 
@@ -26,7 +26,7 @@
 | `backend.md` | 后端架构（模型/树设计/双数据库/中间件/测试） | 后端结构或行为变更 |
 | `frontend.md` | 前端架构（API 层/渲染管线/页面/构建） | 前端结构或渲染行为变更 |
 | `docs/fastapi-migration.md` | FastAPI 迁移规范：骨架契约/移植对照/表名映射/验收门槛 | 改骨架契约、模块包对外契约（router/start_background/ensure_migrations）、表名时 |
-| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog diary vault pwsvc sdklogs subs apihub system todo confcenter | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
+| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog diary vault pwsvc sdklogs subs apihub system todo gamemap practice steamidler confcenter | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
 | `docs/ui-baseline.md` | UI 一致性基线（字体/卡片/按钮/输入档位 + 暗色硬性检查） | 前端页面改动时对齐档位 |
 | `backend-prompt.md` | ⚠️ 历史存档（开发期 AI 提示词，**不更新**） | 永不（已标注历史） |
 | `frontend/README.md` | 前端子目录入口，指向根文档 | 仅当命令变化 |
@@ -37,9 +37,9 @@
 ## 关键事实（改代码前必须知道）
 
 1. **端口**：后端 `60100`、前端 `60101`；**api-hub 子服务 `8300`**（见第 17 条）
-2. **凭据与登录**：`admin` / `lizy111A`（后端 `backend/app/config.py`）。**统一登录**：前端 `/login` 登录一次 → HttpOnly 会话 Cookie（30 天）全站生效；`require_basic` 依赖=Cookie 优先、Basic 兼容（API/测试通道）；前端 bundle **不持有任何凭据**（`shared/client.js` 仅 credentials:include + 401 跳 /login）；免认证例外：图片 GET / sdklogs 摄入 / diary 分享 / apihub gw(sk-)；vault 主密码解锁是加密步骤不是登录
+2. **凭据与登录**：凭据存 **system_accounts 表**（PBKDF2-SHA256 哈希，system 模块播种/管理，`config.py` 的 auth_username/auth_password 仅作首次播种默认与中间态回退）；管理页 `/config` 登录账号卡可改用户名/密码（PUT /api/admin/account，验旧密码）。**统一登录**：前端 `/login` 登录一次 → HttpOnly 会话 Cookie（30 天，HMAC secret_key 在 config.py）全站生效；`require_basic` 依赖=Cookie 优先、Basic 兼容（API/测试通道）；前端 bundle **不持有任何凭据**（`shared/client.js` 仅 credentials:include + 401 跳 /login）；免认证例外：图片 GET / sdklogs 摄入 / diary 分享 / apihub gw(sk-)；vault 主密码解锁是加密步骤不是登录
 3t. **请求级 trace**：main.py 纯 ASGI 中间件每请求绑 lizysdk trace_id（响应头 X-Trace-Id 透传/回写；所有日志行自动携带——经 shared/logging_setup 的 LogRecord 工厂注入，勿用 handler filter 方案，SDK 队列 handler 会绕过）
-3h. **统一页头/宽度**：模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮 + 标题 + 右 slot；侧栏型 diary/subs/vault/logs 用 BackButton）；容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10`；门户含 12 卡（"剧情图谱"直达 /todo/gamemap，"刷题"直达 /todo?v=practice）
+3h. **统一页头/宽度**：模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮 + 标题 + 右 slot；侧栏型 diary/subs/vault/logs 用 BackButton）；容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10`；门户含 13 卡（"剧情图谱"直达 /gamemap，"刷题"直达 /practice，"Steam 挂机"直达 /steamidler）
 3. **双数据库**：运行时后端由 `data/db_config.json` 决定（sqlite/postgres）；切换走 `POST /api/admin/database/switch`——**只换连接不迁移数据**（空库自动建表播种，PG 库不存在自动创建；dev 模式 touch `_reload_stamp.py` 触发 uvicorn 重启，生产需手动重启）；**前端总配置页 `/config`**（数据库 + 日志上报）与 `/admin` 均可操作
 3z. **FastAPI 骨架契约**（详见 `docs/fastapi-migration.md`，改骨架前必读）：`app/db.py`（`Base` 自带 `Model.query` 描述符 / scoped session / `run_db`）/ `app/shared/`（`api_response` 信封、`require_basic` 依赖、`pools.get_pool`）；**模块包三契约**：`__init__.py` 导出 `router` + 可选 `start_background(app)`（`app.state.testing` 空转）+ 可选 `ensure_migrations(engine)`；模块运行态挂 `app.state.<mod>`（禁模块级单例，测试多 app）；`init_db` 顺序 = 存量 RENAME **先于** create_all；Flask 原版快照 `backend/tools/flask-snapshot/`（只读）；压测工具 `backend/tools/bench/`（`launch.py` 支持 flask/fastapi 两实现对照）
 4. **虚拟根节点**：id=0 的 Post 行；所有查询过滤 `id != 0`；建库时自动播种（`db.py`）
@@ -62,8 +62,11 @@
 15a. **SQLite WAL 坑**：`journal_mode=WAL` 必须在 `init_db` 无并发窗口强制设置并校验返回值（并发下切换会**静默失败**回到 delete 模式 → 读写互斥锁死）；每连接 PRAGMA（busy_timeout/synchronous/cache_size/temp_store）走 connect 监听器。压测工具在 `backend/tools/sdklogs_loadtest.py`（改写入/存储路径后跑一遍对照）
 16. **测试完全自包含**（临时 SQLite，无外部依赖）；PG 切换集成测试可选 `pip install pgserver`（未装自动跳过）
 17y. **配置中心模块**（app/confcenter/ + /confcenter 页，cyan）：扁平 KV namespace→key→value；value={type:str|json,data} 显式类型（json 写校验 400、type 可变更）；Redis 读穿缓存三态降级（库缺失/未启用/连接失败→直连 DB，只 warn 一次）；缓存配置 data/redis_config.json；**字面量路由必须先于 /{ns}/{key} 注册**；测试 39 例（FakeRedis）
-17z. **Todo 模块**（app/todo/ + frontend/src/todo/，MyTodo 迁入）：四象限待办+迁移链+规律生活计划（物化任务）+统计+邮件提醒；表 todo_* 五表（users/token 鉴权未迁，走统一登录）；前缀 /api/todo（信封）；真实数据已导入（tools/import_mytodo.py，2500 任务）；**extensions/todo/{chrome-extension,android} 为平迁客户端，仍指向旧服务 8070+token 协议**（未改造，见 docs/modules/todo.md）；**子模块 gamemap**（app/todo/gamemap/ 13 表 gamemap_* + src/todo/gamemap/ 保留 antd6/@xyflow 技术栈——**根 main.jsx 无 StrictMode**（xyflow dev 双渲染坑，勿恢复）、画布勿改回内置 EdgeRenderer；todo 域测试合计 166 例（含 practice 61——20 轮评审 100 问题修复）（含 steamidler 18）
-17. **API Hub 模块**（`app/apihub/`，能力包同款结构）：聚合异构上游 API，网关入口 `/api/apihub/gw/*` 走**平台令牌 sk-（SHA-256 落库，不挂 Basic Auth）**，管理端 `/api/apihub/admin/*` 走 Basic Auth；四级限流/计次配额（预占-退还）/密钥池/探活。运行态挂 `app.state.apihub`（持真实 app 引用）；凭证 AES-GCM 密文落库，主密钥 `data/apihub.key`；上游连接池为标准库 http.client keepalive（每目标封顶 128 并发，超时≠连接错误不重试）；探活调度 daemon 线程 TESTING 空转。前端 `/apihub` 单页（门户卡片）。测试 `tests/test_apihub_core.py` + `tests/test_apihub_api.py`；接口契约见 api.md 第 14 章
+17z. **Todo 模块**（app/todo/ + frontend/src/todo/，MyTodo 迁入）：四象限待办+迁移链+规律生活计划（物化任务）+统计+邮件提醒；表 todo_* 五表（users/token 鉴权未迁，走统一登录）；前缀 /api/todo（信封）；真实数据已导入（tools/import_mytodo.py，2500 任务）；**extensions/todo/{chrome-extension,android} 为平迁客户端，仍指向旧服务 8070+token 协议**（未改造，见 docs/modules/todo.md）；测试 53 例；timeutil 已上移 `app/shared/timeutil.py`（todo 与 practice 共用）；前端 kit/charts 被 gamemap/practice/steamidler 跨模块引用
+17m. **Gamemap 模块**（app/gamemap/ + src/gamemap/，2026-10-12 自 todo 拆出，前缀 /api/gamemap）：剧情图谱 13 表 gamemap_*；保留 antd6/@xyflow 技术栈——**根 main.jsx 无 StrictMode**（xyflow dev 双渲染坑，勿恢复）、画布勿改回内置 EdgeRenderer；ensure_migrations=7 默认关系类型种子+附件目录；测试 34 例（docs/modules/gamemap.md）
+17p. **Practice 模块**（app/practice/ + src/practice/，2026-10-12 自 todo 拆出，前缀 /api/practice）：刷题记录+艾宾浩斯复习+一键抓题（LeetCode/洛谷），6 表 practice_*；时区设置跨模块复用 todo（app.todo.services.get_settings）；测试 61 例——20 轮评审 100 问题修复（docs/modules/practice.md）
+17s. **Steamidler 模块**（app/steamidler/ + src/steamidler/，2026-10-12 自 todo 拆出，前缀 /api/steamidler）：Steam 挂机，单表 steamidler_accounts；auth/worker 与源逐字节一致、gevent 限 worker 线程独立 hub；protobuf 被 steam[client] 锁 3.20.3 勿升 4+；start_background 恢复挂机账号；测试 18 例（docs/modules/steamidler.md）
+17. **API Hub 模块**（`app/apihub/`，能力包同款结构）：聚合异构上游 API，网关入口 `/api/apihub/gw/*` 走**平台令牌 sk-（SHA-256 落库，不挂 Basic Auth）**，管理端 `/api/apihub/admin/*` 走 Basic Auth；四级限流/计次配额（预占-退还）/密钥池/探活。运行态挂 `app.state.apihub`（持真实 app 引用）；凭证 AES-GCM 密文落库，主密钥 `data/apihub.key`；上游连接池为标准库 http.client keepalive（每目标封顶 128 并发，超时≠连接错误不重试）；探活调度 daemon 线程 TESTING 空转。前端 `/apihub` 单页（门户卡片）。测试 core/api/selfreg/openapi 四套；接口契约见 api.md 第 14 章。**OpenAPI 发布**（2026-10-12）：API 带 `group1/group2/pub_name/doc_md`（最多二级分组，`doc` 保留字）；顶级入口 `ANY /openapi/{g1}/{g2}/{name}` + `GET .../doc`（公开 Markdown 文档：骨架自动生成 + doc_md）；路径模板变量以**同名 query 参数**注入；**内部服务令牌 `X-Apihub-Token`**（`data/internal_token` 自动生成，require_basic 见此头即信任——服务内 API 不走用户身份验证，泄漏=绕过全站认证，按密钥文件管理）。**自注册**：`tools/apihub_register_self.py` 把本服务全部模块 API（246 个/13 模块）注册为上游 `doublog` 并发布为 `self/<模块>` 二级分组，配三级限流（api 级读写 20/5rps + token 50rps + global 100rps，幂等可重跑）；`tools/apihub_verify_self.py <sk-令牌>` 做 45 项端到端验收（转发一致性/写操作/429/鉴权/openapi/doc）
 
 ### 本机环境注意（Windows）
 

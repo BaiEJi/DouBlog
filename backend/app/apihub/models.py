@@ -76,6 +76,11 @@ class ApihubApi(Base):
     last_probe_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default='1')
+    # ── OpenAPI 发布（2026-10-12）：二级分组 + 对外名称 + 文档 ──
+    group1: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')    # 一级分组 slug（空=未发布）
+    group2: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')    # 二级分组 slug（最多二级）
+    pub_name: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')  # 对外 api 名称（空=用 slug）
+    doc_md: Mapped[str] = mapped_column(Text, nullable=False, default='', server_default='')           # /doc 自定义 Markdown 段落
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

@@ -29,6 +29,7 @@ class Store:
         self.lock = threading.RLock()
         self.apis: dict = {}            # slug -> dict
         self.apis_by_id: dict = {}
+        self.apis_openapi: dict = {}    # (group1, group2, pub_name|slug) -> dict（OpenAPI 发布索引）
         self.upstreams: dict = {}       # id -> dict
         self.upstreams_by_slug: dict = {}
         self.keys: dict = {}            # upstream_id -> [KeyCfg]
@@ -76,6 +77,7 @@ class Store:
 
             self.apis = {}
             self.apis_by_id = {}
+            self.apis_openapi = {}
             for a in apis:
                 cfg = {
                     'id': a.id, 'slug': a.slug, 'name': a.name,
@@ -87,11 +89,16 @@ class Store:
                     'timeout_ms': a.timeout_ms, 'probe': a.probe, 'enabled': a.enabled,
                     'health_status': a.health_status,
                     'description': a.description or '',
+                    'group1': a.group1 or '', 'group2': a.group2 or '',
+                    'pub_name': a.pub_name or '', 'doc_md': a.doc_md or '',
                     'last_probe_at': a.last_probe_at,
                     'last_latency_ms': a.last_latency_ms,
                 }
                 self.apis[a.slug] = cfg
                 self.apis_by_id[a.id] = cfg
+                if cfg['group1']:
+                    self.apis_openapi[(cfg['group1'], cfg['group2'],
+                                        cfg['pub_name'] or a.slug)] = cfg
 
             self.tokens = {}
             for t in toks:

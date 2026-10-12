@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Task
-from ..timeutil import local_today
+from app.shared.timeutil import local_today
 from . import get_settings
 from .migrations import pending_migrations_dict
 from .stats import compute_streak, day_task_counts
