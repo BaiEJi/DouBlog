@@ -11,7 +11,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  DndContext, KeyboardSensor, PointerSensor,
+  DndContext, DragOverlay, KeyboardSensor, PointerSensor,
   closestCenter, pointerWithin, useSensor, useSensors,
 } from '@dnd-kit/core'
 import {
@@ -263,33 +263,51 @@ function saveLayout(groups) {
   catch { /* 存储禁用时仅本次会话生效 */ }
 }
 
-/** 可排序卡片：dnd 变换在外层 div（与卡片自身 hover 位移互不干扰）；data 标记类型与所属组 */
+/** 可排序卡片：拖拽经 DragOverlay 悬浮跟随（原槽位显示虚线占位）；data 标记类型与所属组 */
 function PortalCard({ sys, groupId, guardClick }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: sys.to, data: { type: 'card', group: groupId } })
   return (
     <div
-      ref={setNodeRef} {...attributes} {...listeners}
+      ref={setNodeRef} {...attributes} {...listeners} data-card={sys.to}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        zIndex: isDragging ? 30 : undefined,
         touchAction: 'manipulation',
       }}
-      className={isDragging ? 'relative opacity-80' : 'relative'}>
-      <Link
-        to={sys.to}
-        onClick={e => { if (guardClick.current) { e.preventDefault(); e.stopPropagation() } }}
-        className={'flex flex-col h-full ' + CARD + (isDragging
-          ? ' shadow-xl ring-1 ring-black/10 dark:ring-white/20 scale-[1.03] cursor-grabbing'
-          : ' cursor-grab')}>
-        <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
-        <div className="text-[15px] font-medium mb-1">{sys.title}</div>
-        <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
-        <div className="mt-4 text-[12px] text-stone-400 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-          进入 →
-        </div>
-      </Link>
+      className="relative">
+      {isDragging ? (
+        // 原槽位占位（虚线框保持网格高度，随其他卡归位动画流动）
+        <div className="h-full min-h-[150px] rounded-3xl border-2 border-dashed
+          border-black/[0.12] dark:border-white/[0.16] bg-black/[0.02] dark:bg-white/[0.02]" />
+      ) : (
+        <Link
+          to={sys.to}
+          onClick={e => { if (guardClick.current) { e.preventDefault(); e.stopPropagation() } }}
+          className={'flex flex-col h-full ' + CARD + ' cursor-grab active:cursor-grabbing'}>
+          <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
+          <div className="text-[15px] font-medium mb-1">{sys.title}</div>
+          <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
+          <div className="mt-4 text-[12px] text-stone-400 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+            进入 →
+          </div>
+        </Link>
+      )}
+    </div>
+  )
+}
+
+/** 拖拽悬浮层卡片：静态克隆（非交互），微倾斜 + 大投影呈现"拎起来"的手感 */
+function OverlayCard({ sys, width, height }) {
+  return (
+    <div
+      style={{ width, height }}
+      className="flex flex-col text-left p-6 rounded-3xl border rotate-2 scale-[1.04]
+        border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-[#1c1b1a]
+        shadow-2xl ring-1 ring-black/10 dark:ring-white/20 cursor-grabbing select-none">
+      <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
+      <div className="text-[15px] font-medium mb-1">{sys.title}</div>
+      <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
     </div>
   )
 }
@@ -375,6 +393,15 @@ export default function PortalPage({ dark, setDark }) {
   const [groups, setGroups] = useState(readLayout)
   // 拖拽结束后的 120ms 内吞掉落在卡片上的 click，防止"拖完误跳转"
   const suppressClick = useRef(false)
+  // 拖拽悬浮层：DragOverlay 渲染的克隆卡（含源卡尺寸），松手后经 dropAnimation 归位
+  const [activeCard, setActiveCard] = useState(null)
+
+  const onDragStart = useCallback(({ active }) => {
+    if (active.data.current?.type !== 'card') return
+    const sys = SYS_BY_TO[active.id]
+    const rect = document.querySelector(`[data-card="${active.id}"]`)?.getBoundingClientRect()
+    setActiveCard(sys && rect ? { sys, width: Math.round(rect.width), height: Math.round(rect.height) } : sys ? { sys } : null)
+  }, [])
 
   // 触屏（粗指针）：长按 180ms 激活拖拽（滚动位移 >6px 自动取消）；鼠标：拖动 6px 激活
   const coarse = useMemo(
@@ -393,6 +420,7 @@ export default function PortalPage({ dark, setDark }) {
 
   const handleDragEnd = useCallback(({ active, over }) => {
     endDrag()
+    setActiveCard(null)
     if (!over || active.id === over.id) return
     const aType = active.data.current?.type
     const oType = over.data.current?.type
@@ -506,7 +534,9 @@ export default function PortalPage({ dark, setDark }) {
 
         {/* 分组卡片（组间/组内均可拖拽） */}
         <DndContext sensors={sensors} collisionDetection={portalCollision}
-          onDragEnd={handleDragEnd} onDragCancel={endDrag}>
+          onDragStart={onDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => { endDrag(); setActiveCard(null) }}>
           <SortableContext items={groups.map(g => g.id)} strategy={rectSortingStrategy}>
             <div className="space-y-8">
               {groups.map(g => (
@@ -519,6 +549,13 @@ export default function PortalPage({ dark, setDark }) {
             className="mt-5 w-full rounded-2xl border border-dashed border-black/[0.12] dark:border-white/[0.12] py-3 text-sm text-stone-500 dark:text-stone-400 hover:border-black/25 dark:hover:border-white/25 hover:bg-black/[0.02] dark:hover:bg-white/[0.03] transition-colors">
             ＋ 新建分组
           </button>
+          {/* 拖拽悬浮层：拎起的卡片克隆（微倾斜 + 大投影），松手 240ms 缓动归位 */}
+          <DragOverlay dropAnimation={{ duration: 240, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
+            {activeCard && (
+              <OverlayCard sys={activeCard.sys}
+                width={activeCard.width} height={activeCard.height} />
+            )}
+          </DragOverlay>
         </DndContext>
 
         <p className="mt-8 text-center text-[11.5px] text-stone-400 dark:text-stone-500">
