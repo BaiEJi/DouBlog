@@ -1054,13 +1054,14 @@ PUT  /api/clash/secret         # body {"secret":"xxx"}；1-64 位可打印字符
 POST /api/clash/upgrade        # body {"channel":""|"release"|"alpha"}，其他值 400
 
 # 内核日志（clashctl log）：mihomo.log 尾部，?tail=1..5000 默认 200
-GET  /api/clash/log?tail=200   # → {"path":".../mihomo.log","tail":200,"content":"time=..."}
+GET  /api/clash/log?tail=200   # → {"path":".../mihomo.log","tail":200,"level":"silent","content":"time=..."}
 
 # 配置文件（clashmixin / -c / -r）；file 仅 mixin|base|runtime，其他 400
 GET  /api/clash/config?file=mixin    # → {"file":"mixin","path":".../mixin.yaml","editable":true,"content":"..."}
 PUT  /api/clash/config               # body {"content":"..."}，仅 mixin；保存即合并并重启内核（同 clashmixin -e）
 
-# 订阅（clashsub ls / add / del / use / update）
+# 订阅（clashsub ls / add / del / use / update）——add/update 下载**剥离代理 env 直连**
+# （后端进程的 *_proxy 指向本机 clash，出口不可达时会拖垮下载；实测直连更稳）
 GET  /api/clash/sub            # → {"use":5,"profiles":[{"id":5,"url":"https://...","path":".../5.yaml"}]}
 POST /api/clash/sub            # body 按动作：
        {"action":"add","url":"https://..."}        # URL 须 http(s):// 或 file:// 开头、无空格引号（400）
@@ -1069,6 +1070,13 @@ POST /api/clash/sub            # body 按动作：
        {"action":"update","id":6,"convert":true}   # convert=订阅转换；flag 在 id 之前（clashctl 语义）
        {"action":"update","auto":true}             # 配置 crontab 自动更新（每 2 天）
 GET  /api/clash/sub/log?tail=200    # profiles.log 尾部
+
+# 日志级别（实时日志开关）：GET /log 附带 level；订阅配置常带 log-level: silent——
+# 内核静默后日志文件不再增长，页面"实时"无从谈起
+GET  /api/clash/log?tail=200   # → {...,"level":"silent","content":"..."}
+POST /api/clash/log/level      # body {"level":"info"}（debug|info|warning|error|silent，其他 400）
+                               # yq 写 mixin 的 log-level + 合并重启（等价 clashmixin -e 改一行）
+                               # → message "😼 日志级别已切换为 info，已重启生效"
 ```
 
 **通用错误**：clashctl 未安装时除 `/availability` 外全部 404（`clashctl 未安装（未找到 <script 路径>）`）；动作类命令失败（退出码≠0）→ 400，clashctl 输出首行透传在 message；超时 → 504。完整行为契约见 `docs/modules/clash.md`。

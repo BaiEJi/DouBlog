@@ -358,7 +358,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 488 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 21；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 491 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 24；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**

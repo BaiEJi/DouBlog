@@ -15,7 +15,7 @@ import {
   clashAvailability, clashStatus, clashOn, clashOff,
   clashProxy, clashProxySet, clashTun, clashTunSet,
   clashUi, clashSecret, clashSecretSet, clashUpgrade,
-  clashLog, clashConfig, clashConfigSave,
+  clashLog, clashLogLevel, clashConfig, clashConfigSave,
   clashSubs, clashSubAction, clashSubLog,
 } from './api'
 
@@ -432,6 +432,7 @@ function LogView({ toast, unavailable }) {
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
   const [auto, setAuto] = useState(false)
+  const [levelBusy, setLevelBusy] = useState(false)
   const timer = useRef(null)
 
   const refresh = useCallback(async (quiet = false) => {
@@ -451,16 +452,43 @@ function LogView({ toast, unavailable }) {
     return () => clearInterval(timer.current)
   }, [auto, unavailable, refresh])
 
+  // 实时日志 = 内核级别非 silent（订阅配置常带 silent，日志文件不再增长）
+  const level = data?.level || 'info'
+  const live = level !== 'silent'
+
+  const toggleLive = async () => {
+    setLevelBusy(true)
+    try {
+      const next = live ? 'silent' : 'info'
+      await clashLogLevel(next)
+      toast({ msg: `😼 日志级别已切换为 ${next}，已重启生效` })
+      await refresh()
+      if (next === 'silent') setAuto(false)
+    } catch (e) {
+      toast({ msg: e.message, kind: 'error' })
+    } finally {
+      setLevelBusy(false)
+    }
+  }
+
   return (
     <div className={card}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-black/[0.06] dark:border-white/[0.06]">
         <div>
           <h3 className="text-sm font-semibold">内核日志</h3>
-          <p className="text-xs text-stone-400 mt-0.5">{data?.path || 'mihomo.log'} · 尾部 {lines} 行</p>
+          <p className="text-xs text-stone-400 mt-0.5">
+            {data?.path || 'mihomo.log'} · 尾部 {lines} 行
+            {!live && ' · 内核静默中（log-level: silent），开启实时后才有新日志'}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={live ? btnDanger : btnPri} disabled={levelBusy || !data}
+            onClick={toggleLive}>
+            {levelBusy ? '切换中…' : (live ? '关闭实时（silent）' : '开启实时日志（info）')}
+          </button>
           <label className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 cursor-pointer">
             <input type="checkbox" className="accent-sky-600" checked={auto}
+              disabled={!live}
               onChange={e => setAuto(e.target.checked)} />
             5s 自动刷新
           </label>

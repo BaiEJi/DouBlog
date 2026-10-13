@@ -5,8 +5,11 @@
   clashsub/_merge_config_restart/clashui/clashupgrade）
 - _okcat 到 stdout 退出码 0、_failcat 到 stderr 退出码 1（带 ANSI 色码，验证剥离）
 - 每次调用把 "函数 参数…" 追加到 resources/calls.log，供断言透传参数正确
+- 每次调用把 "proxy=yes|no" 追加到 resources/proxy-env.log（断言订阅下载剥离代理 env）
 - 状态类查询按 marker 文件（resources/fake-state/*.flag）决定退出码，
   写操作翻转 marker——模拟 proxy/tun 状态往返
+- BIN_YQ 与真实 common.sh 一致是**变量路径**（假环境指向 FAKE_YQ 极简脚本，
+  只实现 yq -i '.log-level = "<级别>"' <file>）
 """
 import base64
 
@@ -21,10 +24,19 @@ RES="$BASE_DIR/resources"
 STATE="$RES/fake-state"
 mkdir -p "$STATE"
 
+# 订阅下载直连验证：记录本次调用是否带了代理 env（strip_proxy 应为 no）
+echo "proxy=$(env | grep -qi '^https\?_proxy=' && echo yes || echo no)" >>"$RES/proxy-env.log"
+
 _okcat()   { printf '\033[38;2;200;214;229m😼 %s\033[0m\n' "$*"; return 0; }
 _failcat() { printf '\033[38;2;253;121;168m😾 %s\033[0m\n' "$*" >&2; return 1; }
 
 _log_call() { printf '%s\n' "$*" >>"$RES/calls.log"; }
+
+# 真实 common.sh 的变量形态：BIN_YQ 指向 yq 可执行文件（假环境为 bin/yq 极简脚本）
+BIN_YQ="$BASE_DIR/bin/yq"
+CLASH_CONFIG_MIXIN="$RES/mixin.yaml"
+CLASH_CONFIG_BASE="$RES/config.yaml"
+CLASH_CONFIG_RUNTIME="$RES/runtime.yaml"
 
 _flag() { [ -f "$STATE/$1" ]; }
 
@@ -58,7 +70,17 @@ clashsecret() {
 }
 clashui()      { _log_call "clashui"; echo '🏠 内网：http://192.168.0.1:9090/ui'; }
 clashupgrade() { _log_call "clashupgrade $*"; echo '{"status":"ok"}'; _okcat '内核升级成功'; }
-_merge_config_restart() { _log_call "_merge_config_restart"; touch "$STATE/merge-restart"; _okcat '配置更新成功，已重启生效'; }
+_merge_config_restart() {
+    _log_call "_merge_config_restart"; touch "$STATE/merge-restart"
+    # 模拟真实合并：mixin 的 log-level 生效进 runtime（kernel_log_level 读 runtime）
+    lvl=$(grep '^log-level:' "$RES/mixin.yaml" 2>/dev/null | head -1 | awk '{print $2}')
+    if [ -n "$lvl" ]; then
+        grep -v '^log-level:' "$RES/runtime.yaml" >"$RES/runtime.yaml.tmp" 2>/dev/null || : ;
+        printf 'log-level: %s\n' "$lvl" >>"$RES/runtime.yaml.tmp"
+        mv "$RES/runtime.yaml.tmp" "$RES/runtime.yaml"
+    fi
+    _okcat '配置更新成功，已重启生效'
+}
 clashsub() {
     _log_call "clashsub $*"
     case "$1" in
@@ -74,6 +96,22 @@ clashsub() {
 }
 """
 
+#: 假 yq：只实现 service 用到的 `yq -i '.log-level = "<级别>"' <file>`（其余一律成功）
+FAKE_YQ = """#!/usr/bin/env bash
+[ "$1" = "-i" ] || exit 0
+expr=$2; file=$3
+case "$expr" in
+'.log-level = "debug"'|'.log-level = "info"'|'.log-level = "warning"'|'.log-level = "error"'|'.log-level = "silent"')
+    lvl=$(printf '%s' "$expr" | sed 's/.*"\\(.*\\)"$/\\1/')
+    if grep -q '^log-level:' "$file" 2>/dev/null; then
+        sed -i "s|^log-level:.*|log-level: $lvl|" "$file"
+    else
+        printf 'log-level: %s\\n' "$lvl" >>"$file"
+    fi ;;
+esac
+exit 0
+"""
+
 
 @pytest.fixture
 def fake_clashctl(tmp_path, monkeypatch):
@@ -81,8 +119,12 @@ def fake_clashctl(tmp_path, monkeypatch):
     base = tmp_path / 'clashctl'
     (base / 'scripts' / 'cmd').mkdir(parents=True)
     (base / 'resources').mkdir()
+    (base / 'bin').mkdir()
     (base / 'scripts' / 'cmd' / 'clashctl.sh').write_text(FAKE_SCRIPT)
     (base / '.env').write_text('KERNEL_NAME=mihomo\nCLASH_BASE_DIR=%s\n' % base)
+    yq = base / 'bin' / 'yq'
+    yq.write_text(FAKE_YQ)
+    yq.chmod(0o755)
     res = base / 'resources'
     (res / 'mixin.yaml').write_text('_custom:\n  system-proxy:\n    enable: false\n')
     (res / 'config.yaml').write_text('proxies: []\n')
@@ -103,5 +145,13 @@ def state_dir(fake_clashctl):
 def calls(fake_clashctl):
     """读取假脚本记录的调用清单（每行 "函数 参数…"）；尚未有调用时为空表。"""
     path = fake_clashctl / 'resources' / 'calls.log'
+    return lambda: ([line for line in path.read_text().splitlines() if line]
+                    if path.exists() else [])
+
+
+@pytest.fixture
+def proxy_env_log(fake_clashctl):
+    """读取假脚本记录的代理 env 出现情况（每次调用一行 proxy=yes|no）。"""
+    path = fake_clashctl / 'resources' / 'proxy-env.log'
     return lambda: ([line for line in path.read_text().splitlines() if line]
                     if path.exists() else [])

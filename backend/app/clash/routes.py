@@ -48,6 +48,10 @@ class _UpgradeBody(BaseModel):
     channel: str = ''
 
 
+class _LogLevelBody(BaseModel):
+    level: str
+
+
 class _SubBody(BaseModel):
     action: str
     url: str | None = None
@@ -164,6 +168,17 @@ def post_upgrade(body: _UpgradeBody):
 def get_log(tail: int = Query(200, ge=1, le=5000)):
     service.ensure_available()
     return api_response(service.kernel_log_tail(_tail_arg(tail)))
+
+
+@router.post('/log/level')
+def set_log_level(body: _LogLevelBody):
+    """切换内核日志级别（写 mixin 的 log-level + 合并重启，等价 clashmixin -e）。
+
+    订阅配置常带 log-level: silent——内核静默后日志文件不增长，实时刷新无从谈起。
+    """
+    service.ensure_available()
+    data = service.kernel_log_level_set((body.level or '').strip())
+    return api_response(data, 200, f'😼 日志级别已切换为 {data.get("level")}，已重启生效')
 
 
 @router.get('/config')

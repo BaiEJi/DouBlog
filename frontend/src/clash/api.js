@@ -42,8 +42,12 @@ export const clashSecretSet = secret =>
 export const clashUpgrade = (channel = '') =>
   json('/api/clash/upgrade', { method: 'POST', body: JSON.stringify({ channel }) })
 
-/** 内核日志尾部：{path, tail, content} */
+/** 内核日志尾部：{path, tail, level, content}（level=当前生效日志级别） */
 export const clashLog = (tail = 200) => json(`/api/clash/log?tail=${tail}`)
+
+/** 切换内核日志级别（写 mixin 的 log-level + 合并重启；silent 会让日志文件停止增长） */
+export const clashLogLevel = (level) =>
+  json('/api/clash/log/level', { method: 'POST', body: JSON.stringify({ level }) })
 
 /** 读配置文件：file = mixin | base | runtime → {file, path, editable, content} */
 export const clashConfig = (file = 'mixin') => json(`/api/clash/config?file=${file}`)

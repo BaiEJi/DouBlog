@@ -72,14 +72,32 @@ def kernel_name() -> str:
     return ''
 
 
-def run_clashctl(func: str, args=None, timeout=DEFAULT_TIMEOUT) -> tuple:
-    """source clashctl.sh 后调用指定函数，返回 (退出码, 去色后的合并输出)。"""
+#: 代理环境变量（订阅下载前剥离——后端进程继承的 *_proxy 指向本机 clash，
+#: 而下载订阅发生在内核规则之外：出口节点不可达时 curl 全部超时，直连通常更稳）
+_PROXY_ENV_KEYS = ('http_proxy', 'https_proxy', 'all_proxy', 'ftp_proxy',
+                   'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'FTP_PROXY')
+
+LOG_LEVELS = ('debug', 'info', 'warning', 'error', 'silent')
+
+
+def run_clashctl(func: str, args=None, timeout=DEFAULT_TIMEOUT, strip_proxy=False) -> tuple:
+    """source clashctl.sh 后调用指定函数，返回 (退出码, 去色后的合并输出)。
+
+    strip_proxy=True 时从子进程环境移除 *_proxy（订阅下载用：不跟随会话代理，
+    避免本机 clash 出口故障拖垮订阅更新；no_proxy=* 双保险）。
+    """
     argv = ['bash', '-c', f'. "$0"; {func} "$@"', script_path(), *(args or ())]
+    env = {**os.environ, 'TERM': 'dumb'}
+    if strip_proxy:
+        for key in _PROXY_ENV_KEYS:
+            env.pop(key, None)
+        env['no_proxy'] = '*'
+        env['NO_PROXY'] = '*'
     try:
         proc = subprocess.run(
             argv, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            timeout=timeout, env={**os.environ, 'TERM': 'dumb'})
+            timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         raise UpstreamTimeoutError(
             message=f'clashctl {func} 执行超时（>{timeout}s），已中止') from None
@@ -217,7 +235,35 @@ def kernel_log_tail(n: int) -> dict:
     content = tail_lines(path, n)
     if content is None:
         raise NotFoundError(message=f'日志文件不存在：{path}')
-    return {'path': path, 'tail': n, 'content': content}
+    return {'path': path, 'tail': n, 'level': kernel_log_level(), 'content': content}
+
+
+def kernel_log_level():
+    """当前生效日志级别（runtime.yaml 的 log-level；缺省=info——mihomo 默认）。"""
+    try:
+        with open(os.path.join(resources_dir(), 'runtime.yaml'), encoding='utf-8',
+                  errors='replace') as f:
+            data = yaml.safe_load(f) or {}
+        level = data.get('log-level') if isinstance(data, dict) else None
+        return level if level in LOG_LEVELS else 'info'
+    except (OSError, yaml.YAMLError):
+        return 'info'
+
+
+def kernel_log_level_set(level: str) -> dict:
+    """写 mixin 的 log-level 并合并重启（等价 clashmixin -e 改一行后保存）。
+
+    订阅原始配置常带 log-level: silent——内核静默后 mihomo.log 不再增长，
+    页面日志无从实时；提级到 info/debug 才有内容可刷。
+    """
+    if level not in LOG_LEVELS:
+        raise ParamError(message='level 只能是 debug / info / warning / error / silent')
+    # level 已过白名单，内联安全；"$@" 兜底追加到 _merge_config_restart（忽略参数）
+    cmd = (f'"$BIN_YQ" -i \'.log-level = "{level}"\' "$CLASH_CONFIG_MIXIN" '
+           '&& _merge_config_restart')
+    rc, out = run_clashctl(cmd, timeout=60)
+    _require_ok('log-level', out, rc)
+    return {'output': out, 'level': kernel_log_level()}
 
 
 # ─── 订阅管理 ─────────────────────────────────────────────
@@ -249,7 +295,8 @@ def _check_sub_id(id_value) -> str:
 def sub_add(url: str) -> dict:
     if not isinstance(url, str) or not _URL_RE.match(url) or len(url) > 2048:
         raise ParamError(message='订阅链接必须以 http(s):// 或 file:// 开头，且不含空格/引号')
-    rc, out = run_clashctl('clashsub', ['add', url], timeout=SUB_TIMEOUT)
+    # 下载直连（strip_proxy）：后端环境继承的 *_proxy 指向本机 clash，出口不可达时必挂
+    rc, out = run_clashctl('clashsub', ['add', url], timeout=SUB_TIMEOUT, strip_proxy=True)
     _require_ok('clashsub add', out, rc)
     return {'output': out}
 
@@ -275,7 +322,8 @@ def sub_update(id_value=None, convert: bool = False, auto: bool = False) -> dict
         args.append('--convert')
     if id_value is not None:
         args.append(_check_sub_id(id_value))
-    rc, out = run_clashctl('clashsub', args, timeout=SUB_TIMEOUT)
+    # 下载直连（同 sub_add）
+    rc, out = run_clashctl('clashsub', args, timeout=SUB_TIMEOUT, strip_proxy=True)
     _require_ok('clashsub update', out, rc)
     return {'output': out}
 

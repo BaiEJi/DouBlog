@@ -199,3 +199,41 @@ def test_sub_use_and_update_flags(client, fake_clashctl, calls):
 
 def test_sub_log_tail(client, fake_clashctl):
     assert '已添加订阅' in _get(client, '/sub/log?tail=10')['data']['content']
+
+
+# ─── 订阅下载直连（strip_proxy：不跟随后端进程的 *_proxy env）──
+
+def test_sub_download_strips_proxy_env(client, fake_clashctl, monkeypatch, proxy_env_log):
+    """带 *_proxy 的后端环境里，订阅 add/update 的子进程必须无代理 env（出口坏时不拖垮下载）。"""
+    monkeypatch.setenv('https_proxy', 'http://127.0.0.1:7890')
+    monkeypatch.setenv('HTTPS_PROXY', 'http://127.0.0.1:7890')
+    body = _post(client, '/sub', {'action': 'add', 'url': 'https://x.example/s?token=1'})
+    assert body['success'] is True
+    _post(client, '/sub', {'action': 'update', 'id': 1})
+    assert proxy_env_log()[-2:] == ['proxy=no', 'proxy=no']
+    # 普通命令保留原 env（不动会话语径）
+    _get(client, '/status')
+    assert proxy_env_log()[-1] == 'proxy=yes'
+
+
+# ─── 日志级别（实时日志开关：silent 时内核不写文件）─────────
+
+def test_log_level_in_get_log(client, fake_clashctl):
+    data = _get(client, '/log?tail=3')['data']
+    assert data['level'] == 'info'          # runtime 未配置 → mihomo 默认 info
+
+
+def test_log_level_switch_roundtrip(client, fake_clashctl, state_dir):
+    body = client.post('/api/clash/log/level', json={'level': 'verbose'},
+                       headers=AUTH).json()
+    assert body['code'] == 400              # 非法级别
+
+    r = client.post('/api/clash/log/level', json={'level': 'silent'}, headers=AUTH)
+    assert r.status_code == 200, r.json()
+    assert r.json()['data']['level'] == 'silent'
+    assert (state_dir / 'merge-restart').exists()        # 切级别 = 写 mixin + 合并重启
+    assert 'log-level: silent' in (fake_clashctl / 'resources' / 'mixin.yaml').read_text()
+    assert _get(client, '/log?tail=3')['data']['level'] == 'silent'
+
+    r = client.post('/api/clash/log/level', json={'level': 'info'}, headers=AUTH)
+    assert r.json()['data']['level'] == 'info'
