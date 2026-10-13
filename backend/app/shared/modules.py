@@ -27,6 +27,7 @@ MODULE_BY_PREFIX = (
     ('/api/practice', 'practice'),
     ('/api/steamidler', 'steamidler'),
     ('/api/confcenter', 'confcenter'),
+    ('/api/clash', 'clash'),
     ('/api/auth', 'shared'),
     ('/api/workspaces', 'blog'),
     ('/api/posts', 'blog'),
@@ -35,7 +36,7 @@ MODULE_BY_PREFIX = (
 )
 
 ALL_MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo',
-               'gamemap', 'practice', 'steamidler', 'confcenter', 'shared', 'main')
+               'gamemap', 'practice', 'steamidler', 'confcenter', 'clash', 'shared', 'main')
 
 #: 有数据库表的模块（init_db 逐个调用其 ensure_migrations 钩子）
 MODULES_WITH_DB = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub',

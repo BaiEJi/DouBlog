@@ -73,6 +73,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── practice/                      # /practice（刷题）：PracticePage（公共 ModuleShell 侧栏）+ PracticeView + components/
 ├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
+├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
     ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮

@@ -23,8 +23,12 @@
 - [13. Subs API](#13-subs-api订阅管理crownflow-迁移)
 - [14. API Hub API](#14-api-hub-api统一-api-调用平台)
 - [15. Todo API](#15-todo-api四象限待办mytodo-迁入)
-- [16. 配置中心 API](#16-配置中心-api)
-- [17. 错误码与数据模型](#17-错误码与数据模型)
+- [16. Gamemap API](#16-gamemap-api剧情图谱独立顶级模块13-表-gamemap_)
+- [17. Practice API](#17-practice-api刷题独立顶级模块22-端点6-表-practice_规范-docspractice-specmd)
+- [18. Steamidler API](#18-steamidler-apisteam-挂机独立顶级模块)
+- [19. 配置中心 API](#19-配置中心-api)
+- [20. Clash API](#20-clash-api代理管理clashctl-全能力的-web-迁移)
+- [21. 错误码与数据模型](#21-错误码与数据模型)
 
 ---
 
@@ -1016,7 +1020,60 @@ POST   /api/confcenter/cache/test              # 连通性测试（可带候选�
 POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
 ```
 
-## 20. 错误码与数据模型
+## 20. Clash API（代理管理：clashctl 全能力的 Web 迁移）
+
+> 模块代码 `app/clash/`，前端页面 `/clash`；**底层能力完全复用本机 clashctl**（bash 函数集，`~/clashctl`，可用环境变量 `DOUBLOG_CLASHCTL_DIR` 覆盖），本模块只做 Web 迁移。无数据表。
+> 全部接口挂统一登录；处理器为同步 def（subprocess 阻塞数秒走线程池）。实测示例（kernel=mihomo）：
+
+```bash
+# 安装检测（门户卡片置灰依据；未安装时 available=false 不报错）
+$ curl -u admin:*** http://localhost:60100/api/clash/availability
+{"success":true,"code":200,"message":"操作成功","data":{"available":true,"base_dir":"/home/lizy/clashctl","kernel":"mihomo"}}
+
+# 内核状态 / 启停（clashctl status / on / off）
+GET  /api/clash/status
+# → data: {"running":true,"output":"529710 /home/lizy/clashctl/bin/mihomo -d ..."}
+POST /api/clash/on      # → message "😼 已开启代理环境"
+POST /api/clash/off     # → message "😼 已关闭代理环境"
+
+# 系统代理（clashctl proxy [on|off]）：查询靠退出码语义 0=开启/1=关闭
+GET  /api/clash/proxy          # → {"enabled":true,"output":"😼 系统代理：开启\n..."}
+POST /api/clash/proxy          # body {"enable":true|false}
+
+# Tun（clashctl tun [on|off]；需 sudo，失败首行透传，如 "sudo: a password is required"）
+GET  /api/clash/tun            # → {"enabled":false,"output":"😾 Tun 状态：关闭"}
+POST /api/clash/tun            # body {"enable":true|false}
+
+# Web 控制台地址（clashctl ui 原始输出）/ 密钥（clashsecret [new]）
+GET  /api/clash/ui             # → {"output":"╔══...Web 控制台...9090/ui..."}
+GET  /api/clash/secret         # → {"secret":"HnR7lD","output":"😼 当前密钥：HnR7lD"}
+PUT  /api/clash/secret         # body {"secret":"xxx"}；1-64 位可打印字符，不含空格/引号（400）
+                                # 写 mixin + 合并重启生效
+
+# 升级内核（clashctl upgrade [-r|-a]）
+POST /api/clash/upgrade        # body {"channel":""|"release"|"alpha"}，其他值 400
+
+# 内核日志（clashctl log）：mihomo.log 尾部，?tail=1..5000 默认 200
+GET  /api/clash/log?tail=200   # → {"path":".../mihomo.log","tail":200,"content":"time=..."}
+
+# 配置文件（clashmixin / -c / -r）；file 仅 mixin|base|runtime，其他 400
+GET  /api/clash/config?file=mixin    # → {"file":"mixin","path":".../mixin.yaml","editable":true,"content":"..."}
+PUT  /api/clash/config               # body {"content":"..."}，仅 mixin；保存即合并并重启内核（同 clashmixin -e）
+
+# 订阅（clashsub ls / add / del / use / update）
+GET  /api/clash/sub            # → {"use":5,"profiles":[{"id":5,"url":"https://...","path":".../5.yaml"}]}
+POST /api/clash/sub            # body 按动作：
+       {"action":"add","url":"https://..."}        # URL 须 http(s):// 或 file:// 开头、无空格引号（400）
+       {"action":"del","id":6}                     # 删除使用中的订阅会被 clashctl 拒绝（400 透传）
+       {"action":"use","id":6}                     # 切换并合并重启
+       {"action":"update","id":6,"convert":true}   # convert=订阅转换；flag 在 id 之前（clashctl 语义）
+       {"action":"update","auto":true}             # 配置 crontab 自动更新（每 2 天）
+GET  /api/clash/sub/log?tail=200    # profiles.log 尾部
+```
+
+**通用错误**：clashctl 未安装时除 `/availability` 外全部 404（`clashctl 未安装（未找到 <script 路径>）`）；动作类命令失败（退出码≠0）→ 400，clashctl 输出首行透传在 message；超时 → 504。完整行为契约见 `docs/modules/clash.md`。
+
+## 21. 错误码与数据模型
 
 ### 6.1 HTTP 状态码
 

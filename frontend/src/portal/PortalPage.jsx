@@ -8,7 +8,7 @@
  * - 头部「恢复默认」清空布局回默认单组
  * 触屏：长按 180ms 激活拖拽；拖完 120ms 内吞 click 防误跳转。
  */
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor,
@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { API_BASE } from '../shared/client'
+import { clashAvailability } from '../clash/api'
 
 function logout() {
   fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' })
@@ -185,6 +186,18 @@ const SYSTEMS = [
     ),
   },
   {
+    to: '/clash',
+    title: 'Clash 代理',
+    desc: 'clashctl Web 化 · 内核启停 · 订阅 · Tun',
+    box: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3 10h14M10 3c2.5 2 2.5 12 0 14M10 3c-2.5 2-2.5 12 0 14" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    ),
+  },
+  {
     to: '/admin',
     title: '管理',
     desc: '内容管理 · 备份导出',
@@ -263,10 +276,24 @@ function saveLayout(groups) {
   catch { /* 存储禁用时仅本次会话生效 */ }
 }
 
-/** 可排序卡片：拖拽经 DragOverlay 悬浮跟随（原槽位显示虚线占位）；data 标记类型与所属组 */
-function PortalCard({ sys, groupId, guardClick }) {
+/** 可排序卡片：拖拽经 DragOverlay 悬浮跟随（原槽位显示虚线占位）；data 标记类型与所属组。
+ *  disabled（如本机未装 clashctl）：置灰去饱和、不可进入，但仍可拖拽归置。 */
+function PortalCard({ sys, groupId, guardClick, disabled }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: sys.to, data: { type: 'card', group: groupId } })
+  const inner = (
+    <>
+      <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
+      <div className="text-[15px] font-medium mb-1">{sys.title}</div>
+      <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
+      <div className={'mt-4 text-[12px] text-stone-400 transition-all ' +
+        (disabled
+          ? 'text-stone-400 dark:text-stone-500'
+          : 'opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0')}>
+        {disabled ? '😼 未安装 clashctl' : '进入 →'}
+      </div>
+    </>
+  )
   return (
     <div
       ref={setNodeRef} {...attributes} {...listeners} data-card={sys.to}
@@ -280,17 +307,18 @@ function PortalCard({ sys, groupId, guardClick }) {
         // 原槽位占位（虚线框保持网格高度，随其他卡归位动画流动）
         <div className="h-full min-h-[150px] rounded-3xl border-2 border-dashed
           border-black/[0.12] dark:border-white/[0.16] bg-black/[0.02] dark:bg-white/[0.02]" />
+      ) : disabled ? (
+        <div className={'flex flex-col h-full p-6 rounded-3xl border cursor-not-allowed select-none ' +
+          'border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] ' +
+          'opacity-55 grayscale'} title="未安装 clashctl，安装后自动恢复">
+          {inner}
+        </div>
       ) : (
         <Link
           to={sys.to}
           onClick={e => { if (guardClick.current) { e.preventDefault(); e.stopPropagation() } }}
           className={'flex flex-col h-full ' + CARD + ' cursor-grab active:cursor-grabbing'}>
-          <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
-          <div className="text-[15px] font-medium mb-1">{sys.title}</div>
-          <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
-          <div className="mt-4 text-[12px] text-stone-400 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
-            进入 →
-          </div>
+          {inner}
         </Link>
       )}
     </div>
@@ -313,7 +341,7 @@ function OverlayCard({ sys, width, height }) {
 }
 
 /** 分组区块：组头（拖把手 + 名称双击改名 + 计数 + 删除）+ 组内卡网格（空组显示放置占位） */
-function GroupSection({ group, total, onRename, onDelete, guardClick }) {
+function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisabled }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(group.name)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -376,7 +404,8 @@ function GroupSection({ group, total, onRename, onDelete, guardClick }) {
         {group.cards.length ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
             {group.cards.map(to => (
-              <PortalCard key={to} sys={SYS_BY_TO[to]} groupId={group.id} guardClick={guardClick} />
+              <PortalCard key={to} sys={SYS_BY_TO[to]} groupId={group.id} guardClick={guardClick}
+                disabled={isCardDisabled?.(to)} />
             ))}
           </div>
         ) : (
@@ -395,6 +424,16 @@ export default function PortalPage({ dark, setDark }) {
   const suppressClick = useRef(false)
   // 拖拽悬浮层：DragOverlay 渲染的克隆卡（含源卡尺寸），松手后经 dropAnimation 归位
   const [activeCard, setActiveCard] = useState(null)
+  // clashctl 未安装 → 门户 Clash 卡片置灰（检测失败/后端不可达时不置灰，避免误伤）
+  const [clashMissing, setClashMissing] = useState(false)
+  useEffect(() => {
+    let alive = true
+    clashAvailability()
+      .then(d => { if (alive && d && d.available === false) setClashMissing(true) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [])
+  const isCardDisabled = useCallback(to => to === '/clash' && clashMissing, [clashMissing])
 
   const onDragStart = useCallback(({ active }) => {
     if (active.data.current?.type !== 'card') return
@@ -541,7 +580,8 @@ export default function PortalPage({ dark, setDark }) {
             <div className="space-y-8">
               {groups.map(g => (
                 <GroupSection key={g.id} group={g} total={groups.length}
-                  onRename={renameGroup} onDelete={deleteGroup} guardClick={suppressClick} />
+                  onRename={renameGroup} onDelete={deleteGroup} guardClick={suppressClick}
+                  isCardDisabled={isCardDisabled} />
               ))}
             </div>
           </SortableContext>

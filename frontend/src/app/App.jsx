@@ -1,7 +1,7 @@
 /**
  * 应用壳：主题状态 + 统一登录守卫 + 路由表（路由级代码分割）+ 全局行为（ScrollToTop/代码块复制委托）。
  * 各能力包：portal(/) blog(/blog /post /create /admin) diary(/diary) vault(/vault) logs(/logs)
- * apihub(/apihub) config(/config) confcenter(/confcenter)；公开页：/login 与 /diary/s/:token（分享）。
+ * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash)；公开页：/login 与 /diary/s/:token（分享）。
  */
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
@@ -26,6 +26,7 @@ const TodoPage = lazy(() => import('@/todo/TodoPage'))
 const GamemapShell = lazy(() => import('@/gamemap/GamemapShell'))
 const PracticePage = lazy(() => import('@/practice/PracticePage'))
 const SteamIdlerPage = lazy(() => import('@/steamidler/SteamIdlerPage'))
+const ClashPage = lazy(() => import('@/clash/ClashPage'))
 const PortalPage = lazy(() => import('@/portal/PortalPage'))
 const LoginPage = lazy(() => import('@/app/LoginPage'))
 
@@ -159,6 +160,7 @@ export default function App() {
             <Route path="/gamemap/*" element={<GamemapShell dark={dark} setDark={toggleDark} />} />
             <Route path="/practice" element={<PracticePage dark={dark} setDark={toggleDark} />} />
             <Route path="/steamidler" element={<SteamIdlerPage dark={dark} setDark={toggleDark} />} />
+            <Route path="/clash" element={<ClashPage dark={dark} setDark={toggleDark} />} />
           </Routes>
           </ModuleFrame>
         </AuthGate>
