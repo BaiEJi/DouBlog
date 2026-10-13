@@ -92,12 +92,28 @@ def create_app() -> FastAPI:
                 trace_id = new_trace_id()
             bind_context(trace_id=trace_id)
 
+            # 访问日志（INFO，随 trace 上下文自动携带 trace_id）：/logs 页实时
+            # 可见全部流量；/api/v1/logs 自身路径 no_remote（防摄入回环）
+            import time as _time
+            path = scope.get('path', '')
+            method = scope.get('method', '')
+            t0 = _time.monotonic()
+            status_holder = {'status': 0}
+
             async def send_with_trace(message):
                 if message['type'] == 'http.response.start':
+                    status_holder['status'] = message['status']
                     message.setdefault('headers', []).append((b'x-trace-id', trace_id.encode('latin-1')))
                 await send(message)
 
-            await app_to_wrap(scope, receive, send_with_trace)
+            try:
+                await app_to_wrap(scope, receive, send_with_trace)
+            finally:
+                extra = {'sys_name': 'doublog.main'}
+                if path.startswith('/api/v1/logs'):
+                    extra['no_remote'] = True
+                logger.info(f"access {method} {path} -> {status_holder['status']}"
+                            f" ({(_time.monotonic() - t0) * 1000:.0f}ms)", extra=extra)
         return middleware
 
     app.add_middleware(trace_middleware)

@@ -69,7 +69,7 @@ def load_logs_config() -> dict:
     cfg = {
         'enabled': settings.logs_send_json,
         'url': settings.logs_send_url,
-        'level': 'WARNING',          # 外发最低级别：WARNING / INFO
+        'level': 'INFO',             # 外发最低级别：INFO（全量采集）/ WARNING（只收告警）
     }
     try:
         with open(logs_config_path(), encoding='utf-8') as f:

@@ -75,7 +75,9 @@ def test_self_ingestion_warning_reaches_logs(app, client, auth_headers, monkeypa
         found = None
         while time.time() < deadline and not found:
             time.sleep(0.3)
-            r = client.get(f'/api/v1/logs?q={marker}', headers=auth_headers)
+            # level=WARNING 钉死：INFO 全量外发后，TestClient(httpx) 的请求日志
+            # "HTTP Request: GET ...?q=<marker>"（消息含 marker）也会入库，避免与之混淆
+            r = client.get(f'/api/v1/logs?q={marker}&level=WARNING', headers=auth_headers)
             items = r.json()['data']['items']
             found = items[0] if items else None
         assert found, 'WARNING 未在 10s 内回灌到 /api/v1/logs'
@@ -111,6 +113,42 @@ def test_no_remote_guard_on_ingest_path(app, client, auth_headers, monkeypatch):
         assert r.json()['data']['total'] == 0, 'no_remote 记录不应外发'
         log_file = os.path.join(settings.data_dir, 'logs', 'doublog.log')
         assert marker in open(log_file, encoding='utf-8').read(), '本地文件应保留'
+    finally:
+        _stop(server)
+        monkeypatch.setattr(settings, 'logs_send_json', False)
+        from app.shared.logging_setup import setup_logging_for_app
+        setup_logging_for_app()
+
+
+def test_info_level_collected_by_default(app, client, auth_headers, monkeypatch):
+    """外发默认级别 INFO（2026-10-13 全量采集）：普通 INFO 模块日志也进 /logs，且带 trace"""
+    from lizysdk.logs.context import bind_context, clear_context
+    server, port = _serve(app)
+    try:
+        _enable_send(app, monkeypatch, f'http://127.0.0.1:{port}/api/v1/logs')
+        marker = f'info-collect-probe-{port}'
+        bind_context(trace_id=f'trace-{marker}')
+        try:
+            logging.getLogger('doublog.test').info('常规 INFO 也应被采集 %s', marker)
+        finally:
+            clear_context()
+        from lizysdk.logs.handlers import flush as sdk_flush
+        sdk_flush(timeout=5)
+
+        deadline = time.time() + 10
+        found = None
+        # trace_id 精确锁定本条：TestClient(httpx) 的请求回声日志（消息含 URL 里的
+        # marker、无 trace）也会入库，勿与之混淆
+        while time.time() < deadline and not found:
+            time.sleep(0.3)
+            r = client.get(f'/api/v1/logs?q={marker}&level=INFO&trace_id=trace-{marker}',
+                           headers=auth_headers)
+            items = r.json()['data']['items']
+            found = items[0] if items else None
+        assert found, 'INFO 未在 10s 内回灌到 /api/v1/logs'
+        assert found['level_text'] == 'INFO'
+        assert found.get('trace_id') == f'trace-{marker}'
+        assert marker in found['message']
     finally:
         _stop(server)
         monkeypatch.setattr(settings, 'logs_send_json', False)
