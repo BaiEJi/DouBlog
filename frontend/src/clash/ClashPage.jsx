@@ -1,13 +1,15 @@
 /**
- * Clash 代理管理页 /clash：clashctl 全能力的 Web 迁移（底层完全复用其 bash 函数）。
+ * Clash 代理管理页 /clash：clashctl 全能力 + mihomo Web 控制台（zashboard）核心能力的 Web 迁移。
  *
- * 四个视图（PageHeader tabs → ModuleShell 侧栏）：
- * - 总览：内核启停 / 系统代理 / Tun / Web 控制台地址 / 密钥 / 升级内核
- * - 订阅：列表（当前使用标记）+ 添加 / 切换 / 更新（--convert）/ 删除 / 自动更新 / 订阅日志
- * - 配置：Mixin 可编辑（保存即合并重启，同 clashmixin -e）；base / runtime 只读
- * - 日志：内核日志尾部刷新（手动 + 5s 自动）
- * 未安装 clashctl 时整页空态提示（门户卡片同时置灰）。个性色 sky——只用于徽章、
- * 主按钮、选中态；其余中性 stone（docs/ui-baseline.md）。
+ * 七个视图（PageHeader tabs → ModuleShell 侧栏）：
+ * - 总览：内核启停 / 系统代理 / Tun / 控制台地址 / 密钥 / 升级 + 运行时配置（模式/局域网）+ 实时流量
+ * - 代理：策略组 / 节点切换 / 连通性测速（单节点 + 整组）——ProxiesView
+ * - 连接：活跃连接 / 断开单条或全部 / 实时速率——ConnectionsView
+ * - 规则：runtime 规则链检索——RulesView
+ * - 订阅：clashctl 订阅管理 + Provider 热更新
+ * - 配置：Mixin 可编辑（保存即合并重启）；base / runtime 只读
+ * - 日志：内核日志尾部 + 实时日志开关（log-level）
+ * 未安装 clashctl 时整页空态（门户卡片同时置灰）。个性色 sky（docs/ui-baseline.md）。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
@@ -15,42 +17,141 @@ import {
   clashAvailability, clashStatus, clashOn, clashOff,
   clashProxy, clashProxySet, clashTun, clashTunSet,
   clashUi, clashSecret, clashSecretSet, clashUpgrade,
-  clashLog, clashLogLevel, clashConfig, clashConfigSave,
+  clashConfig, clashConfigSave, clashLog, clashLogLevel,
   clashSubs, clashSubAction, clashSubLog,
+  clashCtlConfigs, clashCtlConfigsPatch, clashCtlConnections, clashCtlProviders,
+  clashCtlProviderUpdate,
 } from './api'
+import { card, inputCls, btn, btnPri, btnDanger, LBL, MONO_BLOCK, Toast, StateBadge, fmtBytes } from './kit'
+import ProxiesView from './ProxiesView'
+import ConnectionsView from './ConnectionsView'
+import RulesView from './RulesView'
 
-const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
-const inputCls = 'px-3 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
-const btn = 'px-4 py-2 text-sm font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-const btnPri = 'px-4 py-2 text-sm font-medium rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-const btnDanger = 'px-4 py-2 text-sm font-medium rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-const LBL = 'text-xs text-stone-500 dark:text-stone-400'
+// ─── 总览视图 ─────────────────────────────────────────────
 
-/** 轻提示（约 3s 自动消失；error=红底，其余 stone 反色） */
-function Toast({ t }) {
-  if (!t?.msg) return null
+const MODES = [
+  { key: 'rule', label: '规则' },
+  { key: 'global', label: '全局' },
+  { key: 'direct', label: '直连' },
+]
+
+function RuntimeConfigCard({ toast }) {
+  const [cfg, setCfg] = useState(null)
+  const [busy, setBusy] = useState('')
+
+  const refresh = useCallback(async (quiet = false) => {
+    try {
+      setCfg(await clashCtlConfigs())
+    } catch (e) {
+      if (!quiet) toast({ msg: e.message, kind: 'error' })
+    }
+  }, [toast])
+
+  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    const t = setInterval(() => refresh(true), 15000)
+    return () => clearInterval(t)
+  }, [refresh])
+
+  const patch = async body => {
+    setBusy('cfg')
+    try {
+      setCfg(await clashCtlConfigsPatch(body))
+      toast({ msg: '运行时配置已热切换' })
+    } catch (e) {
+      toast({ msg: e.message, kind: 'error' })
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const mode = cfg?.mode
   return (
-    <div className={'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] rounded-lg px-3 py-2 text-[13px] shadow-lg animate-fade-in max-w-[90vw] break-all ' +
-      (t.kind === 'error'
-        ? 'bg-red-500 text-white'
-        : 'bg-stone-800 dark:bg-stone-100 dark:text-stone-900 text-white')}
-      onClick={() => t.onDismiss?.()}>
-      {t.msg}
+    <div className={`${card} p-5`}>
+      <h3 className="text-sm font-semibold mb-0.5">运行配置</h3>
+      <p className="text-xs text-stone-400 mb-3">热切换即时生效，不重启内核（控制器 PATCH）</p>
+      {cfg == null ? (
+        <p className="text-[13px] text-stone-400 py-2">加载中…</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <span className={LBL}>出站模式</span>
+            <div className="flex p-0.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.07]">
+              {MODES.map(m => (
+                <button key={m.key} disabled={!!busy}
+                  className={'px-3 py-1.5 rounded-md text-[13px] transition-colors ' +
+                    (mode === m.key
+                      ? 'bg-white dark:bg-white/[0.14] text-stone-900 dark:text-stone-100 font-medium shadow-sm'
+                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200')}
+                  onClick={() => patch({ mode: m.key })}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm">允许局域网</p>
+              <p className="text-[11.5px] text-stone-400 dark:text-stone-500">mixed-port {cfg['mixed-port'] || '—'} · {cfg['bind-address'] || '*'}</p>
+            </div>
+            <button className={cfg['allow-lan'] ? btnDanger : btn} disabled={!!busy}
+              onClick={() => patch({ allow_lan: !cfg['allow-lan'] })}>
+              {cfg['allow-lan'] ? '已开启（点此关闭）' : '已关闭（点此开启）'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-/** 状态徽章：on=绿点启用 / off=灰点关闭 / wait=琥珀加载中 */
-function StateBadge({ on, loading, onText = '运行中', offText = '已停止' }) {
-  if (loading) return <span className="inline-flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400"><span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />检测中…</span>
-  return on
-    ? <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />{onText}</span>
-    : <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-stone-500/10 text-stone-500 dark:text-stone-400"><span className="w-1.5 h-1.5 rounded-full bg-stone-400 dark:bg-stone-500" />{offText}</span>
+function TrafficCard({ toast }) {
+  const [stat, setStat] = useState(null)
+  const [speed, setSpeed] = useState({ up: 0, down: 0 })
+  const prev = useRef(null)
+
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await clashCtlConnections()
+        if (!alive) return
+        const now = Date.now()
+        if (prev.current) {
+          const dt = (now - prev.current.t) / 1000
+          if (dt > 0) setSpeed({
+            up: Math.max(0, (d.uploadTotal - prev.current.up) / dt),
+            down: Math.max(0, (d.downloadTotal - prev.current.down) / dt),
+          })
+        }
+        prev.current = { t: now, up: d.uploadTotal, down: d.downloadTotal }
+        setStat({ up: d.uploadTotal, down: d.downloadTotal, n: (d.connections || []).length })
+      } catch { /* 内核未运行时静默 */ }
+    }
+    tick()
+    const timer = setInterval(tick, 2000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
+  return (
+    <div className={`${card} p-5`}>
+      <h3 className="text-sm font-semibold mb-0.5">实时流量</h3>
+      <p className="text-xs text-stone-400 mb-3">本内核会话累计 · {stat ? `${stat.n} 条活跃连接` : '…'}</p>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <p className={LBL}>↑ 上行</p>
+          <p className="text-lg font-semibold tabular-nums">{fmtBytes(speed.up)}/s</p>
+          <p className="text-[11.5px] text-stone-400 dark:text-stone-500">累计 {fmtBytes(stat?.up)}</p>
+        </div>
+        <div>
+          <p className={LBL}>↓ 下行</p>
+          <p className="text-lg font-semibold tabular-nums">{fmtBytes(speed.down)}/s</p>
+          <p className="text-[11.5px] text-stone-400 dark:text-stone-500">累计 {fmtBytes(stat?.down)}</p>
+        </div>
+      </div>
+    </div>
+  )
 }
-
-const MONO_BLOCK = 'font-mono text-[12px] leading-relaxed whitespace-pre-wrap break-all text-stone-600 dark:text-stone-300 bg-black/[0.02] dark:bg-white/[0.03] rounded-lg p-3 border border-black/[0.05] dark:border-white/[0.06] max-h-72 overflow-y-auto'
-
-// ─── 总览视图 ─────────────────────────────────────────────
 
 function OverviewView({ toast, unavailable }) {
   const [status, setStatus] = useState(null)         // {running, output}
@@ -127,18 +228,14 @@ function OverviewView({ toast, unavailable }) {
         <p className="text-xs text-stone-400 mb-3">clashproxy / clashtun —— 环境代理开关与全局路由</p>
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <StateBadge on={!!proxy?.enabled} loading={!proxy} onText="系统代理已开启" offText="系统代理已关闭" />
-            </div>
+            <StateBadge on={!!proxy?.enabled} loading={!proxy} onText="系统代理已开启" offText="系统代理已关闭" />
             <button className={proxy?.enabled ? btnDanger : btnPri} disabled={!!busy || !proxy}
               onClick={() => act('proxy', () => clashProxySet(!proxy.enabled))}>
               {busy === 'proxy' ? '切换中…' : (proxy?.enabled ? '关闭系统代理' : '开启系统代理')}
             </button>
           </div>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <StateBadge on={!!tun?.enabled} loading={!tun} onText="Tun 已启用" offText="Tun 已关闭" />
-            </div>
+            <StateBadge on={!!tun?.enabled} loading={!tun} onText="Tun 已启用" offText="Tun 已关闭" />
             <button className={tun?.enabled ? btnDanger : btnPri} disabled={!!busy || !tun}
               onClick={() => act('tun', () => clashTunSet(!tun.enabled))}>
               {busy === 'tun' ? '切换中…' : (tun?.enabled ? '关闭 Tun' : '开启 Tun')}
@@ -148,12 +245,16 @@ function OverviewView({ toast, unavailable }) {
         </div>
       </div>
 
+      {/* 运行配置（模式 / 局域网）+ 实时流量 */}
+      <RuntimeConfigCard toast={toast} />
+      <TrafficCard toast={toast} />
+
       {/* Web 控制台 */}
       <div className={`${card} p-5`}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="text-sm font-semibold">Web 控制台</h3>
-            <p className="text-xs text-stone-400 mt-0.5">clashctl ui —— zashboard 面板地址</p>
+            <h3 className="text-sm font-semibold">Web 控制台（原始）</h3>
+            <p className="text-xs text-stone-400 mt-0.5">clashctl ui —— zashboard 面板地址（本页已内置其核心能力）</p>
           </div>
           <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-medium bg-sky-500/10 text-sky-700 dark:text-sky-300">ui</span>
         </div>
@@ -200,6 +301,8 @@ function SubsView({ toast, unavailable }) {
   const [convert, setConvert] = useState(false)
   const [busy, setBusy] = useState('')
   const [delConfirm, setDelConfirm] = useState(null) // 待二次确认的订阅 id
+  const [providers, setProviders] = useState(null)
+  const [provBusy, setProvBusy] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -213,7 +316,17 @@ function SubsView({ toast, unavailable }) {
     try { setLog(await clashSubLog(200)) } catch { /* 日志缺失不阻塞页面 */ }
   }, [])
 
-  useEffect(() => { if (!unavailable) { refresh(); refreshLog() } }, [unavailable, refresh, refreshLog])
+  const refreshProviders = useCallback(async (quiet = false) => {
+    try {
+      setProviders(await clashCtlProviders())
+    } catch (e) {
+      if (!quiet && providers == null) { /* 控制器不可达时折叠该区块，不打扰订阅管理 */ }
+    }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!unavailable) { refresh(); refreshLog(); refreshProviders() }
+  }, [unavailable, refresh, refreshLog, refreshProviders])
 
   const act = async (name, fn) => {
     setBusy(name)
@@ -239,15 +352,29 @@ function SubsView({ toast, unavailable }) {
 
   const doDel = id => act(`del-${id}`, () => clashSubAction({ action: 'del', id }))
 
+  const updateProvider = async name => {
+    setProvBusy(name)
+    try {
+      const d = await clashCtlProviderUpdate(name)
+      setProviders(d)
+      toast({ msg: '😼 节点池已热更新（未重启内核）' })
+    } catch (e) {
+      toast({ msg: e.message, kind: 'error' })
+    } finally {
+      setProvBusy('')
+    }
+  }
+
   const profiles = subs?.profiles || []
   const current = subs?.use
+  const httpProviders = (providers?.providers || []).filter(p => p.vehicleType === 'HTTP')
 
   return (
     <div className="space-y-4">
       {/* 添加订阅 */}
       <div className={`${card} p-5`}>
         <h3 className="text-sm font-semibold mb-0.5">添加订阅</h3>
-        <p className="text-xs text-stone-400 mb-3">clashsub add —— 支持 http(s):// 与 file:// 本地订阅</p>
+        <p className="text-xs text-stone-400 mb-3">clashsub add —— 支持 http(s):// 与 file:// 本地订阅（下载直连）</p>
         <div className="flex flex-wrap gap-2">
           <input className={inputCls + ' flex-1 min-w-64'} placeholder="https://…（含特殊字符时无需引号，直接粘贴）"
             value={url} onChange={e => setUrl(e.target.value)}
@@ -325,6 +452,29 @@ function SubsView({ toast, unavailable }) {
           </button>
         </div>
       </div>
+
+      {/* 节点池 Provider（热更新） */}
+      {httpProviders.length > 0 && (
+        <div className={card}>
+          <div className="px-5 py-4 border-b border-black/[0.06] dark:border-white/[0.06]">
+            <h3 className="text-sm font-semibold">节点池热更新</h3>
+            <p className="text-xs text-stone-400 mt-0.5">控制器 Provider——拉取订阅新节点即时生效，不重启内核</p>
+          </div>
+          <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+            {httpProviders.map(p => (
+              <div key={p.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-5 py-3">
+                <span className="font-mono text-xs text-stone-600 dark:text-stone-300 truncate">{p.name}</span>
+                <span className="text-xs text-stone-400">{p.proxies.length} 节点 · 更新于 {p.updatedAt || '—'}</span>
+                <span className="flex-1" />
+                <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50"
+                  disabled={!!provBusy} onClick={() => updateProvider(p.name)}>
+                  {provBusy === p.name ? '更新中…' : '热更新'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 订阅日志 */}
       <div className={`${card} p-5`}>
@@ -512,6 +662,9 @@ function LogView({ toast, unavailable }) {
 
 const TABS = [
   { key: 'overview', label: '总览' },
+  { key: 'proxies', label: '代理' },
+  { key: 'connections', label: '连接' },
+  { key: 'rules', label: '规则' },
   { key: 'subs', label: '订阅' },
   { key: 'config', label: '配置' },
   { key: 'log', label: '日志' },
@@ -539,7 +692,7 @@ export default function ClashPage() {
 
   return (
     <div>
-      <PageHeader title="Clash 代理" subtitle="内核启停 · 订阅 · Tun · Mixin 配置"
+      <PageHeader title="Clash 代理" subtitle="内核启停 · 代理组与测速 · 订阅 · 连接与规则"
         tabs={TABS} activeTab={tab} onTabChange={setTab} accent="sky" hideTitle />
       {avail === null ? (
         <div className="px-6 py-16 text-center text-sm text-stone-400">检测 clashctl 安装状态…</div>
@@ -554,6 +707,9 @@ export default function ClashPage() {
       ) : (
         <>
           {tab === 'overview' && <OverviewView toast={toast} unavailable={unavailable} />}
+          {tab === 'proxies' && <ProxiesView toast={toast} unavailable={unavailable} />}
+          {tab === 'connections' && <ConnectionsView toast={toast} unavailable={unavailable} />}
+          {tab === 'rules' && <RulesView toast={toast} unavailable={unavailable} />}
           {tab === 'subs' && <SubsView toast={toast} unavailable={unavailable} />}
           {tab === 'config' && <ConfigView toast={toast} unavailable={unavailable} />}
           {tab === 'log' && <LogView toast={toast} unavailable={unavailable} />}

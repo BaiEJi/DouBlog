@@ -65,3 +65,49 @@ export const clashSubAction = payload =>
 
 /** 订阅日志尾部：{path, tail, content} */
 export const clashSubLog = (tail = 200) => json(`/api/clash/sub/log?tail=${tail}`)
+
+// ── mihomo 控制器（代理组/延迟/连接/规则/运行时配置——zashboard 同源）──
+
+/** 控制器版本 {version, meta} */
+export const clashCtlVersion = () => json('/api/clash/controller/version')
+
+/** 运行时配置 {mode, allow-lan, log-level, mixed-port, ...} */
+export const clashCtlConfigs = () => json('/api/clash/controller/configs')
+
+/** 热切换运行时配置（PATCH 不重启）：{mode?, allow_lan?, log_level?} → 新配置 */
+export const clashCtlConfigsPatch = patch =>
+  json('/api/clash/controller/configs', { method: 'PATCH', body: JSON.stringify(patch) })
+
+/** 策略组 + 节点明细 {groups:[{name,type,now,nodes:[{name,type,alive,delay}]}]} */
+export const clashCtlProxies = () => json('/api/clash/controller/proxies')
+
+/** 切换 Selector 组当前节点 */
+export const clashCtlSelect = (group, name) =>
+  json('/api/clash/controller/proxies', { method: 'PUT', body: JSON.stringify({ group, name }) })
+
+/** 单节点延迟测试 → {delay: ms} */
+export const clashCtlDelay = (name, url = '', timeout = 5000) =>
+  json(`/api/clash/controller/proxies/delay?${new URLSearchParams({ name, url, timeout })}`)
+
+/** 整组并发测速 → {节点名: ms} */
+export const clashCtlGroupDelay = (group, url = '', timeout = 5000) =>
+  json(`/api/clash/controller/group/delay?${new URLSearchParams({ group, url, timeout })}`)
+
+/** 活跃连接 + 总量 {uploadTotal, downloadTotal, memory, connections:[...]} */
+export const clashCtlConnections = () => json('/api/clash/controller/connections')
+
+/** 断开单条 / 全部连接 */
+export const clashCtlCloseConn = id =>
+  json(`/api/clash/controller/connections/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export const clashCtlCloseAll = () =>
+  json('/api/clash/controller/connections', { method: 'DELETE' })
+
+/** 规则链 {rules:[{type,payload,proxy}], total} */
+export const clashCtlRules = () => json('/api/clash/controller/rules')
+
+/** 节点 Provider（订阅节点池）列表 */
+export const clashCtlProviders = () => json('/api/clash/controller/providers')
+
+/** Provider 热更新（拉新节点不重启内核）→ 更新后的列表 */
+export const clashCtlProviderUpdate = name =>
+  json('/api/clash/controller/providers', { method: 'PUT', body: JSON.stringify({ name }) })

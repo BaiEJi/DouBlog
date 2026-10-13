@@ -1,7 +1,7 @@
 # Clash 模块（代理管理，2026-10-13 新增）
 
 > 数据表：无　路由前缀：/api/clash　前端：/clash（门户"Clash 代理"卡）　sys_name：doublog.clash
-> 后端 `app/clash/`；前端 `src/clash/`。**底层能力完全复用本机 clashctl**（bash 函数集），本模块只做 Web 管理迁移，不在 Python 重实现任何 clashctl 逻辑。
+> 后端 `app/clash/`；前端 `src/clash/`。**底层能力完全复用本机 clashctl**（bash 函数集）+ **mihomo 控制器 REST API**（与 clashctl 的 Web 控制台 zashboard 同源同能力），本模块只做 Web 管理迁移，不在 Python 重实现任何 clashctl 逻辑。
 
 ## 1. 模块契约（app/clash/__init__.py）
 
@@ -51,20 +51,45 @@
 | POST | /api/clash/sub | clashsub add/del/use/update | body {action, url?, id?, convert?, auto?}；update 的 flag 必须在 id 前（clashctl _sub_update 在 for 循环里 shift） |
 | GET | /api/clash/sub/log?tail= | clashsub log | profiles.log 尾部 |
 
-## 5. 前端（src/clash/，2 文件）
+## 5. mihomo 控制器层（controller.py——覆盖 Web 控制台 zashboard 核心能力）
 
-- ClashPage：PageHeader tabs → ModuleShell 侧栏（个性色 sky，与 logs 同色系）；四视图——**总览**（内核启停/系统代理/Tun/控制台地址/密钥/升级）、**订阅**（列表+使用中徽标+添加/切换/更新/两步删除/自动更新/订阅日志）、**配置**（mixin 编辑器+base/runtime 只读）、**日志**（尾部刷新+5s 自动刷新）；未安装时整页空态
-- api.js：17 个函数走 apiFetch 信封 unwrap；门户 PortalPage 引其 `clashAvailability` 做卡片置灰
+地址/密钥从 runtime.yaml 解析（external-controller / secret，bind 0.0.0.0 归一为 127.0.0.1）；
+**secret 只留在后端**；requests 会话 `trust_env=False`（不吃进程代理 env）；
+名称经 `urllib.parse.quote(safe='')` 进路径段（组名含 emoji/中文/空格）；
+内核未运行 → 503「控制器不可达」，mihomo 4xx → 400 透传其 message。
+
+| zashboard 功能 | 本模块端点 | 说明 |
+|---|---|---|
+| 代理组/节点展示 | GET /api/clash/controller/proxies | 组（类型/当前/节点明细含最近延迟） |
+| 切换节点 | PUT /api/clash/controller/proxies {group,name} | Selector 组；选择持久于 cache.db |
+| 单节点延迟测试 | GET /controller/proxies/delay?name=&url=&timeout= | 默认 gstatic 204；失败记 0 |
+| 整组并发测速 | GET /controller/group/delay?group= | 返回 {节点: ms} |
+| 活跃连接 | GET /controller/connections | host/规则/链路/上下行/时长 + 总量 |
+| 断开单条 / 全部 | DELETE /controller/connections[/{id}] | |
+| 规则链 | GET /controller/rules | type/payload/proxy + total |
+| 运行时配置热切换 | GET/PATCH /controller/configs | mode(rule/global/direct) / allow-lan / log-level——PATCH 即时生效不重启（zashboard 同款） |
+| Provider 热更新 | GET/PUT /controller/providers | HTTP 订阅节点池拉新节点不重启内核 |
+| 版本 | GET /controller/version | |
+
+## 6. 前端（src/clash/，7 文件）
+
+- ClashPage：PageHeader tabs → ModuleShell 侧栏（个性色 sky，与 logs 同色系）；七视图——**总览**（内核启停/系统代理/Tun/控制台地址/密钥/升级 + 运行配置三段模式切换/允许局域网 + 实时流量速率卡）、**代理**（ProxiesView）、**连接**（ConnectionsView）、**规则**（RulesView）、**订阅**（列表+使用中徽标+添加/切换/更新/两步删除/自动更新/Provider 热更新/订阅日志）、**配置**（mixin 编辑器+base/runtime 只读）、**日志**（尾部刷新+5s 自动+实时开关）；未安装时整页空态
+- ProxiesView：组卡（类型徽章/当前节点/整组测速）+ 节点 chip（存活圆点/延迟色档徽章/⚡单测/点击切换）；15s 轻轮询同步他处切换
+- ConnectionsView：2s 轮询差分出实时速率；搜索 host/规则/链路；断开单条（行内 ✕）/全部
+- RulesView：规则链检索（类型徽章+等宽目标+出站策略）
+- kit.jsx：共享原子（容器/按钮/输入档位/Toast/状态徽章/字节与延迟格式化）
+- api.js：31 个函数走 apiFetch 信封 unwrap；门户 PortalPage 引其 `clashAvailability` 做卡片置灰
 - 提示统一 Toast（猫叫行）；删除两步确认（3.5s 自动撤销）
 
-## 6. 测试（tests/clash/，24 例）
+## 7. 测试（tests/clash/，34 例）
 
-conftest 搭**假 clashctl**（tmp 目录最小 bash 函数集：函数名/参数/退出码语义/ANSI 输出与真实一致，调用落 calls.log 供断言透传；BIN_YQ 为指向极简假脚本的变量路径，与真实 common.sh 形态一致；每次调用记录 proxy=yes|no 供直连断言）；覆盖安装检测两态、未装 404、鉴权 401、启停往返、rc→enabled 语义、ANSI 剥离、失败透传、URL/id/secret/channel/log-level 校验（含注入尝试）、配置三读一写（写触发 merge-restart marker）、日志 tail 与 level 读、**订阅 add/update 剥离代理 env**、日志级别切换往返、订阅动作 flag 顺序。
+conftest 搭**假 clashctl**（tmp 目录最小 bash 函数集：函数名/参数/退出码语义/ANSI 输出与真实一致，调用落 calls.log 供断言透传；BIN_YQ 为指向极简假脚本的变量路径，与真实 common.sh 形态一致；每次调用记录 proxy=yes|no 供直连断言）+ **假 mihomo 控制器**（线程 http.server：Bearer 鉴权、请求日志、emoji 组名路径编码、408 透传）；覆盖安装检测两态、未装 404、鉴权 401、启停往返、rc→enabled 语义、ANSI 剥离、失败透传、URL/id/secret/channel/log-level 校验（含注入尝试）、配置三读一写（写触发 merge-restart marker）、日志 tail 与 level 读、**订阅 add/update 剥离代理 env**、日志级别切换往返、订阅动作 flag 顺序；controller 层：形状裁剪（proxies/connections/rules/providers）、切换路径编码、单/整组延迟、configs PATCH 白名单、连接断开单条/全部、控制器不可达 503。
 
-## 7. 已知边界
+## 8. 已知边界
 
 - **Tun 需要 sudo**：无免密 sudo 时 `clashtun on` 会出现 clashctl 自身语义——sudo 失败但内核未死仍报"已开启"（mixin 的 tun.enable 已翻 true，下次重启内核才真正生效）；`clashtun off` 在此状态下会因 sudo 失败而报错。这是 clashctl 原生行为，Web 层如实透传
 - 系统代理开关写的是 mixin `_custom.system-proxy.enable` + 子进程环境变量；**对已开终端的 env 不生效**（与 clashctl `clashproxy` 在新 shell 生效的语义一致）
 - `clashsub update --auto` 依赖 crontab；`--convert` 依赖本地 subconverter
 - **订阅下载强制直连**（strip_proxy）：若订阅域名必须经代理才可达，Web 端会下载失败（与终端手动 `clashsub add` 行为可能不同——后者跟随会话 env）；当前环境直连可达性优于本机代理出口
+- 控制器层为 REST 轮询（非 zashboard 的 WebSocket 流）：连接/流量 2s、代理组 15s 粒度刷新；PATCH configs 为运行时态（重启内核后回落到配置文件值）
 - 单用户本机工具：接口未做频率限制，认证与其他模块一致（require_basic）

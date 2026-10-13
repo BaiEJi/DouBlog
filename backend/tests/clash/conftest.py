@@ -10,8 +10,15 @@
   写操作翻转 marker——模拟 proxy/tun 状态往返
 - BIN_YQ 与真实 common.sh 一致是**变量路径**（假环境指向 FAKE_YQ 极简脚本，
   只实现 yq -i '.log-level = "<级别>"' <file>）
+
+另附**假 mihomo 控制器**（线程 http.server）：实现 /version /configs /proxies
+/proxies/:name /proxies/:name/delay /group/:name/delay /connections /rules
+/providers/proxies——校验 Bearer 密钥，记录请求供断言（含路径段编码）。
 """
 import base64
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -134,6 +141,153 @@ def fake_clashctl(tmp_path, monkeypatch):
     (res / 'profiles.log').write_text('2026-10-13 10:00:00 ➕ 已添加订阅：[1] https://example.com/sub\n')
     monkeypatch.setenv('DOUBLOG_CLASHCTL_DIR', str(base))
     return base
+
+
+# ─── 假 mihomo 控制器（external-controller REST API）────────
+
+CONTROLLER_SECRET = 'test-secret-1'
+
+_FAKE_PROXIES = {
+    '🚀 节点选择': {'name': '🚀 节点选择', 'type': 'Selector', 'now': '香港 01',
+                    'all': ['香港 01', '日本 02', '美国 03'],
+                    'history': []},
+    '♻️ 自动选择': {'name': '♻️ 自动选择', 'type': 'URLTest', 'now': '香港 01',
+                    'all': ['香港 01', '日本 02'], 'history': []},
+    '香港 01': {'name': '香港 01', 'type': 'Shadowsocks', 'udp': True, 'alive': True,
+                'history': [{'time': '2026-10-13T10:00:00Z', 'delay': 42}]},
+    '日本 02': {'name': '日本 02', 'type': 'Vmess', 'alive': False, 'history': []},
+    '美国 03': {'name': '美国 03', 'type': 'Trojan', 'alive': True,
+                'history': [{'time': 'x', 'delay': 0}]},
+}
+
+
+class _FakeController(BaseHTTPRequestHandler):
+    """假 mihomo：校验 Bearer；记录 (method, path) 到列表；实现用到的子集。"""
+
+    requests_log = None      # 由 fixture 注入
+    selected = {}            # 组 → 当前节点（PUT 切换写入）
+
+    def _send(self, code, payload=None):
+        body = b'' if payload is None else json.dumps(payload).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def _authorized(self):
+        return self.headers.get('Authorization') == f'Bearer {CONTROLLER_SECRET}'
+
+    def log_message(self, *args):  # 静默
+        pass
+
+    def do_GET(self):
+        self.requests_log.append(('GET', self.path))
+        if not self._authorized():
+            return self._send(401, {'message': 'Unauthorized'})
+        from urllib.parse import urlparse, unquote
+        path, query = urlparse(self.path).path, urlparse(self.path).query
+        if path == '/version':
+            return self._send(200, {'meta': True, 'version': 'v1.19.17-fake'})
+        if path == '/configs':
+            return self._send(200, {'mode': 'rule', 'allow-lan': False,
+                                    'log-level': 'info', 'mixed-port': 7890})
+        if path == '/proxies':
+            return self._send(200, {'proxies': _FAKE_PROXIES})
+        if path.startswith('/proxies/') and path.endswith('/delay'):
+            name = unquote(path[len('/proxies/'):-len('/delay')])
+            if name not in _FAKE_PROXIES:
+                return self._send(404, {'message': 'proxy not found'})
+            if 'bad' in (query or ''):
+                return self._send(408, {'message': 'An error occurred in the delay test'})
+            return self._send(200, {'delay': 42})
+        if path.startswith('/group/') and path.endswith('/delay'):
+            group = unquote(path[len('/group/'):-len('/delay')])
+            if group not in _FAKE_PROXIES:
+                return self._send(404, {'message': 'group not found'})
+            return self._send(200, {n: 42 + i for i, n in
+                                    enumerate(_FAKE_PROXIES[group]['all'])})
+        if path == '/connections':
+            return self._send(200, {
+                'uploadTotal': 1024, 'downloadTotal': 2048, 'memory': 100,
+                'connections': [{'id': 'c1', 'upload': 1, 'download': 2,
+                                 'start': '2026-10-13T12:00:00+08:00',
+                                 'rule': 'GeoSite', 'rulePayload': 'CN',
+                                 'chains': ['🚀 节点选择', '香港 01'],
+                                 'metadata': {'host': 'www.baidu.com', 'network': 'tcp',
+                                              'type': 'HTTP', 'sourceIP': '127.0.0.1',
+                                              'sourcePort': '40000'}}]})
+        if path == '/rules':
+            return self._send(200, {'rules': [
+                {'type': 'DOMAIN-SUFFIX', 'payload': 'baidu.com', 'proxy': 'DIRECT'},
+                {'type': 'GEOIP', 'payload': 'CN', 'proxy': 'DIRECT'},
+            ]})
+        if path == '/providers/proxies':
+            return self._send(200, {'providers': {
+                'sub1': {'name': 'sub1', 'type': 'Proxy', 'vehicleType': 'HTTP',
+                         'updatedAt': '2026-10-13',
+                         'subscriptionInfo': {'Upload': 1, 'Download': 2, 'Total': 100},
+                         'proxies': [{'name': '香港 01', 'type': 'Shadowsocks',
+                                      'alive': True, 'udp': True,
+                                      'history': [{'time': 'x', 'delay': 42}]}]},
+            }})
+        return self._send(404, {'message': 'not found'})
+
+    def do_PATCH(self):
+        self.requests_log.append(('PATCH', self.path))
+        if not self._authorized():
+            return self._send(401, {'message': 'Unauthorized'})
+        length = int(self.headers.get('Content-Length') or 0)
+        body = json.loads(self.rfile.read(length) or b'{}')
+        if self.path == '/configs':
+            if body.get('mode') not in (None, 'rule', 'global', 'direct'):
+                return self._send(400, {'message': 'invalid mode'})
+            return self._send(204)
+        return self._send(404, {'message': 'not found'})
+
+    def do_PUT(self):
+        from urllib.parse import urlparse, unquote
+        self.requests_log.append(('PUT', self.path))
+        if not self._authorized():
+            return self._send(401, {'message': 'Unauthorized'})
+        path = urlparse(self.path).path
+        length = int(self.headers.get('Content-Length') or 0)
+        body = json.loads(self.rfile.read(length) or b'{}')
+        if path.startswith('/proxies/'):
+            group = unquote(path[len('/proxies/'):])
+            if group not in _FAKE_PROXIES:
+                return self._send(404, {'message': 'proxy not found'})
+            _FakeController.selected[group] = body.get('name')
+            return self._send(204)
+        if path.startswith('/providers/proxies/'):
+            return self._send(204)
+        return self._send(404, {'message': 'not found'})
+
+    def do_DELETE(self):
+        self.requests_log.append(('DELETE', self.path))
+        if not self._authorized():
+            return self._send(401, {'message': 'Unauthorized'})
+        if self.path == '/connections' or self.path.startswith('/connections/'):
+            return self._send(204)
+        return self._send(404, {'message': 'not found'})
+
+
+@pytest.fixture
+def fake_controller(fake_clashctl):
+    """启动假 mihomo 控制器（随机端口），runtime.yaml 指向它；返回 (port, 请求日志)。"""
+    log = []
+    _FakeController.requests_log = log
+    _FakeController.selected = {}
+    server = ThreadingHTTPServer(('127.0.0.1', 0), _FakeController)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    port = server.server_address[1]
+    (fake_clashctl / 'resources' / 'runtime.yaml').write_text(
+        f'mixed-port: 7890\nexternal-controller: 127.0.0.1:{port}\n'
+        f'secret: {CONTROLLER_SECRET}\n')
+    yield port, log
+    server.shutdown()
+    server.server_close()
 
 
 @pytest.fixture

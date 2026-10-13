@@ -1081,6 +1081,30 @@ POST /api/clash/log/level      # body {"level":"info"}（debug|info|warning|erro
 
 **通用错误**：clashctl 未安装时除 `/availability` 外全部 404（`clashctl 未安装（未找到 <script 路径>）`）；动作类命令失败（退出码≠0）→ 400，clashctl 输出首行透传在 message；超时 → 504。完整行为契约见 `docs/modules/clash.md`。
 
+### 20.1 控制器 API（mihomo external-controller 转发——zashboard 核心能力）
+
+> 前缀 /api/clash/controller；secret 只留在后端（runtime.yaml 解析，响应不回传）；
+> 内核未运行 → 503「控制器不可达」；mihomo 4xx → 400 透传。实测示例（mihomo v1.19.17）：
+
+```
+GET    /api/clash/controller/version                  # {"meta":true,"version":"v1.19.17"}
+GET    /api/clash/controller/configs                  # {mode,allow-lan,log-level,mixed-port,...}
+PATCH  /api/clash/controller/configs                  # body {mode:'rule|global|direct'} / {allow_lan:bool}
+                                                     # / {log_level:...} —— 热切换即时生效不重启
+GET    /api/clash/controller/proxies                  # 策略组+节点：{groups:[{name,type,now,
+                                                     #   nodes:[{name,type,alive,delay}]}]}
+PUT    /api/clash/controller/proxies                  # body {group,name} 切换 Selector 组节点
+GET    /api/clash/controller/proxies/delay?name=&url=&timeout=   # 单节点 → {"delay":168}
+GET    /api/clash/controller/group/delay?group=&url=&timeout=    # 整组并发 → {"节点A":56,"节点B":177,...}
+GET    /api/clash/controller/connections              # {uploadTotal,downloadTotal,memory,
+                                                     #   connections:[{id,host,rule,chains,upload,download,start,source}]}
+DELETE /api/clash/controller/connections              # 断开全部
+DELETE /api/clash/controller/connections/{id}         # 断开单条
+GET    /api/clash/controller/rules                    # {rules:[{type,payload,proxy}],total}
+GET    /api/clash/controller/providers                # 节点池（HTTP 订阅 vehicleType）
+PUT    /api/clash/controller/providers                # body {name} 热更新节点池（不重启内核）
+```
+
 ## 21. 错误码与数据模型
 
 ### 6.1 HTTP 状态码

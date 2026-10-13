@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Query
 from lizysdk.errors import ParamError
 from pydantic import BaseModel
 
-from app.clash import service
+from app.clash import controller, service
 from app.shared.auth import require_basic
 from app.shared.response import api_response
 
@@ -50,6 +50,26 @@ class _UpgradeBody(BaseModel):
 
 class _LogLevelBody(BaseModel):
     level: str
+
+
+class _ProxySelectBody(BaseModel):
+    group: str
+    name: str
+
+
+class _DelayBody(BaseModel):
+    url: str = ''
+    timeout: int = 5000
+
+
+class _ConfigsBody(BaseModel):
+    mode: str | None = None
+    allow_lan: bool | None = None
+    log_level: str | None = None
+
+
+class _NameBody(BaseModel):
+    name: str
 
 
 class _SubBody(BaseModel):
@@ -223,3 +243,102 @@ def post_sub(body: _SubBody):
 def get_sub_log(tail: int = Query(200, ge=1, le=5000)):
     service.ensure_available()
     return api_response(service.sub_log_tail(_tail_arg(tail)))
+
+
+# ─── mihomo 控制器（代理组/延迟/连接/规则/运行时配置——zashboard 同源）──
+
+@router.get('/controller/version')
+def controller_version():
+    service.ensure_available()
+    return api_response(controller.version())
+
+
+@router.get('/controller/configs')
+def controller_configs():
+    service.ensure_available()
+    return api_response(controller.configs_get())
+
+
+@router.patch('/controller/configs')
+def controller_configs_patch(body: _ConfigsBody):
+    """运行时热切换（PATCH，不重启内核——与 Web 控制台一致）：mode / allow-lan / log-level。"""
+    service.ensure_available()
+    patch = {}
+    if body.mode is not None:
+        patch['mode'] = body.mode
+    if body.allow_lan is not None:
+        patch['allow-lan'] = body.allow_lan
+    if body.log_level is not None:
+        patch['log-level'] = body.log_level
+    data = controller.configs_patch(patch)
+    return api_response(data, 200, '运行时配置已热切换')
+
+
+@router.get('/controller/proxies')
+def controller_proxies():
+    """策略组 + 节点明细（名称/类型/存活/最近延迟）——切换节点的前端数据源。"""
+    service.ensure_available()
+    return api_response(controller.proxies_list())
+
+
+@router.put('/controller/proxies')
+def controller_proxy_select(body: _ProxySelectBody):
+    service.ensure_available()
+    data = controller.proxy_select(body.group.strip(), body.name.strip())
+    return api_response(data, 200, f'已切换：{data["now"]}')
+
+
+@router.get('/controller/proxies/delay')
+def controller_proxy_delay(name: str = Query(...), url: str = Query(''),
+                           timeout: int = Query(5000, ge=500, le=30000)):
+    """单节点延迟测试（默认 gstatic 204，可换 url）。"""
+    service.ensure_available()
+    return api_response(controller.proxy_delay(name, url, timeout))
+
+
+@router.get('/controller/group/delay')
+def controller_group_delay(group: str = Query(...), url: str = Query(''),
+                           timeout: int = Query(5000, ge=500, le=30000)):
+    """整组并发延迟测试 → {节点名: 延迟ms}。"""
+    service.ensure_available()
+    return api_response(controller.group_delay(group, url, timeout))
+
+
+@router.get('/controller/connections')
+def controller_connections():
+    service.ensure_available()
+    return api_response(controller.connections_get())
+
+
+@router.delete('/controller/connections')
+def controller_connections_close_all():
+    service.ensure_available()
+    data = controller.connections_close_all()
+    return api_response(data, 200, '已断开全部连接')
+
+
+@router.delete('/controller/connections/{conn_id}')
+def controller_connection_close(conn_id: str):
+    service.ensure_available()
+    data = controller.connection_close(conn_id)
+    return api_response(data, 200, '连接已断开')
+
+
+@router.get('/controller/rules')
+def controller_rules():
+    service.ensure_available()
+    return api_response(controller.rules_get())
+
+
+@router.get('/controller/providers')
+def controller_providers():
+    service.ensure_available()
+    return api_response(controller.providers_get())
+
+
+@router.put('/controller/providers')
+def controller_provider_update(body: _NameBody):
+    """Provider 热更新（HTTP 订阅即时拉新节点，不重启内核）。"""
+    service.ensure_available()
+    data = controller.provider_update(body.name.strip())
+    return api_response(data, 200, '节点池已热更新')
