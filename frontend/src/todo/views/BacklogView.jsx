@@ -4,6 +4,7 @@
  * + 搁置计划（迁移到今天/恢复催办/删除）。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 import {
   todoTasks, todoDeleteTask, todoUpdateTask, todoMigrateTask,
@@ -81,7 +82,8 @@ function ShelvedList({ items, onChanged, toast }) {
 }
 
 export default function BacklogView({ toast }) {
-  const [tab, setTab] = useState('inbox')
+  const [sp] = useSearchParams()
+  const tab = ['inbox', 'migrate', 'shelved'].includes(sp.get('bsub')) ? sp.get('bsub') : 'inbox'
   const [tasks, setTasks] = useState(null)
   const [migrations, setMigrations] = useState([])
   const [shelved, setShelved] = useState([])
@@ -147,17 +149,7 @@ export default function BacklogView({ toast }) {
     <div>
       {/* Tab 行 + 快速添加 */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <div className="inline-flex p-0.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.06]">
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={'px-3 h-8 rounded-md text-xs transition-colors whitespace-nowrap ' +
-                (tab === t.key
-                  ? 'bg-white dark:bg-white/[0.12] text-stone-900 dark:text-stone-100 shadow-sm font-medium'
-                  : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300')}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <h2 className="text-sm font-medium">{TABS.find(t => t.key === tab)?.label}</h2>
         {tab === 'inbox' && (
           <button onClick={() => { setEditing(null); setFormOpen(true) }} className={btn.primary + ' ml-auto'}>
             {Icon.plus}快速添加

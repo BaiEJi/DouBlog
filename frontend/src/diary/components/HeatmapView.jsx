@@ -53,7 +53,7 @@ export default function HeatmapView({ onPickDate }) {
   return (
     <div className="max-w-[1200px]" style={{ '--cell': 'clamp(11px, 1.55vw, 17px)', '--gap': 'clamp(3px, 0.42vw, 5px)' }}>
       <div className="flex items-center gap-3 mb-5">
-        <h2 className="text-base font-semibold">热力图</h2>
+
         <div className="flex items-center gap-1">
           <button onClick={() => setYear(y => y - 1)} className="w-8 h-8 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">{Icon.arrowL}</button>
           <span className="text-sm font-medium tabular-nums w-12 text-center">{year}</span>

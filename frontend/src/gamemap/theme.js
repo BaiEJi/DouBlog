@@ -36,7 +36,7 @@ export const darkTheme = {
 }
 
 /** 浅色变体：同主色系、跟随 Doublog 亮色模式（antd 组件壳自动变浅；
- * 画布工作区内部为源设计的深色画布，不随此切换——见迁移报告已知取舍） */
+ * 画布、工具栏与统计卡片通过 canvas.css 的主题变量同步切换） */
 export const lightTheme = {
   algorithm: antdTheme.defaultAlgorithm,
   token: {

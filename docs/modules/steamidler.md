@@ -17,8 +17,12 @@
 
 ## 3. 前端（src/steamidler/，6 文件）
 
-SteamIdlerView（统计栏+登录卡+账号网格+弹窗调度，3s 轮询）+ LoginCard/AccountCard/GamePicker/LogPanel + api.js（apiFetch 信封 unwrap .data）；独立页 SteamIdlerPage（统一 PageHeader，个性色 slate）；kit 组件跨模块引自 `src/todo/kit`；Tailwind 化。
+SteamIdlerView（统计栏+登录卡+账号网格+弹窗调度，3s 轮询（防重入、后台暂停、游戏名称缓存 60s））+ LoginCard/AccountCard/GamePicker/LogPanel + api.js（apiFetch 信封 unwrap .data）；独立页 SteamIdlerPage（公共 ModuleShell 侧栏，个性色 slate）；kit 组件跨模块引自 `src/todo/kit`；Tailwind 化。
 
 ## 4. 测试
 
 tests/steamidler/test_steamidler.py 18 例（登录/worker 全打桩，无真实 Steam 连接）。
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。

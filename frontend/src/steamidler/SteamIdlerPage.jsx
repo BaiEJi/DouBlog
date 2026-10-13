@@ -4,11 +4,11 @@
  */
 import { useCallback, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
-import { Icon, Toast } from '../todo/kit'
+import { Toast } from '../todo/kit'
 
 import SteamIdlerView from './SteamIdlerView'
 
-export default function SteamIdlerPage({ dark, setDark }) {
+export default function SteamIdlerPage() {
   const [toastMsg, setToastMsg] = useState(null)
   const [toastKind, setToastKind] = useState('')
 
@@ -19,19 +19,14 @@ export default function SteamIdlerPage({ dark, setDark }) {
   }, [])
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
       {/* ── 顶栏 ── */}
       <PageHeader title="Steam 挂机" subtitle="账号 · 挂机时长 · 日志"
-        right={
-          <button onClick={() => setDark(!dark)} title="切换主题"
-            className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] flex items-center justify-center transition-colors">
-            {dark ? Icon.sun : Icon.moon}
-          </button>
-        }
+
         accent="slate" />
 
       {/* ── 主区 ── */}
-      <main className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+      <main className="mx-auto max-w-full p-0">
         <SteamIdlerView toast={toast} />
       </main>
 

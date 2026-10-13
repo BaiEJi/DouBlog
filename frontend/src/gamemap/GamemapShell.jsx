@@ -1,7 +1,8 @@
 import PageHeader from '../shared/PageHeader'
+import './board/canvas.css'
 /**
  * 剧情图谱（gamemap）外壳 —— 顶级模块，替换源版 main.tsx + AppShell。
- * 顶栏遵循 Doublog 外壳基线（← 门户返回 · 标题 · 内部导航 · 主题切换接 Doublog dark props）；
+ * ModuleShell 提供公共侧栏与画布；PageHeader 将路由菜单注册到公共导航；
  * 内容区包 antd ConfigProvider（dark ? darkTheme : lightTheme 联动 Doublog，中文 locale，
  * 只作用于本子树）+ AntApp（message/modal 上下文）+ QueryClientProvider（react-query）。
  * 路由为嵌套 Routes：挂在 /gamemap/* 下（相对路径 index/games/...，与 subs 模块的
@@ -12,7 +13,6 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { App as AntApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Icon } from '../todo/kit'
 import { darkTheme, lightTheme } from './theme'
 
 // 路由级代码分割：各页面按需加载（antd/xyflow 等公共依赖自动进 vendor chunk）
@@ -34,14 +34,6 @@ const NAV = [
   { to: '/gamemap/search', label: '搜索' },
 ]
 
-/** 简易图谱图标（关系节点连线，stroke 1.5 / viewBox 20） */
-const MapGlyph = () => (
-  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-    <circle cx="4.5" cy="5" r="2" /><circle cx="15.5" cy="7" r="2" /><circle cx="9" cy="15" r="2" />
-    <path d="M6.4 6l7-.2M5.5 7l2.6 6M13.8 8.7L10.6 13.6" />
-  </svg>
-)
-
 function PageFallback() {
   return (
     <div className="h-full min-h-[60vh] flex items-center justify-center text-sm text-stone-400 dark:text-stone-500">
@@ -50,7 +42,7 @@ function PageFallback() {
   )
 }
 
-export default function GamemapShell({ dark, setDark }) {
+export default function GamemapShell({ dark }) {
   const { pathname } = useLocation()
   const navigate = useNavigate()
 
@@ -58,22 +50,17 @@ export default function GamemapShell({ dark, setDark }) {
     <ConfigProvider locale={zhCN} theme={dark ? darkTheme : lightTheme}>
       <AntApp>
         <QueryClientProvider client={queryClient}>
-          <div className="h-screen flex flex-col bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+          <div className="gamemap-shell flex flex-col min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
             {/* ── 顶栏（统一 PageHeader + 路由 tabs）── */}
             <PageHeader title="剧情图谱" subtitle="游戏 · 人物 · 关系" backLabel="门户"
-              right={
-                <button onClick={() => setDark(!dark)} title="切换主题"
-                  className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] flex items-center justify-center transition-colors shrink-0">
-                  {dark ? Icon.sun : Icon.moon}
-                </button>
-              }
+
               tabs={NAV.map(t => ({ key: t.to, label: t.label }))}
               activeTab={NAV.find(t => t.exact ? pathname === t.to : pathname.startsWith(t.to))?.to || NAV[0].to}
               onTabChange={to => navigate(to)}
-              accent="violet" />
+              accent="violet" hideTitle />
 
             {/* ── 主区（Workspace 需整幅画布，故不加统一内边距，由各页自管） ── */}
-            <main className="flex-1 min-h-0 overflow-auto">
+            <main className="flex-1 min-h-0">
               <Suspense fallback={<PageFallback />}>
                 <Routes>
                   <Route index element={<Dashboard dark={dark} />} />

@@ -9,24 +9,32 @@ export function CharactersTable({ board, gid, onOpen, onChanged, onCodex }) {
   const { message } = AntApp.useApp()
   const [q, setQ] = useState('')
   const [faction, setFaction] = useState(null)
-  const chars = board?.characters || []
-  const relations = board?.relations || []
+  const chars = useMemo(() => board?.characters || [], [board?.characters])
+  const relations = useMemo(() => board?.relations || [], [board?.relations])
 
   const factions = useMemo(() => [...new Set(chars.map((c) => c.faction).filter(Boolean))], [chars])
-  const relCount = (cid) => relations.filter((r) => r.from_character_id === cid || r.to_character_id === cid).length
+  const relationCounts = useMemo(() => {
+    const counts = new Map()
+    for (const r of relations) {
+      counts.set(r.from_character_id, (counts.get(r.from_character_id) || 0) + 1)
+      if (r.to_character_id !== r.from_character_id) counts.set(r.to_character_id, (counts.get(r.to_character_id) || 0) + 1)
+    }
+    return counts
+  }, [relations])
+  const relCount = cid => relationCounts.get(cid) || 0
   const filtered = chars.filter((c) =>
     (!q || c.name.includes(q) || c.description?.includes(q)) && (!faction || c.faction === faction))
 
   return (
     <div style={{ padding: 20 }}>
-      <Space style={{ marginBottom: 14 }}>
+      <Space wrap style={{ marginBottom: 14, maxWidth: '100%' }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="搜索姓名/简介…"
           style={{ width: 220 }} value={q} onChange={(e) => setQ(e.target.value)} />
         <Select allowClear placeholder="阵营筛选" style={{ minWidth: 140 }} value={faction}
           onChange={setFaction} options={factions.map((f) => ({ value: f, label: f }))} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{filtered.length} / {chars.length} 人</Typography.Text>
       </Space>
-      <Table rowKey="id" dataSource={filtered} pagination={false} size="middle"
+      <Table rowKey="id" dataSource={filtered} pagination={false} size="middle" scroll={{ x: 640 }}
         locale={{ emptyText: <Empty description="本章暂无人物" /> }}
         onRow={(r) => ({ onClick: () => onOpen(r.id), style: { cursor: 'pointer' } })}
         columns={[
@@ -71,7 +79,7 @@ export function CharactersTable({ board, gid, onOpen, onChanged, onCodex }) {
 export function RelationsTable({ board, allCharMap, typeMap, activeChapterTitle, onOpen, onDelete }) {
   const [q, setQ] = useState('')
   const [typeFilter, setTypeFilter] = useState(null)
-  const relations = board?.relations || []
+  const relations = useMemo(() => board?.relations || [], [board?.relations])
   const types = useMemo(() => [...new Map(relations.map((r) => [r.relation_type_id, typeMap.get(r.relation_type_id)])).entries()]
     .filter(([, t]) => t), [relations, typeMap])
   const name = (id) => allCharMap.get(id)?.name || '?'
@@ -81,14 +89,14 @@ export function RelationsTable({ board, allCharMap, typeMap, activeChapterTitle,
 
   return (
     <div style={{ padding: 20 }}>
-      <Space style={{ marginBottom: 14 }}>
+      <Space wrap style={{ marginBottom: 14, maxWidth: '100%' }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="搜索人物/说明…"
           style={{ width: 220 }} value={q} onChange={(e) => setQ(e.target.value)} />
         <Select allowClear placeholder="关系类型" style={{ minWidth: 130 }} value={typeFilter}
           onChange={setTypeFilter} options={types.map(([id, t]) => ({ value: id, label: t.name }))} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{filtered.length} / {relations.length} 条</Typography.Text>
       </Space>
-      <Table rowKey={(r) => String(r.id ?? r._i)} dataSource={filtered} pagination={false} size="middle"
+      <Table rowKey={(r) => String(r.id ?? r._i)} dataSource={filtered} pagination={false} size="middle" scroll={{ x: 640 }}
         locale={{ emptyText: <Empty description="暂无关系" /> }}
         onRow={(r) => ({ onClick: () => onOpen(r._i), style: { cursor: 'pointer' } })}
         columns={[

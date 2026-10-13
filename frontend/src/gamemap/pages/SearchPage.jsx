@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { App as AntApp, Button, Card, Empty, Input, List, Segmented, Space, Tag, Typography } from 'antd'
+import { App as AntApp, Button, Card, Empty, Input, Segmented, Space, Tag, Typography } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { api } from '../api'
 import { glassPanel } from '../theme'
@@ -37,7 +37,7 @@ export default function SearchPage({ dark = true }) {
   const panel = glassPanel(dark)
 
   return (
-    <div className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+    <div className="w-full">
       <h1 className="text-lg font-semibold tracking-tight mb-5">全局搜索 · <span className="gm-gradient-text">找人物、找关系、找剧情</span></h1>
       <Space.Compact style={{ width: '100%', maxWidth: 640, marginBottom: 18 }}>
         <Input size="large" prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="输入关键词：人物名、称呼、关系说明、剧情…"
@@ -48,29 +48,24 @@ export default function SearchPage({ dark = true }) {
 
       {submitted && (
         <>
-          <Segmented value={kind} onChange={(v) => setKind(v)} style={{ marginBottom: 14 }}
+          <Segmented value={kind} onChange={(v) => setKind(v)} style={{ marginBottom: 14, maxWidth: '100%', overflowX: 'auto' }}
             options={kinds.map((k) => ({ value: k, label: k === 'all' ? `全部 ${hits.data?.length || 0}` : `${KIND_META[k]?.icon || ''} ${KIND_META[k]?.label || k} ${(hits.data || []).filter((h) => h.kind === k).length}` }))} />
           {list.length === 0 && !hits.isLoading ? <Empty description={`没有找到与「${submitted}」相关的内容`} /> : (
             <Card style={panel}>
-              <List dataSource={list} loading={hits.isLoading}
-                renderItem={(h) => {
+              {hits.isLoading ? <p role="status" className="py-6 text-center text-sm text-stone-500 dark:text-stone-400">搜索中…</p> : <ul className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+                {list.map((h, index) => {
                   const m = KIND_META[h.kind] || { label: h.kind, color: '#888', icon: '•' }
-                  return (
-                    <List.Item style={{ cursor: 'pointer' }} onClick={() => {
-                      if (h.game_id) nav(h.chapter_id ? `${GM}/games/${h.game_id}/chapters/${h.chapter_id}` : `${GM}/games/${h.game_id}`)
-                      else message.info('该结果属于看板关系，请到对应章节查看')
-                    }}>
-                      <Space align="start" size={14}>
-                        <div style={{ width: 42, height: 42, borderRadius: 12, background: `${m.color}1e`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{m.icon}</div>
-                        <div>
-                          <Space><Typography.Text strong>{h.title || m.label}</Typography.Text>
-                            <Tag style={{ borderColor: 'transparent', color: m.color, background: `${m.color}22` }}>{m.label}</Tag></Space>
-                          <div style={{ color: '#9aa3b8', fontSize: 12, marginTop: 4 }}>{h.snippet || '—'}</div>
-                        </div>
-                      </Space>
-                    </List.Item>
-                  )
-                }} />
+                  return <li key={`${h.kind}:${h.ref_id}:${index}`}><button type="button" className="w-full flex items-start gap-3.5 py-3 text-left" onClick={() => {
+                    if (h.game_id) nav(h.chapter_id ? `${GM}/games/${h.game_id}/chapters/${h.chapter_id}` : `${GM}/games/${h.game_id}`)
+                    else message.info('该结果属于看板关系，请到对应章节查看')
+                  }}>
+                    <span style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, background: `${m.color}1e`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{m.icon}</span>
+                    <span className="min-w-0"><span className="flex flex-wrap items-center gap-2"><Typography.Text strong>{h.title || m.label}</Typography.Text><Tag style={{ borderColor: 'transparent', color: m.color, background: `${m.color}22` }}>{m.label}</Tag></span>
+                    <span className="block mt-1 text-xs text-stone-500 dark:text-stone-400 break-words">{h.snippet || '—'}</span></span>
+                  </button></li>
+                })}
+              </ul>}
+
             </Card>
           )}
         </>

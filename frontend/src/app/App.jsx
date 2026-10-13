@@ -6,6 +6,8 @@
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { API_BASE } from '../shared/client'
+import ModuleShell from '../shared/ModuleShell'
+import { moduleForPath } from '../shared/module-routes'
 
 const HomePage = lazy(() => import('@/blog/pages/HomePage'))
 const PostDetail = lazy(() => import('@/blog/pages/PostDetail'))
@@ -73,6 +75,13 @@ function ScrollToTop() {
   }, [pathname])
 }
 
+function ModuleFrame({ dark, setDark, children }) {
+  const { pathname } = useLocation()
+  const module = moduleForPath(pathname)
+  if (!module || isPublicPath(pathname)) return children
+  return <ModuleShell key={module} module={module} dark={dark} setDark={setDark}>{children}</ModuleShell>
+}
+
 export default function App() {
   const [dark, setDark] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -129,6 +138,7 @@ export default function App() {
       <ScrollToTop />
       <Suspense fallback={<PageFallback />}>
         <AuthGate>
+          <ModuleFrame dark={dark} setDark={toggleDark}>
           <Routes>
             <Route path="/login" element={<LoginPage dark={dark} setDark={toggleDark} />} />
             <Route path="/" element={<PortalPage dark={dark} setDark={toggleDark} />} />
@@ -150,6 +160,7 @@ export default function App() {
             <Route path="/practice" element={<PracticePage dark={dark} setDark={toggleDark} />} />
             <Route path="/steamidler" element={<SteamIdlerPage dark={dark} setDark={toggleDark} />} />
           </Routes>
+          </ModuleFrame>
         </AuthGate>
       </Suspense>
     </BrowserRouter>

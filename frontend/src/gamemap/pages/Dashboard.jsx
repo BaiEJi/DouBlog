@@ -3,7 +3,7 @@
  * 明暗给变体；趋势图为硬编码深色系，浅色模式下换成 stone 网格/白色提示框。 */
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Avatar, Card, Col, List, Row, Statistic, Tag } from 'antd'
+import { Avatar, Card, Col, Row, Statistic, Tag } from 'antd'
 import { BookOutlined, TeamOutlined, ApartmentOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { motion } from 'framer-motion'
@@ -42,7 +42,7 @@ export default function Dashboard({ dark = true }) {
   const valueColor = dark ? '#e8eaf2' : '#1c1917'
 
   return (
-    <div className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+    <div className="w-full">
       <h1 className="text-2xl font-semibold tracking-tight mb-5">
         概览 · <span className="gm-gradient-text">你的剧情宇宙</span>
       </h1>
@@ -57,7 +57,7 @@ export default function Dashboard({ dark = true }) {
             <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * .07 }}>
               <Card style={panel} className="gm-card-hover" styles={{ body: { display: 'flex', gap: 14, alignItems: 'center' } }}>
                 <div style={{ width: 52, height: 52, borderRadius: 14, background: `${s.color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, color: s.color }}>{s.icon}</div>
-                <Statistic title={<span style={{ color: titleColor }}>{s.title}</span>} value={s.value} valueStyle={{ color: valueColor, fontWeight: 700 }} />
+                <Statistic title={<span style={{ color: titleColor }}>{s.title}</span>} value={s.value} styles={{ content: { color: valueColor, fontWeight: 700 } }} />
               </Card>
             </motion.div>
           </Col>
@@ -86,16 +86,14 @@ export default function Dashboard({ dark = true }) {
 
         <Col xs={24} lg={10}>
           <Card title="🎮 我的游戏" style={panel} extra={<a onClick={() => nav(`${GM}/games`)}>全部 ›</a>}>
-            <List dataSource={list.slice(0, 5)} locale={{ emptyText: '还没有游戏，去创建一个吧' }}
-              renderItem={(g) => (
-                <List.Item style={{ cursor: 'pointer', padding: '10px 4px' }} onClick={() => nav(`${GM}/games/${g.id}`)}>
-                  <List.Item.Meta
-                    avatar={<Avatar style={{ background: avatarGradient(g.id) }}>{g.name[0]}</Avatar>}
-                    title={<span>{g.name} <Tag color={(STATUS_TAG[g.play_status] || STATUS_TAG.playing).color}>{(STATUS_TAG[g.play_status] || STATUS_TAG.playing).text}</Tag></span>}
-                    description={<span style={{ color: titleColor }}>{g.description?.slice(0, 40) || '暂无简介'}</span>} />
-                  <ThunderboltOutlined style={{ color: '#ffb020' }} />
-                </List.Item>
-              )} />
+            <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
+              {list.length === 0 && <p className="text-center py-8 text-sm text-stone-500 dark:text-stone-400">还没有游戏，去创建一个吧</p>}
+              {list.slice(0, 5).map(g => <button key={g.id} onClick={() => nav(`${GM}/games/${g.id}`)} className="flex items-center gap-3 w-full py-3 text-left">
+                <Avatar style={{ background: avatarGradient(g.id) }}>{g.name[0]}</Avatar>
+                <span className="flex-1 min-w-0"><span className="block truncate font-medium">{g.name} <Tag color={(STATUS_TAG[g.play_status] || STATUS_TAG.playing).color}>{(STATUS_TAG[g.play_status] || STATUS_TAG.playing).text}</Tag></span><span className="block text-xs mt-1 truncate" style={{ color: titleColor }}>{g.description?.slice(0, 40) || '暂无简介'}</span></span>
+                <ThunderboltOutlined style={{ color: '#ffb020' }} />
+              </button>)}
+            </div>
           </Card>
         </Col>
       </Row>

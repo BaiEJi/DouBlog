@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useDeferredValue, useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import md, { renderMermaidDiagrams, applyWikiLinks, buildWikiMap } from '@/shared/md'
 import { apiFetch, invalidatePost } from '@/blog/api'
@@ -90,7 +90,8 @@ export default function EditPost({ dark, setDark }) {
 
   const flatPosts = useMemo(() => flattenTree(tree), [tree])
 
-  const previewHtml = useMemo(() => md.render(content || ''), [content])
+  const previewContent = useDeferredValue(content)
+  const previewHtml = useMemo(() => md.render(previewContent || ''), [previewContent])
   // 稳定引用：避免无关重渲染(标题输入/保存状态)整体重建预览 DOM 抹掉 mermaid
   // 预览的双链解析（按当前所选知识库的树）
   const wikiMap = useMemo(() => buildWikiMap(tree), [tree])
@@ -215,20 +216,9 @@ export default function EditPost({ dark, setDark }) {
   // 加载中
   if (loading) {
     return (
-      <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
-        <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-          <div className="w-full px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-10">
-              <Link to="/" className="flex items-center gap-2.5 group">
-                <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                  <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
-                </div>
-                <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
-              </Link>
-            </div>
-          </div>
-        </nav>
-        <main className="mx-auto w-full max-w-[1700px] px-6 sm:px-8 xl:px-10 py-10">
+      <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
+
+        <main className="mx-auto w-full max-w-full p-0">
           <div className="animate-pulse space-y-4">
             <div className="h-8 w-32 bg-black/5 dark:bg-white/5 rounded" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -248,24 +238,13 @@ export default function EditPost({ dark, setDark }) {
   // 加载失败
   if (loadError) {
     return (
-      <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
-        <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-          <div className="w-full px-8 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-10">
-              <Link to="/" className="flex items-center gap-2.5 group">
-                <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                  <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
-                </div>
-                <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
-              </Link>
-            </div>
-          </div>
-        </nav>
-        <main className="mx-auto w-full max-w-[1700px] px-6 sm:px-8 xl:px-10 py-10">
+      <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
+
+        <main className="mx-auto w-full max-w-full p-0">
           <div className="px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
             {loadError}
           </div>
-          <Link to="/" className="inline-block mt-4 text-sm text-[#666] dark:text-[#888] hover:text-[#111] dark:hover:text-[#eee] transition-colors">
+          <Link to="/blog" className="inline-block mt-4 text-sm text-[#666] dark:text-[#888] hover:text-[#111] dark:hover:text-[#eee] transition-colors">
             &larr; 返回首页
           </Link>
         </main>
@@ -276,33 +255,11 @@ export default function EditPost({ dark, setDark }) {
   const parentTitle = flatPosts.find(p => String(p.id) === parentId)?.title || ''
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
       {/* Nav */}
-      <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-        <div className="w-full px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-10">
-            <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
-              </div>
-              <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
-            </Link>
-            <div className="hidden md:flex items-center gap-6 text-base text-[#666] dark:text-[#888]">
-              <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setDark()}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
-            >
-              {dark ? Icons.sun : Icons.moon}
-            </button>
-          </div>
-        </div>
-      </nav>
 
-      <main className="mx-auto w-full max-w-[1700px] px-6 sm:px-8 xl:px-10 py-10">
+
+      <main className="mx-auto w-full max-w-full p-0">
         <h1 className="text-2xl font-semibold tracking-tight mb-8">编辑文章</h1>
 
         {/* Meta Info */}
@@ -369,7 +326,7 @@ export default function EditPost({ dark, setDark }) {
             onChange={e => { [...e.target.files].forEach(ed.uploadAndInsert); e.target.value = '' }}
           />
           {/* Toolbar */}
-          <div className="flex items-center gap-0.5 px-3 py-2 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03]">
+          <div className="flex flex-wrap items-center gap-0.5 px-3 py-2 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03]">
             {TOOLBAR_BTNS.map((btn, i) => (
               <button
                 key={i}
@@ -403,9 +360,9 @@ export default function EditPost({ dark, setDark }) {
           </div>
 
           {/* Split View */}
-          <div className="flex h-[70vh] min-h-[420px]">
+          <div className="flex flex-col md:flex-row h-auto md:h-[70vh] min-h-[420px]">
             {/* Editor */}
-            <div className="w-1/2 border-r border-black/5 dark:border-white/5">
+            <div className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] border-b md:border-b-0 md:border-r border-black/5 dark:border-white/5">
               <textarea
                 id="md-editor"
                 ref={ed.editorRef}
@@ -419,7 +376,7 @@ export default function EditPost({ dark, setDark }) {
               />
             </div>
             {/* Preview */}
-            <div ref={ed.previewRef} className="w-1/2 px-5 py-4 overflow-y-auto">
+            <div ref={ed.previewRef} className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] px-5 py-4 overflow-y-auto">
               {content ? (
                 <div className="prose-content" dangerouslySetInnerHTML={previewProps} />
               ) : (

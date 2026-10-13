@@ -11,7 +11,7 @@ export default function RelationConfig({ dark = true }) {
   const panel = glassPanel(dark)
 
   return (
-    <div className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+    <div className="w-full">
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <h1 className="text-lg font-semibold tracking-tight">关系配置 · <span className="gm-gradient-text">全局默认类型</span></h1>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>游戏可在工作区中覆盖样式或新增自定义类型</Typography.Text>
@@ -38,7 +38,7 @@ export default function RelationConfig({ dark = true }) {
       </Row>
 
       <Card title="📋 类型总览" style={{ ...panel, marginTop: 18 }}>
-        <Table rowKey="id" dataSource={list} pagination={false}
+        <Table rowKey="id" dataSource={list} pagination={false} scroll={{ x: 640 }}
           columns={[
             { title: '排序', dataIndex: 'order_index', width: 70 },
             { title: '名称', render: (_, t) => <span style={{ color: t.color, fontWeight: 600 }}>{t.name}</span> },

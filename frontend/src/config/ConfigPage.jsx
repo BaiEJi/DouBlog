@@ -313,20 +313,13 @@ function AccountCard() {
   )
 }
 
-export default function ConfigPage({ dark, setDark }) {
+export default function ConfigPage() {
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e]">
-      <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报" right={<button onClick={setDark} title="切换主题" aria-label="切换主题"
-            className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors">
-            {dark ? (
-              <svg className="w-[18px] h-[18px] mx-auto" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3.6" stroke="currentColor" strokeWidth="1.4" /><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M15.3 4.7L14 6M6 14l-1.3 1.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-            ) : (
-              <svg className="w-[18px] h-[18px] mx-auto" viewBox="0 0 20 20" fill="none"><path d="M16.5 12.5A7 7 0 0 1 7.5 3.5a7 7 0 1 0 9 9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
-            )}
-          </button>} />
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e]">
+      <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报"  />
 
 
-      <main className="w-full max-w-[1700px] mx-auto px-4 sm:px-6 xl:px-10 py-8 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+      <main className="w-full max-w-full mx-auto p-0 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
         <DbCard />
         <LoggingCard />
         <AccountCard />

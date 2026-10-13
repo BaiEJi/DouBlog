@@ -47,7 +47,7 @@ function ResizeHandle({ onDragStart, onDrag }) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className="w-[3px] shrink-0 cursor-col-resize group h-[calc(100vh-48px)] sticky top-12"
+      className="w-[3px] shrink-0 cursor-col-resize group h-[calc(100vh-48px)] sticky top-8"
     >
       <div className="w-full h-full transition-colors bg-transparent group-hover:bg-black/10 dark:group-hover:bg-white/15" />
     </div>
@@ -284,7 +284,7 @@ function TableOfContents({ headings, activeId, dark }) {
   const guideColor = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'
 
   return (
-    <div className="sticky top-12">
+    <div className="sticky top-8">
       <h4 className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest mb-4 font-mono">
         目录
       </h4>
@@ -699,7 +699,7 @@ export default function PostDetail({ dark, setDark }) {
   if (loading && !post) {
     // 结构化骨架屏：与正文布局一致，避免加载→内容的跳变闪烁
     return (
-      <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] animate-fade-in">
+      <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] animate-fade-in">
         <div className="h-12 border-b border-black/[0.06] dark:border-white/[0.06] bg-stone-50 dark:bg-[#141312] backdrop-blur-xl" />
         <div className="max-w-[1150px] mx-auto px-8 py-10 animate-pulse">
           <div className="h-9 w-2/3 bg-black/5 dark:bg-white/5 rounded mb-6" />
@@ -722,12 +722,12 @@ export default function PostDetail({ dark, setDark }) {
 
   if (!post) {
     return (
-      <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e]">
+      <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e]">
         <div className="h-12 border-b border-black/[0.06] dark:border-white/[0.06] bg-stone-50 dark:bg-[#141312] backdrop-blur-xl" />
         <div className="flex items-center justify-center py-32">
           <div className="text-center">
             <p className="text-muted-foreground mb-4">文章不存在</p>
-            <Link to="/" className="text-sm text-[#111] dark:text-[#eee] hover:underline">返回首页</Link>
+            <Link to="/blog" className="text-sm text-[#111] dark:text-[#eee] hover:underline">返回首页</Link>
           </div>
         </div>
       </div>
@@ -735,46 +735,14 @@ export default function PostDetail({ dark, setDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
       {/* ── Nav ────────────────────────────────────────── */}
-      <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-        <div className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="text-[13px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors shrink-0">← 入口</Link>
-            <Link to="/blog" className="flex items-center gap-2 group">
-              <div className="w-7 h-7 rounded-lg bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                <span className="text-white dark:text-[#111] text-[12px] font-bold">D</span>
-              </div>
-              <span className="text-[15px] font-semibold tracking-tight hidden sm:inline">DouBlog</span>
-            </Link>
-            <div className="hidden md:flex items-center gap-4 text-[13px] text-[#666] dark:text-[#888]">
-              <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-              <Link to="/admin" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">管理</Link>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999] dark:text-[#555]">{Icons.search}</span>
-              <input
-                type="text"
-                placeholder="搜索文章..."
-                className="w-32 sm:w-56 pl-9 pr-3 h-8 text-[12.5px] bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[#111] dark:text-[#eee] placeholder:text-[#999] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
-              />
-            </div>
-            <button
-              onClick={() => setDark()}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
-            >
-              {dark ? Icons.sun : Icons.moon}
-            </button>
-          </div>
-        </div>
-      </nav>
+
 
       {/* ── Layout ─────────────────────────────────────── */}
-      <div className="flex w-full px-4 sm:px-6 xl:px-10">
+      <div className="flex w-full min-w-0">
         {/* Left Sidebar */}
-        <aside className="hidden lg:block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-48px)] sticky top-12 overflow-hidden py-6 px-2" style={{ width: leftWidth }}>
+        <aside className="hidden lg:block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-48px)] sticky top-8 overflow-hidden py-6 px-2" style={{ width: leftWidth }}>
           <div className="mb-4 px-2 flex items-center justify-between">
             <div className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest">
               文档
@@ -819,7 +787,7 @@ export default function PostDetail({ dark, setDark }) {
               <div className="flex items-center gap-1.5">
                 {post.parent ? (
                   <>
-                    <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
+                    <Link to="/blog" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
                     <span>/</span>
                     <span className="text-[#666] dark:text-[#888]">{post.parent.title}</span>
                     <span>/</span>
@@ -914,7 +882,7 @@ export default function PostDetail({ dark, setDark }) {
             )}
 
             <div className="mt-16 pt-8 border-t border-black/5 dark:border-white/5">
-              <Link to="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <Link to="/blog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                 &larr; 返回首页
               </Link>
             </div>
@@ -924,7 +892,7 @@ export default function PostDetail({ dark, setDark }) {
 
         {/* Right TOC：切换期间不显示旧文章的目录 */}
         <ResizeHandle onDragStart={onRightDragStart} onDrag={onRightDrag} />
-        <aside className="hidden xl:block shrink-0 h-[calc(100vh-48px)] sticky top-12 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
+        <aside className="hidden xl:block shrink-0 h-[calc(100vh-48px)] sticky top-8 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
           <TableOfContents headings={loading ? [] : headings} activeId={activeTocId} dark={dark} />
         </aside>
       </div>

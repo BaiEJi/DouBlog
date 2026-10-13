@@ -10,7 +10,6 @@
  * 过滤全部下推后端；直方图/模式/导出与列表共用同一组查询参数。
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { BackButton } from '../shared/PageHeader'
 import {
   sdklogSearch, sdklogSysnames, sdklogHistogram, sdklogContext, sdklogPatterns,
   sdklogTrace, sdklogExport, sdklogAlerts, sdklogAlertConfig, sdklogAlertCheck, sdklogAlertAck,
@@ -343,16 +342,21 @@ function Histogram({ data, onZoom }) {
 
 /** 通用模态外壳 */
 function Modal({ title, onClose, children, wide }) {
+  useEffect(() => {
+    const onKey = event => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   return (
     <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] flex items-start justify-center p-6 overflow-y-auto"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={'w-full ' + (wide ? 'max-w-[980px]' : 'max-w-[720px]') + ' mt-10 rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#161514] shadow-2xl'}
-        onKeyDown={e => e.key === 'Escape' && onClose()}>
-        <div className="flex items-center gap-3 px-5 h-12 border-b border-black/[0.06] dark:border-white/[0.07]">
+      <div className={'w-full ' + (wide ? 'max-w-[980px]' : 'max-w-[720px]') + ' mt-4 max-h-[calc(100dvh-80px)] flex flex-col rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#161514] shadow-2xl'}
+        role="dialog" aria-modal="true" aria-label={title} onKeyDown={e => e.key === 'Escape' && onClose()}>
+        <div className="shrink-0 flex items-center gap-3 px-5 h-12 border-b border-black/[0.06] dark:border-white/[0.07]">
           <h3 className="text-base font-semibold">{title}</h3>
-          <button onClick={onClose} className="ml-auto w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10">✕</button>
+          <button onClick={onClose} aria-label="关闭弹窗" className="ml-auto shrink-0 w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10">✕</button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="min-h-0 overflow-y-auto p-5">{children}</div>
       </div>
     </div>
   )
@@ -361,13 +365,13 @@ function Modal({ title, onClose, children, wide }) {
 /** 紧凑行（上下文/trace 模态内用） */
 function MiniRow({ log, anchor, term, onClick }) {
   return (
-    <div onClick={onClick} role="button"
-      className={'flex items-center gap-2.5 px-3 py-[5px] cursor-pointer border-t border-black/[0.06] dark:border-white/[0.06] transition-colors ' +
+    <div onClick={onClick} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
+      className={'grid grid-cols-[104px_70px_1fr] sm:flex items-center gap-2.5 px-3 py-[5px] cursor-pointer border-t border-black/[0.06] dark:border-white/[0.06] transition-colors ' +
         (anchor ? 'bg-amber-500/10' : 'hover:bg-black/[0.02] dark:hover:bg-white/[0.03]')}>
       <span className="text-[11px] text-stone-400 tabular-nums shrink-0 w-[104px]">{fmtLocal(log.ts)}</span>
       <span className={'shrink-0 w-[70px] text-center px-1 py-px rounded border text-[9.5px] font-semibold ' + (LEVEL_STYLE[log.level_text] || '')}>{log.level_text}</span>
-      <span className="shrink-0 text-[10.5px] text-stone-400 w-[70px] truncate">{log.sys_name}</span>
-      <span className="flex-1 min-w-0 text-[12px] truncate"><Highlight text={log.message} term={term} /></span>
+      <span className="min-w-0 text-[10.5px] text-stone-400 sm:w-[70px] truncate">{log.sys_name}</span>
+      <span className="col-span-3 flex-1 min-w-0 text-[12px] truncate"><Highlight text={log.message} term={term} /></span>
     </div>
   )
 }
@@ -376,7 +380,15 @@ function MiniRow({ log, anchor, term, onClick }) {
 function ContextModal({ log, onClose, onOpenTrace }) {
   const [data, setData] = useState(null)
   useEffect(() => {
-    sdklogContext(log.id, 15, 15).then(d => d.success && setData(d.data))
+    sdklogContext(log.id, 15, 15).then(d => {
+      if (!d.success) return
+      const unique = new Map()
+      for (const item of d.data.items) {
+        const previous = unique.get(item.id)
+        unique.set(item.id, { ...item, anchor: item.anchor || previous?.anchor })
+      }
+      setData({ ...d.data, items: [...unique.values()] })
+    })
   }, [log.id])
   return (
     <Modal title={`上下文 · ${fmtLocal(log.ts)} 前后各 15 条`} onClose={onClose} wide>
@@ -415,7 +427,7 @@ function TraceModal({ traceId, onClose }) {
               const off = new Date(l.ts + 'Z').getTime() - startMs
               return <span key={l.id} title={`${fmtLocal(l.ts)} · ${l.level_text}`}
                 className="absolute top-1/2 -translate-y-1/2 w-2 h-2 rounded-full ring-2 ring-white dark:ring-[#161514]"
-                style={{ left: `calc(${Math.min(100, off / spanMs * 100)}% - 4px)`, background: LEVEL_FILL[l.level_text] || '#a8a29e' }} />
+                style={{ left: `calc(${Math.min(100, off / Math.max(1, spanMs) * 100)}% - 4px)`, background: LEVEL_FILL[l.level_text] || '#a8a29e' }} />
             })}
             <span className="absolute left-1.5 top-0.5 text-[9px] text-stone-400">0</span>
             <span className="absolute right-1.5 top-0.5 text-[9px] text-stone-400">+{spanMs >= 1000 ? (spanMs / 1000).toFixed(1) + 's' : spanMs + 'ms'}</span>
@@ -427,7 +439,7 @@ function TraceModal({ traceId, onClose }) {
                   +{new Date(l.ts + 'Z').getTime() - startMs}ms
                 </span>
                 <span className={'shrink-0 w-[70px] text-center px-1 py-px rounded border text-[9.5px] font-semibold ' + (LEVEL_STYLE[l.level_text] || '')}>{l.level_text}</span>
-                <span className="shrink-0 text-[10.5px] text-stone-400 w-[70px] truncate">{l.sys_name}</span>
+                <span className="hidden sm:block shrink-0 text-[10.5px] text-stone-400 w-[70px] truncate">{l.sys_name}</span>
                 <span className="flex-1 min-w-0 text-[12px] truncate" title={l.message}>{l.message}</span>
               </div>
             ))}
@@ -592,20 +604,23 @@ function LogRow({ log, term, selected, newFlash, expanded, onToggle, onKvFilter,
       (expanded ? 'bg-stone-50 dark:bg-white/[0.02] ' : 'hover:bg-black/[0.015] dark:hover:bg-white/[0.02] ') +
       (selected ? 'ring-1 ring-inset ring-blue-500/40 ' : '') +
       (newFlash ? 'animate-newlog bg-amber-500/[0.12]' : '')}>
-      <div onClick={onToggle} role="button" className="flex items-center gap-2.5 px-3 py-[5px] cursor-pointer select-none">
+      <div onClick={onToggle} role="button" tabIndex={0} aria-expanded={expanded}
+        onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onToggle() } }}
+        className="grid grid-cols-[104px_74px_1fr_12px] sm:flex items-center gap-2.5 px-3 py-[5px] cursor-pointer select-none">
         <span className="text-[11.5px] text-stone-400 tabular-nums shrink-0 w-[104px]">{fmtLocal(log.ts)}</span>
         <span className={'shrink-0 w-[74px] text-center px-1 py-px rounded border text-[10px] font-semibold ' + (LEVEL_STYLE[log.level_text] || '')}>{log.level_text}</span>
-        <span className="shrink-0 w-[90px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}>{log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}</span>
-        <span role="button" onClick={e => { if (log.trace_id) { e.stopPropagation(); onOpenTrace(log.trace_id) } }}
-          title={log.trace_id ? '查看 trace 时间线' : ''} className="shrink-0 w-[100px] text-[11px] font-mono truncate text-sky-600 dark:text-sky-400 hover:underline">{log.trace_id || ''}</span>
-        <span className="flex-1 min-w-0 text-[12.5px] truncate" title={log.message}>
+        <span className="hidden sm:block shrink-0 w-[90px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}>{log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}</span>
+        <span role="button" tabIndex={log.trace_id ? 0 : -1} onClick={e => { if (log.trace_id) { e.stopPropagation(); onOpenTrace(log.trace_id) } }}
+          onKeyDown={event => { if (log.trace_id && event.key === 'Enter') { event.stopPropagation(); onOpenTrace(log.trace_id) } }}
+          title={log.trace_id ? '查看 trace 时间线' : ''} className="hidden md:block shrink-0 w-[100px] text-[11px] font-mono truncate text-sky-600 dark:text-sky-400 hover:underline">{log.trace_id || ''}</span>
+        <span className="col-span-4 sm:flex-1 min-w-0 text-[12.5px] truncate" title={log.message}>
           <Highlight text={firstLine} term={term} />
           {multiline && <span onClick={e => { e.stopPropagation(); setStackOpen(s => !s) }}
             className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded px-1 py-px hover:bg-amber-500/10" title="展开/收起堆栈">
             堆栈 {stackLines} 行
           </span>}
         </span>
-        <svg className={'w-3 h-3 shrink-0 text-stone-300 dark:text-stone-600 transition-transform ' + (expanded ? 'rotate-90' : '')} viewBox="0 0 12 12" fill="none">
+        <svg className={'row-start-1 col-start-4 w-3 h-3 shrink-0 text-stone-300 dark:text-stone-600 transition-transform ' + (expanded ? 'rotate-90' : '')} viewBox="0 0 12 12" fill="none">
           <path d="M4.5 2.5L8 6l-3.5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
@@ -645,8 +660,8 @@ export default function LogsPage() {
   const [exactLevels, setExactLevels] = useState([])    // chips：精确级别（多选）
   const [traceId, setTraceId] = useState('')
   const [q, setQ] = useState('')
-  const [start, setStart] = useState(toLocalInput(new Date(Date.now() - 3600000)))   // 默认最近 1h
-  const [end, setEnd] = useState(toLocalInput(new Date()))
+  const [start, setStart] = useState(() => toLocalInput(new Date(Date.now() - 3600000)))   // 默认最近 1h
+  const [end, setEnd] = useState(() => toLocalInput(new Date()))
   const [rangeKey, setRangeKey] = useState('1h')
   const [kv, setKv] = useState([])                      // [{key, value}] 多条 kv 过滤
   const [kvKey, setKvKey] = useState('')
@@ -766,7 +781,11 @@ export default function LogsPage() {
   // Live Tail：3s 轮询第一页 + 增量高亮；相对窗口随时间滑动
   useEffect(() => {
     if (!liveTail) { setNewIds(new Set()); return }
+    let inFlight = false
+    let alive = true
     const timer = setInterval(async () => {
+      if (document.hidden || inFlight) return
+      inFlight = true
       // 相对窗口滑动：先更新 state（下个 tick buildParams 取到新窗口），
       // 并同步刷新 filtersRef，使本 tick 就用新窗口查询
       const snap = searchRef.current.snap
@@ -784,19 +803,22 @@ export default function LogsPage() {
         sdklogSearch(params).catch(() => null),
         sdklogHistogram(buildParams({ buckets: 60 })).catch(() => null),
       ])
+      inFlight = false
+      if (!alive) return
       if (d?.success) {
         setItems(prev => {
           if (!prev) return d.data.items
           const prevIds = new Set(prev.map(x => x.id))
+          const incomingIds = new Set(d.data.items.map(x => x.id))
           const fresh = d.data.items.filter(x => !prevIds.has(x.id))
           if (fresh.length) setNewIds(s => new Set([...s, ...fresh.map(x => x.id)]))
-          return [...d.data.items, ...prev.filter(x => !d.data.items.some(y => y.id === x.id))].slice(0, Math.max(prev.length, 500))
+          return [...d.data.items, ...prev.filter(x => !incomingIds.has(x.id))].slice(0, Math.max(prev.length, 500))
         })
         setTotal(d.data.total)
       }
       if (h?.success) setHist(h.data)
     }, 3000)
-    return () => clearInterval(timer)
+    return () => { alive = false; clearInterval(timer) }
   }, [liveTail, buildParams])
 
   // 无限滚动：滚动到哨兵附近 → 追加下一页（scroll 事件 + getBoundingClientRect，
@@ -941,10 +963,10 @@ export default function LogsPage() {
   const levelTotals = hist?.totals ?? {}
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
-      <header className="sticky top-0 z-20 bg-stone-50/95 dark:bg-[#141312] backdrop-blur border-b border-black/[0.06] dark:border-white/[0.06]">
-        <div className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 h-12 flex items-center gap-4">
-          <BackButton />
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+      <header className="mb-6">
+        <div className="w-full flex flex-wrap items-center gap-2">
+
           <h1 className="text-lg font-semibold tracking-tight">日志查询</h1>
           {/* Live Tail */}
           <button onClick={() => setLiveTail(v => !v)} title="实时追尾：每 3 秒自动拉取新日志"
@@ -999,7 +1021,7 @@ export default function LogsPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 py-4">
+      <main className="mx-auto w-full max-w-full p-0">
         {/* 未确认告警横幅 */}
         {unacked > 0 && !alertOpen && (
           <button onClick={() => setAlertOpen(true)} className="w-full mb-3 px-4 h-9 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-[12.5px] flex items-center gap-2 hover:bg-red-500/15 transition-colors">

@@ -36,18 +36,7 @@ export default function LifeView({ toast, dark }) {
 
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-4 overflow-x-auto pb-1">
-        {SUBS.map(s => (
-          <button key={s.key} onClick={() => setSub(s.key)}
-            className={'inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs shrink-0 transition-colors ' +
-              (sub === s.key
-                ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-medium'
-                : 'text-stone-500 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
-            {s.icon}{s.label}
-          </button>
-        ))}
-      </div>
-
+      <h2 className="text-base font-semibold mb-6">{SUBS.find(s => s.key === sub)?.label}</h2>
       {sub === 'today' && <LifeTodayView toast={toast} dark={dark} />}
       {sub === 'plans' && <LifePlansView toast={toast} dark={dark} />}
       {sub === 'calendar' && <CalendarView variant="life" onOpenDay={openDay} toast={toast} />}

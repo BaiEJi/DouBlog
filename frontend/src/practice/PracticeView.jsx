@@ -8,6 +8,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listTags, createTag, reviewToday } from './api'
 import { Icon } from '../todo/kit'
+import { useModuleNavigation } from '../shared/module-navigation'
 import ProblemList from './components/ProblemList'
 import ProblemDetail from './components/ProblemDetail'
 import ProblemForm from './components/ProblemForm'
@@ -65,6 +66,10 @@ export default function PracticeView({ toast, dark }) {
 
   const bump = () => setRefreshSignal(x => x + 1)
 
+  useModuleNavigation({ items: SUBS.map(s => ({ ...s, badge: s.key === 'review' ? dueCount || undefined : undefined })), activeKey: sub,
+    onSelect: key => { setSub(key); setDetailId(null); setEdit(null) },
+  })
+
   const inOverlay = edit != null || detailId != null
 
   return (
@@ -72,25 +77,7 @@ export default function PracticeView({ toast, dark }) {
       {/* ── 子视图头（覆盖层态隐藏） ── */}
       {!inOverlay && (
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="inline-flex p-0.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.06]">
-            {SUBS.map(s => {
-              const active = sub === s.key
-              return (
-                <button type="button" key={s.key} onClick={() => setSub(s.key)}
-                  className={'px-3 h-7 rounded-md text-xs transition-colors inline-flex items-center gap-1.5 whitespace-nowrap ' +
-                    (active
-                      ? 'bg-white dark:bg-white/[0.12] shadow-sm font-medium text-stone-900 dark:text-stone-100'
-                      : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300')}>
-                  {s.label}
-                  {s.key === 'review' && dueCount > 0 && (
-                    <span className="min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] leading-4 text-center tabular-nums">
-                      {dueCount > 99 ? '99+' : dueCount}
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
+          <h1 className="text-base font-semibold">{SUBS.find(s => s.key === sub)?.label}</h1>
           <span className="flex-1" />
           <button type="button" onClick={() => setEdit({ id: null, from: 'list' })}
             className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">

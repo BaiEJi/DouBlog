@@ -34,7 +34,7 @@ export function EmptyGuide({ onCreateChapter, onAddChar, onFirstRelation }) {
     <div style={{ position: 'absolute', inset: 0, display: 'flex', gap: 16, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
       {steps.map((s, i) => (
         <Card key={s.title} hoverable onClick={s.action}
-          style={{ width: 210, background: '#141824', border: '1px solid #232a3c', textAlign: 'center' }}>
+          style={{ width: 210, background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)', textAlign: 'center' }}>
           <div style={{ fontSize: 34 }}>{s.icon}</div>
           <Typography.Text strong style={{ display: 'block', marginTop: 8 }}>第 {i + 1} 步 · {s.title}</Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>{s.desc}</Typography.Text>
@@ -101,7 +101,7 @@ export function EventsPanel({ gid, chapterId, chapters, allCharMap, onJumpChapte
 
   return (
     <div style={{ padding: 20, display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap', overflow: 'auto', height: '100%' }}>
-      <Card size="small" style={{ flex: '1 1 340px', maxWidth: 460, background: '#141824', border: '1px solid #232a3c' }}
+      <Card size="small" style={{ flex: '1 1 340px', minWidth: 0, maxWidth: '100%' , background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}
         title={<span style={{ fontSize: 13 }}>✏️ 记录到：{ch ? chapterLabel(ch) : '—'}</span>}>
         <Space orientation="vertical" size={10} style={{ width: '100%' }}>
           <Input placeholder="事件标题（如：北境之战、主角觉醒）" value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -119,7 +119,7 @@ export function EventsPanel({ gid, chapterId, chapters, allCharMap, onJumpChapte
         ) : (
           <Space orientation="vertical" size={8} style={{ width: '100%' }}>
             {(events.data || []).map((ev) => (
-              <div key={ev.id} style={{ padding: '8px 10px', background: '#0f121b', borderRadius: 8, border: '1px solid #232a3c' }}>
+              <div key={ev.id} style={{ padding: '8px 10px', background: 'var(--gm-canvas-bg)', borderRadius: 8, border: '1px solid var(--gm-border)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <Typography.Text strong style={{ fontSize: 13, flex: 1 }}>{ev.title}</Typography.Text>
                   <Button size="small" type="text" onClick={() => {
@@ -143,7 +143,7 @@ export function EventsPanel({ gid, chapterId, chapters, allCharMap, onJumpChapte
         )}
       </Card>
 
-      <Card size="small" style={{ flex: '1 1 360px', background: '#141824', border: '1px solid #232a3c' }}
+      <Card size="small" style={{ flex: '1 1 360px', minWidth: 0, maxWidth: '100%', background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}
         title={<span style={{ fontSize: 13 }}>🌐 全时间线（{chapters.length} 章）</span>}>
         {(allEvents.data || []).length === 0 ? (
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>所有章节都没有事件，先在左侧记录一条吧</Typography.Text>
@@ -159,7 +159,7 @@ export function EventsPanel({ gid, chapterId, chapters, allCharMap, onJumpChapte
                   </Typography.Text>
                   <div style={{ marginTop: 4 }}>
                     {evs.map((ev) => (
-                      <div key={ev.id} style={{ fontSize: 12.5, padding: '3px 0', color: '#c3c9d9' }}>
+                      <div key={ev.id} style={{ fontSize: 12.5, padding: '3px 0', color: 'var(--gm-text)' }}>
                         · {ev.title}{ev.character_ids?.length
                           ? <span style={{ color: '#6b7488' }}>（{ev.character_ids.map((cid) => allCharMap.get(cid)?.name || '?').join('、')}）</span>
                           : null}
@@ -191,13 +191,13 @@ export function StatsPanel({ gid, onJumpChapter }) {
           { t: '章节', v: s.totals.chapters }, { t: '人物', v: s.totals.characters },
           { t: '关系', v: s.totals.relations }, { t: '事件', v: s.totals.events },
         ].map((x) => (
-          <Card key={x.t} size="small" style={{ minWidth: 120, background: '#141824', border: '1px solid #232a3c' }}>
-            <Statistic title={x.t} value={x.v} valueStyle={{ color: '#39dbff' }} />
+          <Card key={x.t} size="small" style={{ minWidth: 120, background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}>
+            <Statistic title={x.t} value={x.v} styles={{ content: { color: 'var(--gm-accent)' } }} />
           </Card>
         ))}
       </Space>
-      <Space size={16} align="start" wrap>
-        <Card size="small" title="📈 各章规模" style={{ minWidth: 320, background: '#141824', border: '1px solid #232a3c' }}>
+      <Space size={16} align="start" wrap style={{ maxWidth: '100%' }}>
+        <Card size="small" title="📈 各章规模" style={{ width: 320, maxWidth: '100%', background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}>
           {s.chapters.map((c) => (
             <div key={c.id} style={{ marginBottom: 10 }}>
               <Typography.Text style={{ fontSize: 12.5, cursor: 'pointer' }} onClick={() => onJumpChapter(c.id)}>
@@ -205,18 +205,18 @@ export function StatsPanel({ gid, onJumpChapter }) {
               </Typography.Text>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 3 }}>
                 <Progress percent={Math.round(c.characters / maxCh * 100)} size="small" style={{ flex: 1, marginInlineEnd: 0 }}
-                  format={() => `👤${c.characters}`} strokeColor="#7c5cff" trailColor="#1e2433" />
+                  format={() => `👤${c.characters}`} strokeColor="#7c5cff" railColor="var(--gm-border)" />
                 <span style={{ fontSize: 11.5, color: '#8b93a8' }}>🔗{c.relations}</span>
               </div>
             </div>
           ))}
           {!s.chapters.length && <Typography.Text type="secondary">暂无章节</Typography.Text>}
         </Card>
-        <Card size="small" title="🎯 剧情核心人物" style={{ minWidth: 260, background: '#141824', border: '1px solid #232a3c' }}>
+        <Card size="small" title="🎯 剧情核心人物" style={{ minWidth: 260, background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}>
           {s.top_characters.map((c) => (
             <div key={c.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <span style={{ width: 64, fontSize: 12.5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{c.name}</span>
-              <div style={{ flex: 1, height: 8, background: '#1e2433', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: 8, background: 'var(--gm-border)', borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{ width: `${c.degree / maxDeg * 100}%`, height: '100%', background: 'linear-gradient(90deg,#7c5cff,#38b6ff)' }} />
               </div>
               <span style={{ fontSize: 11.5, color: '#8b93a8', width: 36, textAlign: 'right' }}>{c.degree}</span>
@@ -224,7 +224,7 @@ export function StatsPanel({ gid, onJumpChapter }) {
           ))}
           {!s.top_characters.length && <Typography.Text type="secondary">暂无关系</Typography.Text>}
         </Card>
-        <Card size="small" title="⚔ 阵营" style={{ minWidth: 220, background: '#141824', border: '1px solid #232a3c' }}>
+        <Card size="small" title="⚔ 阵营" style={{ minWidth: 220, background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}>
           {s.factions.map((f) => (
             <div key={f.name} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
               <Tag style={{ borderColor: 'transparent', background: factionColor(f.name), color: '#fff' }}>{f.name}</Tag>
@@ -233,12 +233,12 @@ export function StatsPanel({ gid, onJumpChapter }) {
           ))}
           {!s.factions.length && <Typography.Text type="secondary">还没有阵营标记</Typography.Text>}
         </Card>
-        <Card size="small" title="🔗 关系类型分布" style={{ minWidth: 260, background: '#141824', border: '1px solid #232a3c' }}>
+        <Card size="small" title="🔗 关系类型分布" style={{ minWidth: 260, background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)' }}>
           {s.type_usage.map((t) => (
             <div key={t.type_id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
               <span style={{ width: 8, height: 8, borderRadius: 4, background: t.color }} />
               <span style={{ width: 56, fontSize: 12.5, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{t.name}</span>
-              <div style={{ flex: 1, height: 8, background: '#1e2433', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: 8, background: 'var(--gm-border)', borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{ width: `${t.count / maxType * 100}%`, height: '100%', background: t.color }} />
               </div>
               <span style={{ fontSize: 11.5, color: '#8b93a8', width: 28, textAlign: 'right' }}>{t.count}</span>

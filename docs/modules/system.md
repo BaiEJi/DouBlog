@@ -230,3 +230,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 8. **登录 ≠ vault 解锁**：见 2.5 节；已登录会话对 vault 密文无能为力（零知识设计，服务端无法也不应提供「登录即解锁」）
 9. AuthGate 对后端不可达放行（网络错误不挡页面），认证真正裁决在后端 401 + apiFetch 重定向——前端守卫只是体验层
 10. `GET /api/admin/database` 返回的 `postgres` 配置**含明文 password**（前端表单不回显、以空占位「留空使用已存密码」，但响应体中可见）；如需收敛应在后端掩码并让 `_merged_cfg` 识别掩码占位——涉及 `/admin` 旧入口同批消费方，暂列观察项
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。

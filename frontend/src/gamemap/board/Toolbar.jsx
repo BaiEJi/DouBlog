@@ -1,7 +1,7 @@
 /* 顶栏（#1 收纳分组）：视图切换 | 时间范围（#8 与 URL 同步）| 高频操作常驻，
  * 低频操作（导出/对比/批量/备份）收进「操作 ▾」。
  * 适配 DouBlog：去掉源版右侧 DbSwitcherCompact（数据库切换由 Doublog /config 统一）。 */
-import { Button, Dropdown, Segmented, Select, Space, Tag } from 'antd'
+import { Button, Dropdown, Select, Space, Tag } from 'antd'
 import {
   AppstoreOutlined, CameraOutlined, DownOutlined, DiffOutlined, DownloadOutlined,
   TeamOutlined, UserAddOutlined,
@@ -12,15 +12,10 @@ export function Toolbar(p) {
   const chOpts = p.chapterList.map((c) => ({ value: c.id, label: chapterLabel(c) }))
 
   return (
-    <div style={{ padding: '8px 18px', borderBottom: '1px solid #1e2433', display: 'flex', alignItems: 'center', gap: 12, background: '#0f121b', flexWrap: 'wrap' }}>
-      <Segmented value={p.view} onChange={(v) => p.setView(v)} options={[
-        { value: 'board', label: '🕸️ 看板' }, { value: 'characters', label: '👥 人物' },
-        { value: 'relations', label: '🔗 关系' }, { value: 'events', label: '📜 剧情' },
-        { value: 'stats', label: '📊 统计' },
-      ]} />
+    <div style={{ padding: '8px 18px', borderBottom: '1px solid var(--gm-border)', display: 'flex', alignItems: 'center', gap: 12, background: 'var(--gm-panel-bg)', flexWrap: 'wrap' }}>
       {p.view === 'board' && (
         <>
-          <Space.Compact>
+          <Space.Compact style={{ maxWidth: '100%', flexWrap: 'wrap' }}>
             <Select size="small" style={{ minWidth: 138 }} value={p.scopeMode}
               onChange={(v) => p.setScopeMode(v)}
               options={[
@@ -34,7 +29,7 @@ export function Toolbar(p) {
                 onChange={p.setScopeBoundaryId} options={chOpts} />
             )}
             {p.scopeMode === 'custom' && (
-              <Select mode="multiple" size="small" style={{ minWidth: 220, maxWidth: 420 }} maxTagCount="responsive"
+              <Select mode="multiple" size="small" style={{ minWidth: 0, width: 220, maxWidth: '100%' }} maxTagCount="responsive"
                 placeholder="选择要查看的章节（可多选）" value={p.scopeIds} onChange={p.setScopeIds} options={chOpts.map((o) => ({ ...o, label: '🔖 ' + o.label }))} />
             )}
           </Space.Compact>
@@ -43,9 +38,9 @@ export function Toolbar(p) {
           )}
           <Button size="small" icon={<UserAddOutlined />} onClick={p.onAddChar}>添加人物</Button>
           <Button size="small" icon={<AppstoreOutlined />} onClick={p.onScatter}>打散布局</Button>
-          <Dropdown menu={{
+          <Dropdown trigger={['click']} menu={{
             items: [
-              { key: 'export', icon: <CameraOutlined />, label: '导出图片 PNG' },
+              { key: 'export', icon: <CameraOutlined />, label: '导出图片 PNG', disabled: p.exporting },
               { key: 'diff', icon: <DiffOutlined />, label: '演变对比' },
               { type: 'divider', key: 'd1' },
               { key: 'batch', icon: <TeamOutlined />, label: '批量导入人物' },
@@ -58,7 +53,7 @@ export function Toolbar(p) {
               else if (key === 'backup') p.onBackup()
             },
           }}>
-            <Button size="small">操作 <DownOutlined style={{ fontSize: 10 }} /></Button>
+            <Button size="small" loading={p.exporting}>{p.exporting ? '导出中' : '操作'} <DownOutlined style={{ fontSize: 10 }} /></Button>
           </Dropdown>
           {p.saveBadge}
         </>

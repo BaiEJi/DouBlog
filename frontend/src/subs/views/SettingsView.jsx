@@ -3,7 +3,7 @@
  * 会员分类分布卡片（点击跳转筛选列表）、数据库备份（手动备份 + 保留策略 + 备份列表）。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 import { subsCategories, subsCreateCategory, subsUpdateCategory, subsDeleteCategory, subsMembers, subsBackupRun, subsBackupStats } from '../api'
 import { Icon, Modal, Confirm, Toast, Field, inputCls, btn, adjustForDark } from '../kit'
@@ -285,7 +285,8 @@ const TABS = [
 ]
 
 export default function SettingsView({ dark }) {
-  const [tab, setTab] = useState('category')
+  const [sp] = useSearchParams()
+  const tab = TABS.some(t => t.key === sp.get('panel')) ? sp.get('panel') : 'category'
   const [toastMsg, setToastMsg] = useState(null)
   const [toastKind, setToastKind] = useState('')
 
@@ -298,17 +299,7 @@ export default function SettingsView({ dark }) {
     <div className="space-y-4">
       <h2 className="text-base font-semibold">设置</h2>
       <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
-        <div className="flex gap-1.5 mb-4 border-b border-black/[0.05] dark:border-white/[0.06]">
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={'flex items-center gap-1.5 px-3 h-9 -mb-px text-sm border-b-2 transition-colors ' +
-                (tab === t.key
-                  ? 'border-amber-500 text-amber-700 dark:text-amber-400 font-medium'
-                  : 'border-transparent text-stone-400 hover:text-stone-600 dark:hover:text-stone-300')}>
-              {t.icon} {t.label}
-            </button>
-          ))}
-        </div>
+        <h2 className="text-base font-semibold mb-6">{TABS.find(t => t.key === tab)?.label}</h2>
         {tab === 'category' && <CategoryTab dark={dark} toast={toast} />}
         {tab === 'distribution' && <DistributionTab dark={dark} toast={toast} />}
         {tab === 'backup' && <BackupTab toast={toast} />}

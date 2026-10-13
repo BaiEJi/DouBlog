@@ -141,9 +141,9 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
         </Field>
         <Field label="起止时间" hint="结束时间留空 = 长期坚持">
           <div className="flex items-center gap-2">
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls + ' min-w-0'} />
             <span className="text-stone-400 text-xs shrink-0">至</span>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} />
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls + ' min-w-0'} />
           </div>
         </Field>
         <div>
@@ -162,7 +162,7 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
                       (on
                         ? 'bg-indigo-500/10 border-indigo-500/40 text-indigo-600 dark:text-indigo-400 font-medium'
                         : 'border-black/10 dark:border-white/10 text-stone-500 hover:border-black/25 dark:hover:border-white/25')}>
-                    {w.label}
+                    {w}
                   </button>
                 )
               })}
@@ -187,7 +187,7 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
             </div>
             {ruleType === 'weekly_times' && times >= 1 && (
               <div className="text-[11px] text-stone-400 mt-1.5">
-                自动安排在 {weekdaysForTimes(times).map(w => WEEKDAY_OPTIONS[w].label).join('、')}
+                自动安排在 {weekdaysForTimes(times).map(w => WEEKDAY_OPTIONS[w]).join('、')}
               </div>
             )}
             {ruleType === 'monthly_times' && (

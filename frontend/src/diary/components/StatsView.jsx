@@ -57,7 +57,7 @@ export default function StatsView() {
 
   return (
     <div className="max-w-[1200px] space-y-8">
-      <h2 className="text-base font-semibold">统计</h2>
+
 
       {/* 指标卡 */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">

@@ -49,7 +49,7 @@ notifications：POST /test（email 实测发送；未配置/未启用 400，未�
 
 ## 5. 前端（frontend/src/todo/）
 
-TodoPage 壳（顶栏 + 7 Tab：今日/待办池/日历/回顾/统计/生活/设置，视图走 ?v= 深链）+ kit（象限文案 Hook 可被 settings 覆盖/Modal/Toast/档位件，**gamemap/practice/steamidler 页面跨模块引用它**）+ 纯 SVG 图表 charts.jsx（practice 统计面板跨模块引用）。核心视图：Today（四象限 dnd-kit 拖拽/迁移面板）、Backlog（收件箱/待迁移/已搁置）、Calendar（周/月/年，plan_only 切 life 模式）、Review、Stats（热力图 CSS grid）、Settings（偏好/类别/邮件推送）、Life（打卡/计划 CRUD 四规则表单/日历/统计/回顾，views/life/ 四文件）。鉴权/主题/请求层全部复用 Doublog（apiFetch 会话 Cookie）。
+TodoPage 壳（公共侧栏 + 7 视图（生活下含 5 子项）：今日/待办池/日历/回顾/统计/生活/设置，视图走 ?v= 深链）+ kit（象限文案 Hook 可被 settings 覆盖/Modal/Toast/档位件，**gamemap/practice/steamidler 页面跨模块引用它**）+ 纯 SVG 图表 charts.jsx（practice 统计面板跨模块引用）。核心视图：Today（四象限 dnd-kit 拖拽/迁移面板）、Backlog（收件箱/待迁移/已搁置）、Calendar（周/月/年，plan_only 切 life 模式）、Review、Stats（热力图 CSS grid）、Settings（偏好/类别/邮件推送）、Life（打卡/计划 CRUD 四规则表单/日历/统计/回顾，views/life/ 四文件）。鉴权/主题/请求层全部复用 Doublog（apiFetch 会话 Cookie）。
 
 ## 6. 测试（tests/todo/ 核心 5 文件 53 用例）
 
@@ -61,3 +61,9 @@ test_api（任务 CRUD/过滤/象限/排序/乐观锁/软删恢复/401 鉴权/�
 - Chrome 扩展 / Android（DouBlog/extensions/todo/{chrome-extension,android} 平迁自 MyTodo）**仍指向旧服务 8070 + token 协议**——按用户指令平迁不改码；待后续按 Doublog 统一登录改造
 - MyTodo 技能（~/.agents/skills/mytodo）仍指向 8070；停掉旧服务后该技能与两端客户端需另行适配
 - GET /api/todo/today 已加进程内响应缓存（`app/todo/readcache.py`，2026-10 性能专项）：信封字节缓存于 app.state，键含 (view_date, 本地今日)，todo 模块全部写端点 commit 后 bump 纪元失效——写后立即可见，跨午夜自然换键；直接改库不经 API 不在失效范围（单进程约定）。其余读接口（/tasks 列表、stats 族）仍直查（列表过滤组合多，缓存收益低）
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+
+待办池的收件箱 / 迁移池 / 搁置计划使用侧栏二级菜单，URL 为 `?v=backlog&bsub=inbox|migrate|shelved`；生活子视图仍使用 `lsub`。长表单通用 Modal 限制到视口高度，正文内部滚动，标题与操作按钮固定可见。

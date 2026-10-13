@@ -21,9 +21,13 @@ CRUD/筛选/解法代码/标签/抓题 LeetCode+洛谷/复习/统计/导入导�
 
 ## 4. 前端（src/practice/）
 
-独立页 PracticePage（统一 PageHeader，个性色 blue）→ PracticeView（自带 Segmented 视图切换：题单/复习队列/统计）；kit/charts 组件跨模块引自 `src/todo/`。
+独立页 PracticePage（公共 ModuleShell 侧栏，个性色 blue）→ PracticeView（自带 Segmented 视图切换：题单/复习队列/统计）；kit/charts 组件跨模块引自 `src/todo/`。
 
 ## 5. 质量与测试
 
 - 20 轮代码评审：100 个问题发现并修复（数据完整性/API 一致性/性能/安全/边界/契约对齐/资源管理/整洁度）
 - 测试：tests/practice/test_practice.py 61 例（抓题全 Mock fixture 回放，不连外网）
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。

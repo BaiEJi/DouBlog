@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useDeferredValue, useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import md, { renderMermaidDiagrams, applyWikiLinks, buildWikiMap } from '@/shared/md'
 import { apiFetch, fetchWorkspaces, fetchPostTree } from '@/blog/api'
@@ -83,7 +83,8 @@ export default function CreatePost({ dark, setDark }) {
 
   const flatPosts = useMemo(() => flattenTree(tree), [tree])
 
-  const previewHtml = useMemo(() => md.render(content || ''), [content])
+  const previewContent = useDeferredValue(content)
+  const previewHtml = useMemo(() => md.render(previewContent || ''), [previewContent])
   // 稳定引用：避免无关重渲染(标题输入/保存状态)整体重建预览 DOM 抹掉 mermaid
   // 预览的双链解析（按当前所选知识库的树）
   const wikiMap = useMemo(() => buildWikiMap(tree), [tree])
@@ -209,33 +210,11 @@ export default function CreatePost({ dark, setDark }) {
   useEditorShortcuts({ onSave: handleSubmit, insert: insertAtCursor })
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
       {/* Nav */}
-      <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-        <div className="w-full px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-10">
-            <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="w-9 h-9 rounded-xl bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                <span className="text-white dark:text-[#111] text-sm font-bold">D</span>
-              </div>
-              <span className="text-xl font-bold tracking-tight hidden sm:inline">DouBlog</span>
-            </Link>
-            <div className="hidden md:flex items-center gap-6 text-base text-[#666] dark:text-[#888]">
-              <Link to="/" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setDark()}
-              className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
-            >
-              {dark ? Icons.sun : Icons.moon}
-            </button>
-          </div>
-        </div>
-      </nav>
 
-      <main className="mx-auto w-full max-w-[1700px] px-6 sm:px-8 xl:px-10 py-10">
+
+      <main className="mx-auto w-full max-w-full p-0">
         <h1 className="text-2xl font-semibold tracking-tight mb-8">新建文章</h1>
 
         {/* Meta Info */}
@@ -324,7 +303,7 @@ export default function CreatePost({ dark, setDark }) {
             onChange={e => { [...e.target.files].forEach(ed.uploadAndInsert); e.target.value = '' }}
           />
           {/* Toolbar */}
-          <div className="flex items-center gap-0.5 px-3 py-2 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03]">
+          <div className="flex flex-wrap items-center gap-0.5 px-3 py-2 border-b border-black/5 dark:border-white/5 bg-black/[0.02] dark:bg-white/[0.03]">
             {TOOLBAR_BTNS.map((btn, i) => (
               <button
                 key={i}
@@ -358,9 +337,9 @@ export default function CreatePost({ dark, setDark }) {
           </div>
 
           {/* Split View */}
-          <div className="flex h-[70vh] min-h-[420px]">
+          <div className="flex flex-col md:flex-row h-auto md:h-[70vh] min-h-[420px]">
             {/* Editor */}
-            <div className="w-1/2 border-r border-black/5 dark:border-white/5">
+            <div className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] border-b md:border-b-0 md:border-r border-black/5 dark:border-white/5">
               <textarea
                 id="md-editor"
                 ref={ed.editorRef}
@@ -374,7 +353,7 @@ export default function CreatePost({ dark, setDark }) {
               />
             </div>
             {/* Preview */}
-            <div ref={ed.previewRef} className="w-1/2 px-5 py-4 overflow-y-auto">
+            <div ref={ed.previewRef} className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] px-5 py-4 overflow-y-auto">
               {content ? (
                 <div className="prose-content" dangerouslySetInnerHTML={previewProps} />
               ) : (
@@ -394,7 +373,7 @@ export default function CreatePost({ dark, setDark }) {
         {/* Actions */}
         <div className="flex items-center justify-between mt-6">
           <Link
-            to="/"
+            to="/blog"
             className="px-4 py-2 text-sm text-[#666] dark:text-[#888] hover:text-[#111] dark:hover:text-[#eee] transition-colors"
           >
             取消

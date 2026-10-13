@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { BackButton } from '../../shared/PageHeader'
 import { fetchDbStatus, testDbConnection, switchDatabase, fetchExportZip, fetchLoggingConfig, saveLoggingConfig, testLoggingSend } from '@/blog/api'
 
 // ─── 小组件 ──────────────────────────────────────────────
@@ -131,34 +130,12 @@ export default function AdminPage({ dark, setDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
       {/* 顶栏 */}
-      <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-        <div className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <BackButton />
-            <Link to="/blog" className="flex items-center gap-2 group">
-              <div className="w-7 h-7 rounded-lg bg-[#111] dark:bg-[#eee] flex items-center justify-center">
-                <span className="text-white dark:text-[#111] text-[12px] font-bold">D</span>
-              </div>
-              <span className="font-semibold text-[15px] tracking-tight">系统管理</span>
-            </Link>
-          </div>
-          <button
-            onClick={() => setDark && setDark(!dark)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-stone-400"
-            aria-label="切换主题"
-          >
-            {dark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-            )}
-          </button>
-        </div>
-      </nav>
 
-      <main className="max-w-[1700px] mx-auto px-4 sm:px-6 xl:px-10 py-6 space-y-6">
+
+      <main className="max-w-full mx-auto p-0 space-y-6">
+        <h1 className="text-base font-semibold">内容管理</h1>
         {loading && <div className="text-center text-[#999] py-20">加载中…</div>}
         {error && <div className="rounded-lg px-3 py-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-[13px]">{error}</div>}
 

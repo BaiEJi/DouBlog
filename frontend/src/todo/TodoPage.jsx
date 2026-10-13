@@ -5,17 +5,17 @@
  * 「今日·特定日期」（?v=today&view=day&date=X）或「生活·今日打卡」（?v=life&date=X）。
  * （剧情图谱/刷题/挂机已拆为独立顶级模块：/gamemap、/practice、/steamidler）
  */
-import { useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
 
-import TodayView from './views/TodayView'
-import BacklogView from './views/BacklogView'
-import CalendarView from './views/CalendarView'
-import ReviewView from './views/ReviewView'
-import StatsView from './views/StatsView'
-import SettingsView from './views/SettingsView'
-import LifeView from './views/LifeView'
+const TodayView = lazy(() => import('./views/TodayView'))
+const BacklogView = lazy(() => import('./views/BacklogView'))
+const CalendarView = lazy(() => import('./views/CalendarView'))
+const ReviewView = lazy(() => import('./views/ReviewView'))
+const StatsView = lazy(() => import('./views/StatsView'))
+const SettingsView = lazy(() => import('./views/SettingsView'))
+const LifeView = lazy(() => import('./views/LifeView'))
 import { Icon, Toast } from './kit'
 
 const TABS = [
@@ -28,7 +28,7 @@ const TABS = [
   { key: 'settings', label: '设置', icon: Icon.settings },
 ]
 
-export default function TodoPage({ dark, setDark }) {
+export default function TodoPage({ dark }) {
   const [sp, setSp] = useSearchParams()
   const view = TABS.some(t => t.key === sp.get('v')) ? sp.get('v') : 'today'
   const [toastMsg, setToastMsg] = useState(null)
@@ -41,7 +41,9 @@ export default function TodoPage({ dark, setDark }) {
   }, [])
 
   const goTab = key => {
-    setSp(key === 'today' ? {} : { v: key })
+    if (key.startsWith('backlog:')) setSp({ v: 'backlog', bsub: key.slice(8) })
+    else if (key.startsWith('life:')) setSp({ v: 'life', lsub: key.slice(5) })
+    else setSp(key === 'today' ? {} : { v: key })
   }
 
   /** 日历点某天 → 今日页特定日期模式 */
@@ -50,22 +52,17 @@ export default function TodoPage({ dark, setDark }) {
   }
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
       {/* ── 顶栏 ── */}
       <PageHeader title="MyTodo" subtitle="四象限 · 迁移 · 规律生活"
-        right={
-          <button onClick={() => setDark(!dark)} title="切换主题"
-            className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] flex items-center justify-center transition-colors">
-            {dark ? Icon.sun : Icon.moon}
-          </button>
-        }
-        tabs={TABS.map(t => ({ key: t.key, label: t.label, icon: t.icon }))}
+
+        tabs={TABS.map(t => ({ ...t, active: view === t.key, ...(t.key === 'backlog' ? { children: ['inbox', 'migrate', 'shelved'].map((key, i) => ({ key: `backlog:${key}`, label: ['收件箱', '迁移池', '搁置计划'][i], active: view === 'backlog' && (sp.get('bsub') || 'inbox') === key })) } : {}), ...(t.key === 'life' ? { children: ['today', 'plans', 'calendar', 'stats', 'review'].map((key, i) => ({ key: `life:${key}`, label: ['今日打卡', '计划', '日历', '统计', '回顾'][i], active: view === 'life' && (sp.get('lsub') || 'today') === key })) } : {}) }))}
         activeTab={view}
         onTabChange={goTab}
         accent="indigo" />
 
       {/* ── 主区 ── */}
-      <main className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+      <main className="mx-auto max-w-full p-0"><Suspense fallback={<div className="h-64 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] animate-pulse" aria-label="视图加载中" />}>
         {view === 'today' && <TodayView toast={toast} dark={dark} />}
         {view === 'backlog' && <BacklogView toast={toast} />}
         {view === 'calendar' && <CalendarView variant="todo" onOpenDay={openDay} toast={toast} />}
@@ -73,7 +70,7 @@ export default function TodoPage({ dark, setDark }) {
         {view === 'stats' && <StatsView toast={toast} dark={dark} />}
         {view === 'life' && <LifeView toast={toast} dark={dark} />}
         {view === 'settings' && <SettingsView toast={toast} dark={dark} />}
-      </main>
+      </Suspense></main>
 
       <Toast msg={toastMsg} kind={toastKind} />
     </div>

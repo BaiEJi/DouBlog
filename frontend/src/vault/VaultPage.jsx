@@ -4,8 +4,7 @@
  * 零知识：VEK 仅存内存（不可导出 CryptoKey）；锁定即清除；重载/关浏览器自动锁定。
  */
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Link } from 'react-router-dom'
-import { BackButton } from '../shared/PageHeader'
+import { useModuleNavigation } from '../shared/module-navigation'
 import {
   vaultGetAccount, vaultInitAccount, vaultRotateKeys,
   vaultListItems, vaultCreateItem, vaultUpdateItem, vaultMarkUsed,
@@ -56,7 +55,7 @@ const ACTION_LABELS = {
   exported: '导出备份', imported: '导入备份',
 }
 
-export default function VaultPage({ dark, setDark }) {
+export default function VaultPage() {
   const [phase, setPhase] = useState('loading')
   const [account, setAccount] = useState(null)
   const vekRef = useRef(null)
@@ -233,11 +232,32 @@ export default function VaultPage({ dark, setDark }) {
     () => [...items, ...trash].find(i => i.id === selectedId) || null,
     [items, trash, selectedId])
 
+  useModuleNavigation({
+    items: phase === 'unlocked' ? [
+      { key: 'overview', label: '概览', icon: I.shield },
+      { key: 'all', label: '全部条目', icon: I.key, badge: items.length, children: [
+        ...allCategories.map(c => ({ key: `category:${c}`, label: CATEGORY_LABELS[c] || c, active: section === 'category' && filterValue === c })),
+        ...allTags.map(t => ({ key: `tag:${t}`, label: `# ${t}`, active: section === 'tag' && filterValue === t })),
+      ] },
+      { key: 'favorites', label: '收藏', icon: I.star, badge: items.filter(i => i.favorite).length },
+      { key: 'recent', label: '最近使用', icon: I.clock },
+      { key: 'identities', label: '身份' }, { key: 'security', label: '安全中心', icon: I.shield },
+      { key: 'pwsvc', label: '密码服务', icon: I.key }, { key: 'trash', label: '回收站', icon: I.trash, badge: trash.length },
+    ] : [{ key: 'locked', label: phase === 'setup' ? '初始化密码库' : '解锁密码库' }],
+    activeKey: section,
+    onSelect: key => {
+      const split = key.indexOf(':')
+      setSection(split >= 0 ? key.slice(0, split) : key)
+      if (split >= 0) setFilterValue(key.slice(split + 1))
+      setSelectedId(null); setEditing(null)
+    },
+  })
+
   // ═══════════ 渲染 ═══════════
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
+    <div className="min-h-[60vh] bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
       {phase === 'loading' && (
-        <div className="min-h-screen flex items-center justify-center text-sm text-stone-400">加载中…</div>
+        <div className="min-h-[60vh] flex items-center justify-center text-sm text-stone-400">加载中…</div>
       )}
       {phase === 'setup' && (
         <SetupView onDone={async () => {
@@ -247,13 +267,13 @@ export default function VaultPage({ dark, setDark }) {
         }} />
       )}
       {phase === 'locked' && (
-        <LockView account={account} onUnlock={unlock} onBack={lockNow} dark={dark} setDark={setDark} />
+        <LockView account={account} onUnlock={unlock} />
       )}
       {phase === 'unlocked' && (
-        <div className="h-screen flex flex-col">
+        <div className="h-[calc(100dvh-64px)] min-h-[600px] flex flex-col">
           {/* 顶栏 */}
-          <header className="h-12 shrink-0 border-b border-black/[0.07] dark:border-white/[0.07] flex items-center gap-3 px-4">
-            <BackButton />
+          <header className="min-h-10 shrink-0 flex flex-wrap items-center gap-3 mb-5">
+
             <span className="text-base font-semibold flex items-center gap-1.5">
               <span className="text-stone-400">{I.key}</span> 密码库
               <span className="hidden md:inline text-[11px] font-normal text-stone-400 dark:text-stone-600 ml-1">端到端加密</span>
@@ -270,10 +290,6 @@ export default function VaultPage({ dark, setDark }) {
                 className="h-8 px-2.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
-              <button onClick={() => setDark()} title={dark ? '切换亮色' : '切换暗色'}
-                className="h-8 px-2.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center">
-                {dark ? I.sun : I.moon}
-              </button>
               <button onClick={lockNow}
                 className="h-8 px-2.5 rounded-lg text-[12px] text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1.5">
                 {I.lock} <span className="hidden sm:inline">锁定</span>
@@ -283,37 +299,6 @@ export default function VaultPage({ dark, setDark }) {
 
           {/* 三面板 */}
           <div className="flex-1 flex min-h-0">
-            {/* Sidebar */}
-            <nav className="hidden lg:flex flex-col w-48 shrink-0 border-r border-black/[0.07] dark:border-white/[0.07] py-3 px-2 overflow-y-auto">
-              <NavBtn active={section === 'overview'} onClick={() => { setSection('overview'); setSelectedId(null) }} icon={I.shield} label="概览" />
-              <NavBtn active={section === 'all'} onClick={() => { setSection('all'); setSelectedId(null) }} icon={I.key} label="全部条目" count={items.length} />
-              <NavBtn active={section === 'favorites'} onClick={() => { setSection('favorites'); setSelectedId(null) }} icon={I.star} label="收藏" count={items.filter(i => i.favorite).length} />
-              <NavBtn active={section === 'recent'} onClick={() => { setSection('recent'); setSelectedId(null) }} icon={I.clock} label="最近使用" />
-              <div className="my-2 mx-2 h-px bg-black/[0.06] dark:bg-white/[0.06]" />
-              <SideLabel>分类</SideLabel>
-              {allCategories.map(c => (
-                <NavBtn key={c} active={section === 'category' && filterValue === c}
-                  onClick={() => { setSection('category'); setFilterValue(c); setSelectedId(null) }}
-                  label={CATEGORY_LABELS[c] || c} count={items.filter(i => i.data.category === c).length} small />
-              ))}
-              <SideLabel>标签</SideLabel>
-              <div className="flex flex-wrap gap-1 px-2">
-                {allTags.map(t => (
-                  <button key={t} onClick={() => { setSection('tag'); setFilterValue(t); setSelectedId(null) }}
-                    className={'text-[11px] px-2 py-0.5 rounded-md transition-colors ' + (section === 'tag' && filterValue === t
-                      ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900'
-                      : 'text-stone-400 hover:bg-black/5 dark:hover:bg-white/5')}>{t}</button>
-                ))}
-                {allTags.length === 0 && <span className="text-[11px] text-stone-400 dark:text-stone-500 px-1">暂无</span>}
-              </div>
-              <div className="my-2 mx-2 h-px bg-black/[0.06] dark:bg-white/[0.06]" />
-              <NavBtn active={section === 'identities'} onClick={() => { setSection('identities'); setSelectedId(null) }} label="身份" />
-              <NavBtn active={section === 'security'} onClick={() => { setSection('security'); setSelectedId(null) }} icon={I.shield} label="安全中心" alert={security.weak.length + security.reused.length} />
-              <div className="my-2 mx-2 h-px bg-black/[0.06] dark:bg-white/[0.06]" />
-              <NavBtn active={section === 'pwsvc'} onClick={() => { setSection('pwsvc'); setSelectedId(null) }} icon={I.key} label="密码服务" />
-              <NavBtn active={section === 'trash'} onClick={() => { setSection('trash'); setSelectedId(null) }} icon={I.trash} label="回收站" count={trash.length} />
-            </nav>
-
             {/* 列表 / 概览 / 安全中心 */}
             {(section === 'overview' || section === 'identities' || section === 'security' || section === 'pwsvc') && !selectedId && !editing ? (
               <main className="flex-1 min-w-0 overflow-y-auto">
@@ -562,7 +547,7 @@ function SetupView({ onDone }) {
   )
 }
 
-function LockView({ account, onUnlock, dark, setDark }) {
+function LockView({ account, onUnlock }) {
   const [secret, setSecret] = useState('')
   const [isRecovery, setIsRecovery] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -597,24 +582,14 @@ function LockView({ account, onUnlock, dark, setDark }) {
         className="mt-3 text-[12px] text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors">
         {isRecovery ? '← 使用主密码解锁' : '忘记主密码？使用恢复密钥 →'}
       </button>
-      <div className="mt-6 pt-4 border-t border-black/[0.06] dark:border-white/[0.06] flex items-center justify-between">
-        <Link to="/" className="text-[12px] text-stone-400 hover:text-stone-600 dark:hover:text-stone-300">← 门户</Link>
-        <button onClick={() => setDark()} title={dark ? '切换亮色' : '切换暗色'}
-          className="w-9 h-9 -mr-2 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors flex items-center justify-center">
-          {dark ? (
-            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3.4" stroke="currentColor" strokeWidth="1.5" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
-          ) : (
-            <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none"><path d="M15.5 12.6A6.5 6.5 0 0 1 7.4 4.5 6.8 6.8 0 1 0 15.5 12.6Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>
-          )}
-        </button>
-      </div>
+
     </Centered>
   )
 }
 
 function Centered({ title, icon, children }) {
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-stone-50 dark:bg-[#100f0e]">
+    <div className="min-h-[60vh] flex items-center justify-center p-6 bg-stone-50 dark:bg-[#100f0e]">
       <div className="w-full max-w-sm animate-fade-in">
         <div className="text-center mb-6">
           <div className="inline-flex w-11 h-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 items-center justify-center text-emerald-600 dark:text-emerald-400 mb-3">
@@ -652,7 +627,7 @@ function Overview({ items, security, identities, onSelect, onGoSection, onNew })
     : { label: '需处理', color: '#dc2626', pct: 22 }
 
   return (
-    <div className="p-5 sm:p-8 animate-fade-in max-w-[1700px] w-full mx-auto">
+    <div className="p-0 animate-fade-in max-w-full w-full mx-auto">
       {/* 头部：大数字 + 健康度 */}
       <div className="flex flex-wrap items-end gap-x-8 gap-y-4 mb-7">
         <div>
@@ -793,7 +768,7 @@ function MiniList({ items, onSelect }) {
 
 function IdentitiesView({ identities, onPick }) {
   return (
-    <div className="p-5 sm:p-8 animate-fade-in max-w-[1700px] w-full mx-auto">
+    <div className="p-0 animate-fade-in max-w-full w-full mx-auto">
       <h1 className="text-xl font-semibold mb-1">身份</h1>
       <p className="text-[12px] text-stone-400 mb-8">你的每个邮箱 / 手机号在各服务上的分布——点击查看关联账号。</p>
       {identities.length === 0 ? (
@@ -866,14 +841,14 @@ function SettingsView({ prefs, setPrefs, account, setAccount, items, copier, onR
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/30 dark:bg-black/60" onClick={onClose} />
       <div className="relative w-full max-w-lg max-h-[85vh] bg-white dark:bg-stone-900 border border-black/[0.08] dark:border-white/[0.08] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex items-center gap-1 px-3 pt-3 border-b border-black/[0.06] dark:border-white/[0.06]">
+        <div className="relative shrink-0 flex flex-wrap items-center gap-1 px-3 pr-12 pt-3 border-b border-black/[0.06] dark:border-white/[0.06]">
           {[['general', '通用'], ['security', '主密码与恢复'], ['backup', '备份'], ['activity', '活动记录']].map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={'px-3 h-9 text-sm font-medium transition-colors border-b-2 -mb-px ' + (tab === k
+              className={'px-3 h-9 whitespace-nowrap text-sm font-medium transition-colors border-b-2 -mb-px ' + (tab === k
                 ? 'border-stone-800 dark:border-stone-100 text-stone-900 dark:text-stone-100'
                 : 'border-transparent text-stone-400 hover:text-stone-600 dark:hover:text-stone-300')}>{l}</button>
           ))}
-          <button onClick={onClose} className="ml-auto w-8 h-8 mr-1 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">✕</button>
+          <button onClick={onClose} aria-label="关闭设置" className="absolute right-2 top-3 w-8 h-8 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">✕</button>
         </div>
         <div className="overflow-y-auto p-5">
           {tab === 'general' && <GeneralTab prefs={prefs} setPrefs={setPrefs} account={account} />}
@@ -914,7 +889,7 @@ function GeneralTab({ prefs, setPrefs, account }) {
       <div className="pt-4 border-t border-black/[0.06] dark:border-white/[0.06]">
         <h4 className="text-[12px] font-medium text-stone-500 mb-2">安全属性</h4>
         <ul className="text-[12px] text-stone-400 space-y-1 leading-relaxed">
-          <li>· 加密：Argon2id（t={account_kdf(account, 't')}, m={account_kdf(account, 'm')}MB）派生 KEK + AES-256-GCM</li>
+          <li>· 加密：Argon2id（t={account_kdf(account, 't')}, m={account_kdf(account, 'm')} KiB）派生 KEK + AES-256-GCM</li>
           <li>· 零知识：服务端仅存密文与包裹后的密钥材料</li>
           <li>· 密钥仅存内存，不写入 localStorage / Cookie / 日志</li>
         </ul>

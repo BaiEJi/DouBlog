@@ -4,7 +4,6 @@
 import * as React from 'react'
 import * as RF from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import './canvas.css'
 
 /* ---------- 类型（JSDoc） ----------
  * ScopeMode: "chapter" | "upto" | "from" | "custom"

@@ -59,7 +59,7 @@ export default function GameLibrary() {
     g.name.includes(search) && (filter === 'all' || g.play_status === filter))
 
   return (
-    <div className="mx-auto max-w-[1700px] px-4 sm:px-6 xl:px-10 py-6">
+    <div className="w-full">
       <div className="flex flex-wrap items-center gap-3 mb-5">
         <h1 className="text-lg font-semibold tracking-tight">游戏库 · <span className="gm-gradient-text">{filtered.length} 个世界</span></h1>
         <div className="ml-auto flex items-center gap-2">

@@ -96,7 +96,8 @@ function Mask({ onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-start sm:items-center justify-center p-4 overflow-y-auto"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`${card} w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} p-5 sm:p-6 my-8 shadow-2xl`}>
+      <div className={`${card} w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} relative p-5 sm:p-6 my-4 max-h-[calc(100dvh-32px)] overflow-y-auto shadow-2xl`} role="dialog" aria-modal="true">
+        <button type="button" onClick={onClose} aria-label="关闭弹窗" className="absolute right-3 top-3 w-8 h-8 rounded-lg text-stone-500 hover:bg-black/5 dark:hover:bg-white/10">×</button>
         {children}
       </div>
     </div>
@@ -416,7 +417,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
 
 // ─── 页面 ──────────────────────────────────────────────────
 
-export default function ConfCenterPage({ dark, setDark }) {
+export default function ConfCenterPage() {
   const [ns, setNs] = useState('')            // 当前 namespace 过滤（'' = 全部）
   const [qInput, setQInput] = useState('')    // 搜索框即时值
   const [q, setQ] = useState('')              // 防抖后的查询词
@@ -507,22 +508,11 @@ export default function ConfCenterPage({ dark, setDark }) {
     }
   }
 
-  const themeBtn = (
-    <button onClick={setDark} title="切换主题" aria-label="切换主题"
-      className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors">
-      {dark ? (
-        <svg className="w-[18px] h-[18px] mx-auto" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="3.6" stroke="currentColor" strokeWidth="1.4" /><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M15.3 4.7L14 6M6 14l-1.3 1.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-      ) : (
-        <svg className="w-[18px] h-[18px] mx-auto" viewBox="0 0 20 20" fill="none"><path d="M16.5 12.5A7 7 0 0 1 7.5 3.5a7 7 0 1 0 9 9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></svg>
-      )}
-    </button>
-  )
-
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
-      <PageHeader title="配置中心" subtitle="namespace → key → value · Redis 缓存" right={themeBtn} />
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+      <PageHeader title="配置中心" subtitle="namespace → key → value · Redis 缓存"  />
 
-      <div className="px-4 sm:px-6 xl:px-10 py-6 max-w-[1700px] mx-auto">
+      <div className="p-0 max-w-full mx-auto">
         <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
 
         <div className="mt-4 flex flex-col lg:flex-row gap-4 items-stretch">

@@ -216,7 +216,7 @@ routes.py 模块注释的口径表述：
 ### 5.1 SubsPage.jsx（壳）
 
 220px 侧栏（返回入口 `/`、模块标题、四项导航：概览/会员/统计/设置——概览带**即将到期计数橙色徽标**、
-会员带 `活跃/总数` 计数、主题切换按钮）+ 移动端顶栏横滚 + `max-w-[1700px] px-4 sm:px-6 xl:px-10` 主区内嵌
+会员带 `活跃/总数` 计数、主题切换按钮）+ 移动端公共导航抽屉 + `max-w-[1700px] px-4 sm:px-6 xl:px-10` 主区内嵌
 `<Routes>`（`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）+ 全局 Toast。
 页面底色全站统一 `bg-stone-50 dark:bg-[#100f0e]`。
 
@@ -253,9 +253,9 @@ routes.py 模块注释的口径表述：
 
 ### 5.4 依赖与 @source 红线
 
-- **唯一新增前端依赖 `lunar-javascript`**（仅 OverviewView 到期日历农历显示）：在 OverviewView 顶部
+- **唯一新增前端依赖 `lunar-javascript`**（仅 ExpiryCalendar 到期日历农历显示）：在独立懒加载 ExpiryCalendar 顶部
   `import { Solar } from 'lunar-javascript'`，随 `App.jsx` 路由级 `lazy(() => import('@/subs/SubsPage'))`
-  打进 `/subs` 懒加载 chunk（~122KB gzip）——**勿在别处引入**
+  由 `OverviewView` 的 Suspense 单独加载（不进入订阅壳初始 chunk）——**勿在别处引入**
 - **新增前端目录必须在 `index.css` 补 `@source "./目录";`**（本仓 `source(none)` 显式白名单模式，漏加则该目录
   独有工具类含 `dark:` 变体全部静默不生成）——`@source "./subs";` 已在（index.css 第 11 行）；
   **subs 首版暗色表头白底即漏加此行所致**，改动后需自查明暗两态
@@ -288,3 +288,9 @@ routes.py 模块注释的口径表述：
    在分类列表）；`stats/trend` 则有"未分类"桶（cat_id=0，灰 `#a8a29e`）——两处口径不一致
 9. `useHolidays` 依赖外部 timor.tech 公网接口，失败静默降级仅按周末着色（无重试提示）
 10. 每日线程当日去重是进程内存级（`_DAILY_DONE`），进程重启当天已跑过的任务会再补跑一次
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+
+到期日历独立懒加载，会员 / 统计 / 设置视图无需加载农历实现；订阅表单手机两列、桌面三列。通用弹窗正文滚动，页头与操作栏保持可见。

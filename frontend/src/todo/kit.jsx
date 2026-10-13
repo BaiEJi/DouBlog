@@ -172,18 +172,19 @@ export function Modal({ title, open, onClose, children, footer, width = 'max-w-l
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 overflow-y-auto"
       onClick={onClose}>
-      <div className={`w-full ${width} my-8 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown`}
+      <div className={`w-full ${width} my-4 max-h-[calc(100dvh-32px)] flex flex-col rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown`}
+        role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}
         onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">
+        <div className="shrink-0 flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">
           <div className="text-base font-semibold truncate">{title}</div>
-          <button onClick={onClose}
+          <button onClick={onClose} aria-label="关闭弹窗"
             className="w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
         </div>
-        <div className="px-5 py-4">{children}</div>
+        <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex gap-2 justify-end px-5 py-3.5 border-t border-black/[0.05] dark:border-white/[0.07]">
+          <div className="shrink-0 flex gap-2 justify-end px-5 py-3.5 border-t border-black/[0.05] dark:border-white/[0.07]">
             {footer}
           </div>
         )}

@@ -23,11 +23,11 @@
 
 | 决策 | 说明 |
 |---|---|
-| **无代理直连后端** | 前端不经 Vite proxy，直接请求 `http://{当前主机名}:60100`（后端 CORS 放开）。地址集中在 `api.js` |
+| **API 地址可配置** | 缺省直连 `http://{当前主机名}:60100`，地址唯一在 `shared/client.js`；`VITE_API_BASE=/` 可启用同源开发代理，代理目标由 `VITE_API_PROXY` 决定（缺省 60100） |
 | **统一登录（会话 Cookie）** | `/login` 登录一次签发 HttpOnly Cookie（30 天）全站生效；apiFetch `credentials:'include'`，401 自动跳 `/login`；AuthGate 路由守卫（公开页：/login、/diary/s/*）；bundle 不持有凭据，Basic 仅后端 API 兼容通道 |
 | **正文按需加载** | 列表/树接口不返回正文；详情页按 id 取全文 |
 | **管理页** | `/admin` 数据库管理页：SQLite ↔ PostgreSQL 一键切换（连接测试/迁移/自动重启提示） |
-| **多知识库** | 首页导航选择器切换/新建知识库（`/?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
+| **多知识库** | 知识库页面选择器切换/新建知识库（`/blog?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
 | **首页全量分页拉取** | `fetchAllPosts` 以 100/页循环拉完（上限 2000），保证搜索覆盖全部文章 |
 | **全文搜索（服务端）** | 输入防抖 300ms 调 `GET /api/posts?keyword=`，后端匹配 标题/摘要/英文名/**正文**，跨所有知识库；结果卡片带所属库名 chip；`Ctrl/Cmd+K` 聚焦搜索框；清空回到当前库客户端过滤视图 |
 | **路由级代码分割** | 首页关键路径仅 React/路由/API 层（主入口 gzip ≈ 61KB）；markdown 全家桶随详情/编辑页懒加载（React.lazy + Suspense） |
@@ -43,7 +43,11 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
 ├── shared/                         # 公共层
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
-│   ├── PageHeader.jsx              # 模块顶栏 v2 模板：第一行(返回+标题+副标+right) + 可选第二行(统一药丸 Tab，accent 个性色)；HeaderTabs/BackButton 单独导出
+│   ├── ModuleShell.jsx             # 全模块公共侧栏、递归多级菜单、移动端抽屉、统一内容画布
+│   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
+│   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
+│   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
+│   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
 ├── portal/PortalPage.jsx           # /        统一入口（13 卡含"剧情图谱" /gamemap、"刷题" /practice、"Steam 挂机" /steamidler 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组 + 跨组重复卡去重自愈）
 ├── blog/                           # /blog /post/:id /create /admin
@@ -63,18 +67,18 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── components/                 # crypto core ui ItemDetail ItemEditor Generator SecurityCenter PwsvcView
 ├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页）
 ├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx
-├── config/                        # /config：api.js + ConfigPage.jsx（统一 PageHeader 顶栏）
+├── config/                        # /config：api.js + ConfigPage.jsx（公共 ModuleShell 侧栏）
 ├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×11（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
 ├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
-├── practice/                      # /practice（刷题）：PracticePage（统一 PageHeader）+ PracticeView + components/
-├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（统一 PageHeader）+ SteamIdlerView + components/
+├── practice/                      # /practice（刷题）：PracticePage（公共 ModuleShell 侧栏）+ PracticeView + components/
+├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
     ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮
     ├── charts.jsx                 # 纯 SVG 图表：useWidth + AreaTrend(面积趋势) + DonutPie(环形饼)
     ├── useHolidays.js             # 法定节假日 API（timor.tech，localStorage 缓存 7 天，失败降级按周末）
-    ├── SubsPage.jsx               # /subs/* 壳：侧栏导航(概览/会员/统计/设置+计数徽标) + 内嵌 <Routes>
+    ├── SubsPage.jsx               # /subs/* 壳：公共侧栏导航(概览/会员/统计/设置+计数徽标；设置含分类/分布/备份子项) + 内嵌 <Routes>
     └── views/                     # OverviewView MembersView MemberDetailView StatsView SettingsView
 ```
 
@@ -135,8 +139,8 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### blog/pages（博客各页）
 - `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
-- **WorkspaceSwitcher**（导航栏，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
-- 顶部导航（**移动端自适应**：`<sm` 时 logo 文字与新建文字隐藏、搜索框收窄、导航允许换行成两行、知识库切换器全尺寸可见）：logo/知识库切换器/首页/管理/搜索框/主题切换/新建
+- **WorkspaceSwitcher**（正文工具行，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
+- 公共左侧栏提供知识库 / 新建文章 / 内容管理导航；正文工具行保留知识库切换器、搜索与新建按钮，移动端换行
 
 ### PostDetail.jsx（最重的页面）
 - **数据**：先 `GET /api/posts/id/:id`（正文 + 得知所属知识库）→ 再 `GET /api/posts/tree?workspace_id=`（侧边栏树只含同库文章）；文章一到即解除内容区骨架，树在后台刷新。挂载时先查 `takeCachedPost`（hover 预取缓存）命中即渲染再后台刷新（SWR）；侧栏树链接/首页卡片/子文章卡均挂 `onPointerEnter/onFocus → prefetchPost`
@@ -151,7 +155,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### blog/editor（编辑器增强）
 - `useEditorEnhancements`（共用 hook）：图片**粘贴/拖拽/工具栏按钮**上传（`POST /api/images/upload`，成功后光标处插入 `![alt](/api/images/x.png)`）、**预览同步滚动**（编辑区滚动→预览按比例跟随，用户滚预览时暂停 400ms；EditPost 需传 `active: !loading`——其编辑器在 loading 放行后才渲染）、块模板（表格/mermaid/代码块）
-- 分栏为固定高 `h-[70vh]`：两栏各自内部滚动（长文工具栏常驻），同步滚动才有意义
+- 桌面分栏为固定高 `h-[70vh]`，两栏各自内部滚动；手机编辑与预览上下排列，各占 50vh，工具栏换行
 
 ### AdminPage.jsx（管理页）
 - **状态卡**：当前后端徽章（SQLite/PostgreSQL）、文章数/日志数、数据目录（`fetchDbStatus`，PG 连接参数自动预填）
@@ -164,11 +168,11 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### CreatePost.jsx / EditPost.jsx
 - 表单字段：标题、name（英文名，前端校验格式，**同库内唯一**）、所属知识库下拉（`?ws=` 预选，切换库时清空父文章）、正文（`#md-editor` textarea + 工具栏插入语法）、摘要、父文章（**同库**树的扁平化下拉，过滤自身与子孙）、状态
 - **编辑器快捷键**（`useEditorShortcuts`，两页共用）：`Ctrl/Cmd+S` 保存/发布、`Ctrl/Cmd+B` 加粗、`Ctrl/Cmd+I` 斜体、`Ctrl/Cmd+K` 插入链接、正文内 `Tab` 两格缩进；B/I/K 仅在正文区/页面空白处生效，不干扰标题等普通输入框
-- **实时预览**：`md.render` + mermaid.run，与详情页同一管线
+- **实时预览**：`useDeferredValue(content)` 延后重渲染 + `md.render` + mermaid.run，与详情页同一管线
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
 
 ### DiaryPage.jsx（diary/，Memos × Day One 超集 UI）
-- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）；移动端顶导航横滚
+- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）；移动端用同一菜单的抽屉
 - 时间线：那年今日横幅（往年同月同日 + 随机记忆）→ QuickCapture 快捷录入盒（自动增高 + 心情 + 标签 + 模板下拉 + ✦每日引导问题 + 🌤️天气位置一键采集 open-meteo）→ 日期分组 EntryCard 卡（元信息行：日期/心情/天气图标/位置/字数；hover 操作：置顶/编辑/分享/归档/回收站）
 - Editor 全屏弹层：日期/心情/本子/模板/预览/自动保存（1.2s 防抖，状态行"已保存 HH:MM"）
 - CalendarView 月历（心情着色+今日环+点选过滤）、HeatmapView 年度热力图（365 格色阶+悬浮详情+点选）、StatsView（6 指标卡 + SVG 柱状/折线（纯手写无依赖）+ 年度回顾大卡）、ShareDialog（有效期选项+复制+撤销）、PublicShare 免登录只读页（/diary/s/:token，柔和阅读排版）
@@ -176,7 +180,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### SubsPage.jsx（subs/，订阅管理 —— CrownFlow 迁移 UI）
 - 壳：侧栏（返回入口 / 概览/会员/统计/设置导航；概览带即将到期计数徽标、会员带 活跃/总数）+ 内嵌 `<Routes>`
-  （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）；移动端顶导航横滚
+  （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）；移动端用同一菜单的抽屉
 - **OverviewView**：4 指标卡（总数/活跃/本月/年度支出，月年口径=整月整年）+ 分类汇总表（列排序+合计行）+
   即将到期提醒列表（点击进详情）+ 会员支出排行榜（4 维度切换：累计花费/平均订阅/订阅次数/累计时长，金银铜奖杯+火焰）+
   **订阅到期日历**（月历：`lunar-javascript` 农历与节日（红字优先显示法定节假日/补班）、timor.tech 节假日着色、
@@ -190,7 +194,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
   面积趋势图（hover 提示，明细开关展开分类/订阅明细）+ 环形饼图（中心总计、图例带占比、明细）
 - **SettingsView**：分类管理（CRUD/16 色预设+任意 hex/emoji/搜索）、会员分布卡（计数徽标，点击跳转筛选）、
   备份面板（手动立即备份 + 保留策略说明 + 备份文件列表）
-- 依赖：`lunar-javascript`（仅农历显示，懒加载 chunk ~122KB gzip）；图表零依赖（手写 SVG，useWidth 三重兜底自适应）
+- 依赖：`lunar-javascript`（仅农历显示，独立到期日历 chunk ~104KB gzip）；图表零依赖（手写 SVG，useWidth 三重兜底自适应）
 
 ### LogsPage.jsx（logs/，日志查询）
 - 查询工具条（自绘 Dropdown 级别与 sys_name 下拉/自绘 DateTimeInput 日历+时分微调/任意 kv）+ 紧凑单行结果（时间|级别|文件:行|traceId|消息）点击展开字段表格 + 复制 JSON
@@ -215,7 +219,7 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 
 ### ConfigPage.jsx（config/，系统配置总入口 UI）
 
-单页 `/config`（门户卡片入口，teal 图标），全站唯一总配置页，两张卡：
+单页 `/config`（门户卡片入口，teal 图标），全站唯一总配置页，三张卡（数据库、日志上报、登录账号）：
 
 - **数据库卡**：当前后端徽章（SQLite（本地）/PostgreSQL（远端））+ 统计行（文章数/审计日志/连接串掩码，`GET /api/admin/database`）；PostgreSQL 连接参数表单（主机/端口/库名/用户/密码——状态返回值自动预填，密码留空表示沿用已存）；三个动作：`测试连接`（POST /database/test，连通返回 PG 版本，库不存在时后端提示切换会自动创建）、`一键切换到 PostgreSQL`（目标=表单值）、`一键切换回 SQLite`——当前后端对应按钮高亮、另一个置灰；切换成功按 `restart_required` 提示（dev 自动重启 3.5s 后自动刷新状态 / 生产提示手动重启）
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
@@ -254,7 +258,10 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 **改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
 
-- **页面宽度约定（全站统一）**：模块页容器一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10 mx-auto`（1920 屏内容区 1620px）；模块顶栏一律 `shared/PageHeader.jsx`（大返回按钮‹门户 + text-2xl 标题 + 右侧 slot；侧栏型页用 BackButton）；日记时间线内层 1100px 为阅读宽度设计、vault 锁屏居中卡豁免
+- **页面布局约定（2026-10-13）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。220px 左侧栏，桌面 sticky + 100dvh；内容画布一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。移动端顶部 56px 菜单入口打开同一侧栏，带背景遮罩、滚动锁定、Escape 与焦点循环。
+- **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
+- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心 namespace 区为内容过滤器。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
+- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
 - **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了
 

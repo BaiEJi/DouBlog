@@ -96,31 +96,17 @@ function Err({ e }) {
 }
 
 /** 主题切换图标（与 todo/practice 页同款按钮规格） */
-function ThemeToggle({ dark, setDark }) {
-  return (
-    <button onClick={() => setDark(!dark)} title="切换主题"
-      className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] flex items-center justify-center transition-colors shrink-0">
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor"
-        strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        {dark
-          ? <><circle cx="10" cy="10" r="3.2" /><path d="M10 2.5v1.8M10 15.7v1.8M2.5 10h1.8M15.7 10h1.8M4.7 4.7l1.3 1.3M14 14l1.3 1.3M15.3 4.7 14 6M6 14l-1.3 1.3" /></>
-          : <path d="M16.8 12.2A7.2 7.2 0 0 1 7.8 3.2a7.2 7.2 0 1 0 9 9z" />}
-      </svg>
-    </button>
-  )
-}
-
-export default function ApiHubPage({ dark, setDark }) {
+export default function ApiHubPage() {
   const [tab, setTab] = useState('overview')
   const [err, setErr] = useState(null)
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
       <PageHeader title="API Hub" subtitle="异构 API 聚合 · 平台令牌 · 四级限流 · 一键探活"
-        right={<ThemeToggle dark={dark} setDark={setDark} />}
+
         tabs={TABS.map(([k, label]) => ({ key: k, label }))}
         activeTab={tab}
         onTabChange={k => { setTab(k); setErr(null) }} />
-      <div className="px-4 sm:px-6 xl:px-10 py-6 max-w-[1700px] mx-auto">
+      <div className="p-0 max-w-full mx-auto">
         <Err e={err} />
         {tab === 'overview' && <Overview setErr={setErr} />}
         {tab === 'upstreams' && <Upstreams setErr={setErr} />}

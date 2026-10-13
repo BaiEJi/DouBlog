@@ -20,6 +20,8 @@ export default function SteamIdlerView({ toast }) {
   const [pickerFor, setPickerFor] = useState(null)
   const [logFor, setLogFor] = useState(null)
   const aliveRef = useRef(true)
+  const refreshingRef = useRef(false)
+  const gameMetaAt = useRef(new Map())
 
   // 源版右上多 toast 栈收敛为 Doublog 页面级单 toast（'err' → kit Toast 的 error 语义）
   const notify = useCallback((text, kind = '') => {
@@ -27,16 +29,19 @@ export default function SteamIdlerView({ toast }) {
   }, [toast])
 
   const refresh = useCallback(async () => {
+    if (refreshingRef.current || document.hidden) return
+    refreshingRef.current = true
     try {
       const list = await api.accounts()
       if (!aliveRef.current) return
       setAccounts(list)
       // 补充游戏名称缓存
       const acc = list.find((a) => a.idle_appids?.length)
-      if (acc) {
+      if (acc && Date.now() - (gameMetaAt.current.get(acc.steamid) || 0) > 60000) {
         try {
           const resp = await api.accountGames(acc.steamid)
           if (resp.games && aliveRef.current) {
+            gameMetaAt.current.set(acc.steamid, Date.now())
             setGamesMeta((prev) => {
               const next = new Map(prev)
               for (const g of resp.games) next.set(g.appid, g.name)
@@ -46,6 +51,7 @@ export default function SteamIdlerView({ toast }) {
         } catch { /* 游戏库获取失败不影响主界面 */ }
       }
     } catch { /* 后端未就绪时静默 */ }
+    finally { refreshingRef.current = false }
   }, [])
 
   useEffect(() => {
@@ -53,7 +59,8 @@ export default function SteamIdlerView({ toast }) {
     api.meta().then((m) => setMaxGames(m.max_idle_games || 32)).catch(() => {})
     refresh()
     const t = setInterval(refresh, 3000)
-    return () => { aliveRef.current = false; clearInterval(t) }
+    document.addEventListener('visibilitychange', refresh)
+    return () => { aliveRef.current = false; clearInterval(t); document.removeEventListener('visibilitychange', refresh) }
   }, [refresh])
 
   const totalIdling = accounts.filter((a) => a.idle_appids?.length > 0).length

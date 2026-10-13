@@ -33,8 +33,8 @@ export default function ShareDialog({ entry, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="w-full max-w-md p-5 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown"
-        onClick={e => e.stopPropagation()}>
-        <h3 className="text-base font-semibold mb-1">分享日记</h3>
+        role="dialog" aria-modal="true" aria-label="分享日记" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3 mb-1"><h3 className="text-base font-semibold">分享日记</h3><button type="button" onClick={onClose} aria-label="关闭分享弹窗" className="w-8 h-8 rounded-lg text-stone-500 hover:bg-black/5 dark:hover:bg-white/10">×</button></div>
         <p className="text-xs text-stone-400 mb-4">
           生成免登录只读链接（{entry.entry_date}）——任何拿到链接的人都能读到这一篇，注意内容隐私。
         </p>

@@ -1,4 +1,3 @@
-import { BackButton } from '../../shared/PageHeader'
 /**
  * 博客/知识库首页 /blog：卡片网格 + 知识库切换器 + 搜索 + 最近浏览。
  * （自 app/App.jsx 拆出；导航与布局由本页自绘，博客不出现其他系统入口。）
@@ -345,55 +344,19 @@ export default function HomePage({ dark, setDark }) {
   const wsCount = ws ? posts.filter(p => p.workspace_id === ws.id).length : posts.length
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
       {/* Nav */}
-      <nav className="sticky top-0 z-50 bg-stone-50 dark:bg-[#141312] backdrop-blur-xl border-b border-black/5 dark:border-white/5">
-        <div className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 min-h-12 flex flex-wrap items-center justify-between gap-x-3">
-          <div className="flex items-center gap-2.5 sm:gap-8 min-w-0">
-            <BackButton />
-            <Link to="/blog" className="flex items-center gap-2 group">
-              <div className="w-7 h-7 rounded-lg bg-[#111] dark:bg-[#eee] flex items-center justify-center transition-transform group-hover:scale-105">
-                <span className="text-white dark:text-[#111] text-[12px] font-bold">D</span>
-              </div>
-              <span className="text-[15px] font-semibold tracking-tight hidden sm:inline">DouBlog</span>
-            </Link>
-            {/* 知识库切换器 */}
-            <div>
-              <WorkspaceSwitcher workspaces={workspaces} current={ws} onSelect={switchWs} onCreate={handleCreateWs} />
-            </div>
-            <div className="hidden md:flex items-center gap-4 text-[13px] text-[#666] dark:text-[#888] ml-1 lg:ml-4">
-              <Link to="/blog" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">首页</Link>
-              <Link to="/admin" className="hover:text-[#111] dark:hover:text-[#eee] transition-colors">管理</Link>
-            </div>
-            {/* 其他系统一律从统一入口 `/`（工作台）进入，知识库内不再放交叉入口 */}
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#999] dark:text-[#666]">{Icons.search}</span>
-              <input
-                ref={searchRef}
-                type="text"
-                placeholder="搜索全部内容 ⌘K"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="w-32 sm:w-56 pl-9 pr-3 h-8 text-[12.5px] bg-black/[0.03] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08] rounded-xl text-[#111] dark:text-[#eee] placeholder:text-[#999] dark:placeholder:text-[#666] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
-              />
-            </div>
-            <button
-              onClick={() => setDark()}
-              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors text-[#666] dark:text-[#888]"
-            >
-              {dark ? Icons.sun : Icons.moon}
-            </button>
-            <Link to={ws ? `/create?ws=${ws.id}` : '/create'} className="inline-flex items-center gap-1.5 px-3.5 h-8 bg-amber-500/90 hover:bg-amber-500 text-white text-[12.5px] font-medium rounded-lg transition-colors">
-              {Icons.plus}<span className="hidden sm:inline">新建</span>
-            </Link>
-          </div>
+      <div className="flex flex-wrap items-center gap-3 mb-6">
+        <h2 className="text-base font-semibold">知识库</h2>
+        <WorkspaceSwitcher workspaces={workspaces} current={ws} onSelect={switchWs} onCreate={handleCreateWs} />
+        <div className="relative flex-1 min-w-[180px] max-w-sm ml-auto">
+          <input ref={searchRef} type="search" placeholder="搜索全部内容 ⌘K" value={search} onChange={e => setSearch(e.target.value)} className="w-full h-9 px-3 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] outline-none" />
         </div>
-      </nav>
+        <Link to={ws ? `/create?ws=${ws.id}` : '/create'} className="inline-flex items-center gap-1.5 px-4 h-9 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg">{Icons.plus}新建文章</Link>
+      </div>
 
       {/* Main */}
-      <main className="flex-1 w-full max-w-[1700px] mx-auto px-4 sm:px-6 xl:px-10 py-6">
+      <main className="flex-1 w-full max-w-full mx-auto p-0">
         <div className="mb-10 animate-fade-in-up">
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-4">
             思考，记录，沉淀。

@@ -9,14 +9,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  App as AntApp, Alert, Avatar, Button, Card, Empty, Input, Menu, Modal, Select,
+  App as AntApp, Alert, Avatar, Button, Card, Empty, Input, Modal, Select,
   Space, Typography,
 } from 'antd'
-import { CopyOutlined, HomeOutlined, PlusOutlined } from '@ant-design/icons'
+import { CopyOutlined, PlusOutlined } from '@ant-design/icons'
 import {
   Background, BackgroundVariant, ConnectionMode, Controls, MiniMap, ReactFlow, ReactFlowProvider,
 } from '@xyflow/react'
-import { toPng } from 'html-to-image'
+import { toBlob } from 'html-to-image'
 import { api, assetUrl } from '../api'
 import { avatarColor, avatarGradient, factionColor } from '../theme'
 import { BoardHUD } from './HUD'
@@ -27,6 +27,7 @@ import { BatchImportModal, DiffModal, EmptyGuide, EventsPanel, StatsPanel, AddTa
 import { PhotoCodex } from './PhotoCodex'
 import { CARD_WIDTH, EdgeLayer, clampDragPosition, nodeTypes } from './shared'
 import { useBoardUI } from './ui-store'
+import { useModuleNavigation } from '../../shared/module-navigation'
 
 const GM = '/gamemap'
 
@@ -191,7 +192,10 @@ export default function Workspace() {
     if (!displayBoard || !rf) return
     const stateMap = new Map(displayBoard.states.map((s) => [s.character_id, s]))
     const relCount = new Map()
+    const focusNeighbours = new Set()
     for (const r of displayBoard.relations) {
+      if (r.from_character_id === focusId) focusNeighbours.add(r.to_character_id)
+      if (r.to_character_id === focusId) focusNeighbours.add(r.from_character_id)
       relCount.set(r.from_character_id, (relCount.get(r.from_character_id) || 0) + 1)
       relCount.set(r.to_character_id, (relCount.get(r.to_character_id) || 0) + 1)
     }
@@ -201,8 +205,7 @@ export default function Workspace() {
       const alive = st && st.alive != null ? st.alive : ch?.alive !== false
       const faction = (st && st.faction ? st.faction : ch?.faction) || ''
       const dim = focusId != null && focusId !== n.character_id &&
-        !displayBoard.relations.some((r) => (r.from_character_id === focusId && r.to_character_id === n.character_id) ||
-          (r.to_character_id === focusId && r.from_character_id === n.character_id))
+        !focusNeighbours.has(n.character_id)
       return {
         id: `c-${n.character_id}`, type: 'character', position: { x: n.x, y: n.y }, draggable: true,
         data: {
@@ -447,16 +450,21 @@ export default function Workspace() {
     try {
       rfInstanceRef.current?.fitView({ padding: 0.18, duration: 400 })
       await new Promise((r) => setTimeout(r, 700))
-      const dataUrl = await toPng(node, {
+      const blob = await toBlob(node, {
         pixelRatio: 2,
-        backgroundColor: '#0b0d14',
+        backgroundColor: getComputedStyle(node).getPropertyValue('--gm-canvas-bg').trim() || '#fafaf9',
         skipFonts: true,
         filter: (n) => !(n.classList?.contains('react-flow__panel') || n.classList?.contains('gm8-handle') || n.classList?.contains('gm8-fps') || n.classList?.contains('gm8-hud')),
       })
+      if (!blob) throw new Error('无法生成图片')
+      const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.download = `${game.data?.name || 'GameMap'} - ${isMerged ? `${mergedIds.length}章聚合视图` : activeChapter?.title || '关系看板'}.png`
-      a.href = dataUrl
+      a.href = url
+      document.body.appendChild(a)
       a.click()
+      a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
       message.success('看板已导出为 PNG')
     } catch (e) {
       message.error(`导出失败：${e.message}`)
@@ -602,19 +610,32 @@ export default function Workspace() {
     return () => window.removeEventListener('keydown', onKey)
   }, [view, isMerged, activeChapterId, gid, runUndo, removeNode])
 
+  useModuleNavigation({
+    items: [
+      { key: 'overview', label: '概览', to: GM },
+      { key: 'games', label: '游戏库', to: `${GM}/games`, children: [
+        { key: 'game', label: game.data?.name || '游戏工作区', active: true,
+          children: chapterList.map(c => ({ key: `chapter:${c.id}`, label: c.title, to: `${GM}/games/${gid}/chapters/${c.id}`, active: c.id === activeChapterId })),
+        },
+      ] },
+      { key: 'workspace', label: '当前章节', children: ['board', 'characters', 'relations', 'events', 'stats'].map((key, i) => ({ key: `view:${key}`, label: ['关系画布', '人物', '关系', '剧情事件', '统计'][i], active: view === key })) },
+      { key: 'relations', label: '关系类型', to: `${GM}/relations` },
+      { key: 'search', label: '搜索', to: `${GM}/search` },
+    ],
+    activeKey: `view:${view}`,
+    onSelect: key => { if (key.startsWith('view:')) setView(key.slice(5)) },
+    sidebar: <div className="mt-4 space-y-2"><button type="button" onClick={() => setNewChapterOpen(true)} className="w-full h-9 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] text-stone-700 dark:text-stone-200 hover:bg-black/5 dark:hover:bg-white/[0.08]">＋ 新建章节</button>{activeChapter && <div className="rounded-xl border border-black/10 dark:border-white/10 p-3 text-xs text-stone-500 dark:text-stone-400"><div className="font-medium mb-1">本章摘要</div>{activeChapter.summary || '暂无摘要'}</div>}</div>,
+  })
+
   /* ---------- 渲染 ---------- */
+  const loadError = game.error || chapters.error || characters.error || relationTypes.error || (isMerged ? mergedBoard.error : board.error)
+  if (loadError) return <Alert type="error" showIcon title="游戏工作区加载失败" description={loadError.message} action={<Button onClick={() => { game.refetch(); chapters.refetch(); characters.refetch(); relationTypes.refetch(); if (isMerged && mergedKey) mergedBoard.refetch(); else if (!isMerged && activeChapterId) board.refetch() }}>重试</Button>} />
   if (game.isLoading || !chapters.data) {
     // #5 骨架屏：侧栏 + 顶栏 + 画布的形状占位，替代白屏
     return (
-      <div style={{ display: 'flex', height: '100%', background: '#0b0d14' }}>
-        <div style={{ width: 236, borderRight: '1px solid #1e2433', padding: 16, background: '#0f121b' }}>
-          <div style={{ height: 32, borderRadius: 8, background: '#161b28', marginBottom: 14, animation: 'gmPulse 1.2s infinite' }} />
-          {[1, 2, 3].map((i) => <div key={i} style={{ height: 26, borderRadius: 6, background: '#12161f', marginBottom: 8, animation: 'gmPulse 1.2s infinite' }} />)}
-        </div>
-        <div style={{ flex: 1, padding: 16 }}>
-          <div style={{ height: 32, borderRadius: 8, background: '#161b28', marginBottom: 14, width: '60%', animation: 'gmPulse 1.2s infinite' }} />
-          <div style={{ height: 'calc(100% - 60px)', borderRadius: 12, background: '#0f121b', animation: 'gmPulse 1.2s infinite' }} />
-        </div>
+      <div role="status" aria-label="游戏工作区加载中" style={{ height: 'calc(100dvh - 100px)', minHeight: 600, padding: 16, background: 'var(--gm-canvas-bg)' }}>
+        <div style={{ height: 32, borderRadius: 8, background: 'var(--gm-border)', marginBottom: 14, width: '60%', animation: 'gmPulse 1.2s infinite' }} />
+        <div style={{ height: 'calc(100% - 60px)', borderRadius: 12, background: 'var(--gm-panel-bg)', animation: 'gmPulse 1.2s infinite' }} />
       </div>
     )
   }
@@ -636,31 +657,7 @@ export default function Workspace() {
   ])
 
   return (
-    <div className="gm-hud" style={{ display: 'flex', height: '100%', background: '#0b0d14' }}>
-      {/* 左侧章节栏 */}
-      <div style={{ width: 236, borderRight: '1px solid #1e2433', padding: '12px 10px', overflow: 'auto', background: '#0f121b' }}>
-        <Button block style={{ marginBottom: 10 }} icon={<HomeOutlined />} onClick={() => nav(GM)}>返回主页</Button>
-        <Typography.Title level={5} style={{ padding: '0 8px 10px', color: '#e8eaf2' }}>
-          📖 {game.data?.name}
-        </Typography.Title>
-        <Menu mode="inline" selectedKeys={[String(activeChapterId)]} style={{ border: 'none' }}
-          items={chapterList.map((c) => ({
-            key: c.id,
-            label: <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ width: 20, height: 20, borderRadius: 6, background: avatarGradient(c.id), fontSize: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>{c.order_index}</span>
-              {c.title}</span>,
-            onClick: () => nav(`${GM}/games/${gid}/chapters/${c.id}`),
-          }))} />
-        <Button block style={{ marginTop: 10 }} icon={<PlusOutlined />} onClick={() => setNewChapterOpen(true)}>新建章节</Button>
-        {activeChapter && (
-          <Card size="small" style={{ marginTop: 14, background: '#141824', border: '1px solid #232a3c' }} title={<span style={{ fontSize: 12 }}>本章摘要</span>}>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }} ellipsis={{ rows: 6, expandable: true, symbol: '展开' }}>
-              {activeChapter.summary || '暂无摘要'}
-            </Typography.Paragraph>
-          </Card>
-        )}
-      </div>
-
+    <div className="gm-hud gm-workspace" style={{ display: 'flex', height: 'calc(100dvh - 100px)', minHeight: 600, background: 'var(--gm-canvas-bg)' }}>
       {/* 中间工作区 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Toolbar
@@ -686,7 +683,7 @@ export default function Workspace() {
             <EmptyGuide onCreateChapter={() => setNewChapterOpen(true)} onAddChar={() => setAddCharOpen(true)} onFirstRelation={() => message.info('先加入人物')} />
           ) : view === 'board' ? (
             <ReactFlowProvider>
-              <div ref={boardBoxRef} className="gm8-board" style={{ position: 'absolute', inset: 0, background: '#0b0d14' }}>
+              <div ref={boardBoxRef} className="gm8-board" style={{ position: 'absolute', inset: 0, background: 'var(--gm-canvas-bg)' }}>
                 <ReactFlow defaultNodes={[]} nodeTypes={nodeTypes}
                   connectionMode={ConnectionMode.Loose}
                   onConnect={onConnect} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
@@ -694,17 +691,17 @@ export default function Workspace() {
                   onPaneClick={() => { selectedIdRef.current = null; setFocusId(null) }}
                   onInit={(inst) => { rfInstanceRef.current = inst; setRf(inst) }}
                   fitView proOptions={{ hideAttribution: true }}>
-                  <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="#232a3c" />
+                  <Background variant={BackgroundVariant.Dots} gap={22} size={1.4} color="var(--gm-grid)" />
                   <Controls showInteractive={false} />
                   <MiniMap pannable zoomable
                     nodeColor={(n) => n.data?.miniColor || '#7c5cff'}
-                    maskColor="rgba(11,13,20,.7)"
+                    maskColor="var(--gm-minimap-mask)"
                     style={{ border: '1px solid #2a3040', borderRadius: 8, width: 200, height: 140 }} />
                 </ReactFlow>
                 {/* #10 保存失败持续横幅（带重试） */}
                 {saveState === 'error' && (
                   <Alert type="error" showIcon className="gm8-hud" style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: 460 }}
-                    message={`保存失败：${saveError}`}
+                    title={`保存失败：${saveError}`}
                     action={<Button size="small" danger onClick={() => { if (isMerged) { /* 重试最近一次逐节点写入不现实，提示刷新 */ location.reload() } else saveBoard.mutate() }}>重试</Button>}
                     closable onClose={() => setSaveState('idle')} />
                 )}

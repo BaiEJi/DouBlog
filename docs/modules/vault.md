@@ -149,3 +149,9 @@
 - HIBP/Favicon 依赖外部网络（api.pwnedpasswords.com / icons.duckduckgo.com）：离线时泄露检查返回 -1（显示"不可达"）、favicon 回退字母块；部署在无外网环境功能降级。
 - 导入是替换式（无合并）；单条目附件无数量上限（仅单文件 5MB），总量受库大小约束。
 - 在线暴力破解防护复用站点认证边界（个人/内网部署假设，vault-design.md 威胁模型已声明）；Passkey/WebAuthn 解锁列为二期。
+
+## 公共 UI 外壳（2026-10-13）
+
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+
+锁定界面的返回与主题控制归入公共侧栏；设置弹窗页签在手机换行。Argon2id 的 m 参数显示单位修正为 KiB（与本地 hashes 实现一致），不改变加密参数。

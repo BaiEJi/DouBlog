@@ -5,9 +5,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BackButton } from '../shared/PageHeader'
+import { useModuleNavigation } from '../shared/module-navigation'
+import { useDebouncedValue } from '../shared/useDebouncedValue'
 
-import md from '@/shared/md'
 import {
   diaryList, diaryJournals, diaryCreateJournal, diaryAction, diaryDelete,
   diaryDates, diaryOnThisDay, diaryExportZip, diaryUpsertSummary,
@@ -30,12 +30,15 @@ const VIEWS = [
   { key: 'trash', label: '回收站', icon: Icon.trash },
 ]
 
-export default function DiaryPage({ dark, setDark }) {
+export default function DiaryPage({ dark }) {
   const [view, setView] = useState('timeline')
   const [journals, setJournals] = useState([])
   const [activeJournal, setActiveJournal] = useState(undefined)   // undefined=全部
   const [entries, setEntries] = useState(null)
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search)
+  const requestId = useRef(0)
+  useEffect(() => () => { requestId.current += 1 }, [])
   const [mood, setMood] = useState('')
   const [pickDate, setPickDate] = useState('')
   const [otd, setOtd] = useState(null)
@@ -50,14 +53,16 @@ export default function DiaryPage({ dark, setDark }) {
     if (d.success) setJournals(d.data)
   }, [])
   const loadEntries = useCallback(async () => {
+    if (view !== 'timeline') return
+    const currentRequest = ++requestId.current
     const params = { view: view === 'trash' ? undefined : 'timeline' }
     if (activeJournal !== undefined) params.journal_id = activeJournal
     if (mood) params.mood = mood
     if (pickDate) params.date = pickDate
-    if (search) params.search = search
+    if (debouncedSearch) params.search = debouncedSearch
     const d = await diaryList(params)
-    if (d.success) setEntries(d.data.items)
-  }, [activeJournal, mood, pickDate, search, view])
+    if (d.success && currentRequest === requestId.current) setEntries(d.data.items)
+  }, [activeJournal, mood, pickDate, debouncedSearch, view])
 
   useEffect(() => { loadJournals(); diaryOnThisDay().then(d => d.success && setOtd(d.data)) }, [])
   useEffect(() => {
@@ -105,26 +110,9 @@ export default function DiaryPage({ dark, setDark }) {
   const today = new Date()
   const dateStr = `${today.getMonth() + 1} 月 ${today.getDate()} 日 · 周${'日一二三四五六'[today.getDay()]}`
 
-  return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors flex">
-      {/* ── 侧栏 ── */}
-      <aside className="w-[228px] shrink-0 hidden md:flex flex-col gap-1 p-4 border-r border-black/[0.05] dark:border-white/[0.06] sticky top-0 h-screen overflow-y-auto">
-        <div className="mb-3"><BackButton /></div>
-        <div className="px-2 mb-4">
-          <div className="text-base font-semibold mb-0.5">日记</div>
-          <div className="text-[11px] text-stone-400 tabular-nums">{dateStr}</div>
-        </div>
-        {VIEWS.map(v => (
-          <button key={v.key} onClick={() => setView(v.key)}
-            className={'flex items-center gap-2.5 px-2.5 h-9 rounded-xl text-[13px] transition-colors ' +
-              (view === v.key
-                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium'
-                : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
-            <span className={view === v.key ? 'text-rose-500' : 'text-stone-400'}>{v.icon}</span>{v.label}
-          </button>
-        ))}
-
-        {/* 日记本 */}
+  useModuleNavigation({
+    items: VIEWS, activeKey: view, onSelect: setView,
+    sidebar: <><div className="mt-4 space-y-1">        {/* 日记本 */}
         <div className="mt-5 mb-1 px-2.5 text-[11px] font-medium uppercase tracking-widest text-stone-400">日记本</div>
         <button onClick={() => setActiveJournal(undefined)}
           className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors ' +
@@ -155,31 +143,13 @@ export default function DiaryPage({ dark, setDark }) {
             className="flex-1 min-w-0 h-7 px-2 text-[11.5px] bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none placeholder:text-stone-400" />
         </div>
 
-        <div className="mt-auto flex flex-col gap-1">
-          <button onClick={() => setDark(!dark)} title="切换主题"
-            className="flex items-center gap-2 px-2.5 h-9 rounded-xl text-[13px] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]">
-            <span className="text-stone-400">{dark ? '☀️' : '🌙'}</span>切换主题
-          </button>
-          <button onClick={diaryExportZip}
-            className="flex items-center gap-2 px-2.5 h-9 rounded-xl text-[13px] text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]">
-            <span className="text-stone-400">⬇️</span>导出全部
-          </button>
-        </div>
-      </aside>
+</div><button onClick={diaryExportZip} className="mt-4 px-2.5 h-9 text-left rounded-xl text-sm text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5">↓ 导出全部</button></>,
+  })
 
-      {/* ── 主区 ── */}
-      <main className="flex-1 min-w-0 max-w-[1700px] mx-auto w-full px-4 sm:px-6 xl:px-10 py-6">
-        {/* 移动端导航 */}
-        <div className="md:hidden flex gap-1.5 mb-4 overflow-x-auto pb-1">
-          <Link to="/" className="shrink-0 px-2.5 h-8 rounded-lg text-[12px] text-stone-400 border border-black/[0.07] dark:border-white/[0.1] flex items-center">←</Link>
-          {VIEWS.map(v => (
-            <button key={v.key} onClick={() => setView(v.key)}
-              className={'shrink-0 px-3 h-8 rounded-lg text-xs ' + (view === v.key ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 bg-black/[0.03] dark:bg-white/[0.04]')}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-
+  return (
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors flex">
+      <main className="flex-1 min-w-0 w-full">
+        <h1 className="text-base font-semibold mb-6">{VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
         {view === 'timeline' && (
           <div>
             {/* 搜索与过滤行 */}
@@ -277,7 +247,7 @@ export default function DiaryPage({ dark, setDark }) {
         {view === 'stats' && <StatsView />}
         {view === 'trash' && (
           <div>
-            <h2 className="text-base font-semibold mb-5">回收站</h2>
+
             {!trash ? <p className="text-xs text-stone-400 py-10 text-center">加载中…</p>
               : trash.length === 0 ? <p className="text-xs text-stone-400 py-14 text-center">回收站是空的</p>
                 : <div className="space-y-2.5">

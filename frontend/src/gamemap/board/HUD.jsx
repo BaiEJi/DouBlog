@@ -15,15 +15,15 @@ export function BoardHUD({ relations, typeMap }) {
 
   return (
     <div style={{
-      position: 'absolute', left: 12, top: 10, zIndex: 20, maxWidth: 460,
-      background: 'rgba(15,18,27,.85)', border: '1px solid #2a3040', borderRadius: 10,
+      position: 'absolute', left: 12, top: 10, zIndex: 20, maxWidth: 'calc(100% - 24px)',
+      background: 'var(--gm-panel-bg)', border: '1px solid var(--gm-border)', borderRadius: 10,
       padding: '6px 10px', display: 'flex', flexDirection: 'column', gap: 6,
       pointerEvents: 'none',
     }}>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20, flexWrap: 'wrap' }}>
         <span onClick={toggleHud} title={hudOpen ? '收起看板信息' : '展开看板信息'}
-          style={{ cursor: 'pointer', color: '#8b93a8', fontSize: 11, userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, pointerEvents: 'auto' }}>
+          style={{ cursor: 'pointer', color: 'var(--gm-muted)', fontSize: 11, userSelect: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, pointerEvents: 'auto' }}>
           {hudOpen ? null : '图例 '}<DownOutlined rotate={hudOpen ? 0 : 180} style={{ fontSize: 9 }} />
         </span>
         <span title="卡片信息密度：简洁 / 标准 / 详细"
@@ -39,7 +39,7 @@ export function BoardHUD({ relations, typeMap }) {
         </span>
         {focusId != null && (
           <span onClick={() => setFocusId(null)} title="清除聚焦"
-            style={{ fontSize: 11.5, color: '#ffd666', cursor: 'pointer', pointerEvents: 'auto' }}>
+            style={{ fontSize: 11.5, color: 'var(--gm-accent)', cursor: 'pointer', pointerEvents: 'auto' }}>
             🎯 聚焦中 · 点击清除
           </span>
         )}
@@ -49,7 +49,7 @@ export function BoardHUD({ relations, typeMap }) {
       </div>
       {hudOpen && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {items.length === 0 && <span style={{ fontSize: 11.5, color: '#6b7488' }}>暂无关系</span>}
+          {items.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--gm-muted)' }}>暂无关系</span>}
           {items.map(([tid, n]) => {
             const t = typeMap.get(tid)
             if (!t) return null
@@ -66,7 +66,7 @@ export function BoardHUD({ relations, typeMap }) {
                   fontSize: 11.5, padding: '2px 9px', borderRadius: 999,
                   background: off ? 'rgba(255,255,255,.04)' : `${t.color}2e`,
                   border: `1px solid ${off ? '#2a3040' : t.color + '88'}`,
-                  color: off ? '#6b7488' : '#e8eaf2',
+                  color: off ? 'var(--gm-muted)' : 'var(--gm-text)',
                   textDecoration: off ? 'line-through' : 'none',
                 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 4, background: t.color, opacity: off ? 0.4 : 1 }} />

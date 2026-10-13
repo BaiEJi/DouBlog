@@ -5,7 +5,7 @@
 
 const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
 
-export const API_BASE = `http://${host}:60100`
+export const API_BASE = (import.meta.env.VITE_API_BASE ?? `http://${host}:60100`).replace(/\/$/, '')
 
 export async function apiFetch(path, options = {}) {
   const headers = { ...(options.headers || {}) }
