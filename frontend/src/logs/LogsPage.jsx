@@ -963,7 +963,7 @@ export default function LogsPage() {
   const levelTotals = hist?.totals ?? {}
 
   return (
-    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+    <div className="min-h-0 font-mono bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
       <header className="mb-6">
         <div className="w-full flex flex-wrap items-center gap-2">
 

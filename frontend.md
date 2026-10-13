@@ -65,8 +65,8 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── api.js                      # vault* + pwsvc* 封装
 │   ├── VaultPage.jsx               # 锁屏/侧栏/三面板外壳
 │   └── components/                 # crypto core ui ItemDetail ItemEditor Generator SecurityCenter PwsvcView
-├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页）
-├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx
+├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页；全页等宽字体）
+├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx（全页等宽字体）
 ├── config/                        # /config：api.js + ConfigPage.jsx（公共 ModuleShell 侧栏）
 ├── todo/                          # /todo（四象限待办，MyTodo 迁入）：api.js + kit + charts(纯SVG) + TodoPage + views×11（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
 ├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
