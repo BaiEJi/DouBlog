@@ -609,7 +609,8 @@ function LogRow({ log, term, selected, newFlash, expanded, onToggle, onKvFilter,
         className="grid grid-cols-[104px_74px_1fr_12px] sm:flex items-center gap-2.5 px-3 py-[5px] cursor-pointer select-none">
         <span className="text-[11.5px] text-stone-400 tabular-nums shrink-0 w-[104px]">{fmtLocal(log.ts)}</span>
         <span className={'shrink-0 w-[74px] text-center px-1 py-px rounded border text-[10px] font-semibold ' + (LEVEL_STYLE[log.level_text] || '')}>{log.level_text}</span>
-        <span className="hidden sm:block shrink-0 w-[90px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}>{log.file ? `${log.file}:${log.line ?? '?'}` : log.sys_name}</span>
+        <span className="hidden sm:block shrink-0 w-[112px] text-[11px] text-stone-500 dark:text-stone-400 font-mono truncate" title={log.sys_name}>{log.sys_name}</span>
+        <span className="hidden md:block shrink-0 w-[92px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : ''}>{log.file ? `${log.file}:${log.line ?? '?'}` : ''}</span>
         <span role="button" tabIndex={log.trace_id ? 0 : -1} onClick={e => { if (log.trace_id) { e.stopPropagation(); onOpenTrace(log.trace_id) } }}
           onKeyDown={event => { if (log.trace_id && event.key === 'Enter') { event.stopPropagation(); onOpenTrace(log.trace_id) } }}
           title={log.trace_id ? '查看 trace 时间线' : ''} className="hidden md:block shrink-0 w-[100px] text-[11px] font-mono truncate text-sky-600 dark:text-sky-400 hover:underline">{log.trace_id || ''}</span>
