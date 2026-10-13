@@ -12,7 +12,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, KeyboardSensor, PointerSensor,
-  closestCorners, useSensor, useSensors,
+  closestCenter, pointerWithin, useSensor, useSensors,
 } from '@dnd-kit/core'
 import {
   SortableContext, arrayMove, rectSortingStrategy,
@@ -209,6 +209,19 @@ const DEFAULT_GROUP_NAME = '常用'
 
 const gid = () => 'g_' + Math.random().toString(36).slice(2, 9)
 
+/**
+ * 多容器落点判定（修复"拖不进空分组"，2026-10-13）：
+ * 先取指针所在矩形（pointerWithin，多个包含时按角距排序——卡片天然排在其所在
+ * 大 section 之前），指针不在任何矩形内（页面留白/拖出边界）再回退中心距。
+ * 此前 closestCorners 按"指针到四角距离"全局比较——全宽分组 section 的四角
+ * 离组中心 600+px，悬停空分组中部时随便一张小卡（角距 ~360px）都会胜出，
+ * 导致 over 永远解析成别的卡、跨组拖放落空。
+ */
+const portalCollision = args => {
+  const within = pointerWithin(args)
+  return within.length ? within : closestCenter(args)
+}
+
 /** 读取持久化分组布局；兼容旧平铺顺序 key；跨组重复卡去重自愈；新增模块自动追加到末组；损坏数据回退默认 */
 function readLayout() {
   let groups = null
@@ -298,6 +311,7 @@ function GroupSection({ group, total, onRename, onDelete, guardClick }) {
   return (
     <section
       ref={setNodeRef}
+      data-gid={group.id}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={isDragging ? 'relative z-30 opacity-90' : 'relative'}>
       <div className="flex items-center gap-2 mb-3">
@@ -430,7 +444,15 @@ export default function PortalPage({ dark, setDark }) {
   }, [endDrag])
 
   const update = next => { saveLayout(next); setGroups(next) }
-  const addGroup = () => update([...groups, { id: gid(), name: '新分组', cards: [] }])
+  const addGroup = () => {
+    const id = gid()
+    update([...groups, { id, name: '新分组', cards: [] }])
+    // 新组渲染后平滑滚动到位（长页面时新组在折叠线下，看不见也拖不到）
+    setTimeout(() => {
+      document.querySelector(`[data-gid="${id}"]`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 60)
+  }
   const renameGroup = (id, name) => update(groups.map(g => g.id === id ? { ...g, name } : g))
   const deleteGroup = id => {
     if (groups.length <= 1) return
@@ -483,7 +505,7 @@ export default function PortalPage({ dark, setDark }) {
         </div>
 
         {/* 分组卡片（组间/组内均可拖拽） */}
-        <DndContext sensors={sensors} collisionDetection={closestCorners}
+        <DndContext sensors={sensors} collisionDetection={portalCollision}
           onDragEnd={handleDragEnd} onDragCancel={endDrag}>
           <SortableContext items={groups.map(g => g.id)} strategy={rectSortingStrategy}>
             <div className="space-y-8">
