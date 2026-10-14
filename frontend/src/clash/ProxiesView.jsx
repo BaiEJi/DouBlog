@@ -1,9 +1,9 @@
 /**
  * 代理视图：策略组 + 节点切换 + 连通性（延迟）测试——zashboard 核心能力迁移。
  *
- * - 组卡：组名/类型徽章/当前节点 + 「整组测速」；节点 chip 网格
- * - Selector 组点 chip 即切换（其余组类型自动调度，只读展示）
- * - chip 右侧 ⚡ 单节点测速；测速结果即时回填（整组并发返回 {节点: ms}）
+ * - 组卡：组名/类型徽章/当前节点 + 「整组测速」；节点按**卡片网格**展示（桌面一行 3 个）
+ * - Selector 组点卡片即切换（其余组类型自动调度，只读展示）
+ * - 卡片右上 ⚡ 单节点测速；测速结果即时回填（整组并发返回 {节点: ms}）
  * - 延迟色档见 kit.delayCls（<200 绿 / <500 琥珀 / 其余红 / 0 超时）
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -115,24 +115,31 @@ export default function ProxiesView({ toast, unavailable }) {
               {testingGroup === g.name ? '测速中…' : '整组测速'}
             </button>
           </div>
-          <div className="p-4 flex flex-wrap gap-2">
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {g.nodes.map(n => {
               const isNow = g.now === n.name
-              const busy = switching === `${g.name}/${n.name}` || testingNode === `${g.name}/${n.name}`
+              const isSwitching = switching === `${g.name}/${n.name}`
+              const testing = testingNode === `${g.name}/${n.name}`
               return (
-                <div key={n.name} title={n.type || ''}
-                  className={'group/chip flex items-center gap-1.5 pl-3 pr-1.5 py-1.5 rounded-xl border text-[13px] transition-colors max-w-full ' +
+                <div key={n.name}
+                  className={'relative flex items-center gap-2.5 p-3 rounded-xl border transition-colors ' +
                     (isNow
-                      ? 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300 font-medium'
+                      ? 'border-sky-500/50 bg-sky-500/[0.08] ring-1 ring-sky-500/30'
                       : g.type === 'Selector'
-                        ? 'border-black/[0.08] dark:border-white/[0.1] hover:border-black/25 dark:hover:border-white/30 cursor-pointer'
-                        : 'border-black/[0.06] dark:border-white/[0.08] opacity-80 cursor-default')}
+                        ? 'border-black/[0.08] dark:border-white/[0.1] bg-black/[0.015] dark:bg-white/[0.02] hover:border-black/25 dark:hover:border-white/30 cursor-pointer'
+                        : 'border-black/[0.06] dark:border-white/[0.08] bg-black/[0.01] dark:bg-white/[0.015]')}
+                  title={n.type ? `${n.name}（${n.type}）` : n.name}
                   onClick={() => selectNode(g, n)}>
-                  <span className={'w-1.5 h-1.5 rounded-full shrink-0 ' + (n.alive == null ? 'bg-stone-300 dark:bg-stone-600' : n.alive ? 'bg-emerald-500' : 'bg-red-400')} />
-                  <span className="truncate max-w-56">{n.name}</span>
-                  <DelayBadge delay={n.delay} testing={testingNode === `${g.name}/${n.name}` || busy && switching === `${g.name}/${n.name}`} />
+                  <span className={'w-2 h-2 rounded-full shrink-0 ' + (n.alive == null ? 'bg-stone-300 dark:bg-stone-600' : n.alive ? 'bg-emerald-500' : 'bg-red-400')} />
+                  <div className="flex-1 min-w-0">
+                    <div className={'text-[13px] truncate ' + (isNow ? 'font-medium text-sky-700 dark:text-sky-300' : 'text-stone-700 dark:text-stone-200')}>
+                      {n.name}
+                    </div>
+                    <div className="text-[11px] text-stone-400 dark:text-stone-500">{n.type || '—'}</div>
+                  </div>
+                  <DelayBadge delay={n.delay} testing={testing || isSwitching} />
                   <button
-                    className="shrink-0 w-6 h-6 rounded-lg text-stone-400 hover:text-sky-600 dark:hover:text-sky-300 hover:bg-black/[0.05] dark:hover:bg-white/10 transition-colors text-xs"
+                    className="shrink-0 w-7 h-7 rounded-lg text-stone-400 hover:text-sky-600 dark:hover:text-sky-300 hover:bg-black/[0.06] dark:hover:bg-white/10 transition-colors text-[13px]"
                     title={`测试 ${n.name}`}
                     disabled={!!testingNode}
                     onClick={e => { e.stopPropagation(); testNode(g, n) }}>⚡</button>
