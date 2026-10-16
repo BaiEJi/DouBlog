@@ -14,6 +14,7 @@
 """
 
 import json
+import orjson
 import re
 import time
 
@@ -136,7 +137,7 @@ def _client_value(entry_type: str, raw: str):
     """存储文本 → 客户端值：str 原样；json 解析（写时已校验，解析失败兜底回原文）。"""
     if entry_type == 'json':
         try:
-            return json.loads(raw)
+            return orjson.loads(raw)
         except (ValueError, TypeError):
             return raw
     return raw
@@ -306,14 +307,14 @@ async def put_entry(namespace: str, key: str, request: Request):
     elif isinstance(value, str):
         # json 文本（JsonArea 原样提交）：必须可 json.loads（"[1,2" 拒绝）
         try:
-            json.loads(value)
+            orjson.loads(value)
         except ValueError:
             raise ParamError(message='type=json 时 data 必须是合法 JSON') from None
         stored = value
     else:
         # 结构化 JSON 值（对象/数组/数字）：本身即合法 JSON，规范文本入库
         try:
-            stored = json.dumps(value, ensure_ascii=False)
+            stored = orjson.dumps(value).decode('utf-8')
         except (TypeError, ValueError):
             raise ParamError(message='type=json 时 data 必须是合法 JSON') from None
 

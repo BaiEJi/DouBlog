@@ -15,6 +15,8 @@ from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 import yaml
+
+from app.shared.yamlfast import YamlLoader
 from fastapi import HTTPException
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
@@ -515,7 +517,7 @@ def _parse_md_file(content: str) -> Optional[ProblemCreate]:
     body = content
     if m:
         try:
-            meta = yaml.safe_load(m.group(1)) or {}
+            meta = yaml.load(m.group(1), Loader=YamlLoader) or {}
         except yaml.YAMLError:
             meta = {}
         body = content[m.end():]

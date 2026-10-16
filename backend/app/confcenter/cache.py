@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import orjson
 import os
 import threading
 
@@ -223,7 +224,7 @@ def cache_get(state: CacheState, namespace: str, key: str) -> dict | None:
         state.miss()
         return None
     try:
-        payload = json.loads(raw)
+        payload = orjson.loads(raw)
         if not isinstance(payload, dict) or 'type' not in payload or 'data' not in payload:
             raise ValueError('缓存载荷结构损坏')
     except (ValueError, TypeError):
@@ -241,7 +242,7 @@ def cache_put(state: CacheState, namespace: str, key: str, payload: dict) -> Non
     ttl = max(1, int(state.config.get('ttl_seconds') or DEFAULT_TTL))
     try:
         client.setex(cache_key(namespace, key), ttl,
-                     json.dumps(payload, ensure_ascii=False))
+                     orjson.dumps(payload))
     except Exception:  # noqa: BLE001
         _mark_failed(state)
 

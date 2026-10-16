@@ -1,6 +1,7 @@
 """零知识密码库（账号材料/条目密文/审计）。"""
 
 import json
+import orjson
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, func
@@ -63,7 +64,7 @@ class VaultItem(Base):
     def to_dict(self):
         return {
             'id': self.id,
-            'blob': json.loads(self.blob or '{}'),
+            'blob': orjson.loads(self.blob or '{}'),
             'favorite': bool(self.favorite),
             'last_used_at': _iso(self.last_used_at),
             'password_updated_at': _iso(self.password_updated_at),

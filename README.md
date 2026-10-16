@@ -200,7 +200,7 @@ bash shell/backend/stop.sh           # 停止
 
 ## API 概览
 
-统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`；认证=统一登录（会话 Cookie 或 Basic；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub gw）；JSON 响应超过 1KB 自动 gzip。
+统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`（orjson 渲染，NaN→null）；认证=统一登录（会话 Cookie 或 Basic；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub gw）；JSON 响应超过 1KB 自动 gzip。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|

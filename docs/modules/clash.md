@@ -93,3 +93,5 @@ conftest 搭**假 clashctl**（tmp 目录最小 bash 函数集：函数名/参�
 - **订阅下载强制直连**（strip_proxy）：若订阅域名必须经代理才可达，Web 端会下载失败（与终端手动 `clashsub add` 行为可能不同——后者跟随会话 env）；当前环境直连可达性优于本机代理出口
 - 控制器层为 REST 轮询（非 zashboard 的 WebSocket 流）：连接/流量 2s、代理组 15s 粒度刷新；PATCH configs 为运行时态（重启内核后回落到配置文件值）
 - 单用户本机工具：接口未做频率限制，认证与其他模块一致（require_basic）
+
+> 2026-10-16 性能：runtime.yaml 解析改走 libyaml C（shared/yamlfast.CSafeLoader）——此前连接页 2s 轮询每次纯 Python 解析 40-147KB 耗 0.3-1.2s CPU（持 GIL 拖累全进程），现 ~8.4×；控制器响应解析同步换 orjson。

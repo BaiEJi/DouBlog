@@ -15,6 +15,9 @@ apihub-gw（32 workers，不走 run_db 的共享 DB 池——网关常规路径�
 
 import asyncio
 import json
+import orjson
+
+from app.shared.response import FastJSONResponse
 import math
 import re
 import threading
@@ -162,7 +165,7 @@ def _eval_response(response_cfg, status, body_bytes, charset):
     bp_ = em.get('body_code_path')
     if bp_:
         try:
-            data = json.loads(body_bytes.decode(charset or 'utf-8', errors='replace') or 'null')
+            data = orjson.loads(body_bytes.decode(charset or 'utf-8', errors='replace') or 'null')
         except (ValueError, UnicodeDecodeError):
             data = None
         if isinstance(data, dict):
@@ -346,7 +349,7 @@ def _gw_response(response_cfg, r, latency_ms, quota_remaining, ok, err_code, err
         return resp
     try:
         text = r.content.decode(charset or 'utf-8', errors='replace')
-        data = json.loads(text) if text else None
+        data = orjson.loads(text) if text else None
         if not isinstance(data, (dict, list)):
             data = text
     except (ValueError, UnicodeDecodeError):
@@ -354,7 +357,7 @@ def _gw_response(response_cfg, r, latency_ms, quota_remaining, ok, err_code, err
     meta = {'upstream_status': r.status, 'latency_ms': latency_ms}
     if quota_remaining is not None:
         meta['quota_remaining'] = quota_remaining
-    return JSONResponse({
+    return FastJSONResponse({
         'code': 0 if ok else (int(err_code) if str(err_code).isdigit() else 1),
         'message': 'ok' if ok else err_msg,
         'data': data, 'meta': meta,

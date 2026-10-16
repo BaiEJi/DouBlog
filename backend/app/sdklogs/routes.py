@@ -18,6 +18,7 @@
 """
 import atexit
 import json
+import orjson
 import logging
 import os
 import queue
@@ -270,7 +271,7 @@ def _sqlite_row(r: dict) -> tuple:
     """normalize_record 输出 → 驱动参数元组（fields 预序列化，省 ORM 类型处理）"""
     return (_fmt_dt(r['ts']), r['level'], r['level_text'], r['sys_name'], r['file'],
             r['line'], r['trace_id'], r['message'],
-            json.dumps(r['fields'], ensure_ascii=False), _fmt_dt(r['received_at']))
+            orjson.dumps(r['fields']).decode(), _fmt_dt(r['received_at']))
 
 
 class _Pipeline:
@@ -481,7 +482,7 @@ async def _ingest_payload(request: Request) -> list:
     raw = (await request.body()).decode('utf-8') or ''
     if 'json' in ct or (raw.lstrip()[:1] == '[' and raw.rstrip()[-1:] == ']'):
         try:
-            obj = json.loads(raw)
+            obj = orjson.loads(raw)
         except ValueError:
             raise ParamError(message='非法 JSON')
         return obj if isinstance(obj, list) else [obj]
@@ -490,13 +491,13 @@ async def _ingest_payload(request: Request) -> list:
     if not lines:
         return []
     try:
-        return json.loads('[' + ','.join(lines) + ']')
+        return orjson.loads('[' + ','.join(lines) + ']')
     except ValueError:
         pass
     records = []
     for line in lines:
         try:
-            records.append(json.loads(line))
+            records.append(orjson.loads(line))
         except ValueError:
             raise ParamError(message=f'非法 JSONL 行: {line[:80]!r}')
     return records
@@ -897,10 +898,10 @@ async def export_logs(request: Request):
         first = True
         yield '['
         for r in rows:
-            yield ('' if first else ',') + json.dumps(
+            yield ('' if first else ',') + orjson.dumps(
                 {'ts': r[0].isoformat(), 'level': r[1], 'sys_name': r[2], 'file': r[3],
                  'line': r[4], 'trace_id': r[5], 'message': r[6], 'fields': r[7] or {}},
-                ensure_ascii=False)
+            ).decode('utf-8')
             first = False
         yield ']'
 

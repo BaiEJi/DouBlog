@@ -13,6 +13,8 @@ import re
 import subprocess
 
 import yaml
+
+from app.shared.yamlfast import YamlLoader
 from lizysdk.errors import NotFoundError, ParamError, UpstreamTimeoutError
 
 #: ANSI 转义序列（SGR 参数串 + 字母结尾）
@@ -243,7 +245,7 @@ def kernel_log_level():
     try:
         with open(os.path.join(resources_dir(), 'runtime.yaml'), encoding='utf-8',
                   errors='replace') as f:
-            data = yaml.safe_load(f) or {}
+            data = yaml.load(f, Loader=YamlLoader) or {}
         level = data.get('log-level') if isinstance(data, dict) else None
         return level if level in LOG_LEVELS else 'info'
     except (OSError, yaml.YAMLError):
@@ -271,7 +273,7 @@ def kernel_log_level_set(level: str) -> dict:
 def sub_list() -> dict:
     _, out = run_clashctl('clashsub', ['ls'])
     try:
-        data = yaml.safe_load(out) or {}
+        data = yaml.load(out, Loader=YamlLoader) or {}
     except yaml.YAMLError:
         raise ParamError(message='订阅列表解析失败（clashsub ls 输出非 YAML）') from None
     if not isinstance(data, dict):

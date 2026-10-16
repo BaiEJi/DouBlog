@@ -15,6 +15,8 @@ import urllib.parse
 
 import requests
 import yaml
+
+from app.shared.yamlfast import YamlLoader
 from lizysdk.errors import ParamError, ServiceUnavailableError
 
 #: 延迟测试默认目标（与 zashboard 一致，走节点出网）
@@ -39,7 +41,7 @@ def _controller_info():
     path = os.path.join(service.resources_dir(), 'runtime.yaml')
     try:
         with open(path, encoding='utf-8', errors='replace') as f:
-            cfg = yaml.safe_load(f) or {}
+            cfg = yaml.load(f, Loader=YamlLoader) or {}
     except (OSError, yaml.YAMLError):
         raise ParamError(message=f'运行时配置不可读：{path}') from None
     addr = (cfg.get('external-controller') or '').strip()

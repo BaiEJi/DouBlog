@@ -6,6 +6,7 @@
 - envelope_body:与 api_response 输出同构的 200 信封字节(响应缓存存取用)
 """
 import json
+import orjson
 
 from fastapi import HTTPException
 from pydantic import BaseModel
@@ -34,7 +35,7 @@ def _guard(fn):
 
 def envelope_body(data) -> bytes:
     """200 成功信封序列化(与 api_response 默认输出一致,供响应缓存)。"""
-    return json.dumps(
+    return orjson.dumps(
         {"success": True, "code": 200, "message": "操作成功", "data": data},
-        ensure_ascii=False, separators=(",", ":"),
-    ).encode("utf-8")
+        default=str,
+    )

@@ -11,6 +11,7 @@ Vault API（零知识密码库）
 """
 
 import json
+import orjson
 import time
 from datetime import datetime, timezone
 
@@ -394,7 +395,7 @@ async def add_attachment(item_id: int, request: Request):
             return api_response(None, 400, 'size 需为整数')
         if size < 0 or size > ATTACHMENT_MAX_BYTES:
             return api_response(None, 413, f'附件明文需在 0–{ATTACHMENT_MAX_BYTES // 1024 // 1024}MB 之间')
-        a = VaultAttachment(item_id=item_id, blob=json.dumps(box, ensure_ascii=False), size=size)
+        a = VaultAttachment(item_id=item_id, blob=orjson.dumps(box).decode(), size=size)
         db.session.add(a)
         _audit('attachment_added', item_id)
         db.session.commit()
@@ -450,7 +451,7 @@ async def export_vault():
         if not account:
             return api_response(None, 404, 'Vault 未初始化')
         rows = db.session.execute(select(*_ITEM_COLS)).all()   # 含回收站
-        items = [{'id': r[0], 'blob': json.loads(r[1] or '{}'), 'favorite': bool(r[2]),
+        items = [{'id': r[0], 'blob': orjson.loads(r[1] or '{}'), 'favorite': bool(r[2]),
                   'last_used_at': _iso(r[3]), 'password_updated_at': _iso(r[4]),
                   'deleted_at': _iso(r[5]), 'created_at': _iso(r[6]), 'updated_at': _iso(r[7])}
                  for r in rows]

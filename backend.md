@@ -49,7 +49,8 @@ backend/
 │   ├── db.py                  # 纯 SQLAlchemy 2.0：Base(带 Model.query 描述符) + scoped session + run_db(SDK 线程池)
 │   │                          #   + 双后端初始化 + 表名规范(模块名_表名, 存量自动 RENAME) + 模块 ensure_migrations 钩子 + WAL PRAGMA + 虚拟根播种
 │   ├── shared/                # 公共层（跨能力共享，骨架的一部分）
-│   │   ├── response.py        # api_response 统一信封（JSONResponse，签名与 Flask 时代一致）
+│   │   ├── response.py        # api_response 统一信封（FastJSONResponse=orjson 渲染，大响应 ~18×）
+│   │   ├── yamlfast.py        # PyYAML libyaml C 实现统一入口（CSafeLoader/Dumper，未编译自动回退）
 │   │   ├── auth.py            # require_basic 依赖 + /api/auth/*（能力包统一 Depends(require_basic)）
 │   │   ├── pools.py           # lizysdk 并发池注册表：get_pool(module) / DB_POOL / shutdown_pools
 │   │   ├── timestamps.py      # _iso / _utcnow（双后端时间序列化）
@@ -330,6 +331,13 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - 上限：文本 ≤1MB、二维码内容 ≤2000 字符、scale/border/ecc 越界钳制；错误统一 ParamError 中文 message
 - 依赖：segno==1.6.6（纯 Python 零依赖，PNG 原生输出无需 Pillow）；PyYAML 与 practice 共用
 - 模块细节（31 工具清单/前端结构/42 测试/边界）见 `docs/modules/devtoolbox.md`
+
+## 10.54 全局序列化与 YAML C 加速（2026-10-16，shared 层）
+
+- **全站 JSON 信封改 orjson 渲染**（`shared/response.py` FastJSONResponse，api_response 与 apihub 网关 wrap 共用）：中文不转义、紧凑分隔符与旧输出语义一致，100KB 级响应序列化 ~18×（实测 56KB 信封 1085µs→60µs）；**行为变化：NaN/Infinity 序列化为 null**（旧实现 allow_nan=False 抛 ValueError→500）；datetime 等非 JSON 类型经 default=str 兜底为文本（旧实现 500）。局部热点同步换 orjson：vault 附件三趟序列化（7MB blob 入库 dumps 实测 4.6×）与 export、apihub 网关 wrap/错误归一化、sdklogs 摄入解析/写者序列化/JSON 导出、assets 导出（OPT_INDENT_2）、gamemap 信封缓存、confcenter 读路径与 Redis 缓存
+- **PyYAML 统一走 libyaml C 实现**（`shared/yamlfast.py`，CSafeLoader/CSafeDumper，safe 语义不变，ImportError 回退）：clash 控制器/runtime.yaml（此前连接页 2s 轮询每次纯 Python 解析 40-147KB 耗 0.3-1.2s，实测 ~8.4×，GIL 占用同步大降）、practice Obsidian 导入（500 篇 1.33s→0.25s）、devtoolbox JSON⇄YAML
+- confcenter json 类型值入库文本改 orjson 紧凑格式（`{"a":1}`，旧 `{"a": 1}`）；语义不变，前端 JsonArea 显示的存储原文会少空格
+- 一致性守护测试：`tests/shared/test_response_orjson.py` 16 例（信封 parse 等价/中文不转义/NaN→null/default=str 兜底/C loader 生效断言与语义对拍）
 
 ## 10.51 API Hub（统一 API 调用平台，app/apihub/）
 

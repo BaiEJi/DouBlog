@@ -31,3 +31,5 @@ CRUD/筛选/解法代码/标签/抓题 LeetCode+洛谷/复习/统计/导入导�
 ## 公共 UI 外壳（2026-10-13）
 
 前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+
+> 2026-10-16 性能：Obsidian 导入 frontmatter 解析改走 libyaml C（shared/yamlfast.CSafeLoader），500 篇导入 1.33s→0.25s（实测 5.2×）。

@@ -34,7 +34,7 @@
 | POST | `/api/devtoolbox/yaml/convert` | `{direction: json2yaml\|yaml2json, content}` → `{result}`；safe 模式，date/datetime 序列化为字符串 |
 | POST | `/api/devtoolbox/qrcode` | `{content, scale?, border?, ecc?}` → `{svg, png_data_url, version, ecc}` |
 
-约束：文本输入 ≤1MB（纯计算防滥用）；二维码内容 ≤2000 字符；scale∈[1,32]、border∈[0,10]、ecc∈l/m/q/h 越界钳制。错误统一 `ParamError`（HTTP 400，code=PARAM_INVALID，中文 message）。YAML 解析/序列化走 libyaml 的 C 实现（CSafeLoader/CSafeDumper，ImportError 自动回退；实测 213KB yaml2json 端点级 301ms，纯 Python 版同规模约 2.1s）。
+约束：文本输入 ≤1MB（纯计算防滥用）；二维码内容 ≤2000 字符；scale∈[1,32]、border∈[0,10]、ecc∈l/m/q/h 越界钳制。错误统一 `ParamError`（HTTP 400，code=PARAM_INVALID，中文 message）。YAML 解析/序列化统一走 app/shared/yamlfast.py（libyaml C，CSafeLoader/CSafeDumper，safe 语义，未编译自动回退；实测 213KB yaml2json 端点级 301ms，纯 Python 版同规模约 2.1s；clash/practice 同源共用）。
 
 ## 4. 前端结构
 

@@ -11,6 +11,7 @@ cryptography
 redis==5.2.1              # 配置中心 KV 缓存（可选，未配置/不可达时自动直连 DB）
 PyYAML==6.0.3             # practice 模块 Obsidian 导入 / devtoolbox JSON⇄YAML（frontmatter 解析）
 segno==1.6.6              # devtoolbox 二维码生成（纯 Python，零依赖，PNG 无需 Pillow）
+orjson==3.13.0            # 全站 JSON 序列化（FastJSONResponse；大响应 ~19x）
 steam[client]>=1.4.0      # Steam 挂机模块（todo/steamidler；gevent 限在 worker 线程独立 hub，禁 monkey.patch_all）
 requests>=2.31            # Steam Web API 调用
 lizysdk @ git+https://github.com/BaiEJi/LizySDK.git   # 日志/异常/并发池体系（本地开发可 pip install -e ../basekit）

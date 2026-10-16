@@ -17,6 +17,7 @@ favorite/kind 为元数据变更不快照。使用统计：copy/fill/export 动�
 """
 
 import json
+import orjson
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
@@ -689,11 +690,11 @@ async def export_assets(request: Request):
 
     def _impl():
         items = _export_items(params)
-        body = json.dumps({
+        body = orjson.dumps({
             'generator': 'doulog-assets', 'version': 1,
             'exported_at': _utcnow().isoformat(), 'count': len(items),
             'items': items,
-        }, ensure_ascii=False, indent=2)
+        }, option=orjson.OPT_INDENT_2).decode('utf-8')
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
         return Response(body, media_type='application/json',
                         headers=_attachment(f'doulog-assets-{stamp}.json'))
@@ -707,8 +708,8 @@ async def export_item(item_id: int, request: Request):
     def _impl():
         item = _require_item(item_id)
         if fmt == 'json':
-            body = json.dumps(item.to_dict(include_content=True),
-                              ensure_ascii=False, indent=2)
+            body = orjson.dumps(item.to_dict(include_content=True),
+                                option=orjson.OPT_INDENT_2).decode('utf-8')
             return Response(body, media_type='application/json',
                             headers=_attachment(f'{item.title}.json'))
         if fmt != 'md':
@@ -717,7 +718,7 @@ async def export_item(item_id: int, request: Request):
               'created_at': _iso(item.created_at), 'updated_at': _iso(item.updated_at)}
         if item.summary:
             fm['summary'] = item.summary
-        body = '---\n' + json.dumps(fm, ensure_ascii=False, indent=2) + '\n---\n\n' \
+        body = '---\n' + orjson.dumps(fm, option=orjson.OPT_INDENT_2).decode('utf-8') + '\n---\n\n' \
             + item.content + '\n'
         return Response(body, media_type='text/markdown; charset=utf-8',
                         headers=_attachment(f'{item.title}.md'))
