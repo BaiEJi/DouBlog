@@ -1105,7 +1105,99 @@ GET    /api/clash/controller/providers                # 节点池（HTTP 订阅 
 PUT    /api/clash/controller/providers                # body {name} 热更新节点池（不重启内核）
 ```
 
-## 21. 错误码与数据模型
+## 21. Assets API（资产库：Prompt 与 Skill）
+
+模块文档：`docs/modules/assets.md`。前缀 `/api/assets`，全部挂认证（会话 Cookie / Basic）；
+统一信封；**列表接口不含正文**（`content` 仅详情/导出返回）。
+
+### 21.1 分类
+
+```
+GET    /api/assets/categories                     # 列表（含末尾 id=null 的「未分类」聚合项）
+POST   /api/assets/categories                     # {name, icon?, color?, kind?, sort_order?} → 201
+PUT    /api/assets/categories/{id}                # 部分更新（改名撞名 → 409）
+DELETE /api/assets/categories/{id}                # 分类下仍有资产 → 409「请先移动或删除」
+```
+
+分类字段：`name`（唯一，≤50 字符）、`icon`（emoji，≤10）、`color`（hex，≤7）、
+`kind`（all/prompt/skill，默认 all）、`sort_order`（int，小在前）。
+列表项附 `item_count / prompt_count / skill_count`（非回收站资产）。
+
+### 21.2 资产 CRUD
+
+```
+GET    /api/assets/items                          # 列表（见下过滤参数）
+POST   /api/assets/items                          # 创建 → 201（v1 快照「初始版本」）
+GET    /api/assets/items/{id}                     # 详情（含 content）
+PUT    /api/assets/items/{id}                     # 部分更新；内容类字段变更 → 版本 +1
+DELETE /api/assets/items/{id}                     # 软删入回收站；?hard=1 物理删除（级联版本/日志）
+POST   /api/assets/items/{id}/restore             # 回收站/归档 → active（已在库中 → 409）
+POST   /api/assets/items/{id}/duplicate           # 复制（撞名自动「（副本）」后缀）→ 201
+POST   /api/assets/items/{id}/use                 # 记录使用 {action: copy|fill|export}（默认 copy）
+POST   /api/assets/items/bulk                     # {ids[≤500], action, category_id?}
+```
+
+创建/更新载荷：`kind`（prompt/skill）、`title`（必填 ≤200）、`summary`（≤500）、
+`content`（必填）、`tags`（≤20 个，单个 ≤32 字符，禁引号/反斜杠）、`category_id`（可空）、
+`favorite`（bool）、`version_note`（≤200，内容变更时的版本备注）。
+`variables` 由服务端从正文 `{{name}}` 提取，不接受前端传入。
+
+**列表过滤**：`?kind=&category_id=<int|none>&tag=&favorite=1&status=active|archived|trash|all
+&q=<关键词>&sort=updated_desc|created_desc|usage_desc|title_asc|last_used_desc&page=&page_size=`；
+`q` 匹配标题/摘要/正文（LIKE 转义）。响应 `{items, total, page, page_size}`。
+
+**批量动作**：favorite / unfavorite / archive / unarchive / trash / restore / hard_delete /
+move（需 `category_id`，null=移到未分类）→ `{affected}`。
+
+**版本策略**：title/summary/content 实际变更才快照（相同内容重复保存不产生版本）；
+tags/category/favorite/kind 为元数据变更。回收站资产禁止编辑/使用/恢复版本（409）。
+
+```json
+// POST /api/assets/items → 201
+{"kind":"prompt","title":"代码审查助手","content":"请审查 {{language}} 代码","tags":["编程"]}
+// → data: {"id":1,"kind":"prompt","variables":["language"],"version":1,"status":"active",...}
+```
+
+### 21.3 版本
+
+```
+GET  /api/assets/items/{id}/versions              # 版本列表（v 大在前，不含正文）
+GET  /api/assets/versions/{vid}                   # 单版本（含 content，供前端 diff）
+POST /api/assets/items/{id}/versions/{vid}/restore  # 恢复 → 产生新版本（note「恢复自 vN」）
+```
+
+恢复「当前版本」→ 409；跨资产版本 id → 404。
+
+### 21.4 标签 / 统计
+
+```
+GET /api/assets/tags                              # [{tag, count}]（非回收站，count 降序）
+GET /api/assets/stats                             # 见下
+```
+
+stats 返回：`totals`（prompts/skills/active/archived/trash/favorites/categories/tags/
+versions/total_usage）、`by_category`（含未分类聚合）、`top_used`（TOP5，使用数>0）、
+`recent_used`（按 last_used_at 倒序 TOP5）、`usage_trend`（近 30 天逐日计数，零值补齐）。
+
+### 21.5 导入 / 导出
+
+```
+GET  /api/assets/export                           # JSON 附件（非信封；Content-Disposition 下载）
+     ?kind=&category_id=&favorite=&q=&include_trash=&include_versions=
+GET  /api/assets/items/{id}/export?format=md|json # 单条导出（md = JSON frontmatter + 正文）
+POST /api/assets/import                           # {items|[...], mode, dry_run}
+```
+
+导出格式：`{generator:"doulog-assets", version:1, exported_at, count, items:[...]}`
+（item 含 content/tags/category 名称；`include_versions=1` 附完整版本链）。
+
+导入：接受导出格式或裸数组；条目最小 `{title, content}`（默认 kind=prompt）；
+`category` 接受名称字符串/`{name}`/id。`mode=create`（总是新建）/ `upsert`（按
+「kind+标题」在非回收站资产中匹配更新，内容变更产生版本）。`dry_run=true` 只校验不落库。
+响应 `{created, updated, errors:[{index,title,error}], categories_created, valid}`——
+单条非法进 errors 不阻断整体；载荷无 items / 超 500 条 / mode 非法 → 400。
+
+## 22. 错误码与数据模型
 
 ### 6.1 HTTP 状态码
 

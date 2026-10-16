@@ -198,6 +198,18 @@ const SYSTEMS = [
     ),
   },
   {
+    to: '/assets',
+    title: '资产库',
+    desc: 'Prompt · Skill 沉淀 · 变量填充 · 版本',
+    box: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M10 2.2 17 5v4.4c0 4-2.9 7.5-7 8.4-4.1-.9-7-4.4-7-8.4V5l7-2.8Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="m7.2 10 2 2 3.6-3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     to: '/admin',
     title: '管理',
     desc: '内容管理 · 备份导出',

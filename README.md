@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，14 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，15 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**资产库**（`/assets`，Prompt 与 Skill：变量填充 `{{name}}` / 版本快照与恢复 / 行级 diff / 分类标签 / 使用统计 / 导入导出）、管理（`/admin`）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -42,6 +42,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，14 
 - **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
 - **刷题练习**（`/practice`，独立模块）：题解/代码/标签管理、艾宾浩斯复习、一键抓题（LeetCode/洛谷）
 - **Steam 挂机**（`/steamidler`，独立模块，steam-idler 迁入）：账号登录挂机、时长统计、运行日志
+- **资产库**（`/assets`）：**Prompt 与 Skill 双类型**（`{{变量}}` 声明 + 详情抽屉变量填充台 + 填充值本地记忆）；**版本管理**（内容变更即快照、行级 diff、一键恢复）；分类/标签/收藏/归档/回收站；批量操作；使用统计（copy/fill/export 计数、30 天趋势、最常用 TOP5）；导入导出（upsert/create + dry_run 预检，分类按名自动建）
 - **统一导航与移动端适配**：业务模块共用 220px 多级侧栏与同尺寸内容画布；手机使用菜单抽屉，文章编辑与预览上下排列
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
 - **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
@@ -83,7 +84,7 @@ DouBlog/
 │   │   ├── config.py         # 配置
 │   │   ├── db.py             # 纯 SQLAlchemy：双后端 + 表名规范(模块名_表名,存量自动改名) + run_db
 │   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / timeutil(todo+practice 共用) / logging_setup / modules
-│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 无表、纯 Web 迁移层）
+│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/ assets/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 无表、纯 Web 迁移层）
 │   └── tests/                # pytest（与能力包镜像分层，自包含）
 ├── extensions/todo/           # MyTodo 客户端平迁：chrome-extension/ + android/（仍指旧 8070）
 ├── frontend/                 # 前端 (React)
@@ -101,6 +102,7 @@ DouBlog/
 │       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
 │       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
 │       ├── gamemap/          # /gamemap：GamemapShell（antd6/@xyflow 保留栈）+ board/ + pages/
+│       ├── assets/           # /assets：AssetsPage + api + kit + components（详情抽屉/编辑器/填充/版本/导入导出/统计）
 │       ├── practice/         # /practice：PracticePage + PracticeView + components/
 │       ├── steamidler/       # /steamidler：SteamIdlerPage + SteamIdlerView + components/
 │       └── clash/            # /clash：ClashPage（总览/订阅/配置/日志）+ api.js
@@ -243,6 +245,7 @@ bash shell/backend/stop.sh           # 停止
 | `POST` | `/api/admin/database/test` | 测试目标数据库连通性 |
 | `POST` | `/api/admin/database/switch` | **只换连接切换后端**（SQLite ↔ PostgreSQL，不迁移数据），`/config` 页操作 |
 | `GET/POST/PUT/DELETE` | `/api/clash/*` | **Clash 代理管理**（clashctl 全能力 Web 迁移 + mihomo 控制器：代理组/测速/连接/规则/热配置），见 api.md 第 20 节 |
+| `GET/POST/PUT/DELETE` | `/api/assets/*` | **资产库**（Prompt/Skill CRUD、版本恢复、批量、标签、统计、导入导出），见 api.md 第 21 节 |
 
 ### 图片服务规则
 

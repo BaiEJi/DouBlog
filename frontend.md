@@ -74,6 +74,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
 ├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
+├── assets/                        # /assets（资产库：Prompt/Skill）：AssetsPage + api.js + kit.jsx（diff/copy/Toast）+ components/×5（详情抽屉/编辑器/分类/导入导出/统计）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
     ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮
@@ -217,6 +218,11 @@ localStorage `doublog_apihub_group_fold`，工具条搜索框按 slug/名称/met
 dark:[color-scheme:dark]`，展开的原生选项列表跟随明暗）；弹窗暗色用实底深色卡
 （dark:bg-[#1c1b1a]，与 subs/diary kit 一致）。
 api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-）是外部调用方的事，不在页面内。
+
+### AssetsPage.jsx（assets/，资产库 UI）
+
+单页 `/assets`（fuchsia 强调色，门户卡片入口）。PageHeader 注册模块侧栏三视图（资产库/回收站/统计）；资产库视图 = 页内左过滤栏（全部/★收藏/Prompt/Skill 快速过滤 + 分类树含计数 + 标签 chips，lg 以下隐藏）+ 工具栏（Ctrl+K 搜索/排序/批量/导入导出/新建）+ 卡片网格（kind 徽标、`{{}}` 变量数、标签、版本/使用数 footer、hover 操作；批量模式行内勾选）。
+详情为右滑抽屉（ItemDetail）：操作组（复制全文/编辑/导出 md·json/复制副本/收藏/归档/回收站）+ 三 tab——预览（`shared/md.js` 渲染与原文切换）、变量填充（{{变量}} 表单 + 实时填充预览 + 复制计使用，值记忆 localStorage）、版本（列表 + 行级 LCS diff + 恢复）。编辑器为弹窗（ItemEditor：kind 分段、实时变量检测 chips、版本备注、Ctrl+S/Esc）。导入面板先预检后执行（dry_run 结果展示、分类自动创建提示）；导出走 blob 下载解析 filename*。统计视图为纯 CSS 柱图（30 天趋势零依赖）。kit.jsx 提供 Toast/Modal/diffLines/copyText/KIND_META。
 
 ### ConfigPage.jsx（config/，系统配置总入口 UI）
 

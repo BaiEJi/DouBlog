@@ -27,6 +27,7 @@ const GamemapShell = lazy(() => import('@/gamemap/GamemapShell'))
 const PracticePage = lazy(() => import('@/practice/PracticePage'))
 const SteamIdlerPage = lazy(() => import('@/steamidler/SteamIdlerPage'))
 const ClashPage = lazy(() => import('@/clash/ClashPage'))
+const AssetsPage = lazy(() => import('@/assets/AssetsPage'))
 const PortalPage = lazy(() => import('@/portal/PortalPage'))
 const LoginPage = lazy(() => import('@/app/LoginPage'))
 
@@ -161,6 +162,7 @@ export default function App() {
             <Route path="/practice" element={<PracticePage dark={dark} setDark={toggleDark} />} />
             <Route path="/steamidler" element={<SteamIdlerPage dark={dark} setDark={toggleDark} />} />
             <Route path="/clash" element={<ClashPage dark={dark} setDark={toggleDark} />} />
+            <Route path="/assets" element={<AssetsPage dark={dark} />} />
           </Routes>
           </ModuleFrame>
         </AuthGate>
