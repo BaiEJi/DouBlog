@@ -69,10 +69,11 @@ backend/
 │   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
 │   ├── confcenter/            # 配置中心：扁平 KV + Redis 读穿缓存
+│   ├── bookmarks/            # 书签与稍后阅读：分类树/队列/快照/死链/导入导出
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
 │   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
-└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
+└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ bookmarks/ + test_apihub_*.py
 ```
 
 **模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
@@ -357,6 +358,10 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 - 独立原型期的压测报告（FastAPI 版，含 h11 连接复用/端口耗尽等结论，连接池设计
   直接继承）见 `docs/apihub-loadtest-report.md`
 
+## 10.52 Bookmarks（书签与稍后阅读，app/bookmarks/；4 表 bookmarks_*，docs/modules/bookmarks.md）
+
+单用户书签管理 + 稍后阅读队列：分类树（≤3 层）/条目状态机（unread→reading→read + archived/starred）/标签 M2M/URL 规范化查重（host 小写、去 utm_*、剥 fragment）/离线快照（HTML→Markdown 启发式抽取，列表 defer 大字段）/死链批量检测（模块池并发 HEAD→GET 回退，手动触发无后台线程）/阅读队列下一篇/统计/Netscape HTML + JSON 导入导出（浏览器书签互操作）。网络全在 fetcher.py（FetchError 分类文案收敛），无跨模块依赖。
+
 ## 10.5 双链与导出
 
 - 双链语法 `[[name]]` / `[[标题]]` / `[[name|显示文字]]` 的**渲染**在前端（`md.js` 插件 + `applyWikiLinks`）
@@ -374,7 +379,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 566 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 34；devtoolbox 37；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 616 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**

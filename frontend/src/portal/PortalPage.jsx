@@ -100,6 +100,18 @@ const SYSTEMS = [
     ),
   },
   {
+    to: '/bookmarks',
+    title: '书签 · 稍后阅读',
+    desc: '收录网址 · 阅读队列 · 快照与死链检测',
+    box: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M5.5 2.5h9a1 1 0 0 1 1 1v14l-5.5-3.2L4.5 17.5v-14a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="M7.5 6.5h5M7.5 9.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     to: '/steamidler',
     title: 'Steam 挂机',
     desc: '账号挂机 · 时长统计 · 运行日志',

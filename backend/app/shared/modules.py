@@ -30,6 +30,7 @@ MODULE_BY_PREFIX = (
     ('/api/clash', 'clash'),
     ('/api/assets', 'assets'),
     ('/api/devtoolbox', 'devtoolbox'),
+    ('/api/bookmarks', 'bookmarks'),
     ('/api/auth', 'shared'),
     ('/api/workspaces', 'blog'),
     ('/api/posts', 'blog'),
@@ -39,12 +40,12 @@ MODULE_BY_PREFIX = (
 
 ALL_MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo',
                'gamemap', 'practice', 'steamidler', 'confcenter', 'clash', 'assets',
-               'devtoolbox', 'shared', 'main')
+               'devtoolbox', 'bookmarks', 'shared', 'main')
 
 #: 有数据库表的模块（init_db 逐个调用其 ensure_migrations 钩子）
 MODULES_WITH_DB = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub',
                    'system', 'todo', 'gamemap', 'practice', 'steamidler', 'confcenter',
-                   'assets')
+                   'assets', 'bookmarks')
 
 SYS_PREFIX = 'doublog'
 

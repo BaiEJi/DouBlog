@@ -26,7 +26,7 @@
 | `backend.md` | 后端架构（模型/树设计/双数据库/中间件/测试） | 后端结构或行为变更 |
 | `frontend.md` | 前端架构（API 层/渲染管线/页面/构建） | 前端结构或渲染行为变更 |
 | `docs/fastapi-migration.md` | FastAPI 迁移规范：骨架契约/移植对照/表名映射/验收门槛 | 改骨架契约、模块包对外契约（router/start_background/ensure_migrations）、表名时 |
-| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog diary vault pwsvc sdklogs subs apihub system todo gamemap practice steamidler confcenter clash assets devtoolbox | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
+| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog diary vault pwsvc sdklogs subs apihub system todo gamemap practice steamidler confcenter clash assets devtoolbox bookmarks | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
 | `docs/ui-baseline.md` | UI 一致性基线（字体/卡片/按钮/输入档位 + 暗色硬性检查） | 前端页面改动时对齐档位 |
 | `backend-prompt.md` | ⚠️ 历史存档（开发期 AI 提示词，**不更新**） | 永不（已标注历史） |
 | `frontend/README.md` | 前端子目录入口，指向根文档 | 仅当命令变化 |

@@ -236,6 +236,13 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
 - `config/api.js` 走 apiFetch；AdminPage 的数据库切换 UI 保留（同一批后端端点的旧入口），总配置页为规范入口
 
+### bookmarks（书签与稍后阅读，/bookmarks，个性色 orange）
+- `BookmarksPage` → `BookmarksView`（公共 ModuleShell 侧栏：收藏夹/稍后阅读(徽标=待读数)/统计/工具/回收站）；详情与收录/编辑为覆盖层（state 切换，同 practice 先例）
+- 收藏夹：筛选栏（搜索防抖/分类树拍平下拉/标签/排序）+ 状态 chips + 批量操作条（选中后出现：已读/未读/星标/移动分类/加标签/回收站）+ 行卡片（favicon 回退字母块/状态徽章/链路状态点/快照标记）+ 分页
+- 稍后阅读：「下一篇要读的」英雄卡（开始阅读=打开原文并标 reading）+ 队列列表；统计：指标卡 + 状态环形（DonutPie）+ 30 天趋势柱 + 分类/标签/站点 TOP 横条；工具：导入导出/死链检测/重复链接去重（保留最早）；回收站：还原/彻底删除/清空
+- 表单：URL 一键抓取元信息自动填充（GET /meta，不落库）；标签自由输入逗号分隔 + 已有标签点选；快照正文经 shared/md.js 渲染（prose-content）
+- kit/charts 跨模块引自 `src/todo/`
+
 ## 6. 样式与主题
 
 - Tailwind CSS 4（`@tailwindcss/vite` 插件），类名写在 JSX，无独立组件库

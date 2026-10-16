@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**资产库**（`/assets`，Prompt 与 Skill：变量填充 `{{name}}` / 版本快照与恢复 / 行级 diff / 分类标签 / 使用统计 / 导入导出）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，17 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、**书签与稍后阅读**（`/bookmarks`，收藏夹/阅读队列/离线快照/死链检测/浏览器书签导入导出）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**资产库**（`/assets`，Prompt 与 Skill：变量填充 `{{name}}` / 版本快照与恢复 / 行级 diff / 分类标签 / 使用统计 / 导入导出）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）、管理（`/admin`）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -30,6 +30,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 
 - **最近浏览**：首页按最近阅读横条快速回访（跨知识库，hover 预取不虚增浏览量）
 - **导出备份**：单篇页“导出”按钮下载该文 `.md`（frontmatter + 图片 URL 绝对化）；管理页一键导出全库 Markdown + 图片 zip（树形目录 + frontmatter，Obsidian 可直接导入）
 - **编辑器**：快捷键（`Ctrl+S` 保存、`Ctrl+B/I` 加粗斜体、`Ctrl+K` 链接、`Tab` 缩进）、预览同步滚动、表格/图表/代码块模板
+- **书签与稍后阅读**（`/bookmarks`）：**分类树**（≤3 层文件夹）+ **条目状态机**（未读→阅读中→已读/归档/星标）+ 标签；**URL 规范化查重**（剥 utm 追踪参数）；**收录表单一键抓取页面元信息**；**离线快照**（HTML→Markdown 正文抽取，原文删帖也不怕，列表页不传大字段）；**死链批量检测**（可达/失效/异常三态标记）；**阅读队列**（"下一篇"英雄卡）；**统计**（状态分布/30 天趋势/分类·标签·站点 TOP）；**导入导出**（Netscape 浏览器书签格式 + JSON 全量备份，重复自动跳过）；回收站（还原/彻底删除）
 - **订阅管理**（`/subs`，CrownFlow 全量迁移）：**会员主表 + 多订阅记录**（一次购买/续费一条：价格/币种 5 种/计费周期 4 种/起止/渠道）按自定义分类（emoji+颜色）组织；**支出统计**（日均×重叠天数折算 CNY 静态汇率；概览/分类汇总/趋势 day·week·month·quarter 粒度）；**到期提醒**（按会员 reminder_days 阈值）与**订阅到期日历**（农历/法定节假日/当日徽标）；会员支出排行榜（4 维度）、订阅时间轴（3m/6m/12m/全部+今天线）、表格/卡片双视图；**每日 02:00 自动备份**（90 天保留，可手动触发）
 - **私人日记**（`/diary`，Memos × Day One 超集）：**随记分日记本**（预置 日常🏡/工作💼/感悟🌱，可自建；随记必选本，录入框内直接切换）+ **每日总结**（每天一篇 upsert，总结卡置顶日期组、随记带连接线挂在总结之后）；侧栏工作台（视图/日记本含计数）+ 快捷录入（**本子**/心情/模板/**每日引导问题**/**天气位置一键记录**）；置顶/归档/**回收站**；**年度热力图**、**那年今日**、统计图表（连续/每月字数/心情趋势/**年度回顾**）；单篇**免登录分享链接**（可撤销/有效期）；一句话快速录入 API + 全量 Markdown 导出
 - **密码库**（`/vault`，零知识端到端加密）：Argon2id 派生 + AES-256-GCM，服务端只存密文；**TOTP 验证码生成**（RFC 6238，30s 环形倒计时 + 一键复制，编辑器粘贴 otpauth:// 自动解析）、**HIBP 泄露检查**（k-anonymity，仅上传 SHA-1 前 5 位，结果本地缓存）、**健康总评分**（0-100 环，按泄露/弱/复用等加权扣分，点击下钻）、**安全附件**（前端 VEK 加密上传/下载/删除，5MB/文件，purge 级联清理）、密码历史（改密自动归档）、身份（邮箱/手机 → 关联账号）、密码/口令短语生成器 + 编辑器实时强度条、安全中心（泄露/弱/复用/过旧/**到期提醒**/无 2FA/重复/缺恢复，全客户端分析）、**密码到期提醒**（条目可设 N 天周期，超期概览横条+详情徽标）、⌘K 全局搜索、自动锁定、Recovery Key、加密备份导入导出；全中文界面，三面板布局，明暗 + 移动端
@@ -84,7 +85,7 @@ DouBlog/
 │   │   ├── config.py         # 配置
 │   │   ├── db.py             # 纯 SQLAlchemy：双后端 + 表名规范(模块名_表名,存量自动改名) + run_db
 │   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / timeutil(todo+practice 共用) / logging_setup / modules
-│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/ assets/ devtoolbox/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 与 devtoolbox 无表）
+│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/ assets/ devtoolbox/ bookmarks/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 与 devtoolbox 无表）
 │   └── tests/                # pytest（与能力包镜像分层，自包含）
 ├── extensions/todo/           # MyTodo 客户端平迁：chrome-extension/ + android/（仍指旧 8070）
 ├── frontend/                 # 前端 (React)
@@ -100,7 +101,8 @@ DouBlog/
 │       ├── diary/            # /diary：DiaryPage + PublicShare + api + kit + components×8
 │       ├── vault/            # /vault：VaultPage + api + components（crypto/core/ui/密码服务）
 │       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
-│       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler 跨模块引用）
+│       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler/bookmarks 跨模块引用）
+│       ├── bookmarks/         # /bookmarks：BookmarksPage + BookmarksView（五视图）+ api + components（表单/详情/分类管理）
 │       ├── gamemap/          # /gamemap：GamemapShell（antd6/@xyflow 保留栈）+ board/ + pages/
 │       ├── assets/           # /assets：AssetsPage + api + kit + components（详情抽屉/编辑器/填充/版本/导入导出/统计）
 │       ├── practice/         # /practice：PracticePage + PracticeView + components/
@@ -246,8 +248,9 @@ bash shell/backend/stop.sh           # 停止
 | `POST` | `/api/admin/database/test` | 测试目标数据库连通性 |
 | `POST` | `/api/admin/database/switch` | **只换连接切换后端**（SQLite ↔ PostgreSQL，不迁移数据），`/config` 页操作 |
 | `GET/POST/PUT/DELETE` | `/api/clash/*` | **Clash 代理管理**（clashctl 全能力 Web 迁移 + mihomo 控制器：代理组/测速/连接/规则/热配置），见 api.md 第 20 节 |
-| `GET/POST` | `/api/devtoolbox/*` | **开发者工具箱计算端**（哈希/HMAC、字符集互转乱码修复、JSON⇄YAML、二维码），见 api.md 第 23 节 |
+| `GET/POST` | `/api/devtoolbox/*` | **开发者工具箱计算端**（哈希/HMAC、字符集互转乱码修复、JSON⇄YAML、二维码），见 api.md 第 24 节 |
 | `GET/POST/PUT/DELETE` | `/api/assets/*` | **资产库**（Prompt/Skill CRUD、版本恢复、批量、标签、统计、导入导出），见 api.md 第 21 节 |
+| `GET/POST/PATCH/DELETE` | `/api/bookmarks/*` | **书签与稍后阅读**：分类树/条目 CRUD 与状态机/标签/查重/快照/死链检测/队列/统计/导入导出（Netscape HTML + JSON），见 api.md 第 22 节 |
 
 ### 图片服务规则
 
@@ -289,4 +292,4 @@ python -m pytest tests/ -q
 
 ### 前端本地验收配置
 
-默认 API 地址仍为当前主机的 `60100`。开发时可设置 `VITE_API_BASE=/`，通过 Vite 的 `/api` 与 `/openapi` 代理使用同源请求；`VITE_API_PROXY` 可指定独立后端（默认 `http://127.0.0.1:60100`）。生产构建采用相对 API 地址时，部署服务器也需要配置相同路径的反向代理。界面与性能验收记录见 [docs/ui-qa-2026-10-13.md](docs/ui-qa-2026-10-13.md)。
+默认 API 地址仍为当前主机的 `60100`。开发时可设置 `VITE_API_BASE=/`，通过 Vite 的 `/api` 与 `/openapi` 代理使用同源请求；`VITE_API_PROXY` 可指定独立后端（默认 `http://127.0.0.1:60100`）。生产构建采用相对 API 地址时，部署服务器也需要配置相同路径的反向代理。界面与性能验收记录见 [docs/ui-qa-2026-10-13.md](docs/ui-qa-2026-10-13.md)；书签模块验收见 [docs/ui-qa-2026-10-16.md](docs/ui-qa-2026-10-16.md)。

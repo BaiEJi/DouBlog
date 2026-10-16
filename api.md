@@ -28,7 +28,10 @@
 - [18. Steamidler API](#18-steamidler-apisteam-挂机独立顶级模块)
 - [19. 配置中心 API](#19-配置中心-api)
 - [20. Clash API](#20-clash-api代理管理clashctl-全能力的-web-迁移)
-- [21. 错误码与数据模型](#21-错误码与数据模型)
+- [21. Assets API](#21-assets-api资产库prompt-与-skill)
+- [22. Bookmarks API](#22-bookmarks-api书签与稍后阅读独立顶级模块23-端点4-表-bookmarks_)
+- [23. 错误码与数据模型](#23-错误码与数据模型)
+- [24. 开发者工具箱 API](#24-开发者工具箱devtoolboxapidevtoolbox)
 
 ---
 
@@ -1197,7 +1200,78 @@ POST /api/assets/import                           # {items|[...], mode, dry_run}
 响应 `{created, updated, errors:[{index,title,error}], categories_created, valid}`——
 单条非法进 errors 不阻断整体；载荷无 items / 超 500 条 / mode 非法 → 400。
 
-## 22. 错误码与数据模型
+
+## 22. Bookmarks API（书签与稍后阅读，独立顶级模块；23 端点，4 表 bookmarks_*）
+
+> 后端 `app/bookmarks/`；前端 `/bookmarks`；权威文档 `docs/modules/bookmarks.md`。
+> 统一信封 + Basic/会话认证（同全局规范）。状态机：`unread → reading → read`（→read 记 `read_at`，离开清空）；`archived` 归档；`starred` 独立维度；软删（`deleted_at`）进回收站。
+> **URL 规范化**（`normalized_url`，查重/重复检测统一口径）：host 小写、去默认端口/fragment、剥 `utm_*` 参数、路径保持大小写、裸域名补 `https://`；`mailto:` 等非 http(s) 原样。
+
+### 22.1 分类（文件夹树，≤3 层）
+
+```
+GET    /api/bookmarks/categories                 # 分类树（含直接/累计条目计数）
+POST   /api/bookmarks/categories                 # body {name, parent_id?, after_sort?}；同级重名 409；超 3 层 400
+PATCH  /api/bookmarks/categories/{cid}           # {name?, parent_id?(显式 null=提顶级), sort_order?}；移入自己子孙 400
+DELETE /api/bookmarks/categories/{cid}           # 子分类与书签上提一级（不删书签）→ {moved_children}
+```
+
+### 22.2 条目
+
+```
+GET    /api/bookmarks/items                      # 筛选：q(标题/URL/摘要/站名) status category_id(默认含子孙,
+                                                 #   include_descendants=false 关闭) tag_ids(逗号) tags_op=and|or
+                                                 #   starred link_status trash=1 sort page page_size(≤100)
+                                                 #   sort: created_desc|created_asc|updated_desc|title_asc|read_desc|checked_asc
+                                                 # → {items(不含 note/snapshot_md 大字段), total, page, page_size}
+POST   /api/bookmarks/items                      # {url*, title?, description?, note?, site_name?, favicon_url?,
+                                                 #   category_id?, status?, starred?, tag_ids?, tag_names?}
+                                                 # title 缺省=域名；URL 查重 409（message 带 id）；→ 201 条目（full）
+GET    /api/bookmarks/items/{iid}                # 详情（含 note/snapshot_md/tags）
+PATCH  /api/bookmarks/items/{iid}                # 部分更新；category_id 显式 null=未分类；改 URL 重新查重；
+                                                 #   tag_ids/tag_names 整体替换（不传=不动）
+DELETE /api/bookmarks/items/{iid}                # 软删 → 回收站
+POST   /api/bookmarks/items/{iid}/restore        # 还原；同链新书签已存在 → 409
+DELETE /api/bookmarks/items/{iid}/purge          # 彻底删除（级联标签关联）
+POST   /api/bookmarks/items/batch                # {ids(≤200), action, value?, tag_names?}
+                                                 #   action: status|star|unstar|move_category|add_tags|delete|restore
+POST   /api/bookmarks/items/{iid}/snapshot       # 抓正文存快照（启发式抽取→Markdown）→ 条目（full）；
+                                                 #   抓取失败/正文过短 → 502
+DELETE /api/bookmarks/items/{iid}/snapshot       # 删除快照
+GET    /api/bookmarks/items/duplicates           # 重复链接分组 [{normalized_url, items:[摘要]}]
+GET    /api/bookmarks/items/queue/next           # 阅读队列下一篇（最早未读；?category_id=&tag_id=）→ 条目或 null
+```
+
+### 22.3 标签 / 元信息 / 死链 / 统计 / 导入导出
+
+```
+GET    /api/bookmarks/tags                       # [{id,name,color,item_count}]（按引用数排序）
+POST   /api/bookmarks/tags                       # {name, color?}（色板轮询）；重名 409
+PATCH  /api/bookmarks/tags/{tid}                 # {name?, color?}；改名冲突 409
+DELETE /api/bookmarks/tags/{tid}                 # 删除并解除全部关联
+GET    /api/bookmarks/meta?url=                  # 抓页面元信息（不落库）→ {url,title,description,site_name,favicon_url}；失败 502
+POST   /api/bookmarks/check                      # body {ids:[]}（空=全库最久未检前 50 条）
+                                                 #   → {checked, ok, dead, error}；条目记 link_status/link_code/last_checked_at
+GET    /api/bookmarks/stats/overview             # {total, by_status, starred, dead, snapshots, snapshot_words, trash,
+                                                 #   by_category, by_tag(top10), domains(top10), trend(30 天逐日)}
+POST   /api/bookmarks/import                     # multipart file（Netscape HTML / JSON 自动嗅探）
+                                                 #   → {imported, skipped, invalid, categories_created}
+GET    /api/bookmarks/export?output_format=html|json   # HTML=Netscape 浏览器格式（附件下载）；JSON=全量备份（含快照）
+```
+
+**实测示例**（QA 实例）：
+
+```bash
+curl -u admin:*** -X POST /api/bookmarks/items -H 'Content-Type: application/json'   -d '{"url":"https://Example.com/A/?utm_source=x&q=1","title":"测试","tag_names":["前端"]}'
+# → 201 {"data":{"normalized_url":"https://example.com/A?q=1","domain":"example.com","status":"unread",...}}
+
+curl -u admin:*** -X POST /api/bookmarks/items -d '{"url":"https://X.COM/a"}'   # 规范化后同链
+# → 409 {"message":"该书签已存在（id=01a1...）"}
+```
+
+**通用错误**：非法 status/sort/tags_op/action/format → 400（中文白名单文案）；资源不存在 → 404；同链重复/还原冲突/标签重名 → 409；网络抓取失败 → 502（FetchError 分类文案）。
+
+## 23. 错误码与数据模型
 
 ### 6.1 HTTP 状态码
 
@@ -1231,16 +1305,16 @@ POST /api/assets/import                           # {items|[...], mode, dry_run}
 | `meta_data` | text | 扩展元数据 |
 | `created_at` / `updated_at` | datetime | 时间戳 |
 
-## 23. 开发者工具箱（devtoolbox，/api/devtoolbox）
+## 24. 开发者工具箱（devtoolbox，/api/devtoolbox）
 
 > 纯计算模块：无表、无后台线程。31 个前端工具中仅 4 类经后端（其余浏览器本地完成）。
 > 全部端点 require_basic（统一登录会话 / Basic），DouBlog 信封，同步 def。模块细节见 `docs/modules/devtoolbox.md`。
 
-### 23.1 能力声明
+### 24.1 能力声明
 
 `GET /api/devtoolbox/capabilities` → `{hash_algorithms[10], hmac_algorithms[6], charsets[9], max_text_bytes, max_qrcode_chars}`（前端选项据此渲染，保持两端一致）。
 
-### 23.2 哈希 / HMAC
+### 24.2 哈希 / HMAC
 
 `POST /api/devtoolbox/hash`，body `{text, algorithm, hmac_key?}`（text ≤1MB）→ `{algorithm, hmac, hex}`。
 

@@ -23,6 +23,7 @@ const MODULES = {
   clash: { title: 'Clash 代理', subtitle: '内核 · 订阅 · Tun · Mixin', accent: 'sky' },
   devtoolbox: { title: '开发者工具箱', subtitle: 'JSON · Diff · 编码 · 哈希 · 正则', accent: 'lime' },
   assets: { title: '资产库', subtitle: 'Prompt · Skill · 变量 · 版本', accent: 'fuchsia' },
+  bookmarks: { title: '书签', subtitle: '收藏 · 阅读队列 · 快照', accent: 'orange' },
 }
 
 const ACCENTS = {
@@ -38,6 +39,7 @@ const ACCENTS = {
   slate: 'bg-slate-500/10 text-slate-700 dark:text-slate-300',
   lime: 'bg-lime-500/12 text-lime-700 dark:text-lime-400',
   fuchsia: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400',
+  orange: 'bg-orange-500/12 text-orange-700 dark:text-orange-400',
 }
 
 function containsActive(items, activeKey) {
