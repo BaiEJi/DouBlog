@@ -1348,7 +1348,8 @@ curl -u admin:*** -X POST .../charset/convert -d '{"text":"ä½ å¥½","from_ch
 `POST /api/devtoolbox/yaml/convert`，body `{direction: "json2yaml"|"yaml2json", content}` → `{result, direction}`。
 
 - json2yaml：safe_dump（allow_unicode 中文不转义、sort_keys=False 保键序、width=100）
-- yaml2json：safe_load → `json.dumps(indent=2, ensure_ascii=False, default=str)`（date/datetime → 字符串，空输入 → `{}`）
+- 解析/序列化走 libyaml 的 **CSafeLoader/CSafeDumper**（safe 语义同纯 Python 版，约 8 倍；未编译 libyaml 自动回退）
+- yaml2json：C Loader → `json.dumps(indent=2, ensure_ascii=False, default=str)`（date/datetime → 字符串，空输入 → `{}`）
 - 错误：JSON 失败 400「JSON 解析失败：第 N 行第 M 列…」；YAML 失败 400 含解析器定位；direction 非法 400
 
 ### 23.5 二维码生成

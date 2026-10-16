@@ -34,7 +34,7 @@
 | POST | `/api/devtoolbox/yaml/convert` | `{direction: json2yaml\|yaml2json, content}` → `{result}`；safe 模式，date/datetime 序列化为字符串 |
 | POST | `/api/devtoolbox/qrcode` | `{content, scale?, border?, ecc?}` → `{svg, png_data_url, version, ecc}` |
 
-约束：文本输入 ≤1MB（纯计算防滥用）；二维码内容 ≤2000 字符；scale∈[1,32]、border∈[0,10]、ecc∈l/m/q/h 越界钳制。错误统一 `ParamError`（HTTP 400，code=PARAM_INVALID，中文 message）。
+约束：文本输入 ≤1MB（纯计算防滥用）；二维码内容 ≤2000 字符；scale∈[1,32]、border∈[0,10]、ecc∈l/m/q/h 越界钳制。错误统一 `ParamError`（HTTP 400，code=PARAM_INVALID，中文 message）。YAML 解析/序列化走 libyaml 的 C 实现（CSafeLoader/CSafeDumper，ImportError 自动回退；实测 213KB yaml2json 端点级 301ms，纯 Python 版同规模约 2.1s）。
 
 ## 4. 前端结构
 
@@ -65,7 +65,7 @@ frontend/src/devtoolbox/
 
 ## 5. 测试与验证
 
-- 后端：`backend/tests/devtoolbox/test_devtoolbox.py` **37 例**——鉴权 401、哈希对照标准库（10 算法参数化+HMAC 4 算法+已知向量）、字符集（GBK 往返/latin-1→utf-8 乱码修复/不可编码 400 提示 gb18030/不可解码 400）、YAML（往返/键序/日期字符串/两类解析错误/方向校验）、二维码（形态/空内容/非法 ecc/超长/参数钳制）
+- 后端：`backend/tests/devtoolbox/test_devtoolbox.py` **42 例**——鉴权 401、哈希对照标准库（10 算法参数化+HMAC 4 算法+已知向量）、字符集（GBK 往返/latin-1→utf-8 乱码修复/不可编码 400 提示 gb18030/不可解码 400）、YAML（往返/键序/日期字符串/两类解析错误/方向校验/**C loader 生效断言 + C/纯 Python 一致性 + 锚点合并键多行文本 + 100KB 级大文档往返**）、二维码（形态/空内容/非法 ecc/超长/参数钳制）
 - 前端：`npm run build` 零报错 + eslint 零问题；UI 走查 47 张截图（33 亮 + 14 暗）经 image 子智能体审查，发现并修复：速查表分组过滤条件错误（`c<300` 混入 1xx → 区间判断）、网络错误文案未本地化、ToolHead 未实现 right prop（头部控件被静默丢弃）
 - 回归：全量 pytest 566 用例（devtoolbox 37 全过；clash 14 例失败为该模块本地假环境问题，与本模块无关）
 

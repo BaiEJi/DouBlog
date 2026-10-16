@@ -326,10 +326,10 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 ## 10.53 开发者工具箱（devtoolbox，app/devtoolbox/；无表）
 
 - 纯计算模块：仅 router（无 start_background / ensure_migrations，不在 MODULES_WITH_DB）；5 端点全部 require_basic + 同步 def
-- 能力：哈希/HMAC（10 算法白名单）、字符集互转（9 字符集白名单，乱码修复语义 encode(from)→decode(to)）、JSON⇄YAML（PyYAML safe，date 转字符串）、二维码（segno，SVG+PNG data URL）
+- 能力：哈希/HMAC（10 算法白名单）、字符集互转（9 字符集白名单，乱码修复语义 encode(from)→decode(to)）、JSON⇄YAML（PyYAML **libyaml C 实现** CSafeLoader/CSafeDumper，date 转字符串；213KB 解析 301ms vs 纯 Python 2.1s，未编译 libyaml 自动回退）、二维码（segno，SVG+PNG data URL）
 - 上限：文本 ≤1MB、二维码内容 ≤2000 字符、scale/border/ecc 越界钳制；错误统一 ParamError 中文 message
 - 依赖：segno==1.6.6（纯 Python 零依赖，PNG 原生输出无需 Pillow）；PyYAML 与 practice 共用
-- 模块细节（31 工具清单/前端结构/37 测试/边界）见 `docs/modules/devtoolbox.md`
+- 模块细节（31 工具清单/前端结构/42 测试/边界）见 `docs/modules/devtoolbox.md`
 
 ## 10.51 API Hub（统一 API 调用平台，app/apihub/）
 

@@ -199,3 +199,76 @@ def test_qrcode_params_clamped(client):
     """scale/border 越界钳到安全区间，不报错"""
     data = _post(client, '/qrcode', {'content': 'x', 'scale': 999, 'border': -5, 'ecc': 'h'})
     assert '<svg' in data['svg']
+
+
+# ─── YAML C 加速（CSafeLoader/CSafeDumper）───────────────
+
+def test_yaml_c_loader_active_when_available(client):
+    """venv 编译了 libyaml 时必须走 C 实现（200KB 快约 8 倍）——防止未来重构悄悄退化回纯 Python。"""
+    import yaml
+    from app.devtoolbox import routes
+    if getattr(yaml, '__with_libyaml__', False):
+        assert routes.YamlLoader is yaml.CSafeLoader
+        assert routes.YamlDumper is yaml.CSafeDumper
+
+
+def test_yaml_loader_consistency_c_vs_pure_python(client):
+    """C loader 与纯 Python SafeLoader 对复杂文档的解析结果必须一致。"""
+    import yaml
+    from app.devtoolbox import routes
+    docs = [
+        'a: 1\nb: 中文\n',
+        'd: 2026-10-16\nt: 2026-10-16 12:30:00\n',
+        'list: [1, 2.5, true, null, "x"]\n',
+        'block: |\n  第一行\n  第二行\nfolded: >\n  折叠\n  成一行\n',
+        'base: &b\n  x: 1\nref:\n  <<: *b\n  y: 2\n',
+        'nested:\n  - {k: v}\n  - [1, [2, 3]]\n',
+    ]
+    for doc in docs:
+        assert yaml.load(doc, Loader=routes.YamlLoader) == yaml.safe_load(doc)
+
+
+def test_yaml_c_dumper_matches_safe_semantics(client):
+    """C Dumper 输出可被 safe_load 还原（往返等价），且 allow_unicode/键序行为不变。"""
+    import yaml
+    from app.devtoolbox import routes
+    data = {'名称': '工具箱', '端口': 60100, '嵌套': {'开': True, '列表': [1, 2]}, '空': None}
+    out = yaml.dump(data, Dumper=routes.YamlDumper, allow_unicode=True,
+                    sort_keys=False, default_flow_style=False, width=100)
+    assert '名称: 工具箱' in out
+    assert list(yaml.safe_load(out)) == list(data)          # 键序保持
+    assert yaml.safe_load(out) == data
+
+
+def test_yaml2json_complex_features_via_api(client):
+    """端到端：多行文本/锚点引用/日期/null 经 API 正确转 JSON（C loader 路径）。"""
+    import json as json_mod
+    content = (
+        '服务: &srv\n'
+        '  端口: 60100\n'
+        '  调试: false\n'
+        '引用:\n'
+        '  <<: *srv\n'
+        '  附加: null\n'
+        '说明: |\n'
+        '  第一行\n'
+        '  第二行\n'
+    )
+    data = _post(client, '/yaml/convert', {'direction': 'yaml2json', 'content': content})
+    parsed = json_mod.loads(data['result'])
+    assert parsed['引用']['端口'] == 60100            # 合并键展开
+    assert parsed['引用']['调试'] is False
+    assert parsed['引用']['附加'] is None
+    assert parsed['说明'] == '第一行\n第二行\n'       # block scalar
+
+
+def test_yaml_large_document_roundtrip(client):
+    """100KB 级文档往返（C 路径大输入正确性；计时断言不进 CI，仅功能验证）。"""
+    import json as json_mod
+    obj = {f'键{i}': {'名称': f'配置项{i}', '端口': 60000 + i % 1000,
+                     '标签': ['fastapi', 'react'], '启用': i % 2 == 0} for i in range(1200)}
+    as_json = json_mod.dumps(obj, ensure_ascii=False)
+    as_yaml = _post(client, '/yaml/convert', {'direction': 'json2yaml', 'content': as_json})
+    assert len(as_yaml['result']) > 50_000
+    back = _post(client, '/yaml/convert', {'direction': 'yaml2json', 'content': as_yaml['result']})
+    assert json_mod.loads(back['result']) == obj
