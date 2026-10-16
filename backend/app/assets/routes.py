@@ -16,6 +16,7 @@ Prompt 与 Skill 资产库 API
 favorite/kind 为元数据变更不快照。使用统计：copy/fill/export 动作计数。
 """
 
+import base64
 import json
 import orjson
 from datetime import datetime, timedelta
@@ -34,6 +35,7 @@ from app.shared.timestamps import _iso, _utcnow
 from app.assets.models import (
     KINDS,
     AssetCategory,
+    AssetFile,
     AssetItem,
     AssetUsageLog,
     AssetVersion,
@@ -44,6 +46,7 @@ from app.assets.services import (
     snapshot_version,
     validate_item_payload,
 )
+from app.assets.skills import parse_skill_upload
 from lizysdk.errors import ConflictError, NotFoundError, ParamError
 
 router = APIRouter(prefix='/api/assets', dependencies=[Depends(require_basic)])
@@ -515,6 +518,80 @@ async def bulk_items(request: Request):
     return await run_db(_impl)
 
 
+# ─── Skill 包导入 / 文件 ─────────────────────────────
+
+@router.post('/skills/import')
+async def import_skill(request: Request):
+    """multipart `file` 上传 Skill（.md 单文件宽松 / .zip 严格规格校验）→
+    解析描述建条目 + 存文件清单 + 保留原始 zip；响应先给出提取结果"""
+    try:
+        form = await request.form()
+    except Exception:  # noqa: BLE001
+        raise ParamError(message='请求必须是 multipart/form-data')
+    upload = form.get('file')
+    if upload is None or not hasattr(upload, 'read'):
+        raise ParamError(message='缺少 file 字段')
+    filename = upload.filename or 'SKILL.md'
+    data = await upload.read()
+
+    def _impl():
+        draft = parse_skill_upload(filename, data)
+        item = AssetItem(
+            kind='skill', title=draft['name'], summary=draft['description'],
+            content=draft['content'], variables=extract_variables(draft['content']),
+            archive=draft.get('archive'), archive_name=draft.get('archive_name'),
+        )
+        db.session.add(item)
+        db.session.flush()
+        db.session.add(snapshot_version(item, f'Skill 包导入（{filename}）'))
+        for f in draft['files']:
+            db.session.add(AssetFile(
+                item_id=item.id, path=f['path'], size=f['size'],
+                is_text=f['is_text'], content=f['content']))
+        db.session.commit()
+        logger.info(f"导入 Skill {draft['name']}(#{item.id})：{len(draft['files'])} 个文件"
+                    f"（{'zip' if draft.get('archive') else '单文件'}）")
+        out = item.to_dict(include_content=True)
+        # 先输出提取结果（规格字段 + 文件树），前端据此直接展示
+        out['skill'] = {'name': draft['name'], 'description': draft['description'],
+                        'entry': 'SKILL.md',
+                        'files': [f['path'] for f in draft['files']]}
+        return api_response(out, 201, '导入成功')
+    return await run_db(_impl)
+
+
+@router.get('/items/{item_id}/files')
+async def list_item_files(item_id: int):
+    def _impl():
+        _require_item(item_id)
+        rows = AssetFile.query.filter(AssetFile.item_id == item_id) \
+            .order_by(AssetFile.path).all()
+        return api_response([f.to_dict() for f in rows])
+    return await run_db(_impl)
+
+
+@router.get('/files/{file_id}')
+async def get_file(file_id: int):
+    def _impl():
+        f = db.session.get(AssetFile, file_id)
+        if not f:
+            raise NotFoundError(message='文件不存在')
+        return api_response(f.to_dict(include_content=True))
+    return await run_db(_impl)
+
+
+@router.get('/items/{item_id}/archive')
+async def download_archive(item_id: int):
+    def _impl():
+        item = _require_item(item_id)
+        if not item.archive:
+            raise NotFoundError(message='该资产没有原始压缩包')
+        name = item.archive_name or f'{item.title}.zip'
+        return Response(item.archive, media_type='application/zip',
+                        headers=_attachment(name))
+    return await run_db(_impl)
+
+
 # ─── 版本 ─────────────────────────────────────────────
 
 @router.get('/items/{item_id}/versions')
@@ -680,6 +757,14 @@ def _export_items(params) -> list[dict]:
             d['versions'] = [v.to_dict(include_content=True) for v in
                              AssetVersion.query.filter(AssetVersion.item_id == item.id)
                              .order_by(AssetVersion.version).all()]
+        # Skill 包：文件清单（含文本内容）+ 原始 zip（base64），保证导出导入往返无损
+        files = AssetFile.query.filter(AssetFile.item_id == item.id) \
+            .order_by(AssetFile.path).all()
+        if files:
+            d['files'] = [f.to_dict(include_content=True) for f in files]
+        if item.archive:
+            d['archive_name'] = item.archive_name
+            d['archive_b64'] = base64.b64encode(item.archive).decode('ascii')
         out.append(d)
     return out
 
@@ -748,10 +833,29 @@ def _normalize_import_item(raw, index: int) -> dict:
     versions = raw.get('versions')
     if versions is not None and not isinstance(versions, list):
         raise ParamError(message='versions 必须为数组')
+    files = raw.get('files')
+    if files is not None and not isinstance(files, list):
+        raise ParamError(message='files 必须为数组')
+    archive_b64 = raw.get('archive_b64')
+    if archive_b64 is not None:
+        if not isinstance(archive_b64, str):
+            raise ParamError(message='archive_b64 必须为 base64 字符串')
+        try:
+            archive_bytes = base64.b64decode(archive_b64, validate=True)
+        except Exception:  # noqa: BLE001
+            raise ParamError(message='archive_b64 不是有效的 base64')
+        if len(archive_bytes) > 10 * 1024 * 1024:
+            raise ParamError(message='archive_b64 解码后超过 10MB')
+    else:
+        archive_bytes = None
+    archive_name = raw.get('archive_name')
+    if archive_name is not None and not isinstance(archive_name, str):
+        raise ParamError(message='archive_name 必须为字符串')
     out = dict(normalized)
     out.update({'index': index, 'favorite': bool(favorite), 'status': status,
                 'usage_count': usage_count, 'category': raw.get('category'),
-                'versions': versions})
+                'versions': versions, 'files': files,
+                'archive': archive_bytes, 'archive_name': archive_name})
     return out
 
 
@@ -829,9 +933,20 @@ async def import_assets(request: Request):
                         variables=extract_variables(entry['content']),
                         favorite=entry['favorite'], status=entry['status'],
                         usage_count=entry['usage_count'],
+                        archive=entry.get('archive'),
+                        archive_name=entry.get('archive_name') if entry.get('archive') else None,
                     )
                     db.session.add(item)
                     db.session.flush()
+                    # Skill 包文件（可选）：随条目一起恢复
+                    for f in entry.get('files') or []:
+                        if not isinstance(f, dict) or not isinstance(f.get('path'), str):
+                            continue
+                        db.session.add(AssetFile(
+                            item_id=item.id, path=f['path'][:500],
+                            size=int(f.get('size') or 0),
+                            is_text=bool(f.get('is_text', True)),
+                            content=f.get('content') if f.get('is_text', True) else None))
                     # 历史版本（可选）：重排为连续版本链，当前内容确保在链尾
                     vers = [v for v in (entry.get('versions') or [])
                             if isinstance(v, dict) and isinstance(v.get('content'), str)]

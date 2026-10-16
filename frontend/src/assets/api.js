@@ -81,3 +81,14 @@ export const assetsExport = params => {
 }
 export const assetsExportItem = (id, format) =>
   download(`/api/assets/items/${id}/export?format=${format}`, `asset.${format}`)
+
+// ── Skill 包（单文件 / zip）──
+export const assetsImportSkill = file => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/api/assets/skills/import', { method: 'POST', body: fd }).then(j)
+}
+export const assetsItemFiles = itemId => apiFetch(`/api/assets/items/${itemId}/files`).then(j)
+export const assetsFile = fileId => apiFetch(`/api/assets/files/${fileId}`).then(j)
+export const assetsItemArchive = itemId =>
+  download(`/api/assets/items/${itemId}/archive`, 'skill.zip')

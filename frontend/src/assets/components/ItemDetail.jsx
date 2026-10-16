@@ -5,7 +5,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import md, { renderMermaidDiagrams } from '@/shared/md'
-import { assetsExportItem, assetsItem, assetsRestoreVersion, assetsUseItem, assetsVersion, assetsVersions } from '../api'
+import { assetsExportItem, assetsItem, assetsItemArchive, assetsItemFiles, assetsRestoreVersion, assetsUseItem, assetsVersion, assetsVersions } from '../api'
+import FileTree, { FileViewerModal } from './FileTree'
 import { KIND_META, copyText, diffLines } from '../kit'
 
 const FILL_KEY = id => `doublog_assets_fill_${id}`
@@ -179,14 +180,21 @@ function VersionPanel({ item, dark, toast, onChanged }) {
 
 export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, onRefresh, toast }) {
   const [item, setItem] = useState(null)
+  const [files, setFiles] = useState([])
+  const [viewingFile, setViewingFile] = useState(null)
   const [tab, setTab] = useState('preview')          // preview | fill | versions
   const [raw, setRaw] = useState(false)
   const previewRef = useRef(null)
 
   const load = useCallback(() => {
     assetsItem(itemId).then(r => {
-      if (r.success) setItem(r.data)
-      else toast(r.message || '加载失败', 'error')
+      if (r.success) {
+        setItem(r.data)
+        if (!r.data.files_count) setFiles([])
+        else assetsItemFiles(itemId).then(fr => {
+          if (fr.success) setFiles(fr.data)
+        })
+      } else toast(r.message || '加载失败', 'error')
     })
   }, [itemId, toast])
   useEffect(load, [load])
@@ -200,7 +208,13 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
   useEffect(() => {
     const onKey = e => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // 抽屉打开期间锁根滚动条（防移动端右缘露出根滚动条）
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prev
+    }
   }, [onClose])
 
   if (!item) {
@@ -226,6 +240,12 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
     } else if (!r.success) toast(r.message || '记录使用失败', 'error')
   }
 
+  const downloadArchive = async () => {
+    const r = await assetsItemArchive(item.id)
+    if (r.success) toast('已下载原包')
+    else toast(r.message || '下载失败', 'error')
+  }
+
   const download = async fmt => {
     const r = await assetsExportItem(item.id, fmt)
     if (r.success) {
@@ -239,6 +259,7 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
     { key: 'preview', label: '预览' },
     { key: 'fill', label: `变量填充${item.variables?.length ? `（${item.variables.length}）` : ''}` },
     { key: 'versions', label: `版本（${item.versions_count || item.version}）` },
+    ...(item.files_count > 0 ? [{ key: 'files', label: `文件（${item.files_count}）` }] : []),
   ]
 
   return (
@@ -253,6 +274,9 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
                 <span className={`px-2 py-0.5 rounded-lg text-[11px] font-medium ${meta.chip}`}>{meta.icon} {meta.label}</span>
                 {inTrash && <span className="px-2 py-0.5 rounded-lg text-[11px] bg-red-500/10 text-red-600 dark:text-red-400">回收站</span>}
                 {archived && <span className="px-2 py-0.5 rounded-lg text-[11px] bg-stone-500/10 text-stone-500">已归档</span>}
+                {item.files_count > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-lg text-[11px] bg-sky-500/10 text-sky-700 dark:text-sky-400">📦 {item.files_count} 文件</span>
+                )}
                 <span className="text-[11px] font-mono text-stone-400">v{item.version} · 使用 {item.usage_count} 次</span>
               </div>
               <h2 className="text-lg font-semibold leading-snug break-words">{item.title}</h2>
@@ -276,6 +300,7 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
               <PanelButton onClick={() => onEdit(item)} title="编辑">编辑</PanelButton>
               <PanelButton onClick={() => download('md')}>导出 .md</PanelButton>
               <PanelButton onClick={() => download('json')}>导出 .json</PanelButton>
+              {item.archive_name && <PanelButton onClick={downloadArchive} title={item.archive_name}>⬇ 原包 .zip</PanelButton>}
               <PanelButton onClick={() => onAction('duplicate', item)} title="复制一份新资产">复制副本</PanelButton>
               <PanelButton onClick={() => onAction('favorite', item)}>{item.favorite ? '★ 已收藏' : '☆ 收藏'}</PanelButton>
               <PanelButton onClick={() => onAction(archived ? 'unarchive' : 'archive', item)}>{archived ? '取消归档' : '归档'}</PanelButton>
@@ -314,8 +339,23 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
                 dangerouslySetInnerHTML={{ __html: md.render(item.content || '') }} />)}
           {tab === 'fill' && <VariableFill item={item} toast={toast} onUsed={refreshAll} />}
           {tab === 'versions' && <VersionPanel item={item} dark={dark} toast={toast} onChanged={refreshAll} />}
+          {tab === 'files' && (
+            <div className="space-y-3">
+              {item.summary && (
+                <div className="px-3.5 py-2.5 rounded-xl bg-sky-500/[0.06] border border-sky-500/20 text-[12.5px] leading-relaxed">
+                  <span className="font-medium text-sky-700 dark:text-sky-400">自动提取的描述：</span>
+                  <span className="text-stone-600 dark:text-stone-300">{item.summary}</span>
+                </div>
+              )}
+              <FileTree files={files} onOpenMain={() => setTab('preview')}
+                onOpenFile={setViewingFile} />
+            </div>
+          )}
         </div>
       </aside>
+      {viewingFile && (
+        <FileViewerModal file={viewingFile} onClose={() => setViewingFile(null)} toast={toast} />
+      )}
     </div>
   )
 }

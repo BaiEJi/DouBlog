@@ -596,3 +596,207 @@ def test_import_export_roundtrip(client, auth_headers):
     assert detail['content'] == '内容 {{v}}'
     assert detail['tags'] == ['r'] and detail['favorite'] is True
     assert detail['variables'] == ['v']
+
+
+# ─── Skill 包导入（单文件 / zip 规格） ────────────────
+
+import io
+import zipfile
+
+
+def _zip_bytes(files: dict) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as z:
+        for path, content in files.items():
+            z.writestr(path, content)
+    return buf.getvalue()
+
+
+def _upload(client, filename, data, headers=AUTH):
+    return client.post('/api/assets/skills/import',
+                       files={'file': (filename, data, 'application/octet-stream')},
+                       headers=headers)
+
+
+def _skill_md(name='demo-skill', desc='演示技能描述', body='技能正文 {{input}}'):
+    return f'---\nname: {name}\ndescription: {desc}\n---\n\n{body}\n'
+
+
+def test_skill_zip_import_nested(client, auth_headers):
+    data = _zip_bytes({
+        'demo-skill/SKILL.md': _skill_md(),
+        'demo-skill/reference.md': '参考文档',
+        'demo-skill/scripts/convert.py': 'print(1)',
+        'demo-skill/scripts/__pycache__/x.pyc': 'bin',
+        'demo-skill/img/logo.png': '\x89PNG fake',
+        '__MACOSX/junk': 'x',
+        'demo-skill/.DS_Store': 'junk',
+    })
+    r = _upload(client, 'demo-skill.zip', data)
+    assert r.status_code == 201, r.json()
+    d = r.json()['data']
+    # 描述自动提取（先输出）
+    assert d['kind'] == 'skill'
+    assert d['title'] == 'demo-skill'
+    assert d['summary'] == '演示技能描述'
+    assert d['skill']['name'] == 'demo-skill'
+    assert d['skill']['description'] == '演示技能描述'
+    assert '技能正文' in d['content']
+    # 根目录前缀已剥掉；噪音（__pycache__/.DS_Store/__MACOSX）已滤掉
+    assert d['skill']['files'] == ['SKILL.md', 'img/logo.png', 'reference.md',
+                                   'scripts/convert.py']
+    assert d['files_count'] == 4
+    assert d['archive_name'] == 'demo-skill.zip'
+    assert d['version'] == 1
+
+
+def test_skill_zip_root_layout(client, auth_headers):
+    """SKILL.md 在压缩包根（无外层目录）同样可识别"""
+    data = _zip_bytes({'SKILL.md': _skill_md('root-skill'), 'run.sh': 'echo hi'})
+    r = _upload(client, 'root.zip', data)
+    assert r.status_code == 201
+    assert r.json()['data']['skill']['files'] == ['SKILL.md', 'run.sh']
+
+
+def test_skill_zip_files_tree_and_content(client, auth_headers):
+    data = _zip_bytes({
+        'demo-skill/SKILL.md': _skill_md(),
+        'demo-skill/scripts/run.py': 'print("hello")',
+        'demo-skill/assets/icon.png': '\x89PNG\x00binary',
+    })
+    iid = _upload(client, 's.zip', data).json()['data']['id']
+
+    r = client.get(f'/api/assets/items/{iid}/files', headers=AUTH)
+    files = {f['path']: f for f in r.json()['data']}
+    assert set(files) == {'SKILL.md', 'scripts/run.py', 'assets/icon.png'}
+    assert files['scripts/run.py']['is_text'] is True
+    assert files['assets/icon.png']['is_text'] is False
+
+    r = client.get(f"/api/assets/files/{files['scripts/run.py']['id']}", headers=AUTH)
+    assert r.json()['data']['content'] == 'print("hello")'
+    r = client.get(f"/api/assets/files/{files['assets/icon.png']['id']}", headers=AUTH)
+    assert r.json()['data']['content'] is None          # 二进制无预览
+
+    assert client.get('/api/assets/files/99999', headers=AUTH).status_code == 404
+
+
+def test_skill_archive_download(client, auth_headers):
+    data = _zip_bytes({'SKILL.md': _skill_md('dl-skill')})
+    iid = _upload(client, '原包.zip', data).json()['data']['id']
+    r = client.get(f'/api/assets/items/{iid}/archive', headers=AUTH)
+    assert r.status_code == 200 and 'attachment' in r.headers.get('content-disposition', '')
+    # 下载的字节就是原包（可再次作为 zip 打开）
+    back = zipfile.ZipFile(io.BytesIO(r.content))
+    assert back.namelist() == ['SKILL.md']
+    # 无压缩包的资产 → 404
+    other = _item(client, '普通技能', kind='skill')
+    assert client.get(f"/api/assets/items/{other['id']}/archive",
+                      headers=AUTH).status_code == 404
+
+
+def test_skill_zip_spec_failures(client, auth_headers):
+    # 无 SKILL.md
+    r = _upload(client, 'a.zip', _zip_bytes({'readme.md': 'x'}))
+    assert r.status_code == 400 and 'SKILL.md' in r.json()['message']
+    # 多个 SKILL.md
+    r = _upload(client, 'a.zip', _zip_bytes({'SKILL.md': _skill_md(),
+                                             'sub/SKILL.md': _skill_md()}))
+    assert r.status_code == 400
+    # frontmatter 缺 name / description
+    for fm in ('description: 只有描述\n', 'name: only-name\n'):
+        r = _upload(client, 'a.zip', _zip_bytes(
+            {'SKILL.md': f'---\n{fm}---\nbody'}))
+        assert r.status_code == 400
+    # name 不合规（大写 / 中文 / 超长）
+    for name in ('BadName', '中文名', 'x' * 65):
+        r = _upload(client, 'a.zip', _zip_bytes(
+            {'SKILL.md': _skill_md(name)}))
+        assert r.status_code == 400, name
+    # description 超长
+    r = _upload(client, 'a.zip', _zip_bytes(
+        {'SKILL.md': _skill_md('ok-name', desc='x' * 1025)}))
+    assert r.status_code == 400
+    # frontmatter 非 YAML 映射
+    r = _upload(client, 'a.zip', _zip_bytes({'SKILL.md': '---\n[1,2,3]\n---\nbody'}))
+    assert r.status_code == 400
+    # zip-slip
+    bad = io.BytesIO()
+    with zipfile.ZipFile(bad, 'w') as z:
+        z.writestr('../evil.txt', 'x')
+        z.writestr('SKILL.md', _skill_md())
+    r = _upload(client, 'slip.zip', bad.getvalue())
+    assert r.status_code == 400 and '不安全' in r.json()['message']
+    # 条目超限（201 个）
+    many = {f'f{i}.md': 'x' for i in range(201)}
+    many['SKILL.md'] = _skill_md()
+    r = _upload(client, 'a.zip', _zip_bytes(many))
+    assert r.status_code == 400
+    # 坏 zip / 不支持的扩展
+    r = _upload(client, 'a.zip', b'not a zip')
+    assert r.status_code == 400
+    r = _upload(client, 'a.exe', b'MZ')
+    assert r.status_code == 400 and '.zip' in r.json()['message']
+    # 缺 file 字段
+    r = client.post('/api/assets/skills/import', headers=AUTH)
+    assert r.status_code == 400
+
+
+def test_skill_single_file(client, auth_headers):
+    # 合规 frontmatter：严格提取
+    r = _upload(client, 'note.md', _skill_md('single-skill', '单文件描述').encode())
+    assert r.status_code == 201
+    d = r.json()['data']
+    assert d['title'] == 'single-skill' and d['summary'] == '单文件描述'
+    assert d['files_count'] == 0 and d['archive_name'] is None
+
+    # 无 frontmatter：宽松（标题=文件名，摘要=首个非标题行）
+    r = _upload(client, '我的小技巧.md', '# 标题\n\n把窗口调成深色更护眼\n'.encode())
+    assert r.status_code == 201
+    d = r.json()['data']
+    assert d['title'] == '我的小技巧'
+    assert d['summary'] == '把窗口调成深色更护眼'
+
+    # 非 UTF-8 → 400
+    r = _upload(client, 'gbk.md', '中文'.encode('gbk'))
+    assert r.status_code == 400
+
+
+def test_skill_import_appears_in_list_and_stats(client, auth_headers):
+    _upload(client, 's.zip', _zip_bytes({'SKILL.md': _skill_md('list-skill')}))
+    r = client.get('/api/assets/items?kind=skill', headers=AUTH)
+    item = next(i for i in r.json()['data']['items'] if i['title'] == 'list-skill')
+    assert item['files_count'] == 1 and item['archive_name'] == 's.zip'
+    s = client.get('/api/assets/stats', headers=AUTH).json()['data']['totals']
+    assert s['skills'] >= 1
+
+
+def test_skill_export_import_roundtrip_with_files(client, auth_headers):
+    data = _zip_bytes({'SKILL.md': _skill_md('rt-skill'),
+                       'scripts/run.py': 'print(1)',
+                       'assets/icon.png': '\x89PNG bin'})
+    iid = _upload(client, 'rt.zip', data).json()['data']['id']
+    exported = client.get('/api/assets/export?kind=skill', headers=AUTH).json()
+    item = next(i for i in exported['items'] if i['title'] == 'rt-skill')
+    assert {f['path'] for f in item['files']} == {'SKILL.md', 'scripts/run.py', 'assets/icon.png'}
+    assert item['archive_name'] == 'rt.zip'
+    import base64 as _b64
+    assert zipfile.ZipFile(io.BytesIO(
+        _b64.b64decode(item['archive_b64']))).namelist() == list(data and
+        zipfile.ZipFile(io.BytesIO(data)).namelist())
+    # 清空回导 → 文件与原包均恢复
+    for i in client.get('/api/assets/items?status=all&page_size=100',
+                        headers=AUTH).json()['data']['items']:
+        client.delete(f"/api/assets/items/{i['id']}?hard=1", headers=AUTH)
+    r = client.post('/api/assets/import', json=exported, headers=AUTH)
+    assert r.json()['data']['created'] == 1
+    new = client.get('/api/assets/items?q=rt-skill', headers=AUTH).json()['data']['items'][0]
+    assert new['files_count'] == 3
+    dl = client.get(f"/api/assets/items/{new['id']}/archive", headers=AUTH)
+    assert dl.status_code == 200 and dl.content == data
+
+
+def test_skill_archive_b64_validation(client, auth_headers):
+    r = client.post('/api/assets/import', json={'items': [
+        {'title': 'x', 'content': 'y', 'archive_b64': '!!!not-base64!!!'}]}, headers=AUTH)
+    assert r.status_code == 200
+    assert 'base64' in r.json()['data']['errors'][0]['error']

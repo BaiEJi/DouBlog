@@ -30,6 +30,12 @@ assets 是 **Prompt 与 Skill 资产库**能力包（路由前缀 `/api/assets`�
   导入支持本库导出格式与最小 `{title, content}` 格式，create/upsert 两种模式（upsert 按
   「kind + 标题」在非回收站资产中匹配），**dry_run 预检**（不落库，报告将创建的分类），
   分类按名称自动匹配/创建；单条非法进 errors 不阻断整体；单次 ≤500 条
+- **Skill 包（skills.py）**：`POST /skills/import` 上传单文件（宽松）或 zip（严格规格：
+  恰好一个 SKILL.md + YAML frontmatter name/description 校验）；**描述自动提取先输出**
+  （响应 skill 字段 + 前端 toast + 详情描述横幅）；文件存 `assets_files` 表（文本 ≤512KB
+  带内容可预览，二进制只元数据），原始 zip 存 `archive` 列可下载原包；zip-slip/条目/
+  体积防护；`__MACOSX` 等噪音任意层级忽略；前端详情「文件」tab 单列可展开文件树 +
+  点击弹**宽幅查看弹窗**（max-w-5xl，Esc 捕获阶段隔离只关弹窗）。复用 zipfile+PyYAML
 
 ## 2. 数据模型（`app/assets/models.py`）
 
@@ -38,9 +44,10 @@ assets 是 **Prompt 与 Skill 资产库**能力包（路由前缀 `/api/assets`�
 | 表 | 关键列 | 说明 |
 |---|---|---|
 | `assets_categories` | name(unique) / icon / color / kind / sort_order | 分类 |
-| `assets_items` | kind / title / summary / content / category_id(FK 可空) / tags(JSON) / variables(JSON) / favorite / status / usage_count / last_used_at / version | 资产条目；status: active/archived/trash |
+| `assets_items` | kind / title / summary / content / category_id(FK 可空) / tags(JSON) / variables(JSON) / favorite / status / usage_count / last_used_at / version / archive(LargeBinary) / archive_name | 资产条目；status: active/archived/trash；archive 存 Skill 原始 zip |
 | `assets_versions` | item_id(FK 级联) / version / title / summary / content / note | 版本快照（当前版本在链） |
 | `assets_usage_logs` | item_id(FK 级联) / action / created_at | copy/fill/export 使用日志 |
+| `assets_files` | item_id(FK 级联) / path / size / is_text / content | Skill 包内文件（文本 ≤512KB 带内容） |
 
 要点：
 - `variables` 由服务端在 create/update/restore/import 时经 `extract_variables` 重算——**别信任前端**
@@ -91,3 +98,4 @@ assets 是 **Prompt 与 Skill 资产库**能力包（路由前缀 `/api/assets`�
 - 使用趋势按 UTC 日期分桶（单用户本地部署偏差可忽略）；PG 下时区语义与 SQLite 有细微差异
 - 导入的历史版本会重排为连续版本链（原始 version 号不保留）
 - 单条导出 md 的 frontmatter 为 JSON 格式（YAML 子集），非标准 Jekyll frontmatter
+- Skill 包内二进制文件不入库内容（仅元数据），导出往返后二进制本体只保留在 archive 原包里

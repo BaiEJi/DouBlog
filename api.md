@@ -1199,6 +1199,40 @@ POST /api/assets/import                           # {items|[...], mode, dry_run}
 「kind+标题」在非回收站资产中匹配更新，内容变更产生版本）。`dry_run=true` 只校验不落库。
 响应 `{created, updated, errors:[{index,title,error}], categories_created, valid}`——
 单条非法进 errors 不阻断整体；载荷无 items / 超 500 条 / mode 非法 → 400。
+导出项含 Skill 包文件（`files:[{path,size,is_text,content}]`）与原始压缩包
+（`archive_name` + `archive_b64`），导入时随条目恢复（create 模式）。
+
+### 21.6 Skill 包导入（单文件 / zip）
+
+```
+POST /api/assets/skills/import       # multipart file：.md/.markdown/.txt 单文件（宽松）
+                                     # 或 .zip 压缩包（严格规格校验）
+GET  /api/assets/items/{id}/files    # 文件清单 [{id,path,size,is_text}]（树展示用）
+GET  /api/assets/files/{fid}         # 单文件内容（含 content；二进制 content=null）
+GET  /api/assets/items/{id}/archive  # 下载原始 zip（无原包 → 404）
+```
+
+**zip 规格（Agent Skills 惯例，`app/assets/skills.py`）**：必须恰好一个 `SKILL.md`
+（根或单层子目录均可，自动剥技能根目录前缀）；SKILL.md 需 YAML frontmatter 且
+必含 `name`（小写字母/数字/连字符 ≤64）与 `description`（非空 ≤1024）——导入后
+`title=name`、`summary=description`（**描述自动提取并先输出**，响应带 `skill`
+字段：`{name, description, entry, files[]}`）。防护：zip-slip（绝对路径/`..`）→
+400、条目 ≤200、解压总量 ≤20MB、单文件 ≤5MB、上传本体 ≤10MB；`__MACOSX/`、
+`.git/`、`__pycache__/`、`.DS_Store` 等打包噪音任意层级自动忽略。文本文件
+（按扩展名白名单）≤512KB 内容入库可预览，二进制只存元数据；原始 zip 保留
+（`archive` 列）供下载原包与导出往返。
+
+**单文件宽松**：有合规 frontmatter 走严格提取；无 frontmatter 也可导入
+（标题=文件名，摘要=首个非标题行）。复用：zipfile（标准库）+ PyYAML（既有依赖）。
+
+```json
+// POST /api/assets/skills/import → 201（节选）
+{"title":"pdf-report","kind":"skill","summary":"把文档批量转成 PDF…","files_count":5,
+ "archive_name":"pdf-report.zip",
+ "skill":{"name":"pdf-report","description":"把文档批量转成 PDF…","entry":"SKILL.md",
+          "files":["SKILL.md","reference/参数说明.md","scripts/convert.py"]}}
+```
+
 
 
 ## 22. Bookmarks API（书签与稍后阅读，独立顶级模块；23 端点，4 表 bookmarks_*）

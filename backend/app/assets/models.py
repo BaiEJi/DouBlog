@@ -14,7 +14,7 @@ hard 删除物理清除（级联版本与使用日志）。
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -82,6 +82,10 @@ class AssetItem(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1,
                                          comment='当前版本号')
+    archive: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True,
+                                                  comment='Skill 包原始 zip（可下载原包）')
+    archive_name: Mapped[str | None] = mapped_column(String(200), nullable=True,
+                                                     comment='原始压缩包文件名')
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
                                                         server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
@@ -94,6 +98,8 @@ class AssetItem(Base):
                             order_by='AssetVersion.version.desc()')
     usage_logs = relationship('AssetUsageLog', back_populates='item',
                               cascade='all, delete-orphan')
+    files = relationship('AssetFile', back_populates='item', cascade='all, delete-orphan',
+                         order_by='AssetFile.path')
 
     def to_dict(self, include_content: bool = False) -> dict:
         out = {
@@ -111,6 +117,8 @@ class AssetItem(Base):
             'last_used_at': _iso(self.last_used_at),
             'version': self.version,
             'versions_count': len(self.versions) if self.versions else None,
+            'files_count': len(self.files) if self.files else 0,
+            'archive_name': self.archive_name,
             'created_at': _iso(self.created_at),
             'updated_at': _iso(self.updated_at),
         }
@@ -171,3 +179,35 @@ class AssetUsageLog(Base):
             'action': self.action,
             'created_at': _iso(self.created_at),
         }
+
+
+class AssetFile(Base):
+    """Skill 包内文件（导入 zip 时解包；文本文件带内容可预览，二进制只存元数据）"""
+    __tablename__ = 'assets_files'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey('assets_items.id'),
+                                         nullable=False, index=True)
+    path: Mapped[str] = mapped_column(String(500), nullable=False,
+                                      comment='包内相对路径（已剥技能根目录前缀）')
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_text: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True,
+                                                comment='文本内容（≤512KB 入库，否则 NULL）')
+    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                        server_default=func.now())
+
+    item = relationship('AssetItem', back_populates='files')
+
+    def to_dict(self, include_content: bool = False) -> dict:
+        out = {
+            'id': self.id,
+            'item_id': self.item_id,
+            'path': self.path,
+            'size': self.size,
+            'is_text': bool(self.is_text),
+            'created_at': _iso(self.created_at),
+        }
+        if include_content:
+            out['content'] = self.content if self.is_text else None
+        return out

@@ -55,10 +55,11 @@ export default function ItemEditor({ item, categories, onClose, onSave }) {
   useEffect(() => {
     const onKey = e => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save() }
-      if (e.key === 'Escape') onClose()
+      // 捕获阶段阻断：编辑器叠在详情抽屉上时，Esc 只关编辑器
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
     }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
   })
 
   return (

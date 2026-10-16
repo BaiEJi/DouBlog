@@ -9,8 +9,8 @@ import PageHeader from '../shared/PageHeader'
 import { useDebouncedValue } from '../shared/useDebouncedValue'
 import {
   assetsBulkItems, assetsCategories, assetsCreateItem, assetsDeleteItem,
-  assetsDuplicateItem, assetsItems, assetsRestoreItem, assetsTags,
-  assetsUpdateItem, assetsUseItem,
+  assetsDuplicateItem, assetsImportSkill, assetsItems, assetsRestoreItem,
+  assetsTags, assetsUpdateItem, assetsUseItem,
 } from './api'
 import { KIND_META, Toast, copyText } from './kit'
 import ItemDetail from './components/ItemDetail'
@@ -34,7 +34,7 @@ function ItemCard({ item, selected, bulkMode, onOpen, onToggle, onAction, onTag 
     <div className={`relative flex flex-col p-4 rounded-2xl border transition-all group ${selected
       ? 'border-fuchsia-500/50 bg-fuchsia-500/[0.04]'
       : 'border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-white/[0.025] hover:border-black/[0.16] dark:hover:border-white/[0.18] hover:shadow-sm'}`}>
-      <div className="flex items-start gap-2">
+      <div className="flex items-start gap-2 flex-1">
       {bulkMode && (
         <input type="checkbox" checked={selected} onChange={() => onToggle(item.id)}
           className="w-4 h-4 accent-fuchsia-600 shrink-0 mt-0.5" aria-label={`选择 ${item.title}`} />
@@ -46,6 +46,11 @@ function ItemCard({ item, selected, bulkMode, onOpen, onToggle, onAction, onTag 
           {item.variables?.length > 0 && (
             <span className="px-1.5 py-0.5 rounded text-[10.5px] font-mono bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400">
               {'{{}}'} {item.variables.length}
+            </span>
+          )}
+          {item.files_count > 0 && (
+            <span className="px-1.5 py-0.5 rounded text-[10.5px] bg-sky-500/10 text-sky-700 dark:text-sky-400">
+              📦 {item.files_count}
             </span>
           )}
         </div>
@@ -104,7 +109,9 @@ export default function AssetsPage({ dark }) {
   const [showImport, setShowImport] = useState(false)
   const [toastMsg, setToastMsg] = useState(null)
   const [toastKind, setToastKind] = useState('')
+  const [uploading, setUploading] = useState(false)
   const searchRef = useRef(null)
+  const uploadRef = useRef(null)
 
   const toast = useCallback((msg, kind) => {
     setToastMsg(msg); setToastKind(kind || '')
@@ -154,6 +161,27 @@ export default function AssetsPage({ dark }) {
   }, [editing, detailId])
 
   const refresh = useCallback(() => { load(); loadLists() }, [load, loadLists])
+
+  const uploadSkill = async e => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || uploading) return
+    setUploading(true)
+    try {
+      const r = await assetsImportSkill(file)
+      if (r.success) {
+        const { skill, id } = r.data
+        // 描述先输出：toast 完整给出自动提取结果，再打开详情
+        toast(`已导入 ${skill.name}：${skill.description.slice(0, 60)}${skill.description.length > 60 ? '…' : ''}（${skill.files.length} 个文件）`)
+        refresh()
+        setDetailId(id)
+      } else {
+        toast(r.message || '导入失败', 'error')
+      }
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const openDetail = id => setDetailId(id)
 
@@ -355,6 +383,13 @@ export default function AssetsPage({ dark }) {
                 className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07]">
                 导入 / 导出
               </button>
+              <button type="button" onClick={() => uploadRef.current?.click()} disabled={uploading}
+                title="上传单个 .md 或 .zip 压缩包（zip 需含合规 SKILL.md）"
+                className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">
+                {uploading ? '解析中…' : '⬆ 上传 Skill'}
+              </button>
+              <input ref={uploadRef} type="file" accept=".zip,.md,.markdown,.txt" className="hidden"
+                onChange={uploadSkill} aria-label="上传 Skill 文件" />
               <button type="button" onClick={() => setEditing({})}
                 className="px-3.5 py-2 rounded-xl text-[13px] font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 transition-opacity">
                 ＋ 新建资产
