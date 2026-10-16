@@ -1230,3 +1230,57 @@ POST /api/assets/import                           # {items|[...], mode, dry_run}
 | `tags` | text | 标签 JSON 数组 |
 | `meta_data` | text | 扩展元数据 |
 | `created_at` / `updated_at` | datetime | 时间戳 |
+
+## 23. 开发者工具箱（devtoolbox，/api/devtoolbox）
+
+> 纯计算模块：无表、无后台线程。31 个前端工具中仅 4 类经后端（其余浏览器本地完成）。
+> 全部端点 require_basic（统一登录会话 / Basic），DouBlog 信封，同步 def。模块细节见 `docs/modules/devtoolbox.md`。
+
+### 23.1 能力声明
+
+`GET /api/devtoolbox/capabilities` → `{hash_algorithms[10], hmac_algorithms[6], charsets[9], max_text_bytes, max_qrcode_chars}`（前端选项据此渲染，保持两端一致）。
+
+### 23.2 哈希 / HMAC
+
+`POST /api/devtoolbox/hash`，body `{text, algorithm, hmac_key?}`（text ≤1MB）→ `{algorithm, hmac, hex}`。
+
+- algorithm 白名单：`md5 sha1 sha224 sha256 sha384 sha512 sha3_256 sha3_512 blake2b blake2s`
+- 带 `hmac_key` 时走 HMAC（仅 `md5 sha1 sha224 sha256 sha384 sha512`），hex 为 UTF-8 字节摘要小写
+- 错误：未知算法 400「不支持的算法 …」；HMAC+sha3 400「HMAC 不支持 …」；超限 400「输入超过 1MB 上限…」
+
+```bash
+curl -u admin:*** -X POST http://localhost:60100/api/devtoolbox/hash \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"hello","algorithm":"md5"}'
+# → {"success":true,...,"data":{"algorithm":"md5","hmac":false,"hex":"5d41402abc4b2a76b9719d911017c592"}}
+```
+
+### 23.3 字符集互转（乱码修复）
+
+`POST /api/devtoolbox/charset/convert`，body `{text, from_charset, to_charset}` → `{from, to, result, hex, bytes}`。
+
+- 语义：`text --encode(from)--> 中间字节(hex) --decode(to)--> result`；from=错误解码所用的字符集，to=真实字符集
+- 白名单：`utf-8 gbk gb18030 big5 shift_jis euc-kr latin-1 windows-1252 utf-16`
+- 错误：编码失败 400「无法用 gbk 编码该文本…换 gb18030/utf-8 试试」；解码失败 400「无法用 xx 解释字节…检查方向是否反了」
+
+```bash
+# UTF-8 内容被按 latin-1 显示成 "ä½ å¥½" 的修复：
+curl -u admin:*** -X POST .../charset/convert -d '{"text":"ä½ å¥½","from_charset":"latin-1","to_charset":"utf-8"}'
+# → data.result = "你好"，data.hex = "e4 bd a0 e5 a5 bd"
+```
+
+### 23.4 JSON ⇄ YAML
+
+`POST /api/devtoolbox/yaml/convert`，body `{direction: "json2yaml"|"yaml2json", content}` → `{result, direction}`。
+
+- json2yaml：safe_dump（allow_unicode 中文不转义、sort_keys=False 保键序、width=100）
+- yaml2json：safe_load → `json.dumps(indent=2, ensure_ascii=False, default=str)`（date/datetime → 字符串，空输入 → `{}`）
+- 错误：JSON 失败 400「JSON 解析失败：第 N 行第 M 列…」；YAML 失败 400 含解析器定位；direction 非法 400
+
+### 23.5 二维码生成
+
+`POST /api/devtoolbox/qrcode`，body `{content, scale=6, border=2, ecc="m"}` → `{svg, png_data_url, version, ecc}`。
+
+- content ≤2000 字符且非空白；ecc ∈ l(7%)/m(15%)/q(25%)/h(30%)；scale∈[1,32]、border∈[0,10] 越界钳制不报错
+- `svg` 为矢量字符串（可直接内嵌），`png_data_url` 为 data:image/png;base64
+- 错误：空内容 400「内容不能为空」；超长 400「内容超过 2000 字符…」；容量超限 400「内容超出二维码容量…」

@@ -198,6 +198,19 @@ const SYSTEMS = [
     ),
   },
   {
+    to: '/devtoolbox',
+    title: '开发者工具箱',
+    desc: '31 个工具 · JSON / Diff / 编码 / 哈希 / 正则',
+    box: 'bg-lime-500/10 text-lime-600 dark:text-lime-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M12.8 3.4a2.6 2.6 0 0 1 3.7 3.7l-1.9 1.9-3.7-3.7 1.9-1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+        <path d="m10.1 6.1-6.5 6.5a2.6 2.6 0 0 0-.7 1.3l-.5 2.7 2.7-.5a2.6 2.6 0 0 0 1.3-.7l6.5-6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="m9 11 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
     to: '/assets',
     title: '资产库',
     desc: 'Prompt · Skill 沉淀 · 变量填充 · 版本',

@@ -70,8 +70,9 @@ backend/
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
 │   ├── confcenter/            # 配置中心：扁平 KV + Redis 读穿缓存
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
+│   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
-└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
+└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
 ```
 
 **模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
@@ -321,6 +322,14 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - 无后台线程、无 ensure_migrations 实质逻辑（新表由 create_all 建）；无导入导出服务依赖（纯 JSON 附件流）
 - 模块细节（27 测试/导入导出语义/边界）见 `docs/modules/assets.md`
 
+## 10.53 开发者工具箱（devtoolbox，app/devtoolbox/；无表）
+
+- 纯计算模块：仅 router（无 start_background / ensure_migrations，不在 MODULES_WITH_DB）；5 端点全部 require_basic + 同步 def
+- 能力：哈希/HMAC（10 算法白名单）、字符集互转（9 字符集白名单，乱码修复语义 encode(from)→decode(to)）、JSON⇄YAML（PyYAML safe，date 转字符串）、二维码（segno，SVG+PNG data URL）
+- 上限：文本 ≤1MB、二维码内容 ≤2000 字符、scale/border/ecc 越界钳制；错误统一 ParamError 中文 message
+- 依赖：segno==1.6.6（纯 Python 零依赖，PNG 原生输出无需 Pillow）；PyYAML 与 practice 共用
+- 模块细节（31 工具清单/前端结构/37 测试/边界）见 `docs/modules/devtoolbox.md`
+
 ## 10.51 API Hub（统一 API 调用平台，app/apihub/）
 
 聚合异构上游 API 的能力包：models.py（apihub_* 七表，凭证 AES-256-GCM 密文落库，
@@ -365,7 +374,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 501 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 34；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 566 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 34；devtoolbox 37；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**

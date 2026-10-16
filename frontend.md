@@ -224,6 +224,10 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 单页 `/assets`（fuchsia 强调色，门户卡片入口）。PageHeader 注册模块侧栏三视图（资产库/回收站/统计）；资产库视图 = 页内左过滤栏（全部/★收藏/Prompt/Skill 快速过滤 + 分类树含计数 + 标签 chips，lg 以下隐藏）+ 工具栏（Ctrl+K 搜索/排序/批量/导入导出/新建）+ 卡片网格（kind 徽标、`{{}}` 变量数、标签、版本/使用数 footer、hover 操作；批量模式行内勾选）。
 详情为右滑抽屉（ItemDetail）：操作组（复制全文/编辑/导出 md·json/复制副本/收藏/归档/回收站）+ 三 tab——预览（`shared/md.js` 渲染与原文切换）、变量填充（{{变量}} 表单 + 实时填充预览 + 复制计使用，值记忆 localStorage）、版本（列表 + 行级 LCS diff + 恢复）。编辑器为弹窗（ItemEditor：kind 分段、实时变量检测 chips、版本备注、Ctrl+S/Esc）。导入面板先预检后执行（dry_run 结果展示、分类自动创建提示）；导出走 blob 下载解析 filename*。统计视图为纯 CSS 柱图（30 天趋势零依赖）。kit.jsx 提供 Toast/Modal/diffLines/copyText/KIND_META。
 
+### DevToolboxPage.jsx（devtoolbox/，开发者工具箱 UI）
+
+单页 `/devtoolbox`（lime 个性色，门户卡片入口，`?t=<工具id>` 深链）。侧栏两级导航（8 分类 → 31 工具）经 useModuleNavigation 注册；首页为搜索 + 分组卡片网格。31 个工具组件各自 React.lazy 独立分包（registry.js 为分组/名称/描述/组件单源）。绝大多数工具纯本地计算（隐私 + 即时）；仅哈希/字符集互转/JSON⇄YAML/二维码走 `api.js`（网络错误本地化中文并保留 cause）。kit.jsx 提供 UI 原子（ToolHead 的 `right` prop 为头部动作区、TwoPane 双栏编辑器、CopyBtn/Segmented/Check/Toast）；lib/ 为纯逻辑（diff 行级 LCS+行内 token 高亮+jsonDiff、cron 解析推算、color WCAG、misc 的 UTF-8 安全 Base64 与 uuid/nanoId/密码生成）。md-preview 直接复用 `shared/md.js`。模块细节见 `docs/modules/devtoolbox.md`。
+
 ### ConfigPage.jsx（config/，系统配置总入口 UI）
 
 单页 `/config`（门户卡片入口，teal 图标），全站唯一总配置页，三张卡（数据库、日志上报、登录账号）：

@@ -21,6 +21,7 @@ const MODULES = {
   config: { title: '系统配置', subtitle: '账号 · 数据库 · 日志上报', accent: 'teal', items: [{ key: 'config', label: '系统配置' }] },
   confcenter: { title: '配置中心', subtitle: 'namespace → key → value', accent: 'cyan', items: [{ key: 'entries', label: '配置管理' }] },
   clash: { title: 'Clash 代理', subtitle: '内核 · 订阅 · Tun · Mixin', accent: 'sky' },
+  devtoolbox: { title: '开发者工具箱', subtitle: 'JSON · Diff · 编码 · 哈希 · 正则', accent: 'lime' },
   assets: { title: '资产库', subtitle: 'Prompt · Skill · 变量 · 版本', accent: 'fuchsia' },
 }
 
@@ -35,6 +36,7 @@ const ACCENTS = {
   sky: 'bg-sky-500/10 text-sky-700 dark:text-sky-400',
   cyan: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
   slate: 'bg-slate-500/10 text-slate-700 dark:text-slate-300',
+  lime: 'bg-lime-500/12 text-lime-700 dark:text-lime-400',
   fuchsia: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400',
 }
 
