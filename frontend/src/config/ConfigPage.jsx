@@ -395,7 +395,7 @@ export default function ConfigPage() {
       <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报 · API Hub 出站代理"  />
 
 
-      <main className="w-full max-w-full mx-auto p-0 grid grid-cols-2 gap-6 items-start">
+      <main className="w-full max-w-full mx-auto p-0 grid grid-cols-1 gap-6 items-start">
         <DbCard />
         <LoggingCard />
         <ApiHubProxyCard />
