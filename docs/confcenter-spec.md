@@ -1,12 +1,17 @@
 # 配置中心（confcenter）模块规范
 
-> 2026-10-11。模块名 `confcenter`（配置中心）；表 `confcenter_entries`；前缀 `/api/confcenter`；前端 `/confcenter`（门户卡"配置中心"）。
+> 2026-10-17。模块名 `confcenter`（配置中心）；表 `confcenter_namespaces` / `confcenter_entries`；前缀 `/api/confcenter`；前端 `/confcenter`（门户卡"配置中心"）。
 
 ## 1. 数据模型（app/confcenter/models.py）
 
-一张扁平映射表，无中间实体：
+namespace 是独立实体；空间内仍为扁平 KV：
 
 ```python
+class ConfNamespace(Base):
+    __tablename__ = 'confcenter_namespaces'
+    namespace: str  # PrimaryKey（1–100）
+    created_at: DateTime
+
 class ConfEntry(Base):
     __tablename__ = 'confcenter_entries'
     namespace: str  # CompositePK 左（≤100）
@@ -17,6 +22,7 @@ class ConfEntry(Base):
     # 索引：namespace 单列（按 ns 浏览）
 ```
 
+- create_all 建表后，模块 `ensure_migrations(engine)` 从已有 KV 幂等登记 namespace；不改动原值，空空间可独立存在且重启不消失。
 - **namespace + key 唯一定位一个 value**；value = {type, data} 包装
 - 显式 type 的理由：裸存时 "123"/"[1,2]" 会被误判 JSON，读时无法还原"本来就是字符串"——显式声明消除歧义
 
@@ -24,12 +30,14 @@ class ConfEntry(Base):
 
 - 读：str → 客户端拿到字符串；json → 拿到结构化数据（响应里 data 为解析后的对象）
 - 写（PUT 同一 ns+key 即**整体覆盖**，type 允许变更）；type=json 且 data 非法 JSON → 400 拒绝
-- 删除：DELETE /{namespace}/{key}
+- 删除：DELETE /{namespace}/{key}；删除最后一项后空间仍保留。
+- 页面先创建空间，再选中该空间管理 KV；旧客户端直接 PUT 到新 namespace 时，创建 KV 的事务同时登记 namespace。
 
 ## 3. API 契约（全部 require_basic，Doublog 信封）
 
 ```
-GET    /api/confcenter/namespaces                 # distinct namespace + 每个 ns 的条目数
+GET    /api/confcenter/namespaces                 # 含空空间的 namespace 列表 + 每个 ns 的条目数
+POST   /api/confcenter/namespaces                 # JSON {namespace}；201 新建 / 409 重名 / 400 非法名称
 GET    /api/confcenter/entries?namespace=&q=&page=&page_size=   # 浏览（q 模糊匹配 key；省略 namespace=全部）
 GET    /api/confcenter/{namespace}/{key}          # 读单条：data 按解析后返回（str→字符串，json→结构）
 PUT    /api/confcenter/{namespace}/{key}          # upsert {type:'str'|'json', data}（201 新建 / 200 覆盖；json 非法 400）
@@ -55,18 +63,19 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 
 ## 5. 前端（frontend/src/confcenter/）
 
-- `ConfCenterPage.jsx`：左侧 namespace 列表（含计数）+ 右侧 KV 表格（key / 类型徽章 str|json / 值预览（json 折叠显示）/ 更新时间 / 操作）；新建/编辑 Modal（type 段选 str|json：str=多行文本原样；json=同一文本域失焦校验，非法标红禁止保存）；删除两步确认（第一步入列，3.5s 自动撤销）；搜索框 q（300ms 防抖）+ 分页
+- `ConfCenterPage.jsx`：先创建 namespace（独立弹窗，名称校验与重名提示），左侧列表选择空间（含计数，无“全部”项，`?namespace=` 保持刷新后的选择）+ 右侧当前空间 KV 表格（key / 类型徽章 str|json / 值预览（统一单行，点击查看完整值）/ 更新时间 / 操作）；新建/编辑 Modal（namespace 只读绑定当前空间，输入 key/value；type 段选 str|json：str=多行文本原样；json=同一文本域失焦校验，非法标红禁止保存）；删除两步确认（第一步入列，3.5s 自动撤销）；搜索框 q（300ms 防抖）+ 分页；切换空间会清空搜索并回到第一页，异步旧结果不覆盖新空间
 - 顶部 Redis 状态条三态（调 cache/status）：绿=已启用（探活可达）/ 琥珀=已配置但连接异常（降级直连）/ 灰=未启用，附 url_masked 与命中计数；未配置时按钮文案「去配置」
 - 缓存配置 Modal（GET /cache/config 回显，密码不回显、留空=沿用已存）：enabled/host/port/db/password/ttl + 测试连接 + 保存 + 清空缓存
 - `api.js` 走 apiFetch + unwrap（模块内全部端点均有包装，组件不裸调 fetch）；个性色 **cyan**；遵循 docs/ui-baseline.md
-- 值预览：str 显示原文（截断 + title 全文）；json 显示 pretty（≤3 行折叠）
+- 值预览：中性浅底的等高单行预览，长值省略，多行字符串以 ↵ 标识换行，空字符串明确标注；点击打开只读弹窗查看完整原文或格式化 JSON，可直接进入编辑。JSON 字符串标量保留引号。表格固定列宽，长 key 省略并支持悬停查看。
 
-## 6. 测试（tests/confcenter/，39 例，FakeRedis 内存假客户端——不连真实 Redis）
+## 6. 测试（tests/confcenter/，46 例，FakeRedis 内存假客户端——不连真实 Redis）
 
 - CRUD：upsert 新建 201/覆盖 200/读回（str 保字符串形状、json 解析回对象）/**type 变更**（json→str 后读回字符串）/删除/404
 - 校验：非法 type 400；json 非法 400（"[1,2" 拒绝）；key/namespace 非法字符与超长 400；含 `/` 的段结构性 404
 - **缓存五路径**：命中（不查库、hits+1）/未命中回填（SETEX 键/TTL/载荷）/写删后失效（DEL 被调用）/未启用直连 DB（零交互零计数）/连接抛错静默降级（进程内只 warn 一次，test 探活自愈）；另覆盖 损坏载荷视同未命中、redis 库缺失降级
 - 缓存管理端点：配置落盘与回显、非法配置 400、test（候选配置试连）、flush 前缀 SCAN+DEL（不误伤同 db 其他业务键）、status 密码掩码
+- namespace：独立创建、重名 409、字符/长度/鉴权校验、重启与最后 KV 删除后仍保留、旧 PUT 兼容、相同 key 跨空间隔离、历史回填幂等
 - 浏览：namespaces 聚合、entries 过滤分页（非法分页参数回退默认）
 - 鉴权：无凭据/错凭据 401（全端点）
 

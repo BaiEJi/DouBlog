@@ -40,7 +40,7 @@
 1. **端口**：后端 `60100`、前端 `60101`；**api-hub 子服务 `8300`**（见第 17 条）
 2. **凭据与登录**：凭据存 **system_accounts 表**（PBKDF2-SHA256 哈希，system 模块播种/管理，`config.py` 的 auth_username/auth_password 仅作首次播种默认与中间态回退）；管理页 `/config` 登录账号卡可改用户名/密码（PUT /api/admin/account，验旧密码）。**统一登录**：前端 `/login` 登录一次 → HttpOnly 会话 Cookie（30 天，HMAC secret_key 在 config.py）全站生效；`require_basic` 依赖=Cookie 优先、Basic 兼容（API/测试通道）；前端 bundle **不持有任何凭据**（`shared/client.js` 仅 credentials:include + 401 跳 /login）；免认证例外：图片 GET / sdklogs 摄入 / diary 分享 / apihub gw(sk-)；vault 主密码解锁是加密步骤不是登录
 3t. **请求级 trace**：main.py 纯 ASGI 中间件每请求绑 lizysdk trace_id（响应头 X-Trace-Id 透传/回写；所有日志行自动携带——经 shared/logging_setup 的 LogRecord 工厂注入，勿用 handler filter 方案，SDK 队列 handler 会绕过）
-3h. **统一侧栏/内容画布（2026-10-13；2026-10-17 移除移动端）**：全部业务模块由 App 的 ModuleFrame 包入 `shared/ModuleShell.jsx`（220px 常驻 sticky 侧栏（`h-screen`）+ 多级菜单）；PageHeader 为 tabs 注册适配器，不再绘制顶栏。页面使用 `useModuleNavigation` 注册视图/徽标/插槽；内容全局留白只在 ModuleShell 提供（`max-w-[1700px] px-10 py-8`），禁止内页再包一层全局 padding。门户/登录/公开分享独立外壳。gamemap 画布须保留显式容器高度与明暗主题变量；导航不得重挂正文/画布组件。
+3h. **统一侧栏/内容画布（2026-10-13；2026-10-17 移除移动端）**：全部业务模块由 App 的 ModuleFrame 包入 `shared/ModuleShell.jsx`（180px 紧凑 sticky 侧栏（`h-screen`，可折叠为 56px 图标栏，localStorage `doublog_sidebar_collapsed` 记忆）+ 多级菜单）；PageHeader 为 tabs 注册适配器，不再绘制顶栏。页面使用 `useModuleNavigation` 注册视图/徽标/插槽；内容全局留白只在 ModuleShell 提供（`max-w-[1700px] px-10 py-8`），禁止内页再包一层全局 padding。门户/登录/公开分享独立外壳。gamemap 画布须保留显式容器高度与明暗主题变量；导航不得重挂正文/画布组件。
 3. **双数据库**：运行时后端由 `data/db_config.json` 决定（sqlite/postgres）；切换走 `POST /api/admin/database/switch`——**只换连接不迁移数据**（空库自动建表播种，PG 库不存在自动创建；dev 模式 touch `_reload_stamp.py` 触发 uvicorn 重启，生产需手动重启）；**前端总配置页 `/config`**（数据库 + 日志上报）与 `/admin` 均可操作
 3z. **FastAPI 骨架契约**（详见 `docs/fastapi-migration.md`，改骨架前必读）：`app/db.py`（`Base` 自带 `Model.query` 描述符 / scoped session / `run_db`）/ `app/shared/`（`api_response` 信封、`require_basic` 依赖、`pools.get_pool`）；**模块包三契约**：`__init__.py` 导出 `router` + 可选 `start_background(app)`（`app.state.testing` 空转）+ 可选 `ensure_migrations(engine)`；模块运行态挂 `app.state.<mod>`（禁模块级单例，测试多 app）；`init_db` 顺序 = 存量 RENAME **先于** create_all；Flask 原版快照 `backend/tools/flask-snapshot/`（只读）；压测工具 `backend/tools/bench/`（`launch.py` 支持 flask/fastapi 两实现对照）
 4. **虚拟根节点**：id=0 的 Post 行；所有查询过滤 `id != 0`；建库时自动播种（`db.py`）
@@ -62,7 +62,7 @@
 15. **响应超 1KB 自动 gzip**（main.py `GZipMiddleware(minimum_size=1024, compresslevel=6)`）
 15a. **SQLite WAL 坑**：`journal_mode=WAL` 必须在 `init_db` 无并发窗口强制设置并校验返回值（并发下切换会**静默失败**回到 delete 模式 → 读写互斥锁死）；每连接 PRAGMA（busy_timeout/synchronous/cache_size/temp_store）走 connect 监听器。压测工具在 `backend/tools/sdklogs_loadtest.py`（改写入/存储路径后跑一遍对照）
 16. **测试完全自包含**（临时 SQLite，无外部依赖）；PG 切换集成测试可选 `pip install pgserver`（未装自动跳过）
-17y. **配置中心模块**（app/confcenter/ + /confcenter 页，cyan）：扁平 KV namespace→key→value；value={type:str|json,data} 显式类型（json 写校验 400、type 可变更）；Redis 读穿缓存三态降级（库缺失/未启用/连接失败→直连 DB，只 warn 一次）；缓存配置 data/redis_config.json；**字面量路由必须先于 /{ns}/{key} 注册**；测试 39 例（FakeRedis）
+17y. **配置中心模块**（app/confcenter/ + /confcenter 页，cyan）：独立 namespace（confcenter_namespaces；POST /namespaces 创建；空空间保留）→ 空间内 KV；启动迁移回填已有 namespace，旧 PUT KV 兼容自动登记；value={type:str|json,data} 显式类型（json 写校验 400、type 可变更）；Redis 读穿缓存三态降级（库缺失/未启用/连接失败→直连 DB，只 warn 一次）；缓存配置 data/redis_config.json；**字面量路由必须先于 /{ns}/{key} 注册**；测试 46 例（含 namespace 生命周期/迁移；FakeRedis）
 17z. **Todo 模块**（app/todo/ + frontend/src/todo/，MyTodo 迁入）：四象限待办+迁移链+规律生活计划（物化任务）+统计+邮件提醒；表 todo_* 五表（users/token 鉴权未迁，走统一登录）；前缀 /api/todo（信封）；真实数据已导入（tools/import_mytodo.py，2500 任务）；**extensions/todo/{chrome-extension,android} 为平迁客户端，仍指向旧服务 8070+token 协议**（未改造，见 docs/modules/todo.md）；测试 53 例；timeutil 已上移 `app/shared/timeutil.py`（todo 与 practice 共用）；前端 kit/charts 被 gamemap/practice/steamidler 跨模块引用
 17m. **Gamemap 模块**（app/gamemap/ + src/gamemap/，2026-10-12 自 todo 拆出，前缀 /api/gamemap）：剧情图谱 13 表 gamemap_*；保留 antd6/@xyflow 技术栈——**根 main.jsx 无 StrictMode**（xyflow dev 双渲染坑，勿恢复）、画布勿改回内置 EdgeRenderer；ensure_migrations=7 默认关系类型种子+附件目录；测试 34 例（docs/modules/gamemap.md）
 17p. **Practice 模块**（app/practice/ + src/practice/，2026-10-12 自 todo 拆出，前缀 /api/practice）：刷题记录+艾宾浩斯复习+一键抓题（LeetCode/洛谷），6 表 practice_*；时区设置跨模块复用 todo（app.todo.services.get_settings）；测试 61 例——20 轮评审 100 问题修复（docs/modules/practice.md）
@@ -76,6 +76,7 @@
 ### 本机环境注意（Windows）
 
 - 后端虚拟环境：`backend/venv`（Windows 下 `venv/Scripts/python.exe`）
+- Windows 跑后端回归时设置进程环境 `PYTHONUTF8=1`（xdist 子进程同样继承），避免 Clash 测试生成含 emoji 的脚本时被系统默认 GBK 编码阻断。
 - shell 脚本兼容 Git Bash（lsof 缺失时自动回退 netstat）
 - PG 切换的集成测试依赖 venv 内 `pgserver`（内嵌 PostgreSQL，`pip install pgserver`；注意其默认在宿主 Python 进程退出时停止 PG，长跑场景需常驻进程保活）
 
@@ -88,7 +89,7 @@
 ```bash
 cd backend
 ./venv/Scripts/python.exe run.py            # 启动（60100，uvicorn 单进程，dev 自动 --reload）—— Windows Git Bash
-./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（637 用例，含 clash 34；并行 ≈2 分钟；xdist 已装入 venv）
+./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（653 用例，含 clash 34；并行 ≈2 分钟；xdist 已装入 venv）
 ./venv/Scripts/pip.exe install -r requirements.txt
 ```
 

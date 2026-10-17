@@ -1,4 +1,4 @@
-"""配置中心数据模型：一张扁平 KV 映射表（无中间实体）。
+"""配置中心数据模型：独立 namespace + 空间内的扁平 KV 映射。
 
 value = {type, data} 包装：namespace+key 唯一定位一个 value；
 显式 type 的理由：裸存时 "123"/"[1,2]" 会被误判 JSON，读时无法还原
@@ -34,3 +34,12 @@ class ConfEntry(Base):
         # 按 ns 浏览的单列索引（复合主键虽可作前缀，显式建索引与规范一致）
         Index('ix_confcenter_entries_namespace', 'namespace'),
     )
+
+
+class ConfNamespace(Base):
+    """命名空间独立存在，删除最后一个 KV 后仍保留。"""
+    __tablename__ = 'confcenter_namespaces'
+
+    namespace: Mapped[str] = mapped_column(String(100), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now())

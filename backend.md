@@ -69,7 +69,7 @@ backend/
 │   ├── gamemap/               # 剧情图谱（gamemap 迁入）：13 表 + routers 9 组 + response_cache
 │   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
-│   ├── confcenter/            # 配置中心：扁平 KV + Redis 读穿缓存
+│   ├── confcenter/            # 配置中心：独立 namespace + KV + 幂等回填 + Redis 读穿缓存
 │   ├── bookmarks/            # 书签与稍后阅读：分类树/队列/快照/死链/导入导出
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
 │   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
@@ -125,6 +125,8 @@ backend/
 - `init_db` 启动顺序：**存量表 RENAME（必须先于 create_all，否则 create_all 先建空新表导致 RENAME 永不触发）** → `create_all` → 逐模块 `ensure_migrations(engine)` 列级钩子 → 播种虚拟根
 - RENAME 条件：旧表存在且新表不存在 → `ALTER TABLE 旧 RENAME TO 新`（SQLite/PG 同语法；旧索引随表改名保留，功能等价）
 - 知识库幂等迁移（`app/blog/services/migrations.py::ensure_migrations`）：blog_posts 缺 `workspace_id`/`last_viewed_at` 列补列建索引；无知识库时建"默认知识库"并拷贝虚拟根 `children_order`；NULL 归属全部回填默认库
+
+- 配置中心幂等回填（`app/confcenter/migrations.py::ensure_migrations`）：`create_all` 建立 `confcenter_namespaces` 后，从已有 `confcenter_entries` 登记所有缺失 namespace；不改动原 KV，独立空空间在重启后仍保留。
 
 ### 3.4 初始化与双后端（`db.py`）
 
@@ -387,7 +389,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 616 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 39；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 653 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 46；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**

@@ -43,7 +43,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
 ├── shared/                         # 公共层
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
-│   ├── ModuleShell.jsx             # 全模块公共侧栏（常驻 sticky）、递归多级菜单、统一内容画布
+│   ├── ModuleShell.jsx             # 全模块公共侧栏（紧凑 sticky，可折叠图标栏）、递归多级菜单、统一内容画布
 │   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
@@ -72,7 +72,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
 ├── practice/                      # /practice（刷题）：PracticePage（公共 ModuleShell 侧栏）+ PracticeView + components/
 ├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
-├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（KV 浏览/编辑/Redis 状态与配置）
+├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（创建/切换 namespace、空间内 KV、Redis 状态与配置）
 ├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
@@ -235,6 +235,14 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
 - `config/api.js` 走 apiFetch；AdminPage 的数据库切换 UI 保留（同一批后端端点的旧入口），总配置页为规范入口
 
+### ConfCenterPage.jsx（confcenter/，namespace 与 KV）
+
+首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，点击进入后只查看和搜索该空间的 KV。新建 KV 绑定当前空间，namespace 只读；空空间持久保存，选中项由 `?namespace=` 保持。切换空间重置搜索/分页，并丢弃旧请求的异步结果。表格使用固定列宽和等高单行值预览，长 key/value 省略；点击预览弹窗查看完整原文或格式化 JSON，空字符串明确标注，JSON 字符串标量保留引号，可从预览进入编辑。Redis 配置入口保留；模型、接口及迁移详见 `docs/modules/confcenter.md`。
+
+### TodoPage.jsx（todo/，今日 / 特定日期四象限）
+
+今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白，标题和工具栏外的剩余高度由两行两列等高看板占满。每象限固定显示 8 行空间，空内容不收缩，超出行数在象限内滚动；任务标题与标记单行，长文省略，说明和完成备注通过悬停或编辑查看。菜单使用 portal 避免被滚动容器裁切。其余视图保留原来的页面流布局；模块细节见 `docs/modules/todo.md`。
+
 ### bookmarks（书签与稍后阅读，/bookmarks，个性色 orange）
 - `BookmarksPage` → `BookmarksView`（公共 ModuleShell 侧栏：收藏夹/稍后阅读(徽标=待读数)/统计/工具/回收站）；详情与收录/编辑为覆盖层（state 切换，同 practice 先例）
 - 收藏夹：筛选栏（搜索防抖/分类树拍平下拉/标签/排序）+ 状态 chips + 批量操作条（选中后出现：已读/未读/星标/移动分类/加标签/回收站）+ 行卡片（favicon 回退字母块/状态徽章/链路状态点/快照标记）+ 分页
@@ -275,9 +283,9 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 **改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
 
-- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`）；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
+- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。180px 紧凑左侧栏常驻 sticky（`h-screen`），顶部按钮可折叠为 56px 图标栏；一级菜单行高 32px、子菜单 28px，行间距 2px。折叠状态存于 localStorage `doublog_sidebar_collapsed`，刷新及跨模块导航沿用；图标保留名称提示、选中态、门户与主题入口，点击含子菜单的图标会展开侧栏。侧栏内容独立滚动，折叠时保留菜单及 sidebar 插槽挂载（隐藏子项和插槽），正文不重挂；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
-- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心 namespace 区为内容过滤器。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
+- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
 - **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
 - **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了

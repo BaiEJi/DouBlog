@@ -4,6 +4,7 @@
  * 乐观更新 + 失败回滚刷新），样式换 DouBlog 档位。
  */
 import { memo, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor,
   pointerWithin, rectIntersection, useDroppable, useSensor, useSensors,
@@ -13,23 +14,47 @@ import { CSS } from '@dnd-kit/utilities'
 
 import { QUADRANT_DISPLAY_ORDER, Dot, quadrantMeta, flagsForQuadrant, adjustForDark } from '../kit'
 
+const VISIBLE_TASK_ROWS = 8
+const TASK_ROW_GAP = 4
+
 // ─── 任务卡 ─────────────────────────────────────────────────
 
-function CardMenu({ task, onEdit, onReschedule, onMoveQuadrant, onDelete, onClose }) {
+function CardMenu({ anchorRef, task, onEdit, onReschedule, onMoveQuadrant, onDelete, onClose }) {
   const [confirmDel, setConfirmDel] = useState(false)
   const ref = useRef(null)
   useEffect(() => {
-    // 点击菜单/触发按钮以外区域时收起（parent = 含 ⋯ 按钮的容器）
     const onDoc = e => {
-      const scope = ref.current?.parentElement
-      if (scope && !scope.contains(e.target)) onClose()
+      if (!ref.current?.contains(e.target) && !anchorRef.current?.contains(e.target)) onClose()
+    }
+    const onScroll = e => {
+      if (!(e.target instanceof Node && ref.current?.contains(e.target))) onClose()
+    }
+    const onKey = e => {
+      if (e.key === 'Escape') { onClose(); anchorRef.current?.focus() }
     }
     document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [onClose])
+    document.addEventListener('keydown', onKey)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onClose)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onClose)
+    }
+  }, [anchorRef, onClose])
+  const positionMenu = node => {
+    ref.current = node
+    if (!node || !anchorRef.current) return
+    const anchor = anchorRef.current.getBoundingClientRect()
+    const top = anchor.bottom + node.offsetHeight + 8 <= window.innerHeight
+      ? anchor.bottom + 4 : anchor.top - node.offsetHeight - 4
+    node.style.top = `${Math.max(8, top)}px`
+    node.style.left = `${Math.max(8, Math.min(window.innerWidth - node.offsetWidth - 8, anchor.right - node.offsetWidth))}px`
+  }
   const item = 'flex items-center gap-2 w-full px-3 h-8 text-left text-[13px] rounded-lg transition-colors '
-  return (
-    <div ref={ref} className="absolute right-0 top-8 z-30 w-40 p-1 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#262524] shadow-lg">
+  return createPortal(
+    <div ref={positionMenu} data-todo-menu className="fixed left-0 top-0 z-50 w-40 max-h-[calc(100vh-16px)] overflow-y-auto p-1 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#262524] shadow-lg" onPointerDown={e => e.stopPropagation()}>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
         onClick={() => { onClose(); onEdit(task) }}>编辑</button>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
@@ -58,7 +83,7 @@ function CardMenu({ task, onEdit, onReschedule, onMoveQuadrant, onDelete, onClos
         <button className={item + 'text-red-600 dark:text-red-400 hover:bg-red-500/10'}
           onClick={() => setConfirmDel(true)}>删除</button>
       )}
-    </div>
+    </div>, document.body,
   )
 }
 
@@ -66,70 +91,47 @@ export const TaskCardContent = memo(function TaskCardContent({
   task, focused, onToggle, onEdit, onDelete, onMoveQuadrant, onReschedule, className = '', style, dark,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuButtonRef = useRef(null)
   const done = task.status === 'done'
   const catColor = task.category_color
-  // 类别背景色：标题色 + 低透明度，深浅色主题下均可读
   const tintStyle = catColor
     ? { background: (dark ? adjustForDark(catColor) : catColor) + '1f', borderColor: (dark ? adjustForDark(catColor) : catColor) + '45' }
     : {}
+  const detail = [task.title, task.description, done && task.completion_note && `完成备注：${task.completion_note}`].filter(Boolean).join('\n')
 
   return (
-    <div className={'relative flex items-start gap-2 rounded-xl border px-2.5 py-2 transition-colors ' +
-        (className) +
+    <div title={detail} className={'todo-task-card relative flex h-full min-h-0 min-w-0 items-center gap-2 whitespace-nowrap rounded-lg border px-2.5 transition-colors ' +
+        className +
         (done ? ' opacity-60 ' : '') +
         (focused ? ' ring-2 ring-indigo-400/70 ' : '') +
         ' border-black/[0.07] dark:border-white/[0.08] bg-white dark:bg-white/[0.03]'}
       style={{ ...tintStyle, ...style }}>
-      <button onClick={() => onToggle(task)} aria-label="完成/重开任务" title={done ? '重开任务' : '完成任务'}
-        className={'mt-[1px] w-[18px] h-[18px] rounded-[5px] border flex items-center justify-center shrink-0 transition-colors ' +
+      <button type="button" onClick={() => onToggle(task)} aria-label="完成/重开任务" title={done ? '重开任务' : '完成任务'}
+        className={'w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 transition-colors ' +
           (done
             ? 'bg-indigo-500 border-indigo-500 text-white'
             : 'border-black/25 dark:border-white/30 hover:border-indigo-400 dark:hover:border-indigo-400')}>
-        {done && (
-          <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>
-        )}
+        {done && <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>}
       </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={'text-sm leading-5 break-words ' + (done ? 'line-through text-stone-400' : '')}>{task.title}</span>
-        </div>
-        {task.description && (
-          <div className="text-[11.5px] text-stone-400 dark:text-stone-500 mt-0.5 line-clamp-1">{task.description}</div>
-        )}
-        {done && task.completion_note && (
-          <div className="text-[11.5px] text-stone-400 dark:text-stone-500 mt-0.5 line-clamp-1">📝 {task.completion_note}</div>
-        )}
-        {(task.migrated_count > 0 || task.category_name || task.plan_id) && (
-          <div className="flex items-center gap-1.5 flex-wrap mt-1">
-            {task.plan_id && (
-              <span className="inline-flex items-center rounded-md px-1.5 h-4.5 text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">生活</span>
-            )}
-            {task.migrated_count > 0 && task.days_procrastinated != null && (
-              <span title={`已迁移 ${task.migrated_count} 次，最初属于 ${task.original_date ?? '?'}`}
-                className="inline-flex items-center rounded-md px-1.5 h-[18px] text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">
-                拖{task.days_procrastinated}天
-              </span>
-            )}
-            {task.category_name && (
-              <span className="inline-flex items-center gap-1 text-[10.5px] text-stone-500 dark:text-stone-400">
-                <Dot color={task.category_color ?? '#94a3b8'} size={7} />{task.category_name}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-      <div className="relative shrink-0">
-        <button onClick={e => { e.stopPropagation(); setMenuOpen(v => !v) }} aria-label="任务操作"
-          className={'w-6 h-6 rounded-lg flex items-center justify-center transition-colors ' +
-            (menuOpen ? 'bg-black/[0.07] dark:bg-white/[0.12] text-stone-700 dark:text-stone-200' : 'text-stone-400 hover:bg-black/[0.05] dark:hover:bg-white/10')}>
-          <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.4" /><circle cx="10" cy="10" r="1.4" /><circle cx="15.5" cy="10" r="1.4" /></svg>
-        </button>
-        {menuOpen && (
-          <CardMenu task={task}
-            onEdit={onEdit} onReschedule={onReschedule} onMoveQuadrant={onMoveQuadrant} onDelete={onDelete}
-            onClose={() => setMenuOpen(false)} />
-        )}
-      </div>
+      <span className={'min-w-0 flex-1 truncate text-sm leading-5 ' + (done ? 'line-through text-stone-400 dark:text-stone-500' : '')}>{task.title}</span>
+      {task.plan_id && <span className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">生活</span>}
+      {task.migrated_count > 0 && task.days_procrastinated != null && (
+        <span title={`已迁移 ${task.migrated_count} 次，最初属于 ${task.original_date ?? '?'}`}
+          className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">拖{task.days_procrastinated}天</span>
+      )}
+      {task.category_name && (
+        <span title={task.category_name} className="min-w-0 max-w-24 flex items-center gap-1 text-[10.5px] text-stone-500 dark:text-stone-400">
+          <Dot color={task.category_color ?? '#94a3b8'} size={7} /><span className="truncate">{task.category_name}</span>
+        </span>
+      )}
+      <button ref={menuButtonRef} type="button" onClick={e => { e.stopPropagation(); setMenuOpen(v => !v) }} aria-label="任务操作" aria-expanded={menuOpen} title="任务操作"
+        className={'shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors ' +
+          (menuOpen ? 'bg-black/[0.07] dark:bg-white/[0.12] text-stone-700 dark:text-stone-200' : 'text-stone-400 hover:bg-black/[0.05] dark:hover:bg-white/10')}>
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.4" /><circle cx="10" cy="10" r="1.4" /><circle cx="15.5" cy="10" r="1.4" /></svg>
+      </button>
+      {menuOpen && <CardMenu anchorRef={menuButtonRef} task={task}
+        onEdit={onEdit} onReschedule={onReschedule} onMoveQuadrant={onMoveQuadrant} onDelete={onDelete}
+        onClose={() => setMenuOpen(false)} />}
     </div>
   )
 })
@@ -141,7 +143,7 @@ function SortableTaskCard(props) {
     data: { type: 'task', quadrant },
   })
   return (
-    <div ref={setNodeRef}
+    <div ref={setNodeRef} className="todo-task-row min-h-0 min-w-0"
       id={`task-${task.id}`}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
       {...attributes}
@@ -161,43 +163,37 @@ function QuadrantColumn({ block, tasks, softLimit, focusedId, cardHandlers, onAd
   const m = quadrantMeta(block.quadrant)
   const pendingCount = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length
   const overLimit = softLimit > 0 && pendingCount > softLimit
+  const limitHint = overLimit ? `该象限已有 ${pendingCount} 个待办，超过建议上限 ${softLimit}，考虑迁移或委派部分任务` : undefined
 
   return (
-    <div className={'rounded-2xl border p-4 transition-all bg-white dark:bg-white/[0.025] ' +
+    <section aria-label={block.label} data-quadrant={block.quadrant} className={'todo-quadrant flex min-h-0 min-w-0 flex-col rounded-2xl border p-3 transition-colors bg-white dark:bg-white/[0.025] ' +
       (dragOver
         ? 'border-indigo-400/70 ring-2 ring-indigo-400/30'
         : 'border-black/[0.07] dark:border-white/[0.07]')}>
-      <div className="h-[3px] rounded-full mb-3" style={{ background: m.color }} />
-      <div className="flex items-center gap-2 mb-3">
-        <span className={'text-sm font-semibold ' + m.text}>{block.label}</span>
-        <span className="text-[11px] text-stone-400">{block.subtitle}</span>
-        <span className="ml-auto min-w-[20px] h-5 px-1.5 rounded-full text-[11px] flex items-center justify-center tabular-nums text-white"
-          style={{ background: overLimit ? '#ef4444' : m.color }}>
-          {pendingCount}
-        </span>
+      <div className="h-[3px] shrink-0 rounded-full mb-1.5" style={{ background: m.color }} />
+      <div className="flex h-5 shrink-0 min-w-0 items-center gap-2 mb-1.5 whitespace-nowrap">
+        <span className={'shrink-0 text-sm font-semibold ' + m.text}>{block.label}</span>
+        <span className="min-w-0 flex-1 truncate text-[11px] text-stone-400 dark:text-stone-500" title={block.subtitle}>{block.subtitle}</span>
+        {overLimit && <span title={limitHint} aria-label={limitHint} className="shrink-0 text-xs text-orange-600 dark:text-orange-400">⚠</span>}
+        <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[11px] flex items-center justify-center tabular-nums text-white" title={limitHint}
+          style={{ background: overLimit ? '#ef4444' : m.color }}>{pendingCount}</span>
       </div>
-      {overLimit && (
-        <div className="mb-2.5 rounded-lg px-2.5 py-1.5 text-[11px] leading-relaxed bg-orange-500/10 text-orange-700 dark:text-orange-300">
-          该象限已有 {pendingCount} 个待办，超过建议上限 {softLimit}，考虑迁移或委派部分任务
-        </div>
-      )}
-      <div ref={setNodeRef} className="flex flex-col gap-2 min-h-[76px]">
+      <div ref={setNodeRef} className="todo-task-list grid flex-1 min-h-0 min-w-0 content-start grid-cols-1 overflow-y-auto overflow-x-hidden"
+        style={{ gridAutoRows: `calc((100% - ${TASK_ROW_GAP * (VISIBLE_TASK_ROWS - 1)}px) / ${VISIBLE_TASK_ROWS})`, gap: TASK_ROW_GAP, scrollbarGutter: 'stable' }}>
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(t => (
             <SortableTaskCard key={t.id} task={t} quadrant={block.quadrant} focused={focusedId === t.id} dark={dark} {...cardHandlers} />
           ))}
         </SortableContext>
         {tasks.length === 0 && (
-          <div className="flex flex-col items-center gap-2.5 py-5 rounded-xl border border-dashed border-black/[0.1] dark:border-white/[0.12]">
-            <span className="text-[11.5px] text-stone-400">这个象限还是空的</span>
+          <div style={{ gridRow: `span ${VISIBLE_TASK_ROWS}` }} className="flex flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-black/[0.1] dark:border-white/[0.12]">
+            <span className="text-[11.5px] text-stone-400 dark:text-stone-500">这个象限还是空的</span>
             <button onClick={() => onAddFirst(block.quadrant)}
-              className="px-3 h-7 rounded-lg text-xs text-indigo-600 dark:text-indigo-400 border border-dashed border-indigo-500/40 hover:bg-indigo-500/10 transition-colors">
-              添加第一个任务
-            </button>
+              className="px-3 h-7 rounded-lg text-xs text-indigo-600 dark:text-indigo-400 border border-dashed border-indigo-500/40 hover:bg-indigo-500/10 transition-colors">添加第一个任务</button>
           </div>
         )}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -347,7 +343,7 @@ export default function QuadrantBoard({ data, focusedId, cardHandlers, onAddFirs
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="grid grid-cols-2 gap-3">
+      <div className="todo-quadrant-board grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-3">
         {QUADRANT_DISPLAY_ORDER
           .map(q => data.quadrants.find(b => b.quadrant === q))
           .filter(Boolean)

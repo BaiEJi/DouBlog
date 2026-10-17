@@ -23,7 +23,7 @@ from sqlalchemy import bindparam, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.confcenter import cache
-from app.confcenter.models import ConfEntry
+from app.confcenter.models import ConfEntry, ConfNamespace
 from app.config import settings
 from app.db import db, run_db
 from app.shared.auth import require_basic
@@ -48,6 +48,14 @@ TYPES = ('str', 'json')
 # WHERE 全部走绑定参数（值永不拼进 SQL），路由层另有 NAME_RE 白名单双保险。
 
 _TBL = ConfEntry.__table__
+_NS_TBL = ConfNamespace.__table__
+
+# 空间登记兼容旧版直接 PUT KV 的调用；只在创建新 KV 时执行。
+_REGISTER_NS = _NS_TBL.insert().from_select(
+    ['namespace'],
+    select(bindparam('new_ns', type_=_NS_TBL.c.namespace.type)).where(
+        ~select(_NS_TBL.c.namespace).where(
+            _NS_TBL.c.namespace == bindparam('new_ns')).exists()))
 
 #: 单条读：{type, data, updated_at}
 _GET_ROW = select(
@@ -72,10 +80,12 @@ _DELETE_ROW = _TBL.delete().where(
     _TBL.c.key == bindparam('k'),
 )
 
-#: namespaces 聚合（GROUP BY 下推数据库，不做内存聚合）
+#: namespace 独立存在；外连接计数使空空间也返回 count=0。
 _NS_AGG = select(
-    _TBL.c.namespace, func.count(),
-).group_by(_TBL.c.namespace).order_by(_TBL.c.namespace)
+    _NS_TBL.c.namespace, func.count(_TBL.c.key),
+).select_from(
+    _NS_TBL.outerjoin(_TBL, _NS_TBL.c.namespace == _TBL.c.namespace)
+).group_by(_NS_TBL.c.namespace).order_by(_NS_TBL.c.namespace)
 
 #: entries 浏览取数（条件/分页动态拼，只取响应需要的 5 列，不装配 ORM 实体）
 _ENTRY_COLS = (_TBL.c.namespace, _TBL.c.key, _TBL.c.type,
@@ -158,12 +168,32 @@ def _entry_dict(namespace: str, key: str, payload: dict) -> dict:
 
 @router.get('/namespaces')
 async def list_namespaces():
-    """distinct namespace + 每个 ns 的条目数（GROUP BY 聚合全部下推数据库）。"""
+    """所有 namespace（包括空空间）+ 每个空间的条目数。"""
     def _q():
         with db.engine.connect() as conn:
             rows = conn.execute(_NS_AGG).all()
         return [{'namespace': ns, 'count': cnt} for ns, cnt in rows]
     return api_response(await run_db(_q))
+
+
+@router.post('/namespaces')
+async def create_namespace(request: Request):
+    """创建独立的空 namespace；重复名称返回 409。"""
+    body = await _json_body(request)
+    namespace = body.get('namespace')
+    if (not isinstance(namespace, str) or not namespace
+            or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
+        raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
+
+    def _create():
+        def _attempt():
+            with db.engine.begin() as conn:
+                return conn.execute(_REGISTER_NS, {'new_ns': namespace}).rowcount > 0
+        return _run_write(_attempt)
+
+    if not await run_db(_create):
+        return api_response(None, 409, 'namespace 已存在')
+    return api_response({'namespace': namespace, 'count': 0}, 201, '空间创建成功')
 
 
 @router.get('/entries')
@@ -288,7 +318,7 @@ async def get_entry(namespace: str, key: str, request: Request):
 @router.put('/{namespace}/{key}')
 async def put_entry(namespace: str, key: str, request: Request):
     """upsert {type:'str'|'json', data}：新建 201 / 整体覆盖 200（type 可变更）。"""
-    if len(namespace) > NAMESPACE_MAX or not NAME_RE.match(namespace):
+    if len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace):
         raise ParamError(message='namespace 含非法字符（仅允许字母数字 _ . : -）')
     if len(key) > KEY_MAX or not NAME_RE.match(key):
         raise ParamError(message='key 含非法字符（仅允许字母数字 _ . : -）')
@@ -331,6 +361,7 @@ async def put_entry(namespace: str, key: str, request: Request):
                                                'v_at': now})
                 if r.rowcount:
                     return False
+                conn.execute(_REGISTER_NS, {'new_ns': namespace})
                 conn.execute(_TBL.insert().values(
                     namespace=namespace, key=key, type=entry_type,
                     data=stored, updated_at=now))

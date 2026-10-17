@@ -1012,7 +1012,8 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 > 扁平 KV：namespace+key 唯一定位 value；value = {type, data}（str 原样 / json 校验）；type 可变更。
 
 ```
-GET    /api/confcenter/namespaces              # distinct namespace + 条目数
+GET    /api/confcenter/namespaces              # namespace + 条目数（包括空空间）
+POST   /api/confcenter/namespaces              # {namespace} → 201；重名 409；非法名称 400
 GET    /api/confcenter/entries                 # ?namespace= &q= &page= &page_size=
 GET    /api/confcenter/{ns}/{key}              # 读：str→字符串，json→解析后结构
 PUT    /api/confcenter/{ns}/{key}              # upsert {type, data}（201 新建/200 覆盖；json 非法 400）
@@ -1022,6 +1023,21 @@ GET/PUT /api/confcenter/cache/config           # Redis 配置（enabled/host/por
 POST   /api/confcenter/cache/test              # 连通性测试（可带候选配置）
 POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
 ```
+
+
+创建 namespace（临时 SQLite 实测，HTTP 201）：
+
+```json
+{"namespace":"infra"}
+```
+
+响应：
+
+```json
+{"success":true,"code":201,"message":"空间创建成功","data":{"namespace":"infra","count":0}}
+```
+
+名称为 1–100 个 `[A-Za-z0-9_.:-]` 字符。空 namespace 独立保存，删除最后一条 KV 后仍会在列表中返回 `count: 0`；启动时幂等登记历史 KV 的 namespace。为兼容已有客户端，直接 PUT 到新 namespace 仍会在创建 KV 的同一事务内登记该空间；前端流程固定先建空间，再在选中空间内创建 KV。`GET /entries` 省略 namespace 的旧版全量浏览契约保留。
 
 ## 20. Clash API（代理管理：clashctl 全能力的 Web 迁移）
 

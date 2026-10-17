@@ -40,13 +40,13 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 
 - **模块化日志上报**：每个模块独立 sys_name（doublog.blog/diary/vault/…），WARNING+ 按标准 HTTP 发往日志查询模块，**服务地址/开关/级别在管理页配置**（即时生效）
 - **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（不丢已接收日志）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
 - **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——INFO+ 全量回灌自身 `/api/v1/logs`（2026-10-13 起默认全量采集；含每请求 access 日志，trace 贯穿同请求全部记录；管理页可切回仅 WARNING），日志查询页实时检索本服务全部日志；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
-- **配置中心**（`/confcenter`）：namespace→key→value 扁平 KV；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
+- **配置中心**（`/confcenter`）：先创建 namespace，再从左侧进入空间管理 KV；空空间独立保留；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
 - **四象限待办**（`/todo`，MyTodo 迁入）：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
 - **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
 - **刷题练习**（`/practice`，独立模块）：题解/代码/标签管理、艾宾浩斯复习、一键抓题（LeetCode/洛谷）
 - **Steam 挂机**（`/steamidler`，独立模块，steam-idler 迁入）：账号登录挂机、时长统计、运行日志
 - **资产库**（知识库模块 tab，`/assets`，2026-10-17 自独立模块并入 blog）：**Prompt 与 Skill 双类型**（`{{变量}}` 声明 + 详情抽屉变量填充台 + 填充值本地记忆）；**版本管理**（内容变更即快照、行级 diff、一键恢复）；分类/标签/收藏/归档/回收站；批量操作；使用统计（copy/fill/export 计数、30 天趋势、最常用 TOP5）；导入导出（upsert/create + dry_run 预检，分类按名自动建）；**Skill 包上传**（单文件或 zip：规格校验、描述自动提取、可展开文件树 + 宽幅弹窗查看、原包下载）
-- **统一导航（仅桌面）**：业务模块共用 220px 多级侧栏与同尺寸内容画布；文章编辑与预览左右分栏
+- **统一导航（仅桌面）**：业务模块共用紧凑的 180px 多级侧栏，可折叠为 56px 图标栏并记忆状态，内容画布尺寸统一；文章编辑与预览左右分栏
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
 - **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
 

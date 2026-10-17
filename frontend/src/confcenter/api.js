@@ -15,8 +15,11 @@ const seg = s => encodeURIComponent(s)
 
 // ── KV 条目 ──────────────────────────────────────────────
 
-/** distinct namespace 列表 + 每个 ns 的条目数 */
+/** namespace 列表（包含空空间）+ 每个 ns 的条目数 */
 export const confNamespaces = () => json('/api/confcenter/namespaces')
+
+export const confCreateNamespace = namespace =>
+  json('/api/confcenter/namespaces', { method: 'POST', body: JSON.stringify({ namespace }) })
 
 /** 浏览（q 模糊匹配 key；省略 namespace = 全部；分页） */
 export const confEntries = ({ namespace = '', q = '', page = 1, pageSize = 50 } = {}) => {

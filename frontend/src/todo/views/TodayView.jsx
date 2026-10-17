@@ -187,9 +187,9 @@ export default function TodayView({ toast, dark }) {
   const pendingCount = data?.pending_migrations?.length || 0
 
   return (
-    <div>
+    <div className="h-full min-h-0 flex flex-col">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="shrink-0 min-w-0 flex items-center gap-2 mb-3 whitespace-nowrap">
         <Segmented value={viewMode} onChange={switchView}
           options={[{ label: '今日', value: 'today' }, { label: '特定日期', value: 'date' }]} />
         {viewMode === 'date' && (
@@ -201,7 +201,7 @@ export default function TodayView({ toast, dark }) {
                 setSp({ v: 'today', view: 'day', date: e.target.value }, { replace: true })
               }
             }}
-            className={inputCls + ' w-auto'} />
+            className={inputCls + ' shrink-0'} style={{ width: 'auto' }} />
         )}
         <button onClick={() => openQuickAdd(2)} className={btn.primary}>
           {Icon.plus}新增任务
@@ -215,7 +215,7 @@ export default function TodayView({ toast, dark }) {
           )}
         </button>
         {data && (
-          <span className="ml-auto text-xs text-stone-400 dark:text-stone-500 tabular-nums whitespace-nowrap">
+          <span className="ml-auto min-w-0 truncate text-xs text-stone-400 dark:text-stone-500 tabular-nums">
             昨日新建 {data.yesterday.created} · 昨日完成 {data.yesterday.completed} · 连续活跃 {data.streak.current} 天
           </span>
         )}
@@ -223,7 +223,7 @@ export default function TodayView({ toast, dark }) {
 
       {/* 看板 */}
       {loading && !data ? (
-        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
+        <div className="flex-1 min-h-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
           <Spinner />
         </div>
       ) : data ? (
