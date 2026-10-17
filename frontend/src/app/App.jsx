@@ -1,6 +1,6 @@
 /**
  * 应用壳：主题状态 + 统一登录守卫 + 路由表（路由级代码分割）+ 全局行为（ScrollToTop/代码块复制委托）。
- * 各能力包：portal(/) blog(/blog /post /create /admin) diary(/diary) vault(/vault) logs(/logs)
+ * 各能力包：portal(/) blog(/blog /post /create) diary(/diary) vault(/vault) logs(/logs)
  * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash) bookmarks(/bookmarks)；公开页：/login 与 /diary/s/:token（分享）。
  */
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
@@ -13,7 +13,6 @@ const HomePage = lazy(() => import('@/blog/pages/HomePage'))
 const PostDetail = lazy(() => import('@/blog/pages/PostDetail'))
 const CreatePost = lazy(() => import('@/blog/pages/CreatePost'))
 const EditPost = lazy(() => import('@/blog/pages/EditPost'))
-const AdminPage = lazy(() => import('@/blog/pages/AdminPage'))
 const DiaryPage = lazy(() => import('@/diary/DiaryPage'))
 const DiaryPublicShare = lazy(() => import('@/diary/PublicShare'))
 const VaultPage = lazy(() => import('@/vault/VaultPage'))
@@ -150,7 +149,7 @@ export default function App() {
             <Route path="/post/:id" element={<PostDetail dark={dark} setDark={toggleDark} />} />
             <Route path="/post/:id/edit" element={<EditPost dark={dark} setDark={toggleDark} />} />
             <Route path="/create" element={<CreatePost dark={dark} setDark={toggleDark} />} />
-            <Route path="/admin" element={<AdminPage dark={dark} setDark={toggleDark} />} />
+            <Route path="/admin" element={<Navigate to="/blog" replace />} />
             <Route path="/diary" element={<DiaryPage dark={dark} setDark={toggleDark} />} />
             <Route path="/diary/s/:token" element={<DiaryPublicShare dark={dark} />} />
             <Route path="/vault" element={<VaultPage dark={dark} setDark={toggleDark} />} />

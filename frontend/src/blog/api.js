@@ -2,7 +2,7 @@ import { apiFetch } from '@/shared/client'
 
 export { apiFetch, API_BASE } from '@/shared/client'
 
-// 博客/知识库 API（文章/知识库/图片/最近浏览/反链/导出/数据库管理）。
+// 博客/知识库 API（文章/知识库/图片/最近浏览/反链）。
 
 export async function fetchAllPosts({ pageSize = 100, maxPosts = 2000 } = {}) {
   const items = []
@@ -23,29 +23,6 @@ export async function fetchAllPosts({ pageSize = 100, maxPosts = 2000 } = {}) {
     page += 1
   }
   return items
-}
-
-/**
- * 数据库管理（见 api.md 管理端一节）
- * fetchDbStatus()            当前后端/连接配置/数据量
- * testDbConnection(payload)  测试目标后端连通性 {target, postgres?}
- * switchDatabase(payload)    切换连接（只换库不迁移数据）{target, postgres?}
- * 三者均返回统一信封 {success, code, message, data}
- */
-
-export async function fetchDbStatus() {
-  const res = await apiFetch('/api/admin/database')
-  return res.json()
-}
-
-export async function testDbConnection(payload) {
-  const res = await apiFetch('/api/admin/database/test', { method: 'POST', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function switchDatabase(payload) {
-  const res = await apiFetch('/api/admin/database/switch', { method: 'POST', body: JSON.stringify(payload) })
-  return res.json()
 }
 
 /**
@@ -149,27 +126,5 @@ export async function fetchRecentPosts(limit = 10) {
 
 export async function fetchBacklinks(id) {
   const res = await apiFetch(`/api/posts/id/${id}/backlinks`)
-  return res.json()
-}
-
-/** 导出全站 Markdown 备份（GET /api/export/markdown，zip blob） */
-
-export async function fetchExportZip() {
-  const res = await apiFetch('/api/export/markdown')
-  if (!res.ok) throw new Error(`导出失败 HTTP ${res.status}`)
-  return res.blob()
-}
-
-/** ─── 日志上报配置（管理页 /api/admin/logging，见 api.md 9.1）─ */
-export async function fetchLoggingConfig() {
-  const res = await apiFetch('/api/admin/logging')
-  return res.json()
-}
-export async function saveLoggingConfig(payload) {
-  const res = await apiFetch('/api/admin/logging', { method: 'PUT', body: JSON.stringify(payload) })
-  return res.json()
-}
-export async function testLoggingSend() {
-  const res = await apiFetch('/api/admin/logging/test', { method: 'POST' })
   return res.json()
 }

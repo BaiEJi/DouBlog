@@ -21,7 +21,7 @@
 
 > **⚠️ 前端不适配移动端**（2026-10-17 起）：已移除全部移动端适配（侧栏抽屉、响应式断点、触屏拖拽分支、viewport meta），所有页面按桌面宽屏单态布局渲染，手机访问得到的是缩放的桌面视图。新增前端页面禁止引入 `sm:/md:/lg:/xl:` 断点类或移动端专属 UI。
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`：Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、**书签与稍后阅读**（`/bookmarks`，收藏夹/阅读队列/离线快照/死链检测/浏览器书签导入导出）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，15 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`：Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、**书签与稍后阅读**（`/bookmarks`，收藏夹/阅读队列/离线快照/死链检测/浏览器书签导入导出）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -30,16 +30,16 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 
 - **双链 `[[wiki]]` + 反向链接**：`[[英文名]]`/`[[标题]]`/`[[名|显示文字]]` 三种写法，文末自动聚合"谁链接了我"
 - **图片上传**：编辑器内粘贴/拖拽/按钮上传（自动插入 Markdown），10MB 上限 + 类型白名单
 - **最近浏览**：首页按最近阅读横条快速回访（跨知识库，hover 预取不虚增浏览量）
-- **导出备份**：单篇页“导出”按钮下载该文 `.md`（frontmatter + 图片 URL 绝对化）；管理页一键导出全库 Markdown + 图片 zip（树形目录 + frontmatter，Obsidian 可直接导入）
+- **导出备份**：单篇页“导出”按钮下载该文 `.md`（frontmatter + 图片 URL 绝对化）；通过 `GET /api/export/markdown` 下载全库 Markdown + 图片 zip（树形目录 + frontmatter，Obsidian 可直接导入）
 - **编辑器**：快捷键（`Ctrl+S` 保存、`Ctrl+B/I` 加粗斜体、`Ctrl+K` 链接、`Tab` 缩进）、预览同步滚动、表格/图表/代码块模板
 - **书签与稍后阅读**（`/bookmarks`）：**分类树**（≤3 层文件夹）+ **条目状态机**（未读→阅读中→已读/归档/星标）+ 标签；**URL 规范化查重**（剥 utm 追踪参数）；**收录表单一键抓取页面元信息**；**离线快照**（HTML→Markdown 正文抽取，原文删帖也不怕，列表页不传大字段）；**死链批量检测**（可达/失效/异常三态标记）；**阅读队列**（"下一篇"英雄卡）；**统计**（状态分布/30 天趋势/分类·标签·站点 TOP）；**导入导出**（Netscape 浏览器书签格式 + JSON 全量备份，重复自动跳过）；回收站（还原/彻底删除）
 - **订阅管理**（`/subs`，CrownFlow 全量迁移）：**会员主表 + 多订阅记录**（一次购买/续费一条：价格/币种 5 种/计费周期 4 种/起止/渠道）按自定义分类（emoji+颜色）组织；**支出统计**（日均×重叠天数折算 CNY 静态汇率；概览/分类汇总/趋势 day·week·month·quarter 粒度）；**到期提醒**（按会员 reminder_days 阈值）与**订阅到期日历**（农历/法定节假日/当日徽标）；会员支出排行榜（4 维度）、订阅时间轴（3m/6m/12m/全部+今天线）、表格/卡片双视图；**每日 02:00 自动备份**（90 天保留，可手动触发）
 - **私人日记**（`/diary`，Memos × Day One 超集）：**随记分日记本**（预置 日常🏡/工作💼/感悟🌱，可自建；随记必选本，录入框内直接切换）+ **每日总结**（每天一篇 upsert，总结卡置顶日期组、随记带连接线挂在总结之后）；侧栏工作台（视图/日记本含计数）+ 快捷录入（**本子**/心情/模板/**每日引导问题**/**天气位置一键记录**）；置顶/归档/**回收站**；**年度热力图**、**那年今日**、统计图表（连续/每月字数/心情趋势/**年度回顾**）；单篇**免登录分享链接**（可撤销/有效期）；一句话快速录入 API + 全量 Markdown 导出
 - **密码库**（`/vault`，零知识端到端加密）：Argon2id 派生 + AES-256-GCM，服务端只存密文；**TOTP 验证码生成**（RFC 6238，30s 环形倒计时 + 一键复制，编辑器粘贴 otpauth:// 自动解析）、**HIBP 泄露检查**（k-anonymity，仅上传 SHA-1 前 5 位，结果本地缓存）、**健康总评分**（0-100 环，按泄露/弱/复用等加权扣分，点击下钻）、**安全附件**（前端 VEK 加密上传/下载/删除，5MB/文件，purge 级联清理）、密码历史（改密自动归档）、身份（邮箱/手机 → 关联账号）、密码/口令短语生成器 + 编辑器实时强度条、安全中心（泄露/弱/复用/过旧/**到期提醒**/无 2FA/重复/缺恢复，全客户端分析）、**密码到期提醒**（条目可设 N 天周期，超期概览横条+详情徽标）、⌘K 全局搜索、自动锁定、Recovery Key、加密备份导入导出；全中文界面，三面板布局，明暗主题
 - **密码服务**（密码库内子模块）：为项目提供**自动轮换密码**（30s~10min）与机器校验 API——项目 → 用户类型（密码策略）→ 用户（**每用户独立密码链**）；密码不落盘、由 seed+时间窗口确定性推导（TOTP 思路），上一窗口 **30 秒宽限**；`POST /api/pwsvc/validate`（X-Api-Key）供第三方服务校验；**校验限流**（页面可配，默认 120 次/分钟）+ **校验日志与失败统计**（项目页时间线，保留 30 天，永不含密码内容）；设计见 `docs/pwsvc-design.md`
-- **模块化日志上报**：每个模块独立 sys_name（doublog.blog/diary/vault/…），WARNING+ 按标准 HTTP 发往日志查询模块，**服务地址/开关/级别在管理页配置**（即时生效）
+- **模块化日志上报**：每个模块独立 sys_name（doublog.blog/diary/vault/…），WARNING+ 按标准 HTTP 发往日志查询模块，**服务地址/开关/级别在系统配置页 `/config` 配置**（即时生效）
 - **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（不丢已接收日志）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
-- **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——INFO+ 全量回灌自身 `/api/v1/logs`（2026-10-13 起默认全量采集；含每请求 access 日志，trace 贯穿同请求全部记录；管理页可切回仅 WARNING），日志查询页实时检索本服务全部日志；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
+- **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——INFO+ 全量回灌自身 `/api/v1/logs`（2026-10-13 起默认全量采集；含每请求 access 日志，trace 贯穿同请求全部记录；系统配置页可切回仅 WARNING），日志查询页实时检索本服务全部日志；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
 - **配置中心**（`/confcenter`）：先创建 namespace，再从左侧进入空间管理 KV；空空间独立保留；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
 - **四象限待办**（`/todo`，MyTodo 迁入）：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
 - **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
@@ -99,7 +99,7 @@ DouBlog/
 │       ├── app/              # 壳：App.jsx（路由表 + 主题 + 全局行为）+ LoginPage.jsx
 │       ├── shared/           # 公共层：client.js（后端地址唯一处）+ md.js（渲染管线）+ PageHeader.jsx
 │       ├── portal/           # / 工作台门户（dnd 分组布局）
-│       ├── blog/             # /blog /post /create /admin：api + pages×5 + editor×2（快捷键/图片上传）
+│       ├── blog/             # /blog /post /create：api + pages×4 + editor×2（快捷键/图片上传）
 │       ├── diary/            # /diary：DiaryPage + PublicShare + api + kit + components×8
 │       ├── vault/            # /vault：VaultPage + api + components（crypto/core/ui/密码服务）
 │       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
@@ -125,7 +125,7 @@ DouBlog/
 
 - Python 3.10+
 - Node.js 18+
-- PostgreSQL 17（默认）：`117.72.98.99:50002/app_dev`（用户 `lizy`）；也可在管理页一键切回本地 SQLite（零配置）
+- PostgreSQL 17（默认）：`117.72.98.99:50002/app_dev`（用户 `lizy`）；也可在系统配置页 `/config` 一键切回本地 SQLite（零配置）
 
 ### 1. 启动后端（端口 60100）
 

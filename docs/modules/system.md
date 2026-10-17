@@ -36,7 +36,7 @@
 | **时间戳** | `shared/timestamps.py::_iso/_utcnow`：SQLite（naive）与 PG（timestamptz 带偏移）双后端输出一致的序列化 |
 | **模块 sys_name 映射** | `shared/modules.py`：请求路径前缀 → 模块名 → `doublog.<module>` 记录级覆盖；mod_logger / 日志上报配置持久化 |
 | **应用工厂** | `main.py::create_app`：CORS（凭据模式）+ GZip + 统一异常信封 + 动态模块注册表 + init_db |
-| **前端总配置页** | `/config` ConfigPage（数据库 + 日志上报两卡）；`/` 门户 12 卡 + 登出；`/login` 登录页；client.js Cookie 化（**不再持有任何凭据**） |
+| **前端总配置页** | `/config` ConfigPage（账号 / 数据库 / 日志上报）；`/` 门户 15 卡 + 登出；`/login` 登录页；client.js Cookie 化（**不再持有任何凭据**） |
 
 模块注册顺序（`main.py::MODULES`）：`blog → diary → vault → pwsvc → sdklogs → subs → apihub → system → todo → confcenter`；auth 路由（`/api/auth/*`，属 shared 层）在所有模块路由之后单独挂载。
 
@@ -177,11 +177,11 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 ## 5. 前端
 
 ### ConfigPage（`/config`，`config/ConfigPage.jsx` + `config/api.js`）
-全站唯一总配置页，两张卡：
+全站总配置页；数据库和日志上报统一从此页操作：
 
 - **数据库卡**：状态区（当前后端徽章 SQLite/PostgreSQL、文章数/审计日志计数、掩码连接串 font-mono）；PG 连接参数表单（host/port/dbname/user/密码——密码留空则沿用已存值）；「测试连接」「一键切换到 PostgreSQL」「一键切换回 SQLite」（当前后端按钮禁用置灰）；切换带 confirm（说明只换连接不迁移）；dev 切换后提示自动重启并 3.5s 后重拉状态
 - **日志上报卡**：外发启用 checkbox、服务地址、外发最低级别（WARNING/INFO select）、各模块 sys_name chips（font-mono）；「保存」（即时生效）/「发送测试日志」（返回 marker 提示到 /logs 验证）
-- `config/api.js` 六函数全走 `shared/client.js::apiFetch`（fetchDbStatus/testDbConnection/switchDatabase/fetchLoggingConfig/saveLoggingConfig/testLoggingSend）；`/admin` 页保留同批端点的旧入口
+- `config/api.js` 六函数全走 `shared/client.js::apiFetch`（fetchDbStatus/testDbConnection/switchDatabase/fetchLoggingConfig/saveLoggingConfig/testLoggingSend）；旧独立管理页已移除，`/admin` 地址跳回 `/blog`
 
 ### LoginPage（`/login`，`app/LoginPage.jsx`）
 全站唯一登录入口：用户名/密码表单 → `POST /api/auth/login`（JSON + `credentials:'include'`）；成功 `navigate(safeNext)`（`?next=` 回跳，`//` 开头拒绝）；401 显示后端 message；网络失败提示后端未启动；主题切换按钮；卡片下方微注（会话 30 天）。
@@ -189,11 +189,11 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 ### AuthGate + 应用壳（`app/App.jsx`）
 - AuthGate 守卫逻辑见 2.5 节；`PageFallback`（居中细进度条）
 - 主题状态：`localStorage['doublog_dark']` > `prefers-color-scheme`；`documentElement.classList.toggle('dark')` + 350ms transitioning 类防闪烁
-- 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create /admin`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`、`/confcenter`、`/todo/*`
+- 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`、`/confcenter`、`/todo/*`
 - 全局行为：ScrollToTop（锚点除外）、代码块复制按钮事件委托（clipboard API + execCommand 降级）
 
 ### PortalPage（`/`，`portal/PortalPage.jsx`）
-13 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/管理，各带个性色图标底 + hover 位移；「剧情图谱」直达 `/gamemap`、「刷题」直达 `/practice`、「Steam 挂机」直达 `/steamidler`），`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6`；卡片分组布局存 localStorage 可自定义（默认单组全卡）；头部「工作台」大标语 + 主题切换 + **登出按钮**（logout 后跳 /login）。
+15 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/书签/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/Clash 代理/开发者工具箱），桌面 `grid-cols-6`；“管理”卡片已删除，历史 localStorage 分组会过滤旧卡片，同时保留分组名称及其他卡片顺序。卡片分组布局可自定义（默认单组全卡）；头部“工作台”标题 + 主题切换 + 登出按钮（logout 后跳 `/login`）。
 
 ### client.js（Cookie 化）
 `API_BASE = http://{hostname}:60100`（后端地址全项目唯一持有处）；`apiFetch`：自动 Content-Type（FormData 除外）、`credentials:'include'`、401 统一重定向 `/login?next=`（登录接口与 /login 页排除，防环）。**不含任何凭据/btoa**。
@@ -229,7 +229,7 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 7. **require_basic 命名是历史包袱**：实际是「Cookie 优先 + Basic 兼容」统一认证依赖，阅读代码勿望文生义
 8. **登录 ≠ vault 解锁**：见 2.5 节；已登录会话对 vault 密文无能为力（零知识设计，服务端无法也不应提供「登录即解锁」）
 9. AuthGate 对后端不可达放行（网络错误不挡页面），认证真正裁决在后端 401 + apiFetch 重定向——前端守卫只是体验层
-10. `GET /api/admin/database` 返回的 `postgres` 配置**含明文 password**（前端表单不回显、以空占位「留空使用已存密码」，但响应体中可见）；如需收敛应在后端掩码并让 `_merged_cfg` 识别掩码占位——涉及 `/admin` 旧入口同批消费方，暂列观察项
+10. `GET /api/admin/database` 返回的 `postgres` 配置**含明文 password**（前端表单不回显、以空占位「留空使用已存密码」，但响应体中可见）；如需收敛应在后端掩码并让 `_merged_cfg` 识别掩码占位，暂列观察项
 
 ## 公共 UI 外壳（2026-10-13）
 

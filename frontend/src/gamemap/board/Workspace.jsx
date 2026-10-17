@@ -624,7 +624,7 @@ export default function Workspace() {
     ],
     activeKey: `view:${view}`,
     onSelect: key => { if (key.startsWith('view:')) setView(key.slice(5)) },
-    sidebar: <div className="mt-4 space-y-2"><button type="button" onClick={() => setNewChapterOpen(true)} className="w-full h-9 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] text-stone-700 dark:text-stone-200 hover:bg-black/5 dark:hover:bg-white/[0.08]">＋ 新建章节</button>{activeChapter && <div className="rounded-xl border border-black/10 dark:border-white/10 p-3 text-xs text-stone-500 dark:text-stone-400"><div className="font-medium mb-1">本章摘要</div>{activeChapter.summary || '暂无摘要'}</div>}</div>,
+    sidebar: <div className="mt-4 space-y-2"><button type="button" onClick={() => setNewChapterOpen(true)} className="w-full h-9 rounded-lg text-base border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] text-stone-700 dark:text-stone-200 hover:bg-black/5 dark:hover:bg-white/[0.08]">＋ 新建章节</button>{activeChapter && <div className="rounded-xl border border-black/10 dark:border-white/10 p-3 text-sm text-stone-500 dark:text-stone-400"><div className="font-medium mb-1">本章摘要</div>{activeChapter.summary || '暂无摘要'}</div>}</div>,
   })
 
   /* ---------- 渲染 ---------- */

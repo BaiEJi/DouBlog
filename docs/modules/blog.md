@@ -15,7 +15,7 @@
 | 3 层树形结构 | 虚拟根 id=0；顶级顺序存 `blog_workspaces.children_order`，子级顺序存父文章 `children_order`；拖拽排序（dnd-kit） |
 | 双链 | `[[name]]` / `[[标题]]` / `[[名\|显示文字]]`；**渲染在前端**（`md.js` wiki_link + `applyWikiLinks`），**反链在后端**（同库扫描正文） |
 | 图片 | 粘贴/拖拽/按钮上传（uuid 文件名落盘 `data/images/`）+ 目录围栏下载；上传白名单不含 svg、下载白名单含 svg |
-| 导出 | 全库 Markdown zip 备份（管理页）+ 单篇 .md 纯前端导出（详情页） |
+| 导出 | 全库 Markdown zip 备份（`GET /api/export/markdown`）+ 单篇 .md 纯前端导出（详情页） |
 | 最近浏览 | `last_viewed_at` 倒序跨库横条（首页）；仅真实浏览计入，预取不计 |
 | SWR 预取 | 链接 hover/focus → `prefetchPost(?no_view=1)`；详情页命中缓存即渲染、后台重拉覆盖；保存/删除后 `invalidatePost` |
 | 其他 | 浏览计数实时写库、操作审计（AuditLog）、keyword 全文搜索（标题/摘要/英文名/正文，跨库）、gzip（全局中间件 ≥1KB） |
@@ -158,6 +158,7 @@
 - **WorkspaceSwitcher**（本文件内组件）：触发按钮 + 下拉面板（库名/文章数/选中态蓝点、新建库内嵌表单 Enter/Esc、点外关闭）；创建成功自动切到新库。
 - **搜索**：300ms 防抖走后端 `searchPosts`（**服务端全文、跨库**，命中显示所属库徽章）；`Ctrl/Cmd+K` 聚焦。非搜索态显示最近浏览横条（hover 预取）。
 - 卡片 hover/focus `prefetchPost`；骨架屏 stagger、空态引导新建。
+- 公共侧栏入口为知识库 / 新建文章 / 资产库；独立管理页和门户管理卡片已移除，旧 `/admin` 地址重定向到 `/blog`。数据库与日志设置统一从 `/config` 操作。
 
 ### 5.2 PostDetail（`/post/:id`，pages/PostDetail.jsx，最重页面）
 
@@ -169,20 +170,14 @@
 - **单篇导出**（纯前端）：frontmatter + 图片 URL 绝对化（`/api/images/x` → `API_BASE + path`）→ Blob 下载 `<name>.md`。
 - 删除走确认弹窗 → `DELETE ?recursive=1` → 失效缓存、重拉树、当前文被删则回首页。
 
-### 5.3 AdminPage（`/admin`，pages/AdminPage.jsx）
-
-- **状态卡**：后端徽章（SQLite/PostgreSQL）、文章数/操作日志数/数据目录（`fetchDbStatus`，PG 参数自动预填）+ `导出 Markdown 备份 (.zip)`（拉 blob 下载）。
-- **数据库切换**（SQLite 模式显示 PG 表单：host/port/user/password/dbname + 测试连接 + 切换并连接；PG 模式一键切回）；`restart_required=false`（dev 自动重启）提示后 3 秒自动刷新，`true`（生产）提示手动重启。
-- **LoggingCard**：日志上报配置（`/api/admin/logging` 三端点：开关/级别/服务地址 + 发送测试 + sys_name 徽章墙）——跨模块共享端点，配置页 `/config` 的同款卡。
-
-### 5.4 CreatePost / EditPost（`/create`、`/post/:id/edit`）
+### 5.3 CreatePost / EditPost（`/create`、`/post/:id/edit`）
 
 - **表单**：标题/slug（`NAME_RE` 前端校验）/所属知识库下拉（`?ws=` 预选，切库清空父文章）/父文章（同库树扁平化下拉，`└ ` 缩进）/状态/摘要；EditPost 的 slug/父文章/状态为只读展示（编辑入口不改 name 与挂载）。
 - **编辑器**（两页同构）：工具栏 9 个语法按钮（insertAtCursor 包选区）+ 图片/表格/mermaid/代码块模板；分栏 `h-[70vh]` 双栏内部滚动；实时预览（同渲染管线 + 双链解析 + mermaid）。
 - **提交流程**：Create `POST /api/posts` → 跳 `/post/:id`；Edit `PUT /api/posts/id/:id`（title/content/summary）→ `invalidatePost` → 跳回详情。
 - EditPost 先拉详情再按库拉树；loading/loadError 两个独立整页分支。
 
-### 5.5 editor hooks（共用）
+### 5.4 editor hooks（共用）
 
 - `useEditorShortcuts`：`Ctrl/Cmd+S` 保存、`Ctrl/Cmd+B` 加粗、`Ctrl/Cmd+I` 斜体、`Ctrl/Cmd+K` 链接、正文内 `Tab` 两格缩进；B/I/K 仅在正文区/页面空白处生效。
 - `useEditorEnhancements`：图片**粘贴/拖拽/按钮**三通道上传（`uploadImage` → 光标处插 `![alt](url)`，uploading 计数显示"图片上传中…"）；**预览同步滚动**（编辑区滚 → 预览按比例跟随；用户滚预览暂停 400ms）；块模板 `BLOCK_TEMPLATES`（表格/mermaid/代码块）。EditPost 传 `active: !loading`（编辑器在 loading 放行后才渲染，挂监听需双信号）。
@@ -204,7 +199,7 @@
 1. **移动子树不重算子孙 `level` 列**：slug 已级联、level 陈旧仅影响展示（AGENTS #3）
 2. **AuditLog 只增不删**，无清理策略，长期膨胀（AGENTS #1）
 3. 前端 `/archive` 死链、无 404 兜底页（应用壳层问题，导航里 blog 相关，AGENTS #4）
-4. 生产模式数据库切换需手动重启；切换期间并发写入可能丢失（AGENTS #5，AdminPage 仅提示）
+4. 生产模式数据库切换需手动重启；切换期间并发写入可能丢失（AGENTS #5，系统配置页提示）
 5. `/api/posts/slug/{name}` 与 `/path/{slug}` **无库过滤**：跨库同名文章时命中 id 最小的那条（前端一律 `/id` 寻址不受影响，API 直用需注意）
 6. `name` 库内唯一是**应用层**校验（DB 无唯一约束），并发极端下可能突破（单用户可忽略）
 7. `keyword` 搜索走 `content LIKE` 全表扫，数据量大时 O(N)
@@ -226,7 +221,7 @@
 **后端** `app/blog/assets/` 子包（路由前缀 `/api/assets` 不变，router 由 blog `__init__` 挂载，
 `ensure_migrations` 由 blog 链式调用）；**前端** `src/blog/assets/`（知识库模块侧栏第四项「资产库」，
 三视图为其 children）；sys_name 并入 `doublog.blog`；表名保留 `assets_` 前缀（免数据迁移）；
-门户独立卡片已移除（17 卡 → 16 卡，入口 = 知识库模块内）。
+门户独立卡片已移除，入口在知识库模块内；门户现共 15 张卡片。
 
 ### 功能概述
 

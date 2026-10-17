@@ -26,7 +26,7 @@
 | **API 地址可配置** | 缺省直连 `http://{当前主机名}:60100`，地址唯一在 `shared/client.js`；`VITE_API_BASE=/` 可启用同源开发代理，代理目标由 `VITE_API_PROXY` 决定（缺省 60100） |
 | **统一登录（会话 Cookie）** | `/login` 登录一次签发 HttpOnly Cookie（30 天）全站生效；apiFetch `credentials:'include'`，401 自动跳 `/login`；AuthGate 路由守卫（公开页：/login、/diary/s/*）；bundle 不持有凭据，Basic 仅后端 API 兼容通道 |
 | **正文按需加载** | 列表/树接口不返回正文；详情页按 id 取全文 |
-| **管理页** | `/admin` 数据库管理页：SQLite ↔ PostgreSQL 一键切换（连接测试/迁移/自动重启提示） |
+| **系统配置** | `/config` 统一操作数据库切换、日志上报和账号；旧 `/admin` 地址重定向到 `/blog` |
 | **多知识库** | 知识库页面选择器切换/新建知识库（`/blog?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
 | **首页全量分页拉取** | `fetchAllPosts` 以 100/页循环拉完（上限 2000），保证搜索覆盖全部文章 |
 | **全文搜索（服务端）** | 输入防抖 300ms 调 `GET /api/posts?keyword=`，后端匹配 标题/摘要/英文名/**正文**，跨所有知识库；结果卡片带所属库名 chip；`Ctrl/Cmd+K` 聚焦搜索框；清空回到当前库客户端过滤视图 |
@@ -50,9 +50,9 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
 ├── portal/PortalPage.jsx           # /        统一入口（13 卡含"剧情图谱" /gamemap、"刷题" /practice、"Steam 挂机" /steamidler 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组 + 跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
-├── blog/                           # /blog /post/:id /create /admin
+├── blog/                           # /blog /post/:id /create
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
-│   ├── pages/                      # HomePage PostDetail CreatePost EditPost AdminPage
+│   ├── pages/                      # HomePage PostDetail CreatePost EditPost
 │   └── editor/                     # useEditorShortcuts / useEditorEnhancements
 ├── diary/                          # /diary（Memos/Day One 超集 UI）
 │   ├── api.js / api-entry.js       # API 封装 / 天气位置采集（open-meteo）
@@ -109,7 +109,7 @@ invalidatePost(id)     // 编辑保存/删除后失效；LRU 上限 50 条
 
 **api.js 已按能力分包**（每个能力目录自己的 api.js，公共传输层唯一在 `shared/client.js`）：
 
-- `blog/api.js`：fetchAllPosts / fetchWorkspaces / createWorkspace / searchPosts / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（SWR 预取缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks / fetchExportZip + 数据库管理三件套 + 日志上报配置（fetch/saveLoggingConfig、testLoggingSend）；并透传 `apiFetch, API_BASE`
+- `blog/api.js`：fetchAllPosts / fetchWorkspaces / createWorkspace / searchPosts / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（SWR 预取缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks；并透传 `apiFetch, API_BASE`
 - `diary/api.js`：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
 - `vault/api.js`：vault*（条目/审计/备份）+ pwsvc*（项目/类型/用户/校验日志/限流）封装，透传 `API_BASE`
 - `logs/api.js`：sdklogSearch / sdklogSysnames
@@ -141,7 +141,8 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### blog/pages（博客各页）
 - `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
 - **WorkspaceSwitcher**（正文工具行，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
-- 公共左侧栏提供知识库 / 新建文章 / 内容管理导航；正文工具行保留知识库切换器、搜索与新建按钮
+- 公共左侧栏提供知识库 / 新建文章 / 资产库导航；正文工具行保留知识库切换器、搜索与新建按钮
+- 门户“管理”卡片、知识库“内容管理”导航及旧独立管理页已移除；历史 `/admin` 地址通过 replace 重定向到 `/blog`，保存的门户分组会自动过滤旧卡片。
 
 ### PostDetail.jsx（最重的页面）
 - **数据**：先 `GET /api/posts/id/:id`（正文 + 得知所属知识库）→ 再 `GET /api/posts/tree?workspace_id=`（侧边栏树只含同库文章）；文章一到即解除内容区骨架，树在后台刷新。挂载时先查 `takeCachedPost`（hover 预取缓存）命中即渲染再后台刷新（SWR）；侧栏树链接/首页卡片/子文章卡均挂 `onPointerEnter/onFocus → prefetchPost`
@@ -150,21 +151,13 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - **侧边栏树**：树形展开/折叠、右键菜单（删除等）、dnd-kit 拖拽排序（乐观更新 + `PUT /reorder`（顶级需带 workspace_id）+ 失败回滚重拉同库树）
 - **渲染**：`md.render(content)` 走模块级 `renderCache`（按正文内容 LRU 16 条，重访近期文章跳过整个渲染管线）+ `useMemo`；图片点击进入自研 lightbox（缩放/拖动）
 - **双链**：`buildWikiMap(tree)` → `applyWikiLinks(html, map)` 解析 `[[...]]`（树异步到达后自动补 href）；正文内双链点击走事件委托 → SPA 导航（不整页刷新）；文末**反向链接**区（`GET /api/posts/id/:id/backlinks`，hover 预取）
-- **单篇导出**：meta 行“导出”按钮（纯前端）——正文已在手，合成 YAML frontmatter + 图片 URL 绝对化（`/api/images/x` → `API_BASE + path`，导出文件在任意位置图片仍可访问）→ Blob 下载 `<name>.md`；全库 zip 备份在管理页
+- **单篇导出**：meta 行“导出”按钮（纯前端）——正文已在手，合成 YAML frontmatter + 图片 URL 绝对化（`/api/images/x` → `API_BASE + path`，导出文件在任意位置图片仍可访问）→ Blob 下载 `<name>.md`；全库 zip 备份通过 `GET /api/export/markdown` 下载
 - **mermaid**：见上节
 - **dangerouslySetInnerHTML 必须传稳定引用**（`proseProps = useMemo(() => ({ __html: html }), [html])`，编辑器两页同理 `previewProps`）：react-dom 的更新路径对 innerHTML 不做同值比较，行内对象字面量会让任何无关重渲染（树刷新/TOC 高亮/展开折叠）都整体重建正文 DOM——抹掉 mermaid.run 注入的 SVG 且无法自动恢复，还有整段 HTML 重新解析的性能开销
 
 ### blog/editor（编辑器增强）
 - `useEditorEnhancements`（共用 hook）：图片**粘贴/拖拽/工具栏按钮**上传（`POST /api/images/upload`，成功后光标处插入 `![alt](/api/images/x.png)`）、**预览同步滚动**（编辑区滚动→预览按比例跟随，用户滚预览时暂停 400ms；EditPost 需传 `active: !loading`——其编辑器在 loading 放行后才渲染）、块模板（表格/mermaid/代码块）
 - 编辑/预览左右分栏，固定高 `h-[70vh]`，两栏各自内部滚动
-
-### AdminPage.jsx（管理页）
-- **状态卡**：当前后端徽章（SQLite/PostgreSQL）、文章数/日志数、数据目录（`fetchDbStatus`，PG 连接参数自动预填）
-- **切换到 PostgreSQL**：连接表单（host/port/user/password/dbname）+ `测试连接`（成功显示 PG 版本，失败显示驱动错误）+ `切换并连接`
-- **切回 SQLite**：PG 模式下显示一键切回
-- **切换语义**：只换连接读目标库现有数据（空库自动初始化），不迁移数据、互不影响
-- **切换后**：`restart_required=false`（开发模式自动重启）→ 提示并 3 秒后自动刷新；`true`（生产）→ 提示手动重启
-- **导出备份**：`导出 Markdown 备份 (.zip)` 按钮 → `fetchExportZip()` 拉 blob 触发下载（见 api.md 导出一节）
 
 ### CreatePost.jsx / EditPost.jsx
 - 表单字段：标题、name（英文名，前端校验格式，**同库内唯一**）、所属知识库下拉（`?ws=` 预选，切换库时清空父文章）、正文（`#md-editor` textarea + 工具栏插入语法）、摘要、父文章（**同库**树的扁平化下拉，过滤自身与子孙）、状态
@@ -233,7 +226,7 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 
 - **数据库卡**：当前后端徽章（SQLite（本地）/PostgreSQL（远端））+ 统计行（文章数/审计日志/连接串掩码，`GET /api/admin/database`）；PostgreSQL 连接参数表单（主机/端口/库名/用户/密码——状态返回值自动预填，密码留空表示沿用已存）；三个动作：`测试连接`（POST /database/test，连通返回 PG 版本，库不存在时后端提示切换会自动创建）、`一键切换到 PostgreSQL`（目标=表单值）、`一键切换回 SQLite`——当前后端对应按钮高亮、另一个置灰；切换成功按 `restart_required` 提示（dev 自动重启 3.5s 后自动刷新状态 / 生产提示手动重启）
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
-- `config/api.js` 走 apiFetch；AdminPage 的数据库切换 UI 保留（同一批后端端点的旧入口），总配置页为规范入口
+- `config/api.js` 走 apiFetch；数据库与日志上报统一从 `/config` 操作
 
 ### ConfCenterPage.jsx（confcenter/，namespace 与 KV）
 
@@ -281,11 +274,11 @@ bash shell/frontend/start.sh         # 一键：build + preview（生产模式�
 bash shell/frontend/start.sh dev     # 一键：dev server
 ```
 
-**改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
+**改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/系统配置（详见 AGENTS.md 验证清单）。
 
-- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。180px 紧凑左侧栏常驻 sticky（`h-screen`），顶部按钮可折叠为 56px 图标栏；一级菜单行高 32px、子菜单 28px，行间距 2px。折叠状态存于 localStorage `doublog_sidebar_collapsed`，刷新及跨模块导航沿用；图标保留名称提示、选中态、门户与主题入口，点击含子菜单的图标会展开侧栏。侧栏内容独立滚动，折叠时保留菜单及 sidebar 插槽挂载（隐藏子项和插槽），正文不重挂；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
+- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。180px 紧凑左侧栏常驻 sticky（`h-screen`），顶部按钮可折叠为 56px 图标栏；侧栏文字统一增加 2px：菜单/模块标题 16px，辅助说明 13.5px，徽标/页脚 13px；一级菜单行高 32px、子菜单 28px，行间距 2px。折叠状态存于 localStorage `doublog_sidebar_collapsed`，刷新及跨模块导航沿用；图标保留名称提示、选中态、门户与主题入口，点击含子菜单的图标会展开侧栏。侧栏内容独立滚动，折叠时保留菜单及 sidebar 插槽挂载（隐藏子项和插槽），正文不重挂；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
-- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
+- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；插槽文字同样增加 2px；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
 - **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
 - **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了
@@ -295,5 +288,5 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 ## 8. 已知限制
 
 1. 无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
-2. 生产模式下管理页切换数据库后需手动重启后端（页面有提示）
+2. 生产模式下系统配置页切换数据库后需手动重启后端（页面有提示）
 3. 开发模式下连续改动源文件后，Vite 依赖重优化窗口内 mermaid 偶发不渲染（刷新即恢复，仅 dev，生产预打包不受影响）

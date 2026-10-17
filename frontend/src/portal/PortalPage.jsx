@@ -222,18 +222,6 @@ const SYSTEMS = [
       </svg>
     ),
   },
-  {
-    to: '/admin',
-    title: '管理',
-    desc: '内容管理 · 备份导出',
-    box: 'bg-stone-500/10 text-stone-600 dark:text-stone-300',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4M4.9 4.9l1.7 1.7M13.4 13.4l1.7 1.7M15.1 4.9l-1.7 1.7M6.6 13.4l-1.7 1.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
 ]
 
 // ─── 分组布局持久化（localStorage 存 [{id,name,cards:[to...]}]）──
