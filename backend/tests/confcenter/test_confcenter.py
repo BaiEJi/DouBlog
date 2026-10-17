@@ -235,3 +235,73 @@ def test_wrong_credentials_401(client):
     bad = {'Authorization': 'Basic ' + base64.b64encode(b'admin:wrong').decode()}
     r = client.get('/api/confcenter/namespaces', headers=bad)
     assert r.status_code == 401
+
+# ─── 重命名：单事务迁移 / 404 / 409 / 校验 / 缓存双失效 / 限流 ──
+
+def _rename(client, namespace, old_key, new_key, expect=200):
+    r = client.put('/api/confcenter/rename',
+                   json={'namespace': namespace, 'old_key': old_key, 'new_key': new_key},
+                   headers=AUTH)
+    assert r.status_code == expect, r.json()
+    return r.json()
+
+
+def test_rename_moves_value_preserving_metadata(client):
+    _put(client, 'app', 'old.name', 'json', '{"a":1}')
+    before = _get(client, 'app', 'old.name')['data']
+    body = _rename(client, 'app', 'old.name', 'new.name')
+    assert body['success'] is True and body['data'] == {'namespace': 'app', 'key': 'new.name'}
+    after = _get(client, 'app', 'new.name')['data']
+    assert after['data'] == {'a': 1} and after['type'] == 'json'
+    assert after['updated_at'] == before['updated_at']   # 重命名不碰值与时间戳
+    _get(client, 'app', 'old.name', expect=404)
+
+
+def test_rename_missing_old_404(client):
+    _rename(client, 'app', 'ghost', 'x', expect=404)
+
+
+def test_rename_target_exists_409(client):
+    _put(client, 'app', 'r1', 'str', 'v1')
+    _put(client, 'app', 'r2', 'str', 'v2')
+    _rename(client, 'app', 'r1', 'r2', expect=409)
+    # 冲突时原值不受影响
+    assert _get(client, 'app', 'r1')['data']['data'] == 'v1'
+    assert _get(client, 'app', 'r2')['data']['data'] == 'v2'
+
+
+def test_rename_same_key_noop_200(client):
+    _put(client, 'app', 'same', 'str', 'v')
+    body = _rename(client, 'app', 'same', 'same')
+    assert body['message'] == 'key 未变化'
+    assert _get(client, 'app', 'same')['data']['data'] == 'v'
+
+
+def test_rename_validation_400(client):
+    for bad in ({'namespace': 'bad ns', 'old_key': 'a', 'new_key': 'b'},
+                {'namespace': 'app', 'old_key': 'a!', 'new_key': 'b'},
+                {'namespace': 'app', 'old_key': 'a', 'new_key': 'b!'},
+                {'namespace': 'app', 'old_key': '', 'new_key': 'b'},
+                {'namespace': 'app', 'old_key': 'a', 'new_key': 'x' * 201}):
+        r = client.put('/api/confcenter/rename', json=bad, headers=AUTH)
+        assert r.status_code == 400, bad
+
+
+def test_rename_invalidates_cache_both_keys(cache_env, client):
+    _put(client, 'app', 'ck', 'str', 'v')
+    assert client.get('/api/confcenter/app/ck', headers=AUTH).status_code == 200   # 回填缓存
+    assert 'confcenter:app:ck' in cache_env.store
+    _rename(client, 'app', 'ck', 'ck2')
+    assert 'confcenter:app:ck' in cache_env.deleted      # 旧键失效
+    assert 'confcenter:app:ck2' in cache_env.deleted     # 新键失效（防陈旧）
+
+
+def test_rename_counts_toward_ratelimit(app, client, auth_headers):
+    from app.confcenter import ratelimit as rl
+    state = rl.get_state(app)
+    state.apply_config({'enabled': True, 'limit': 1, 'window_seconds': 60, 'overrides': {}})
+    _put(client, 'app', 'rk', 'str', 'v')                # 额度用完
+    r = client.put('/api/confcenter/rename',
+                   json={'namespace': 'app', 'old_key': 'rk', 'new_key': 'rk2'},
+                   headers=auth_headers)
+    assert r.status_code == 429

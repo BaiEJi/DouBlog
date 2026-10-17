@@ -18,7 +18,7 @@ import JsonEditor, { JsonHighlightedView } from './JsonEditor'
 import { jsonValidate } from './jsonTools'
 import {
   confNamespaces, confCreateNamespace, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
-  confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
+  confRenameEntry, confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
   confRatelimitStatus, confRatelimitConfig, confRatelimitSave, confRatelimitReset,
 } from './api'
 
@@ -56,7 +56,9 @@ function valueText({ type, data }, pretty = false) {
     : (data == null ? '' : String(data))
 }
 
-/** 表格保持单行，完整值在只读弹窗查看，避免截断的 JSON 撑高列表。 */
+/** 表格保持单行，完整值在只读弹窗查看，避免截断的 JSON 撑高列表。
+ * 点击热区经 after 伪元素撑满整个单元格（覆盖 td 的 px-2/py-2.5 内边距）——
+ * 点值文本任意处即打开预览，不必瞄准右侧图标。 */
 function ValuePreview({ entry, onEdit }) {
   const [open, setOpen] = useState(false)
   const trigger = useRef(null)
@@ -66,7 +68,7 @@ function ValuePreview({ entry, onEdit }) {
   return (
     <>
       <button ref={trigger} type="button" onClick={() => setOpen(true)} aria-label={`预览 ${entry.key}`} title="查看完整值"
-        className="group flex w-full min-w-0 items-center gap-2 h-8 px-2.5 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-stone-50 dark:bg-black/15 text-left hover:bg-stone-100 dark:hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-600 transition-colors">
+        className="group relative flex w-full min-w-0 items-center gap-2 h-8 px-2.5 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-stone-50 dark:bg-black/15 text-left hover:bg-stone-100 dark:hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-600 transition-colors cursor-pointer after:absolute after:-inset-x-2 after:-inset-y-2.5 after:content-['']">
         <span className={`min-w-0 flex-1 truncate font-mono text-sm ${text === '' ? 'text-stone-400 dark:text-stone-500 italic' : 'text-stone-600 dark:text-stone-300'}`}>
           {text === '' ? '空字符串' : text.replace(/\r\n|\r|\n/g, ' ↵ ')}
         </span>
@@ -609,8 +611,13 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
     if (!canSave) return
     setBusy(true)
     try {
+      // key 变更：先原子重命名（值/时间戳原样迁移），再整体覆盖本次编辑的值
+      if (isEdit && key !== init.entry.key) {
+        await confRenameEntry(ns, init.entry.key, key)
+      }
       await confPutEntry(ns, key, { type, data })
-      say(isEdit ? `已更新 ${ns}/${key}` : `已创建 ${ns}/${key}`)
+      if (isEdit && key !== init.entry.key) say(`已重命名并更新 ${ns}/${key}`)
+      else say(isEdit ? `已更新 ${ns}/${key}` : `已创建 ${ns}/${key}`)
       onSaved()
       onClose()
     } catch (e) {
@@ -635,8 +642,8 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
         </div>
         <div>
           <label htmlFor="conf-entry-key" className={`${LBL} block mb-1.5`}>key</label>
-          <input id="conf-entry-key" className={`${inputCls} w-full font-mono disabled:opacity-60 disabled:cursor-not-allowed`}
-            value={key} disabled={isEdit} placeholder="如 feature_flags"
+          <input id="conf-entry-key" className={`${inputCls} w-full font-mono`}
+            value={key} placeholder="如 feature_flags" autoComplete="off"
             onChange={e => setKey(e.target.value)} />
           {key && !keyOk && (
             <div className="mt-1 text-sm text-red-600 dark:text-red-400">仅允许字母数字 _ . : -（≤200 字符）</div>
@@ -645,7 +652,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
       </div>
       {isEdit && (
         <p className="mt-1.5 text-[13px] text-stone-400 dark:text-stone-500">
-          编辑时不可改 namespace / key（复合主键）——需要请另存新条目
+          namespace 不可改；修改 key 即重命名（值原样迁移，目标 key 已存在会拒绝保存）
         </p>
       )}
 

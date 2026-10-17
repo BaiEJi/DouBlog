@@ -22,7 +22,7 @@
 
 ## 4. API（全部 require_basic，信封）
 
-`GET /namespaces`（含空空间，计数为 0）；`POST /namespaces`（JSON `{namespace}`：201 创建，409 重名，400 非法名称）；`GET /entries?namespace=&q=&page=&page_size=`；`GET|PUT|DELETE /{namespace}/{key}`（**三条单条路由受 namespace 限流约束，超限 429**）；缓存管理：`GET /cache/status`、`GET|PUT /cache/config`（data/redis_config.json，密码留空沿用）、`POST /cache/test`（可带候选配置试连）、`POST /cache/flush`（`confcenter:*` 前缀 SCAN+DEL）；限流管理：`GET /ratelimit/status`、`GET|PUT /ratelimit/config`（data/ratelimit_config.json）、`POST /ratelimit/reset`（清零某空间窗口计数）。
+`GET /namespaces`（含空空间，计数为 0）；`POST /namespaces`（JSON `{namespace}`：201 创建，409 重名，400 非法名称）；`GET /entries?namespace=&q=&page=&page_size=`；`GET|PUT|DELETE /{namespace}/{key}`（**三条单条路由受 namespace 限流约束，超限 429**）；`PUT /rename`（{namespace, old_key, new_key}：同空间重命名，单事务拷贝行（保留 type/data/updated_at）后删旧行，缓存双失效，计入限流；旧 404/新 409）；缓存管理：`GET /cache/status`、`GET|PUT /cache/config`（data/redis_config.json，密码留空沿用）、`POST /cache/test`（可带候选配置试连）、`POST /cache/flush`（`confcenter:*` 前缀 SCAN+DEL）；限流管理：`GET /ratelimit/status`、`GET|PUT /ratelimit/config`（data/ratelimit_config.json）、`POST /ratelimit/reset`（清零某空间窗口计数）。
 **路由陷阱**：字面量路由（/namespaces /entries /cache/* /ratelimit/*）必须先于 `/{namespace}/{key}` 注册。
 
 ## 5. Redis 缓存层（cache.py）
@@ -44,13 +44,13 @@
 
 ## 7. 前端（frontend/src/confcenter/）
 
-先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧只展示该空间的 KV 表（类型徽章/等高单行值预览；长值省略，换行以 ↵ 标识，空字符串显式标注，点击弹窗查看完整值及格式化 JSON，并可进入编辑；JSON 字符串标量在预览和编辑时保留引号）；新建/编辑 Modal（**加宽档 max-w-4xl**（Mask xwide，比值预览的 max-w-2xl 再宽一档），str 与 json 编辑器同高（16 行 × leading-6 + p-3 同度量，切换类型弹窗尺寸不变），namespace 固定为当前空间，只填写 key/value；type 段选；str 多行原样；**json=JSON 编辑器**——`JsonEditor.jsx` textarea 透明覆层 + highlight.js 着色（GitHub 亮暗主题沿用 index.css，零新依赖），Tab 两空格缩进、格式化/压缩按钮、失焦校验非法标红禁存且错误带行列定位（`jsonTools.js`，devtoolbox 同款 V8 position 约定））；值预览弹窗 json 类型同款着色（`JsonHighlightedView`，折行只读）；删除两步确认；搜索仅在当前空间内防抖查询，切换空间重置搜索和分页，过期请求不覆盖新空间；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）；**限流状态条**（绿=Redis 滑动窗口/琥珀=本地降级/灰=未启用 + 当前规则与放行/拒绝计数 + 重置当前空间计数）+ 限流配置 Modal（默认额度/窗口 + 按空间覆盖行编辑，limit=0 豁免，namespace 输入带已有空间 datalist）。
+先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧只展示该空间的 KV 表（类型徽章/等高单行值预览；长值省略，换行以 ↵ 标识，空字符串显式标注，**整格可点击**（after 伪元素热区撑满单元格），点击弹窗查看完整值及格式化 JSON，并可进入编辑；JSON 字符串标量在预览和编辑时保留引号）；新建/编辑 Modal（**编辑时 key 可改**——保存时先原子重命名再覆盖值；**加宽档 max-w-4xl**（Mask xwide，比值预览的 max-w-2xl 再宽一档），str 与 json 编辑器同高（16 行 × leading-6 + p-3 同度量，切换类型弹窗尺寸不变），namespace 固定为当前空间，只填写 key/value；type 段选；str 多行原样；**json=JSON 编辑器**——`JsonEditor.jsx` textarea 透明覆层 + highlight.js 着色（GitHub 亮暗主题沿用 index.css，零新依赖），Tab 两空格缩进、格式化/压缩按钮、失焦校验非法标红禁存且错误带行列定位（`jsonTools.js`，devtoolbox 同款 V8 position 约定））；值预览弹窗 json 类型同款着色（`JsonHighlightedView`，折行只读）；删除两步确认；搜索仅在当前空间内防抖查询，切换空间重置搜索和分页，过期请求不覆盖新空间；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）；**限流状态条**（绿=Redis 滑动窗口/琥珀=本地降级/灰=未启用 + 当前规则与放行/拒绝计数 + 重置当前空间计数）+ 限流配置 Modal（默认额度/窗口 + 按空间覆盖行编辑，limit=0 豁免，namespace 输入带已有空间 datalist）。
 
 配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值预览保持单行。表格类型、时间和操作列同步加宽；删除确认展示“确认删除 / 取消”两步按钮。
 
-## 8. 测试（tests/confcenter/，69 例）
+## 8. 测试（tests/confcenter/，76 例）
 
-namespace 创建/重名/校验/重启保留/最后 KV 删除/空间隔离/历史迁移幂等（7）+ CRUD/type 变更/非法校验/浏览/鉴权（23）+ 缓存五路径（命中/回填/写失效/未启用/连接异常降级）与管理端点（16）+ **限流 23**：默认不限流、三路由均受限、本地 429 信封/空间隔离/窗口到期（_monotonic 接缝）/覆盖行更严与豁免、Redis 滑动窗口（confcenter_rl 前缀、被拒占名额、status tracked）、缓存 flush 不误伤限流键、EVAL 抛错即时降级本地、配置回显/部分缺省/非法 400、reset 双路径、鉴权。FakeRedis 扩展 EVAL/ZRANGE/ZCARD（按脚本内容识别 lizysdk 两段 Lua 以内存 ZSET 语义等价执行，TTL 忽略）。
+namespace 创建/重名/校验/重启保留/最后 KV 删除/空间隔离/历史迁移幂等（7）+ CRUD/type 变更/非法校验/浏览/鉴权 + 重命名 7 例（迁移保值保时间戳/404/409 冲突不动原值/同名 no-op/参数校验/缓存双失效/计入限流）（30）+ 缓存五路径（命中/回填/写失效/未启用/连接异常降级）与管理端点（16）+ **限流 23**：默认不限流、三路由均受限、本地 429 信封/空间隔离/窗口到期（_monotonic 接缝）/覆盖行更严与豁免、Redis 滑动窗口（confcenter_rl 前缀、被拒占名额、status tracked）、缓存 flush 不误伤限流键、EVAL 抛错即时降级本地、配置回显/部分缺省/非法 400、reset 双路径、鉴权。FakeRedis 扩展 EVAL/ZRANGE/ZCARD（按脚本内容识别 lizysdk 两段 Lua 以内存 ZSET 语义等价执行，TTL 忽略）。
 
 ## 公共 UI 外壳（2026-10-13）
 

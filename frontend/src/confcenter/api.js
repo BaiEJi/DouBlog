@@ -42,6 +42,13 @@ export const confPutEntry = (namespace, key, payload) =>
 export const confDeleteEntry = (namespace, key) =>
   json(`/api/confcenter/${seg(namespace)}/${seg(key)}`, { method: 'DELETE' })
 
+/** 同空间重命名 key（单事务迁移，值/时间戳原样保留）；新 key 已存在抛 409 */
+export const confRenameEntry = (namespace, oldKey, newKey) =>
+  json('/api/confcenter/rename', {
+    method: 'PUT',
+    body: JSON.stringify({ namespace, old_key: oldKey, new_key: newKey }),
+  })
+
 // ── Redis 缓存管理 ───────────────────────────────────────
 
 /** {enabled, reachable, url_masked, hits, misses}（不可达时 enabled=false 不报错） */

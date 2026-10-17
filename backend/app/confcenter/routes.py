@@ -341,6 +341,62 @@ async def reset_ratelimit(request: Request):
     return api_response(ratelimit.reset(request.app, namespace), 200, '已清零')
 
 
+@router.put('/rename')
+async def rename_entry(request: Request):
+    """同空间内重命名 key：单事务「拷贝行（保留 type/data/updated_at）→ 删旧行」，
+    不产生中间态；旧 key 不存在 404，新 key 已存在 409。缓存对两个 key 都失效。
+
+    字面量单段路由，天然先于 /{namespace}/{key} 两段参数路由匹配。
+    """
+    body = await _json_body(request)
+    namespace = body.get('namespace')
+    old_key = body.get('old_key')
+    new_key = body.get('new_key')
+    if (not isinstance(namespace, str) or not namespace
+            or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
+        raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
+    if (not isinstance(old_key, str) or not old_key or len(old_key) > KEY_MAX
+            or not NAME_RE.match(old_key)):
+        raise ParamError(message='old_key 含非法字符（仅允许字母数字 _ . : -）')
+    if (not isinstance(new_key, str) or not new_key or len(new_key) > KEY_MAX
+            or not NAME_RE.match(new_key)):
+        raise ParamError(message='new_key 含非法字符（仅允许字母数字 _ . : -）')
+    if old_key == new_key:
+        return api_response({'namespace': namespace, 'key': new_key}, 200, 'key 未变化')
+
+    await run_db(lambda: ratelimit.check(request.app, namespace))
+
+    def _rename():
+        state = cache.get_cache_state(request.app)
+
+        def _attempt() -> str | None:
+            """'ok' / None(404) / 'conflict'(409)；并发撞新主键由 _run_write 整事务重试。"""
+            with db.engine.begin() as conn:
+                old_row = conn.execute(_GET_ROW, {'ns': namespace, 'k': old_key}).first()
+                if old_row is None:
+                    return None
+                if conn.execute(_GET_ROW, {'ns': namespace, 'k': new_key}).first() is not None:
+                    return 'conflict'
+                conn.execute(_TBL.insert().values(
+                    namespace=namespace, key=new_key, type=old_row[0],
+                    data=old_row[1], updated_at=old_row[2]))
+                conn.execute(_DELETE_ROW, {'ns': namespace, 'k': old_key})
+                return 'ok'
+
+        result = _run_write(_attempt)
+        if result == 'ok':
+            cache.cache_invalidate(state, namespace, old_key)
+            cache.cache_invalidate(state, namespace, new_key)
+        return result
+
+    result = await run_db(_rename)
+    if result is None:
+        raise NotFoundError(message='配置项不存在')
+    if result == 'conflict':
+        return api_response(None, 409, '目标 key 已存在')
+    return api_response({'namespace': namespace, 'key': new_key}, 200, '已重命名')
+
+
 # ─── 单条 CRUD（参数路由放最后；三条路由开头均按 namespace 限流）──
 
 @router.get('/{namespace}/{key}')

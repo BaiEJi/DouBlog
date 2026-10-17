@@ -43,6 +43,7 @@ GET    /api/confcenter/{namespace}/{key}          # 读单条：data 按解析�
 PUT    /api/confcenter/{namespace}/{key}          # upsert {type:'str'|'json', data}（201 新建 / 200 覆盖；json 非法 400）
 DELETE /api/confcenter/{namespace}/{key}          # 200；不存在 404
 # ↑ GET/PUT/DELETE 三条单条路由受 namespace 限流约束（超限 429）
+PUT    /api/confcenter/rename                  # {namespace, old_key, new_key} 同空间重命名：单事务拷贝行（保留 type/data/updated_at）→ 删旧行；缓存双失效；计入限流；旧 404 / 新 409 / 同名 200 no-op
 # Redis 缓存管理（系统配置页用）
 GET    /api/confcenter/cache/status               # {enabled, configured, reachable, library_available, url_masked, ttl_seconds, hits, misses}（enabled=已启用且探活可达；不可达时不报错）
 GET    /api/confcenter/cache/config               # 当前配置回显（配置 Modal 用；单用户管理端原样返回）
@@ -87,7 +88,7 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 - 字号：主要控件/正文 16px；状态、表头及辅助说明 14px；namespace/key 和完整值 15px；类型徽章 13px；弹窗标题 18px。类型、时间和操作列配合加宽，删除确认使用“确认删除 / 取消”两步按钮。
 - 值预览：中性浅底的等高单行预览，长值省略，多行字符串以 ↵ 标识换行，空字符串明确标注；点击打开只读弹窗查看完整原文或格式化 JSON（json 类型 highlight.js 着色），可直接进入编辑。JSON 字符串标量保留引号。表格固定列宽，长 key 省略并支持悬停查看。
 
-## 6. 测试（tests/confcenter/，69 例，FakeRedis 内存假客户端——不连真实 Redis）
+## 6. 测试（tests/confcenter/，76 例，FakeRedis 内存假客户端——不连真实 Redis）
 
 - CRUD：upsert 新建 201/覆盖 200/读回（str 保字符串形状、json 解析回对象）/**type 变更**（json→str 后读回字符串）/删除/404
 - 校验：非法 type 400；json 非法 400（"[1,2" 拒绝）；key/namespace 非法字符与超长 400；含 `/` 的段结构性 404
@@ -96,6 +97,7 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 - namespace：独立创建、重名 409、字符/长度/鉴权校验、重启与最后 KV 删除后仍保留、旧 PUT 兼容、相同 key 跨空间隔离、历史回填幂等
 - 浏览：namespaces 聚合、entries 过滤分页（非法分页参数回退默认）
 - 鉴权：无凭据/错凭据 401（全端点）
+- 重命名 7 例：值/类型/时间戳原样迁移、旧 key 404、目标冲突 409 不动原值、同名 no-op 200、参数校验 400、缓存对旧/新键双失效（FakeRedis DEL 断言）、计入 namespace 限流（429）
 - **限流 23 例**：默认未启用不限流；GET/PUT/DELETE 三路由均受限而浏览/管理端点不受限；本地 429 信封（RATE_LIMITED+details.retry_after/mode）与空间隔离；窗口到期恢复（monkeypatch _monotonic）；覆盖行更严/豁免（limit=0）；status tracked/计数；Redis 路径（confcenter_rl 前缀 ZSET、被拒占名额、mode=redis）；缓存 flush 不误伤限流键；EVAL 抛错即时降级本地；配置保存/回显/部分缺省沿用/非法 400（8 组参数化）；reset 本地与 Redis 双路径；限流端点鉴权。FakeRedis 相应扩展 EVAL/ZRANGE/ZCARD（按脚本内容识别 lizysdk 两段 Lua，内存 ZSET 语义等价执行）
 
 ## 7. 验收
