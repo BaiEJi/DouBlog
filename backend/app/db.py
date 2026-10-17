@@ -30,6 +30,8 @@ LEGACY_TABLE_MAP = {
     'diaries': 'diary_diaries',
     'sdk_logs': 'sdklogs_logs',
     'sdk_alerts': 'sdklogs_alerts',
+    # apihub 2026-10-17 重构：upstream 维度改为 system（列级迁移见 app/apihub/__init__.py）
+    'apihub_upstreams': 'apihub_systems',
 }
 
 

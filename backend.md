@@ -342,7 +342,12 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 
 ## 10.51 API Hub（统一 API 调用平台，app/apihub/）
 
-聚合异构上游 API 的能力包：models.py（apihub_* 七表，凭证 AES-256-GCM 密文落库，
+聚合异构系统 API 的能力包（**2026-10-17 重构：分类收敛为 system → api 两维，原
+upstream（上游）整体改名 system（系统，手动创建，表 apihub_upstreams 由 LEGACY_TABLE_MAP
+启动改名）；自注册系统内部 API（tools/apihub_register_self.py 及 doublog 上游/doublog-self
+令牌遗留数据）与 OpenAPI 发布（/openapi/** 路由、apihub_apis 的 group1/group2/pub_name/
+doc_md 列、X-Apihub-Token 内部令牌旁路）整体移除，存量库由 ensure_migrations 幂等清理，
+见 tests/test_apihub_migration.py）：models.py（apihub_* 七表，凭证 AES-256-GCM 密文落库，
 主密钥 `data/apihub.key` 自动生成）+ core.py（框架无关核心：加密/模板渲染/鉴权适配
 七式/内存限流器（令牌桶+固定窗口，多级 AND 短路）/key 选择器（加权轮询+连续失败
 冷却）/探活状态机）+ pool.py（标准库 http.client keepalive 连接池：每目标空闲池
@@ -351,7 +356,8 @@ state.py（每 app 一份运行态挂 `app.state.apihub`（持真实 app 引用�
 概念）：配置内存快照（版本化，管理端改动 reload 全量生效）、限流桶、探活调度
 daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，配额计数随批落库，
 写完显式 `db.session.remove()` 复刻请求级会话回收））+ routes.py（APIRouter
-`/api/apihub`：网关双入口 + 管理 CRUD + 探活/日志/统计；探活并发执行走 lizysdk
+`/api/apihub`：网关双入口（invoke `POST /gw/apis/{slug}` + 透明代理
+`ANY /gw/systems/{slug}/{path}`）+ 管理 CRUD + 探活/日志/统计；探活并发执行走 lizysdk
 池 `get_pool('apihub-probe', workers=10)`）。
 
 - **网关管道**：令牌鉴权（sk- SHA-256 查内存快照）→ 授权（有效期/scope/IP/健康）→
@@ -362,8 +368,9 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 - **探活调度**：daemon 线程每秒检查到期 API（interval_s>0），TESTING 模式空转；
   手动一键探活走线程池（10 并发）
 - **测试**：tests/test_apihub_core.py（核心单元）+ tests/test_apihub_api.py
-  （CRUD+网关端到端，内置 http.server 线程 mock 上游；配额并发不超卖用
-  ThreadPoolExecutor 多 test_client 实测）
+  （CRUD+网关端到端，内置 http.server 线程 mock 系统；配额并发不超卖用
+  ThreadPoolExecutor 多 test_client 实测）+ tests/test_apihub_qq.py（QQ/代理）+
+  tests/test_apihub_migration.py（upstream→system 迁移与自注册数据清理）
 - 独立原型期的压测报告（FastAPI 版，含 h11 连接复用/端口耗尽等结论，连接池设计
   直接继承）见 `docs/apihub-loadtest-report.md`
 

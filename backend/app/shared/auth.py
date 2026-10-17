@@ -99,51 +99,9 @@ def _clear_session_cookie(response: Response):
     response.delete_cookie(SESSION_COOKIE, path='/')
 
 
-# ─── 内部服务令牌（apihub 网关回源用）────────────────────
-
-INTERNAL_TOKEN_HEADER = 'X-Apihub-Token'
-_internal_token_cache: dict[str, str] = {}
-
-
-def internal_token() -> str:
-    """内部服务令牌：data/internal_token 首次访问自动生成（32 字节 hex）。
-
-    apihub 网关以 api_key_header 注入本令牌回源，后端见此头即信任（服务到服务，
-    不以用户身份执行）；与 pwsvc.key/apihub.key 同属密钥文件模式。
-    """
-    import os
-    import secrets
-
-    path = os.path.join(settings.data_dir, 'internal_token')
-    cached = _internal_token_cache.get(path)
-    if cached and os.path.isfile(path):
-        return cached
-    try:
-        with open(path, encoding='utf-8') as f:
-            tok = f.read().strip()
-        if tok:
-            _internal_token_cache[path] = tok
-            return tok
-    except OSError:
-        pass
-    tok = secrets.token_hex(32)
-    os.makedirs(settings.data_dir, exist_ok=True)
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(tok)
-    _internal_token_cache[path] = tok
-    return tok
-
-
 async def require_basic(request: Request) -> None:
-    """统一认证依赖（历史名保留）：会话 Cookie 优先，其次 Basic；失败统一 401 信封。
-
-    例外：携带有效 X-Apihub-Token 内部令牌的请求（apihub 网关回源）直接放行——
-    服务内 API 以 OpenAPI 形式对外提供时，调用方鉴权由 apihub 平台令牌（sk-）承担。
-    """
+    """统一认证依赖（历史名保留）：会话 Cookie 优先，其次 Basic；失败统一 401 信封。"""
     if not settings.auth_enabled:
-        return
-    hdr = request.headers.get(INTERNAL_TOKEN_HEADER)
-    if hdr and hmac.compare_digest(hdr, internal_token()):
         return
     if _session_user(request) is not None:
         return

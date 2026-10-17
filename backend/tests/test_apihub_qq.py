@@ -32,7 +32,7 @@ def qq_state():
 
 
 @pytest.fixture()
-def qq_upstream(qq_state):
+def qq_system(qq_state):
     def handler_cls():
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *a):
@@ -82,10 +82,10 @@ def qq_upstream(qq_state):
     server.shutdown()
 
 
-def _qq_auth(upstream_base):
+def _qq_auth(system_base):
     # token_url 显式指向 mock（生产注册时省略 token_url 即用真实 bots.qq.com）
     return {'providers': [{'type': 'qq_bot',
-                           'token_url': upstream_base + '/app/getAppAccessToken'}],
+                           'token_url': system_base + '/app/getAppAccessToken'}],
             'credential_fields': ['app_id', 'app_secret'], 'transport': {}}
 QQ_REQUEST_CFG = {
     'param_defaults': {'openid': QQ_OPENID},
@@ -93,19 +93,19 @@ QQ_REQUEST_CFG = {
 }
 
 
-def _setup_qq_env(client, auth_headers, upstream_base, *, slug='qqenv',
+def _setup_qq_env(client, auth_headers, system_base, *, slug='qqenv',
                   request_cfg=None, cred=None):
-    """建 qq 上游+key+API+令牌，返回 sk 明文。"""
-    r = client.post('/api/apihub/admin/upstreams', headers=auth_headers, json={
-        'name': f'u-{slug}', 'slug': f'u-{slug}', 'base_url': upstream_base,
-        'timeout_ms': 3000, 'max_retry': 0, 'auth_config': _qq_auth(upstream_base)})
+    """建 qq 系统+key+API+令牌，返回 sk 明文。"""
+    r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
+        'name': f'u-{slug}', 'slug': f'u-{slug}', 'base_url': system_base,
+        'timeout_ms': 3000, 'max_retry': 0, 'auth_config': _qq_auth(system_base)})
     assert r.status_code == 200, r.json()
     uid = r.json()['data']['id']
-    rr = client.post(f'/api/apihub/admin/upstreams/{uid}/keys', headers=auth_headers,
+    rr = client.post(f'/api/apihub/admin/systems/{uid}/keys', headers=auth_headers,
                      json={'credential': cred or {'app_id': QQ_APP_ID, 'app_secret': QQ_SECRET}})
     assert rr.status_code == 200
     r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
-        'name': f'a-{slug}', 'slug': f'a-{slug}', 'upstream_id': uid,
+        'name': f'a-{slug}', 'slug': f'a-{slug}', 'system_id': uid,
         'method': 'POST', 'path_tpl': '/v2/users/{path.openid}/messages',
         'request_cfg': request_cfg if request_cfg is not None else QQ_REQUEST_CFG})
     assert r.status_code == 200, r.json()
@@ -115,9 +115,9 @@ def _setup_qq_env(client, auth_headers, upstream_base, *, slug='qqenv',
 
 
 class TestQQBotProvider:
-    def test_end_to_end_with_defaults(self, client, auth_headers, qq_upstream, qq_state):
+    def test_end_to_end_with_defaults(self, client, auth_headers, qq_system, qq_state):
         """openid/msg_type 全走默认值：调用方只传 content。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream)
+        sk = _setup_qq_env(client, auth_headers, qq_system)
         r = client.post('/api/apihub/gw/apis/a-qqenv', headers={'Authorization': f'Bearer {sk}'},
                         json={'body': {'content': '告警：测试消息'}})
         assert r.status_code == 200, r.json()
@@ -128,9 +128,9 @@ class TestQQBotProvider:
         assert msg['authorization'] == f'QQBot tok-1'           # 动态令牌注入
         assert msg['body'] == {'msg_type': 0, 'content': '告警：测试消息'}  # body 默认值合并
 
-    def test_token_cached_across_invokes(self, client, auth_headers, qq_upstream, qq_state):
+    def test_token_cached_across_invokes(self, client, auth_headers, qq_system, qq_state):
         """token 进程内缓存：多次调用只交换一次。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqcache')
+        sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqcache')
         for _ in range(3):
             r = client.post('/api/apihub/gw/apis/a-qqcache',
                             headers={'Authorization': f'Bearer {sk}'},
@@ -139,9 +139,9 @@ class TestQQBotProvider:
         assert qq_state.token_calls == 1
         assert qq_state.messages[-1]['authorization'] == 'QQBot tok-1'
 
-    def test_token_refresh_after_expiry(self, client, auth_headers, qq_upstream, qq_state, app):
+    def test_token_refresh_after_expiry(self, client, auth_headers, qq_system, qq_state, app):
         """缓存过期后自动重新交换（手动把过期时间拨到过去）。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqexp')
+        sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqexp')
         r = client.post('/api/apihub/gw/apis/a-qqexp', headers={'Authorization': f'Bearer {sk}'},
                         json={'body': {'content': 'x'}})
         assert r.status_code == 200
@@ -154,9 +154,9 @@ class TestQQBotProvider:
         assert qq_state.token_calls == 2
         assert qq_state.messages[-1]['authorization'] == 'QQBot tok-2'
 
-    def test_caller_values_override_defaults(self, client, auth_headers, qq_upstream, qq_state):
+    def test_caller_values_override_defaults(self, client, auth_headers, qq_system, qq_state):
         """调用方显式传 openid / msg_type 时默认值让位。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqover')
+        sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqover')
         r = client.post('/api/apihub/gw/apis/a-qqover', headers={'Authorization': f'Bearer {sk}'},
                         json={'path': {'openid': 'U-CUSTOM'},
                               'body': {'msg_type': 2, 'content': 'markdown 消息'}})
@@ -164,18 +164,18 @@ class TestQQBotProvider:
         assert qq_state.messages[0]['openid'] == 'U-CUSTOM'
         assert qq_state.messages[0]['body'] == {'msg_type': 2, 'content': 'markdown 消息'}
 
-    def test_bad_credentials_fails(self, client, auth_headers, qq_upstream):
+    def test_bad_credentials_fails(self, client, auth_headers, qq_system):
         """错误凭证：token 端点 400 → 网关 5xx 且错误可见。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqbad',
+        sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqbad',
                            cred={'app_id': 'wrong', 'app_secret': 'nope'})
         r = client.post('/api/apihub/gw/apis/a-qqbad', headers={'Authorization': f'Bearer {sk}'},
                         json={'body': {'content': 'x'}})
         assert r.status_code >= 500
         assert 'qq token' in r.json().get('message', '')
 
-    def test_missing_path_var_without_default(self, client, auth_headers, qq_upstream):
+    def test_missing_path_var_without_default(self, client, auth_headers, qq_system):
         """无默认值且调用方未传 path 变量 → 400 template_error（默认值消除的报错）。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqnodef',
+        sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqnodef',
                            request_cfg={'body': {'type': 'json'}})
         r = client.post('/api/apihub/gw/apis/a-qqnodef', headers={'Authorization': f'Bearer {sk}'},
                         json={'body': {'content': 'x'}})
@@ -190,28 +190,6 @@ class TestQQBotProvider:
         inj = apply_providers([{'type': 'qq_bot'}], {'app_id': 'a', 'app_secret': 'b'},
                               token_fetch=lambda p, c: 'T')
         assert inj.headers['Authorization'] == 'QQBot T'
-
-    def test_openapi_entry_defaults(self, client, auth_headers, qq_upstream, qq_state):
-        """OpenAPI 发布入口同样吃默认值；query 显式值优先。"""
-        sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqoa')
-        r = client.get('/api/apihub/admin/apis', headers=auth_headers)
-        row = next(a for a in r.json()['data'] if a['slug'] == 'a-qqoa')
-        r = client.put(f"/api/apihub/admin/apis/{row['id']}", headers=auth_headers, json={
-            'slug': 'a-qqoa', 'upstream_id': row['upstream_id'],
-            'method': 'POST', 'path_tpl': '/v2/users/{path.openid}/messages',
-            'request_cfg': QQ_REQUEST_CFG, 'group1': 'qq', 'group2': '', 'pub_name': 'send'})
-        assert r.status_code == 200, r.json()
-        # 不带 openid query → 默认值
-        r = client.post('/openapi/qq/send', headers={'Authorization': f'Bearer {sk}'},
-                        json={'content': 'via openapi'})
-        assert r.status_code == 200, r.text
-        assert qq_state.messages[-1]['openid'] == QQ_OPENID
-        assert qq_state.messages[-1]['body'] == {'msg_type': 0, 'content': 'via openapi'}
-        # 显式 query 覆盖
-        r = client.post('/openapi/qq/send?openid=U-Q', headers={'Authorization': f'Bearer {sk}'},
-                        json={'content': 'q'})
-        assert r.status_code == 200
-        assert qq_state.messages[-1]['openid'] == 'U-Q'
 
 
 class TestOutboundProxy:
@@ -271,9 +249,9 @@ class TestOutboundProxy:
 class TestAdminInvoke:
     """页面调试调用（POST /admin/apis/{id}/invoke）：不走平台令牌，返回原始上游响应。"""
 
-    def test_invoke_qq_with_defaults(self, client, auth_headers, qq_upstream, qq_state):
+    def test_invoke_qq_with_defaults(self, client, auth_headers, qq_system, qq_state):
         """管理端直发：默认值填充 + QQBot 头注入，响应含状态/延迟/上游原文。"""
-        _sk = _setup_qq_env(client, auth_headers, qq_upstream, slug='qqinv')
+        _sk = _setup_qq_env(client, auth_headers, qq_system, slug='qqinv')
         r = client.get('/api/apihub/admin/apis', headers=auth_headers)
         api_id = next(a['id'] for a in r.json()['data'] if a['slug'] == 'a-qqinv')
         r = client.post(f'/api/apihub/admin/apis/{api_id}/invoke', headers=auth_headers,

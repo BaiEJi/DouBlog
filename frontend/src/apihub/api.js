@@ -1,5 +1,6 @@
 // API Hub 能力包 API 层：统一走 shared/client.js 的 apiFetch（Basic Auth 唯一持有处）。
 // 网关调用（平台令牌 sk-）不走 apiFetch——那是给外部调用方的，管理页只需要 admin 接口。
+// 分类维度：system → api（系统手动创建，API 路径映射到系统 base_url）。
 
 import { apiFetch } from '../shared/client'
 
@@ -12,21 +13,21 @@ async function json(path, options = {}) {
 
 export const apihubOverview = () => json('/api/apihub/stats/overview')
 export const apihubApis = () => json('/api/apihub/admin/apis')
-export const apihubUpstreams = () => json('/api/apihub/admin/upstreams')
+export const apihubSystems = () => json('/api/apihub/admin/systems')
 export const apihubTokens = () => json('/api/apihub/admin/tokens')
 export const apihubRules = () => json('/api/apihub/admin/rules')
 export const apihubLogs = (params = '') => json(`/api/apihub/logs${params}`)
 
-export const apihubSaveUpstream = (u) => u.id
-  ? json(`/api/apihub/admin/upstreams/${u.id}`, { method: 'PUT', body: JSON.stringify(u) })
-  : json('/api/apihub/admin/upstreams', { method: 'POST', body: JSON.stringify(u) })
-export const apihubDeleteUpstream = (id) => json(`/api/apihub/admin/upstreams/${id}`, { method: 'DELETE' })
-export const apihubKeys = (uid) => json(`/api/apihub/admin/upstreams/${uid}/keys`)
-export const apihubAddKey = (uid, credential) =>
-  json(`/api/apihub/admin/upstreams/${uid}/keys`, { method: 'POST', body: JSON.stringify({ credential }) })
+export const apihubSaveSystem = (s) => s.id
+  ? json(`/api/apihub/admin/systems/${s.id}`, { method: 'PUT', body: JSON.stringify(s) })
+  : json('/api/apihub/admin/systems', { method: 'POST', body: JSON.stringify(s) })
+export const apihubDeleteSystem = (id) => json(`/api/apihub/admin/systems/${id}`, { method: 'DELETE' })
+export const apihubKeys = (sid) => json(`/api/apihub/admin/systems/${sid}/keys`)
+export const apihubAddKey = (sid, credential) =>
+  json(`/api/apihub/admin/systems/${sid}/keys`, { method: 'POST', body: JSON.stringify({ credential }) })
 export const apihubUpdateKey = (kid, payload) =>
-  json(`/api/apihub/admin/upstreams/keys/${kid}`, { method: 'PUT', body: JSON.stringify(payload) })
-export const apihubDeleteKey = (kid) => json(`/api/apihub/admin/upstreams/keys/${kid}`, { method: 'DELETE' })
+  json(`/api/apihub/admin/systems/keys/${kid}`, { method: 'PUT', body: JSON.stringify(payload) })
+export const apihubDeleteKey = (kid) => json(`/api/apihub/admin/systems/keys/${kid}`, { method: 'DELETE' })
 
 export const apihubSaveApi = (a) => a.id
   ? json(`/api/apihub/admin/apis/${a.id}`, { method: 'PUT', body: JSON.stringify(a) })
@@ -56,3 +57,10 @@ export const apihubTestProxy = () => json('/api/apihub/admin/proxy/test', { meth
 
 export const apihubInvokeApi = (id, payload) =>
   json(`/api/apihub/admin/apis/${id}/invoke`, { method: 'POST', body: JSON.stringify(payload) })
+
+// 调用文档（后端返回 text/markdown，非 api_response 信封）
+export async function apihubApiDoc(id) {
+  const r = await apiFetch(`/api/apihub/admin/apis/${id}/doc`)
+  if (!r.ok) throw new Error(`文档获取失败(${r.status})`)
+  return r.text()
+}

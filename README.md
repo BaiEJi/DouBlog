@@ -21,8 +21,7 @@
 
 > **⚠️ 前端不适配移动端**（2026-10-17 起）：已移除全部移动端适配（侧栏抽屉、响应式断点、触屏拖拽分支、viewport meta），所有页面按桌面宽屏单态布局渲染，手机访问得到的是缩放的桌面视图。新增前端页面禁止引入 `sm:/md:/lg:/xl:` 断点类或移动端专属 UI。
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，13 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`（Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、**日记** tab `/diary` 与**书签·稍后阅读** tab `/bookmarks`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`，聚合异构上游 + QQ 官方机器人消息推送 `qq/send-c2c`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）。
-
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，13 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`（Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、**日记** tab `/diary` 与**书签·稍后阅读** tab `/bookmarks`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`，system→api 两维聚合异构系统 + QQ 官方机器人消息推送 `qq/send-c2c`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）。
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
 - **多知识库**：文章按知识库分组隔离（首页切换器一键新建/切换，`/?ws=<id>` 记忆当前库）
@@ -224,8 +223,6 @@ bash shell/backend/stop.sh           # 停止
 | `GET` | `/api/images[...]?type=` | 图片服务（见下） |
 | `POST` | `/api/images/upload` | 上传图片（multipart `file`，返回可写入 Markdown 的 url） |
 | `GET` | `/api/export/markdown` | 导出全库 Markdown + 图片 zip 备份 |
-| `ANY` | `/openapi/{一级分组}/{二级分组}/{api名称}` | **OpenAPI 发布入口**（apihub 平台令牌 sk-；服务内 API 已发布为 `self/<模块>/**`；路径变量经同名 query 参数传入） |
-| `GET` | `/openapi/{…}/{api名称}/doc` | OpenAPI 的完整 Markdown 文档（公开） |
 | `GET/POST` | `/api/diary/entries` | 随记列表（?date/?search/?journal_id/?mood，总结在前随记挂后）/ 新建随记（**journal_id 必填**） |
 | `PUT/DELETE` | `/api/diary/entries/<id>` | 更新（自动保存）/ 删除 |
 | `POST` | `/api/diary/summary` | **每日总结 upsert**（每天一篇，body: entry_date+content[+mood]，返回 created 标志） |
@@ -296,4 +293,4 @@ python -m pytest tests/ -q
 
 ### 前端本地验收配置
 
-默认 API 地址仍为当前主机的 `60100`。开发时可设置 `VITE_API_BASE=/`，通过 Vite 的 `/api` 与 `/openapi` 代理使用同源请求；`VITE_API_PROXY` 可指定独立后端（默认 `http://127.0.0.1:60100`）。生产构建采用相对 API 地址时，部署服务器也需要配置相同路径的反向代理。界面与性能验收记录见 [docs/ui-qa-2026-10-13.md](docs/ui-qa-2026-10-13.md)；书签模块验收见 [docs/ui-qa-2026-10-16.md](docs/ui-qa-2026-10-16.md)。
+默认 API 地址仍为当前主机的 `60100`。开发时可设置 `VITE_API_BASE=/`，通过 Vite 的 `/api` 代理使用同源请求；`VITE_API_PROXY` 可指定独立后端（默认 `http://127.0.0.1:60100`）。生产构建采用相对 API 地址时，部署服务器也需要配置相同路径的反向代理。界面与性能验收记录见 [docs/ui-qa-2026-10-13.md](docs/ui-qa-2026-10-13.md)；书签模块验收见 [docs/ui-qa-2026-10-16.md](docs/ui-qa-2026-10-16.md)。

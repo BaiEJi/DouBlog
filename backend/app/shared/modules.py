@@ -22,7 +22,6 @@ MODULE_BY_PREFIX = (
     ('/api/v1', 'sdklogs'),
     ('/api/admin', 'system'),
     ('/api/apihub', 'apihub'),
-    ('/openapi', 'apihub'),
     ('/api/todo', 'todo'),
     ('/api/gamemap', 'gamemap'),
     ('/api/practice', 'practice'),

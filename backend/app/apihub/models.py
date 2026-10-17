@@ -1,6 +1,8 @@
-"""API Hub 模块模型：上游/密钥池/API/平台令牌/限流规则/调用日志/探活日志。
+"""API Hub 模块模型：系统/密钥池/API/平台令牌/限流规则/调用日志/探活日志。
 
-上游凭证与密钥一律 AES-256-GCM 密文落库（LargeBinary），
+分类只有 system → api 两个维度：系统（手动创建，类比 confcenter 的 namespace）
+下挂多个 API，API 的路径模板映射到系统的 base_url 上。
+系统凭证与密钥一律 AES-256-GCM 密文落库（LargeBinary），
 明文结构 {providers, credential_fields, transport} / {字段: 值}，见 core.CryptoBox。
 """
 
@@ -14,9 +16,12 @@ from app.db import Base
 from app.shared.timestamps import _iso, _utcnow
 
 
-class ApihubUpstream(Base):
-    """上游：一组同源 API 的公共配置 + 默认鉴权（auth_config_enc 密文）"""
-    __tablename__ = 'apihub_upstreams'
+class ApihubSystem(Base):
+    """系统：一组同源 API 的公共配置 + 默认鉴权（auth_config_enc 密文）。
+
+    2026-10-17 重构前名为 ApihubUpstream（上游），表 apihub_upstreams 由
+    db.LEGACY_TABLE_MAP 启动幂等改名。"""
+    __tablename__ = 'apihub_systems'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -41,12 +46,12 @@ class ApihubUpstream(Base):
 
 
 class ApihubKey(Base):
-    """密钥池：一个上游可挂多把 key，加权轮询；上游 401/403 自动禁用单 key"""
+    """密钥池：一个系统可挂多把 key，加权轮询；系统回 401/403 自动禁用单 key"""
     __tablename__ = 'apihub_keys'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    upstream_id: Mapped[int] = mapped_column(Integer, ForeignKey('apihub_upstreams.id', ondelete='CASCADE'),
-                                             nullable=False, index=True)
+    system_id: Mapped[int] = mapped_column(Integer, ForeignKey('apihub_systems.id', ondelete='CASCADE'),
+                                           nullable=False, index=True)
     credential_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     status: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')  # 1启用 2禁用
@@ -57,12 +62,14 @@ class ApihubKey(Base):
 
 
 class ApihubApi(Base):
-    """API：平台对外一个可调用单元（invoke 统一信封 / 透明代理）"""
+    """API：平台对外一个可调用单元（invoke 统一信封 / 透明代理）。
+
+    system_id 归属系统，path_tpl 相对系统 base_url（支持 {path.x}/{cred.x} 模板）。"""
     __tablename__ = 'apihub_apis'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    upstream_id: Mapped[int] = mapped_column(Integer, ForeignKey('apihub_upstreams.id', ondelete='CASCADE'),
-                                             nullable=False, index=True)
+    system_id: Mapped[int] = mapped_column(Integer, ForeignKey('apihub_systems.id', ondelete='CASCADE'),
+                                           nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     slug: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     description: Mapped[str] = mapped_column(String(256), nullable=False, default='')
@@ -76,11 +83,6 @@ class ApihubApi(Base):
     last_probe_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default='1')
-    # ── OpenAPI 发布（2026-10-12）：二级分组 + 对外名称 + 文档 ──
-    group1: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')    # 一级分组 slug（空=未发布）
-    group2: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')    # 二级分组 slug（最多二级）
-    pub_name: Mapped[str] = mapped_column(String(64), nullable=False, default='', server_default='')  # 对外 api 名称（空=用 slug）
-    doc_md: Mapped[str] = mapped_column(Text, nullable=False, default='', server_default='')           # /doc 自定义 Markdown 段落
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -144,7 +146,7 @@ class ApihubCallLog(Base):
                                     primary_key=True, autoincrement=True)
     token_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     api_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
-    upstream_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    system_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     key_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default='invoke')
     method: Mapped[str] = mapped_column(String(8), nullable=False, default='')

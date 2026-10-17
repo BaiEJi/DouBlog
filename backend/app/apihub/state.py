@@ -14,7 +14,7 @@ from sqlalchemy import select
 from app.apihub.core import CryptoBox, HealthMonitor, KeyCfg, KeySelector, \
     LevelSpec, RateLimiter, TokenExchanger, level_key, merge_probe, strictest
 from app.apihub.models import ApihubApi, ApihubCallLog, ApihubKey, ApihubRule, ApihubToken, \
-    ApihubUpstream
+    ApihubSystem
 from app.apihub.pool import UpstreamPool
 from app.config import settings
 from app.shared.timestamps import _utcnow
@@ -29,10 +29,9 @@ class Store:
         self.lock = threading.RLock()
         self.apis: dict = {}            # slug -> dict
         self.apis_by_id: dict = {}
-        self.apis_openapi: dict = {}    # (group1, group2, pub_name|slug) -> dict（OpenAPI 发布索引）
-        self.upstreams: dict = {}       # id -> dict
-        self.upstreams_by_slug: dict = {}
-        self.keys: dict = {}            # upstream_id -> [KeyCfg]
+        self.systems: dict = {}         # id -> dict
+        self.systems_by_slug: dict = {}
+        self.keys: dict = {}            # system_id -> [KeyCfg]
         self.tokens: dict = {}          # key_hash -> dict
         self.rules: list = []
         self.quota_used: dict = {}      # token_id -> 内存计数（writer 线程落库）
@@ -41,28 +40,28 @@ class Store:
     def reload(self):
         from app.db import db
         with self.lock:
-            ups = db.session.execute(select(ApihubUpstream)).scalars().all()
+            systems = db.session.execute(select(ApihubSystem)).scalars().all()
             keys = db.session.execute(select(ApihubKey)).scalars().all()
             apis = db.session.execute(select(ApihubApi)).scalars().all()
             toks = db.session.execute(select(ApihubToken)).scalars().all()
             rules = db.session.execute(select(ApihubRule)).scalars().all()
 
-            self.upstreams = {}
-            for u in ups:
+            self.systems = {}
+            for s in systems:
                 try:
-                    cfg = self.crypto.decrypt(bytes(u.auth_config_enc))
+                    cfg = self.crypto.decrypt(bytes(s.auth_config_enc))
                 except Exception:
                     cfg = {'_broken': True, 'providers': [], 'credential_fields': [],
                            'transport': {}}
-                self.upstreams[u.id] = {
-                    'id': u.id, 'slug': u.slug, 'name': u.name, 'base_url': u.base_url,
-                    'timeout_ms': u.timeout_ms, 'max_retry': u.max_retry,
+                self.systems[s.id] = {
+                    'id': s.id, 'slug': s.slug, 'name': s.name, 'base_url': s.base_url,
+                    'timeout_ms': s.timeout_ms, 'max_retry': s.max_retry,
                     'providers': cfg.get('providers', []),
                     'credential_fields': cfg.get('credential_fields', []),
-                    'transport': cfg.get('transport', {}) or {}, 'status': u.status,
+                    'transport': cfg.get('transport', {}) or {}, 'status': s.status,
                     'auth_config': cfg,   # 解密原文（管理端回读用，免每请求重复解密）
                 }
-            self.upstreams_by_slug = {c['slug']: c for c in self.upstreams.values()}
+            self.systems_by_slug = {c['slug']: c for c in self.systems.values()}
 
             self.keys = {}
             for k in keys:
@@ -70,18 +69,17 @@ class Store:
                     cred = self.crypto.decrypt(bytes(k.credential_enc))
                 except Exception:
                     continue
-                self.keys.setdefault(k.upstream_id, []).append(
+                self.keys.setdefault(k.system_id, []).append(
                     KeyCfg(id=k.id, cred=cred, weight=max(1, k.weight), status=k.status))
             for lst in self.keys.values():
                 lst.sort(key=lambda x: x.id)
 
             self.apis = {}
             self.apis_by_id = {}
-            self.apis_openapi = {}
             for a in apis:
                 cfg = {
                     'id': a.id, 'slug': a.slug, 'name': a.name,
-                    'upstream_id': a.upstream_id,
+                    'system_id': a.system_id,
                     'method': a.method, 'path_tpl': a.path_tpl,
                     # 存原始值（可为 None）：管理端回读与库内 JSON 完全一致；
                     # 网关/探活消费方各自 `or {}` 兜底
@@ -89,16 +87,11 @@ class Store:
                     'timeout_ms': a.timeout_ms, 'probe': a.probe, 'enabled': a.enabled,
                     'health_status': a.health_status,
                     'description': a.description or '',
-                    'group1': a.group1 or '', 'group2': a.group2 or '',
-                    'pub_name': a.pub_name or '', 'doc_md': a.doc_md or '',
                     'last_probe_at': a.last_probe_at,
                     'last_latency_ms': a.last_latency_ms,
                 }
                 self.apis[a.slug] = cfg
                 self.apis_by_id[a.id] = cfg
-                if cfg['group1']:
-                    self.apis_openapi[(cfg['group1'], cfg['group2'],
-                                        cfg['pub_name'] or a.slug)] = cfg
 
             self.tokens = {}
             for t in toks:

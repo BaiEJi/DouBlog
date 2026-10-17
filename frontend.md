@@ -190,14 +190,15 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### ApiHubPage.jsx（apihub/，统一 API 调用平台 UI）
 
 单页 `/apihub`（门户卡片入口），六个内部 Tab：总览（24h 统计卡+健康徽标+一键探活）、
-上游（CRUD+密钥池弹窗，credential 脱敏展示）、API（按 OpenAPI 分组分区块展示：每个
-`group1/group2` 一个可折叠卡——组头=折叠箭头+分组路径+API 数徽章+`/openapi/{g1}/{g2}`
-前缀链接，未设 group1 的归「未分组（不发布）」排最后；≥8 条的组默认折叠、手动状态存
-localStorage `doublog_apihub_group_fold`，工具条搜索框按 slug/名称/method/路径过滤
-（命中组路径保留整组，无命中组隐藏，搜索中强制展开）、全部展开/收起批量按钮；行操作
-探活/分组/编辑/删除，其中「分组」为轻量弹窗——只编辑一级/二级分组/对外 api 名称/文档
-补充四字段+对外路径实时预览+前端轻校验，保存走 PUT 全量 upsert（未编辑字段从行数据
-透传，防 `_upsert_api` 整行覆写清空））、平台令牌（签发弹窗明文仅显示一次+复制）、
+系统（CRUD+密钥池弹窗，credential 脱敏展示；2026-10-17 重构前名「上游」）、API（**按
+所属系统分区块展示**：每个系统一个可折叠卡——组头=折叠箭头+系统名/slug+API 数徽章+
+`/gw/systems/{slug}/{path}` 透明代理前缀提示；≥8 条的系统默认折叠、手动状态存
+localStorage `doublog_apihub_system_fold`，工具条搜索框按 slug/名称/method/路径/系统
+过滤（命中系统保留整组，无命中组隐藏，搜索中强制展开）、全部展开/收起批量按钮；行操作
+调用/文档/探活/编辑/删除+行内启停开关——**调用弹窗参数齐全**：路径变量/query/header/body
+四桶输入框按 request_cfg 默认值自动预填（KeyValueFields 组件：可追加自定义键、清空即回落
+后端默认值），**文档弹窗**经 `GET /admin/apis/{id}/doc` 取 Markdown 用 shared/md.js 渲染
+（prose-content 样式，示例参数默认值全代入可直接复制））、平台令牌（签发弹窗明文仅显示一次+复制）、
 限流规则（四级+算法动态表单+实时余量进度条）、调用日志（按 API 筛选，限流触发标紫并
 注明层级）。配置类字段（auth_config/request_cfg/response_cfg/probe）用 JsonArea 组件
 （失焦校验标红不改值）。全页 select 用 selectCls（inputCls + `[color-scheme:light]
@@ -273,11 +274,10 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 - **ConfigPage**：数据库 / 日志上报 / **API Hub 出站代理**（2026-10-17 新增卡片：enabled+host+port，保存即时生效，测试按钮经当前配置探测 bots.qq.com）/ 登录账号 四卡片两列网格。
 - **vite 代理键必须用正则（2026-10-17 修复）**：`server.proxy` 的 `/api` 纯字符串前缀会把
   `/apihub` 页面路由也吞进代理（浏览器打开 /apihub 直接显示后端 404 JSON）——已改为
-  `'^/api(/|$)'` 与 `'^/openapi(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
+  `'^/api(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
 - **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`），侧栏整体纵向滚动；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；注册的 subtitle 不在公共侧栏显示；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
-- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
-- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
+- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
 - **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了
 

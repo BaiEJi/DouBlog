@@ -133,14 +133,14 @@ def main():
         accepted += d['accepted']
     state['sdklogs_ingested'] = accepted
 
-    # ── apihub（上游=本机 mock 60111）───────────────────
-    d, _ = call('POST', '/api/apihub/admin/upstreams', {
+    # ── apihub（系统=本机 mock 60111）───────────────────
+    d, _ = call('POST', '/api/apihub/admin/systems', {
         'slug': 'echo', 'name': 'echo', 'base_url': 'http://127.0.0.1:60111',
         'auth_config': {'type': 'none'},
     }, expect=201)
     uid = d['id']
     d, _ = call('POST', '/api/apihub/admin/apis', {
-        'slug': 'echo', 'name': 'echo', 'upstream_id': uid,
+        'slug': 'echo', 'name': 'echo', 'system_id': uid,
         'method': 'GET', 'path_tpl': '/echo',
     }, expect=201)
     aid = d['id']

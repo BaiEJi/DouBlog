@@ -795,7 +795,11 @@ GET /api/subs/members?keyword=netflix
 
 ## 14. API Hub API（统一 API 调用平台）
 
-> 聚合异构上游 API，统一以平台令牌调用；四级限流 / 计次配额 / 密钥池 / 一键与定时探活。
+> 聚合异构系统 API，统一以平台令牌调用；四级限流 / 计次配额 / 密钥池 / 一键与定时探活。
+> **分类只有 system → api 两个维度**（2026-10-17 重构）：系统手动创建（类比配置中心
+> confcenter 的 namespace），API 归属系统、路径模板映射到系统 base_url 上。系统内部
+> API 的自注册与 OpenAPI 发布入口（/openapi/**、group1/group2 分组、X-Apihub-Token
+> 内部令牌旁路）已随重构整体移除，存量数据由启动迁移自动清理（见 14.3）。
 > 模块代码 `app/apihub/`，前端页面 `/apihub`。管理端走 Basic Auth；**网关入口走平台令牌（sk-，不挂 Basic Auth）**。
 
 ### 14.1 网关调用（外部调用方，Authorization: Bearer sk-…）
@@ -806,20 +810,20 @@ POST   /api/apihub/gw/apis/{slug}
        body: {"path": {...}, "query": {...}, "header": {...}, "body": {...}}
 
 # 透明代理：原路径/query/body 透传（存量客户端只换 base_url 与鉴权头）
-ANY    /api/apihub/gw/upstreams/{upstream_slug}/{path}
+ANY    /api/apihub/gw/systems/{system_slug}/{path}
 ```
 
-- 响应默认透传（含上游状态码与 `X-Hub-Latency-Ms`）；API 配置 `response_cfg.envelope=wrap` 时返回统一信封 `{code,message,data,meta}`
+- 响应默认透传（含系统侧状态码与 `X-Hub-Latency-Ms`）；API 配置 `response_cfg.envelope=wrap` 时返回统一信封 `{code,message,data,meta}`
 - 错误归一化双通道：HTTP 状态 + `response_cfg.error_mapping`（`body_code_path/success_codes/body_message_path`，适配"HTTP 200 + body code 表错"的国内 API）
 - 429 响应头：`Retry-After` / `X-RateLimit-Scope`（token_api|api|token|global）/ `X-RateLimit-Limit` / `X-RateLimit-Remaining`
-- 上游 401/403 → 自动禁用该把 key 并换 key 重试；连接错误仅在有备选 key 时计失败（连续 3 次冷却 10s）；超时 → 504；全部失败 → 503
+- 系统侧 401/403 → 自动禁用该把 key 并换 key 重试；连接错误仅在有备选 key 时计失败（连续 3 次冷却 10s）；超时 → 504；全部失败 → 503
 - API 健康状态 down 时拒绝调用（503 unhealthy）；探活恢复后自动放行
 
-**实测示例**（上游指向本服务 /health，api_key_header 鉴权注入）：
+**实测示例**（系统指向本服务 /health，api_key_header 鉴权注入）：
 
 ```json
 POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
-→ {"status": "healthy"}            # 上游响应原样透传，X-Hub-Latency-Ms: 0
+→ {"status": "healthy"}            # 系统响应原样透传，X-Hub-Latency-Ms: 0
 
 第 3 次调用（API 总量规则 2 次/60s）→ 429
   Retry-After: 22, X-RateLimit-Scope: api, X-RateLimit-Limit: 2, X-RateLimit-Remaining: 0
@@ -828,75 +832,47 @@ POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
 ### 14.2 管理端（Basic Auth，统一 {success,code,message,data} 包装）
 
 ```
-上游      GET/POST /api/apihub/admin/upstreams   PUT/DELETE /api/apihub/admin/upstreams/{id}
-密钥池    GET/POST /api/apihub/admin/upstreams/{id}/keys   PUT/DELETE /api/apihub/admin/upstreams/keys/{kid}
+系统      GET/POST /api/apihub/admin/systems   PUT/DELETE /api/apihub/admin/systems/{id}
+密钥池    GET/POST /api/apihub/admin/systems/{id}/keys   PUT/DELETE /api/apihub/admin/systems/keys/{kid}
 API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/apis/{id}
-一键启停  PUT /api/apihub/admin/apis/{id}/enabled   {"enabled": bool}（关闭后 gw/openapi 立即 503「已关闭，不可用」；/doc 不受影响）
+一键启停  PUT /api/apihub/admin/apis/{id}/enabled   {"enabled": bool}（关闭后 gw 调用立即 503「已关闭，不可用」）
 平台令牌  GET/POST /api/apihub/admin/tokens      PUT/DELETE /api/apihub/admin/tokens/{id}
 限流规则  GET/POST /api/apihub/admin/rules       PUT/DELETE /api/apihub/admin/rules/{id}
 出站代理  GET /api/apihub/admin/proxy            PUT /api/apihub/admin/proxy   {"enabled","host","port"}
 连通测试  POST /api/apihub/admin/proxy/test      # 经当前配置探测 https://bots.qq.com/，任意 HTTP 状态即隧道通
-调试调用  POST /api/apihub/admin/apis/{id}/invoke  # 页面「调用」弹窗：{"path":{},"query":{},"body":…}
-                                                   # 不走平台令牌/限流/配额；返回 {status_code,latency_ms,ok,body}（上游原文）；日志 mode=test
+调试调用  POST /api/apihub/admin/apis/{id}/invoke  # 页面「调用」弹窗：{"path":{},"query":{},"header":{},"body":…}
+                                                   # 不走平台令牌/限流/配额；返回 {status_code,latency_ms,ok,body}（系统侧原文）；日志 mode=test
+调用文档  GET  /api/apihub/admin/apis/{id}/doc     # text/markdown：元信息/认证/参数默认值表/可直接复制的调用示例（前端「文档」弹窗渲染）
 探活      POST /api/apihub/probes/run            {"api_ids": [id,…]}  # 空=全部
 日志/统计 GET /api/apihub/logs?api_id=&token_id=&limit=   GET /api/apihub/stats/overview
 ```
 
 要点：
-- **上游 auth_config**（JSON）：`{providers: [...], credential_fields: [...], transport: {...}}`；
+- **系统（system，手动创建）**：`{name, slug, base_url, timeout_ms, max_retry, status, auth_config}`；
+  slug 唯一（字母数字_-，≤64）；API 的 `path_tpl` 拼接在 base_url 之后（`{path.x}`/`{cred.x}`
+  模板变量）；删除前须先删其下 API；`system_disabled`（503）= 系统被禁用
+- **系统 auth_config**（JSON）：`{providers: [...], credential_fields: [...], transport: {...}}`；
   providers 类型 = 七种静态 `bearer / api_key_header / query_key / basic / static_cookie / path_token / template`
   + **动态令牌 `qq_bot`**（2026-10-17，QQ 开放平台专用：appId+secret 换 access_token 约 7200s，
   进程内缓存、过期前 5 分钟自动刷新，注入 `Authorization: QQBot <token>`；凭证字段
   `app_id`/`app_secret`；provider 可选 `token_url` 覆盖端点，默认
   `https://bots.qq.com/app/getAppAccessToken`）；
   凭证模板 `{cred.字段}` 可用于 header/query/cookie 与 base_url/路径模板；多 provider 组合支持（数组）
-- **出站代理**（全局可选，`data/apihub_proxy.json`，/config 页读写）：仅 https 上游且非 localhost
-  走正向代理 CONNECT 隧道（本机 Clash 等）；http 上游与本机回环始终直连；保存即生效
+- **出站代理**（全局可选，`data/apihub_proxy.json`，/config 页读写）：仅 https 目标且非 localhost
+  走正向代理 CONNECT 隧道（本机 Clash 等）；http 目标与本机回环始终直连；保存即生效
   （旧空闲连接自然淘汰）
-- **API 参数默认值**（request_cfg 内，2026-10-17）：`param_defaults`（dict）为**路径模板变量**
-  提供缺省、`body.defaults`（dict）为 **JSON body 顶层字段**提供缺省——调用方未传时填充、
-  显式传值优先；gw invoke 与 OpenAPI 入口行为一致。QQ 场景示例：
+- **API 参数默认值——四桶全覆盖**（request_cfg 内，2026-10-17）：`param_defaults`（路径模板
+  变量）/ `query_defaults`（query 参数）/ `header_defaults`（请求头）/ `body.defaults`（JSON
+  body 顶层字段）均为 dict，调用方未传时填充、显式传值优先；gw invoke、透明代理外的调试
+  调用与调用文档共用同一合并语义。QQ 场景示例：
   `{"param_defaults": {"openid": "B93C…"}, "body": {"type": "json", "defaults": {"msg_type": 0}}}`
   → 调用方只需 `{"content": "告警内容"}`
 - **密钥池**：credential 按 credential_fields 填字典；列表只回脱敏指纹（`abc***23`），明文不落日志
 - **平台令牌**：`sk-` 前缀 SHA-256 落库，**明文仅创建响应返回一次**；属性：expires_at / allowed_api_ids / allowed_ips / quota_total（计次，预占-退还语义）
 - **限流规则**：scope = token_api|api|token|global（同层多条取最严格）；algorithm = token_bucket(rate_per_sec+burst) | fixed_window(window_s+max_count)；列表附当前用量 usage
 - **探活 probe**（JSON）：path（默认=API 自身路径）/expect_status/expect_body_regex/interval_s（>0 定时探，down 态间隔×5）/failure_threshold/success_threshold
-- **OpenAPI 发布字段**（2026-10-12，API 增删改均支持）：`group1`（一级分组，空=不发布）、`group2`（二级，需先有一级，**最多二级**）、
-  `pub_name`（对外 api 名称，空=slug，分组内唯一，`doc` 为保留字）、`doc_md`（Markdown 文档补充段落）
 
-### 14.3 OpenAPI 发布入口（2026-10-12；顶级路径，鉴权 = apihub 平台令牌 sk-）
-
-```
-# 对外调用（method/query/body 原样转发；路径模板变量以 query 参数注入）
-ANY  /openapi/{一级分组}/{二级分组}/{api名称}        # 二级可空：/openapi/{一级}/{api名称}
-GET  /openapi/{一级分组}/{二级分组}/{api名称}/doc    # 完整 Markdown 文档（公开无鉴权）
-```
-
-- api 名称 = `pub_name`（管理端可自设），缺省 slug；服务内 API 由 `tools/apihub_register_self.py`
-  统一发布为 `self/<模块名>/...`（一级=自我服务，二级=模块）
-- **服务内 API 不走用户身份验证**：上游回源经内部服务令牌 `X-Apihub-Token`（密钥文件
-  `data/internal_token` 自动生成，`require_basic` 见此头即信任）；调用方鉴权完全由 apihub
-  平台令牌（sk-）承担，不接触内部凭据
-- 路径变量：内部路径模板 `/api/todo/tasks/{path.task_id}` 的变量以**同名 query 参数**注入
-  （`?task_id=123`），该参数不再转发；缺变量 400 `template_error`
-- 四级限流/计次配额/健康阻断/密钥池与 gw invoke 完全一致（共用 api 级规则）；调用日志 `mode='openapi'`
-- 方法不符 405（带 `Allow`）；`/doc` 返回 `text/markdown`：元信息（分组/上游/方法/模板/地址）+
-  认证说明 + 路径变量表 + 限流 + curl 示例 + `doc_md` 自定义段落
-
-**实测示例**（self 注册后）：
-
-```
-GET /openapi/self/todo/todo-get-todo-tasks        (Authorization: Bearer sk-…)
-→ {"success":true,"code":200,...}                  # 与直连响应逐字节一致
-
-DELETE /openapi/self/todo/todo-delete-todo-tasks-task_id?task_id=<uuid>
-→ 200 {"success":true,...,"data":{"ok":true}}      # 路径变量经 query 注入
-
-GET  /openapi/self/blog/blog-get-posts/doc         # 公开，text/markdown
-```
-
-**QQ 机器人接入实测**（2026-10-17，上游 `qq` + `qq_bot` provider + 出站代理）：
+**QQ 机器人接入实测**（2026-10-17，系统 `qq` + `qq_bot` provider + 出站代理）：
 
 ```
 # 管理端一次性注册（auth_config.providers=[{"type":"qq_bot"}]、凭证 {app_id, app_secret}；
@@ -907,6 +883,17 @@ POST /api/apihub/gw/apis/qq-send-c2c       (Authorization: Bearer sk-…)
 
 → 200 {"id":"ROBOT1.0_3sPbBo68VNkUDW.Cu1ggNj-…","timestamp":"2026-10-17T10:09:59+08:00",…}
 ```
+
+### 14.3 upstream → system 迁移（2026-10-17，启动时自动执行）
+
+老库（存在 `apihub_upstreams` 表或 `apihub_apis.group1` 列）启动时幂等迁移：
+
+- 表改名 `apihub_upstreams` → `apihub_systems`（db.LEGACY_TABLE_MAP）；`apihub_apis` / `apihub_keys` /
+  `apihub_call_logs` 的 `upstream_id` 列改名 `system_id`
+- **删除自注册遗留数据**：系统 `doublog`（自注册脚本产物）及其下全部 API / 密钥 / 探活日志 /
+  调用日志 / api 级限流规则，以及令牌 `doublog-self` 与其 token 级规则（仅老库首次迁移执行一次）
+- DROP `apihub_apis` 的 OpenAPI 发布四列 `group1/group2/pub_name/doc_md`
+  （旧 SQLite <3.35 不支持 DROP COLUMN 时仅告警，残留列不影响功能）
 
 ## 15. Todo API（四象限待办，MyTodo 迁入）
 
