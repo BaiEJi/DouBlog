@@ -1,12 +1,13 @@
 /**
  * 题库列表：可折叠筛选区（搜索防抖 300ms / TagSelect / 难度多选 / 状态 / 来源 / 语言 /
  * 仅看待复习开关 / 且或切换 / 清空）+ 列表表格（题号来源|标题|难度|状态|标签|解法数|
- * 语言|下一复习日(逾期红)|更新时间，行点击进详情）+ 分页 + 导入导出入口。
+ * 语言|下一复习日(逾期红)|更新时间，行点击进详情）+ 分页。
+ * 导入导出入口在父级 PracticeView 的子视图头（与新增题目同一行）。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
-  listProblems, importProblems, exportProblems,
+  listProblems,
   SOURCES, STATUSES, LANGUAGES, DIFFICULTIES, diffMeta, statusMeta, sourceLabel, langMeta,
 } from '../api'
 import { Empty, Spinner, Switch, btn, Icon } from '../../todo/kit'
@@ -95,7 +96,7 @@ function pageWindow(page, pages) {
 
 // ─── 列表主组件 ──────────────────────────────────────────────
 
-export default function ProblemList({ toast, onOpen, onImported, refreshSignal = 0, tags, onCreateTag }) {
+export default function ProblemList({ toast, onOpen, refreshSignal = 0, tags, onCreateTag }) {
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [qInput, setQInput] = useState('')
   const [filters, setFilters] = useState({
@@ -104,8 +105,6 @@ export default function ProblemList({ toast, onOpen, onImported, refreshSignal =
   const [page, setPage] = useState(1)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [busyIO, setBusyIO] = useState(false)
-  const fileRef = useRef(null)
 
   // 搜索防抖 300ms
   useEffect(() => {
@@ -157,33 +156,9 @@ export default function ProblemList({ toast, onOpen, onImported, refreshSignal =
     setPage(1)
   }
 
-  const doExport = async format => {
-    if (busyIO) return
-    setBusyIO(true)
-    try {
-      await exportProblems(format)
-      toast(format === 'md' ? '已导出 Markdown(zip)' : '已导出 JSON')
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '导出失败', 'error')
-    } finally { setBusyIO(false) }
-  }
-  const doImport = async e => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file) return
-    setBusyIO(true)
-    try {
-      const res = await importProblems(file)
-      toast(`导入 ${res.imported} 题${res.skipped ? `，跳过 ${res.skipped} 题` : ''}${res.invalid ? `，${res.invalid} 条无效` : ''}`)
-      onImported?.() // 通知父级刷新列表（refreshSignal 递增触发重拉）
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '导入失败', 'error')
-    } finally { setBusyIO(false) }
-  }
-
   return (
     <div className="space-y-4">
-      {/* ── 工具栏：筛选折叠 + 导入导出 ── */}
+      {/* ── 工具栏：筛选折叠 + 计数 ── */}
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" onClick={() => setFiltersOpen(!filtersOpen)} className={btn.plain}>
           <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6"
@@ -194,20 +169,6 @@ export default function ProblemList({ toast, onOpen, onImported, refreshSignal =
           {hasFilter && <span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500" />}
         </button>
         <span className="text-xs text-stone-400 tabular-nums">共 {total} 题</span>
-        <span className="flex-1" />
-        <button type="button" onClick={() => fileRef.current?.click()} disabled={busyIO}
-          className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
-          导入
-        </button>
-        <button type="button" onClick={() => doExport('json')} disabled={busyIO}
-          className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
-          导出 JSON
-        </button>
-        <button type="button" onClick={() => doExport('md')} disabled={busyIO}
-          className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
-          导出 MD
-        </button>
-        <input ref={fileRef} type="file" accept=".json,.zip" className="hidden" onChange={doImport} />
       </div>
 
       {/* ── 筛选区（可折叠） ── */}

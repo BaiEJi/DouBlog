@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { listTags, createTag, reviewToday } from './api'
+import { listTags, createTag, reviewToday, importProblems, exportProblems } from './api'
 import { Icon } from '../todo/kit'
 import { useModuleNavigation } from '../shared/module-navigation'
 import ProblemList from './components/ProblemList'
@@ -32,6 +32,9 @@ export default function PracticeView({ toast, dark }) {
   const [serverToday, setServerToday] = useState(null)
   const [refreshSignal, setRefreshSignal] = useState(0)
   const [tags, setTags] = useState([])
+  // 题库导入导出（按钮在子视图头，与新增题目同一行；仅题库子视图可见）
+  const [busyIO, setBusyIO] = useState(false)
+  const fileRef = useRef(null)
 
   // 卸载守卫：异步回调 setState 前确认组件仍挂载
   const aliveRef = useRef(true)
@@ -66,6 +69,30 @@ export default function PracticeView({ toast, dark }) {
 
   const bump = () => setRefreshSignal(x => x + 1)
 
+  const doExport = async format => {
+    if (busyIO) return
+    setBusyIO(true)
+    try {
+      await exportProblems(format)
+      toast(format === 'md' ? '已导出 Markdown(zip)' : '已导出 JSON')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '导出失败', 'error')
+    } finally { setBusyIO(false) }
+  }
+  const doImport = async e => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setBusyIO(true)
+    try {
+      const res = await importProblems(file)
+      toast(`导入 ${res.imported} 题${res.skipped ? `，跳过 ${res.skipped} 题` : ''}${res.invalid ? `，${res.invalid} 条无效` : ''}`)
+      bump()
+    } catch (err) {
+      toast(err instanceof Error ? err.message : '导入失败', 'error')
+    } finally { setBusyIO(false) }
+  }
+
   useModuleNavigation({ items: SUBS.map(s => ({ ...s, badge: s.key === 'review' ? dueCount || undefined : undefined })), activeKey: sub,
     onSelect: key => { setSub(key); setDetailId(null); setEdit(null) },
   })
@@ -79,6 +106,24 @@ export default function PracticeView({ toast, dark }) {
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-base font-semibold">{SUBS.find(s => s.key === sub)?.label}</h1>
           <span className="flex-1" />
+          {/* 导入导出仅题库子视图有，与新增题目同一行 */}
+          {sub === 'list' && (
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={busyIO}
+                className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
+                导入
+              </button>
+              <button type="button" onClick={() => doExport('json')} disabled={busyIO}
+                className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
+                导出 JSON
+              </button>
+              <button type="button" onClick={() => doExport('md')} disabled={busyIO}
+                className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
+                导出 MD
+              </button>
+              <input ref={fileRef} type="file" accept=".json,.zip" className="hidden" onChange={doImport} />
+            </div>
+          )}
           <button type="button" onClick={() => setEdit({ id: null, from: 'list' })}
             className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium bg-indigo-500 text-white hover:bg-indigo-600 transition-colors">
             {Icon.plus}新增题目
@@ -124,7 +169,6 @@ export default function PracticeView({ toast, dark }) {
               tags={tags}
               onCreateTag={onCreateTag}
               refreshSignal={refreshSignal}
-              onImported={bump}
               onOpen={id => setDetailId(id)} />
           )}
           {sub === 'review' && (
