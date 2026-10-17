@@ -276,6 +276,10 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 **改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/系统配置（详见 AGENTS.md 验证清单）。
 
+- **ConfigPage**：数据库 / 日志上报 / **API Hub 出站代理**（2026-10-17 新增卡片：enabled+host+port，保存即时生效，测试按钮经当前配置探测 bots.qq.com）/ 登录账号 四卡片两列网格。
+- **vite 代理键必须用正则（2026-10-17 修复）**：`server.proxy` 的 `/api` 纯字符串前缀会把
+  `/apihub` 页面路由也吞进代理（浏览器打开 /apihub 直接显示后端 404 JSON）——已改为
+  `'^/api(/|$)'` 与 `'^/openapi(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
 - **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。180px 紧凑左侧栏常驻 sticky（`h-screen`），顶部按钮可折叠为 56px 图标栏；侧栏文字统一增加 2px：菜单/模块标题 16px，辅助说明 13.5px，徽标/页脚 13px；一级菜单行高 32px、子菜单 28px，行间距 2px。折叠状态存于 localStorage `doublog_sidebar_collapsed`，刷新及跨模块导航沿用；图标保留名称提示、选中态、门户与主题入口，点击含子菜单的图标会展开侧栏。侧栏内容独立滚动，折叠时保留菜单及 sidebar 插槽挂载（隐藏子项和插槽），正文不重挂；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
 - **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；插槽文字同样增加 2px；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。

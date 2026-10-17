@@ -16,8 +16,9 @@ export default defineConfig({
     port: 60101,
     host: '0.0.0.0',
     proxy: {
-      '/api': process.env.VITE_API_PROXY || 'http://127.0.0.1:60100',
-      '/openapi': process.env.VITE_API_PROXY || 'http://127.0.0.1:60100',
+      // 正则键精确匹配路径段：纯前缀 '/api' 会把 /apihub 页面路由也吞进代理（页面 404）
+      '^/api(/|$)': process.env.VITE_API_PROXY || 'http://127.0.0.1:60100',
+      '^/openapi(/|$)': process.env.VITE_API_PROXY || 'http://127.0.0.1:60100',
     },
   }
 })

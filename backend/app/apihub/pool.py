@@ -16,6 +16,8 @@ import threading
 import time
 import urllib.parse
 
+from app.apihub.proxy import resolve_proxy
+
 MAX_IDLE = 256
 IDLE_MAX_AGE_S = 4.5
 MAX_CONN_PER_TARGET = 128
@@ -71,18 +73,25 @@ class _Conn:
 
 
 class _Target:
-    def __init__(self, scheme, host, port, ssl_ctx):
+    def __init__(self, scheme, host, port, ssl_ctx, proxy=None):
         self.scheme = scheme
         self.host = host
         self.port = port
         self.ssl_ctx = ssl_ctx
+        # (proxy_host, proxy_port) 或 None：https 目标经正向代理 CONNECT 隧道
+        # （resolve_proxy 已保证仅 https 且非 localhost 才有值）
+        self.proxy = proxy
         self.idle: list = []
         self.lock = threading.Lock()      # 保护 idle 列表
         self.sem = threading.Semaphore(MAX_CONN_PER_TARGET)
 
     def _connect(self, timeout_s):
         try:
-            if self.scheme == 'https':
+            if self.proxy:
+                conn = http.client.HTTPSConnection(self.proxy[0], self.proxy[1],
+                                                   timeout=timeout_s, context=self.ssl_ctx)
+                conn.set_tunnel(self.host, self.port)
+            elif self.scheme == 'https':
                 conn = http.client.HTTPSConnection(self.host, self.port, timeout=timeout_s,
                                                    context=self.ssl_ctx)
             else:
@@ -195,8 +204,10 @@ class _Target:
 
 
 class UpstreamPool:
-    """按 (scheme, host, port, verify) 分池的共享客户端。复杂 transport
-    （自定义 CA/代理）不支持——需要时在上游配置里关闭走系统默认或扩展。"""
+    """按 (scheme, host, port, verify, proxy) 分池的共享客户端。出站代理为全局
+    可选配置（app/apihub/proxy.py，/config 页读写）：仅 https 目标且非 localhost
+    时经正向代理 CONNECT 隧道，代理配置变更后新连接自动走新配置（旧空闲连接
+    4.5s 过期自然淘汰）。自定义 CA 不支持——需要时在上游配置里关闭校验。"""
 
     def __init__(self):
         self._targets: dict = {}
@@ -209,11 +220,12 @@ class UpstreamPool:
             raise UpstreamProtocolError(f'unsupported url: {url}')
         ssl_ctx = _get_ssl(verify is not False) if u.scheme == 'https' else None
         port = u.port or (443 if u.scheme == 'https' else 80)
-        key = (u.scheme, u.hostname, port, id(ssl_ctx))
+        proxy = resolve_proxy(u.scheme, u.hostname)
+        key = (u.scheme, u.hostname, port, id(ssl_ctx), proxy)
         with self._lock:
             t = self._targets.get(key)
             if t is None:
-                t = _Target(u.scheme, u.hostname, port, ssl_ctx)
+                t = _Target(u.scheme, u.hostname, port, ssl_ctx, proxy)
                 self._targets[key] = t
         target = u.path or '/'
         if u.query:

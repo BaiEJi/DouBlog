@@ -118,11 +118,14 @@ def render_obj(obj, ctx: dict):
     return obj
 
 
-# ─── 鉴权适配（静态七式，一个注入引擎） ─────────────────────────────
+# ─── 鉴权适配（静态七式 + qq_bot 动态令牌，一个注入引擎） ────────────
 
 STATIC_PROVIDER_TYPES = {
     'bearer', 'api_key_header', 'query_key', 'basic',
     'static_cookie', 'path_token', 'template',
+    # qq_bot：QQ 开放平台动态令牌——appId+secret 换 access_token（约 7200s 有效），
+    # 进程内缓存自动刷新，注入 Authorization: QQBot <token>；凭证字段 app_id/app_secret
+    'qq_bot',
 }
 
 
@@ -147,14 +150,21 @@ class Injection:
     cookies: dict = field(default_factory=dict)
 
 
-def apply_providers(providers: list, cred: dict) -> Injection:
-    """把全部 provider 编译为注入规则；cred = 该把 key 的凭证字段字典。"""
+def apply_providers(providers: list, cred: dict, token_fetch=None) -> Injection:
+    """把全部 provider 编译为注入规则；cred = 该把 key 的凭证字段字典。
+
+    token_fetch(provider_cfg, cred) -> str：qq_bot 等动态令牌 provider 的取 token
+    回调（网关/探活运行态绑定 state.tokens；未绑定时遇到 qq_bot 抛 TemplateError）。"""
     ctx = {'cred': cred}
     inj = Injection()
     for p in providers:
         t = p.get('type')
         if t == 'bearer':
             inj.headers['Authorization'] = 'Bearer ' + render(p.get('value', '{cred.token}'), ctx)
+        elif t == 'qq_bot':
+            if token_fetch is None:
+                raise TemplateError('qq_bot provider 需要令牌交换器（运行态）')
+            inj.headers['Authorization'] = 'QQBot ' + token_fetch(p, cred)
         elif t == 'api_key_header':
             inj.headers[p.get('header') or 'X-API-Key'] = render(p.get('value', '{cred.token}'), ctx)
         elif t == 'query_key':
@@ -173,6 +183,59 @@ def apply_providers(providers: list, cred: dict) -> Injection:
             inj.cookies.update(render_obj(tpl.get('cookies', {}), ctx))
         # path_token: 凭证变量直接用于 path/base_url 模板，无注入动作
     return inj
+
+
+# ─── qq_bot 动态令牌交换（appId+secret → access_token，进程内缓存） ──
+
+QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
+QQ_TOKEN_REFRESH_MARGIN_S = 300      # 提前 5 分钟刷新
+QQ_TOKEN_TIMEOUT_S = 15.0
+
+
+class TokenExchanger:
+    """QQ 开放平台 access_token 交换器：按 (token_url, app_id) 缓存，
+    过期前 QQ_TOKEN_REFRESH_MARGIN_S 秒自动重新交换；连接走共享池（含出站代理）。
+
+    provider 可配置 token_url / app_id / app_secret 模板（默认取凭证字段）。"""
+
+    def __init__(self):
+        self._cache: dict = {}      # (url, app_id) -> (token, expire_at_monotonic)
+        self._lock = threading.Lock()
+
+    def get(self, pool, provider: dict, cred: dict) -> str:
+        ctx = {'cred': cred}
+        url = render(provider.get('token_url') or QQ_TOKEN_URL, ctx)
+        app_id = render(provider.get('app_id') or '{cred.app_id}', ctx)
+        secret = render(provider.get('app_secret') or '{cred.app_secret}', ctx)
+        cache_key = (url, app_id)
+        now = time.monotonic()
+        with self._lock:
+            ent = self._cache.get(cache_key)
+            if ent and ent[1] > now:
+                return ent[0]
+        payload = json.dumps({'appId': app_id, 'clientSecret': secret}).encode()
+        r = pool.request('POST', url, {'Content-Type': 'application/json'},
+                         {}, payload, QQ_TOKEN_TIMEOUT_S)
+        try:
+            data = json.loads(r.content)
+        except ValueError as e:
+            raise ValueError(f'qq token 响应非 JSON: {e}') from e
+        token = data.get('access_token')
+        if r.status != 200 or not token:
+            raise ValueError(f'qq token 交换失败 http {r.status}: '
+                             f'{str(data)[:120]}')
+        try:
+            expires_in = max(60, int(data.get('expires_in') or 7200))
+        except (TypeError, ValueError):
+            expires_in = 7200
+        with self._lock:
+            self._cache[cache_key] = (token, time.monotonic() + expires_in
+                                      - QQ_TOKEN_REFRESH_MARGIN_S)
+        return token
+
+    def clear(self):
+        with self._lock:
+            self._cache.clear()
 
 
 # ─── 内存限流（令牌桶 + 固定窗口，多级 AND） ────────────────────────

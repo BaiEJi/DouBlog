@@ -36,6 +36,7 @@ from app.apihub.core import (DEFAULT_PROBE, Injection, LevelSpec, TemplateError,
 from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog, ApihubKey,
                                ApihubRule, ApihubToken, ApihubUpstream)
 from app.apihub.pool import UpstreamConnectError, UpstreamProtocolError, UpstreamTimeout
+from app.apihub.proxy import load_proxy_config, save_proxy_config
 from app.apihub.state import get_state
 from app.db import db, run_db
 from app.shared.auth import require_basic
@@ -186,6 +187,13 @@ def _url_for(up, key, path_tpl, path_vars):
     return base.rstrip('/') + '/' + path.lstrip('/')
 
 
+def _auth_injection(state, up, key):
+    """鉴权注入：qq_bot 等动态令牌 provider 绑定 state.token_exchange（走共享池/出站代理）。"""
+    def _fetch(provider, cred):
+        return state.token_exchange.get(state.pool, provider, cred)
+    return apply_providers(up['providers'], key.cred, token_fetch=_fetch)
+
+
 def _build_headers(inbound, inj: Injection):
     headers = {str(k): str(v) for k, v in (inbound or {}).items()
                if k.lower() not in STRIP_HEADERS}
@@ -256,6 +264,18 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     req_cfg = api['request_cfg'] or {}
     body_cfg = req_cfg.get('body') or {}
     body_type = body_cfg.get('type', 'json')
+    # 参数默认值（QQ 等场景：openid 等可不传）：
+    # - param_defaults：路径模板变量（未提供时填充，调用方显式值优先）
+    # - body.defaults：JSON body 顶层字段（同上）
+    param_defaults = req_cfg.get('param_defaults') or {}
+    body_defaults = body_cfg.get('defaults') or {}
+    if param_defaults:
+        env_path = {**param_defaults, **env_path}
+    if body_defaults and api['method'] not in ('GET', 'HEAD'):
+        if env_body is None:
+            env_body = dict(body_defaults) if body_type == 'json' else None
+        elif body_type == 'json' and isinstance(env_body, dict):
+            env_body = {**body_defaults, **env_body}
     timeout_s = (api['timeout_ms'] or up['timeout_ms']) / 1000.0
 
     attempts = max(1, up['max_retry'] + 1)
@@ -268,7 +288,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
             break
         try:
             url = _url_for(up, key, api['path_tpl'], env_path)
-            inj = apply_providers(up['providers'], key.cred)
+            inj = _auth_injection(state, up, key)
             headers = _build_headers(env_header, inj)
             params = {**env_query, **inj.query}
 
@@ -508,7 +528,7 @@ def probe_api(app, api_id, source='manual'):
             url = render(up['base_url'], {'cred': {}}).rstrip('/') + '/' + probe['path'].lstrip('/')
         else:
             url = _url_for(up, key, probe['path'], {})
-        inj = apply_providers(up['providers'], cred)
+        inj = _auth_injection(state, up, key) if key is not None else apply_providers(up['providers'], cred)
         headers = {str(k): str(v) for k, v in (probe.get('headers') or {}).items()}
         headers.update(inj.headers)
         payload = b''
@@ -769,6 +789,45 @@ async def delete_key(kid: int, request: Request):
     return await run_db(_run)
 
 
+# ─── 管理端：出站代理（全局，/config 页读写） ────────────────────────
+
+@router.get('/admin/proxy', dependencies=_ADMIN_AUTH)
+async def get_proxy_config(request: Request):
+    return api_response(load_proxy_config())
+
+
+@router.put('/admin/proxy', dependencies=_ADMIN_AUTH)
+async def put_proxy_config(request: Request):
+    body = await _silent_json(request) or {}
+    port = body.get('port')
+    if port is not None and not (isinstance(port, int) and 1 <= port <= 65535):
+        return api_response(None, 400, 'port 必须是 1-65535 的整数')
+    host = str(body.get('host') or '').strip()
+    if body.get('enabled') and not host:
+        return api_response(None, 400, '启用代理时 host 不能为空')
+    cfg = save_proxy_config({'enabled': bool(body.get('enabled')),
+                             'host': host, 'port': port})
+    # 配置变更即生效：清掉按旧代理键缓存的空闲连接
+    get_state(request.app).pool.close_all()
+    return api_response(cfg)
+
+
+@router.post('/admin/proxy/test', dependencies=_ADMIN_AUTH)
+async def test_proxy(request: Request):
+    """经当前代理配置探测外网连通性（GET https://bots.qq.com/，任意 HTTP 状态都证明隧道通）。"""
+    state = get_state(request.app)
+    t0 = time.monotonic()
+    try:
+        r = state.pool.request('GET', 'https://bots.qq.com/', {}, {}, b'', 8.0)
+        return api_response({'ok': True, 'status_code': r.status,
+                             'latency_ms': int((time.monotonic() - t0) * 1000),
+                             'proxy': load_proxy_config()})
+    except Exception as e:  # noqa: BLE001 - 连通性问题以失败信封返回
+        return api_response({'ok': False, 'error': f'{type(e).__name__}: {e}'[:200],
+                             'latency_ms': int((time.monotonic() - t0) * 1000),
+                             'proxy': load_proxy_config()})
+
+
 # ─── 管理端：API ────────────────────────────────────────────────────
 
 def _api_dict(app, a):
@@ -888,6 +947,122 @@ async def delete_api(aid: int, request: Request):
         get_state(app).reload()
         return api_response({'ok': True})
     return await run_db(_run)
+
+
+@router.post('/admin/apis/{aid}/invoke', dependencies=_ADMIN_AUTH)
+async def admin_invoke_api(aid: int, request: Request):
+    """页面调试调用：管理端直发一次上游请求（不走平台令牌/限流/配额，mode='test' 记日志），
+    返回原始上游状态/延迟/响应体——/apihub 页「调用」弹窗用。"""
+    raw = await _silent_json(request)
+    if not isinstance(raw, dict):
+        raw = {}
+    return await _run_gw(lambda: _admin_invoke_sync(request.app, aid, raw))
+
+
+def _admin_invoke_sync(app, aid: int, raw: dict):
+    state = get_state(app)
+    t0 = time.monotonic()
+    api = state.store.apis_by_id.get(aid)
+    if api is None:
+        return _gw_err(404, 'not_found', 'API 不存在')
+    if not api['enabled']:
+        return _gw_err(503, 'api_disabled', f"API '{api['slug']}' 已关闭，不可用")
+    up = state.store.upstreams.get(api['upstream_id'])
+    if up is None or up['status'] != 1:
+        return _gw_err(503, 'upstream_disabled', '上游已禁用')
+
+    req_cfg = api['request_cfg'] or {}
+    body_cfg = req_cfg.get('body') or {}
+    body_type = body_cfg.get('type', 'json')
+    # 与 gw invoke 相同的默认值语义：param_defaults（路径变量）+ body.defaults（JSON 顶层）
+    env_path = {**(req_cfg.get('param_defaults') or {}), **(raw.get('path') or {})}
+    env_query = raw.get('query') or {}
+    env_body = raw.get('body')
+    body_defaults = body_cfg.get('defaults') or {}
+    if body_defaults and api['method'] not in ('GET', 'HEAD'):
+        if env_body is None:
+            env_body = dict(body_defaults) if body_type == 'json' else None
+        elif body_type == 'json' and isinstance(env_body, dict):
+            env_body = {**body_defaults, **env_body}
+    timeout_s = (api['timeout_ms'] or up['timeout_ms']) / 1000.0
+
+    attempts = max(1, up['max_retry'] + 1)
+    last_error = 'no_attempt'
+    for _attempt in range(attempts):
+        key = state.selector.next_key(up['id'], state.store.keys.get(up['id'], []))
+        if key is None:
+            last_error = 'no_available_key' if last_error == 'no_attempt' \
+                else f'no_available_key(prev:{last_error})'
+            break
+        try:
+            url = _url_for(up, key, api['path_tpl'], env_path)
+            inj = _auth_injection(state, up, key)
+            headers = _build_headers(raw.get('header') or {}, inj)
+            params = {**env_query, **inj.query}
+
+            body_json = body_data = body_content = None
+            if api['method'] not in ('GET', 'HEAD') and env_body is not None:
+                if body_type == 'json':
+                    body_json = env_body
+                    headers.setdefault('Content-Type', 'application/json')
+                elif body_type == 'form':
+                    body_data = env_body
+                    headers.setdefault('Content-Type', 'application/x-www-form-urlencoded')
+                else:
+                    headers['Content-Type'] = body_cfg.get('content_type', 'application/octet-stream')
+                    body_content = env_body.encode() if isinstance(env_body, str) else env_body
+            if body_content is not None:
+                payload = body_content if isinstance(body_content, bytes) else str(body_content).encode()
+            elif body_json is not None:
+                payload = json.dumps(body_json).encode()
+            elif body_data is not None:
+                payload = urlencode(body_data).encode()
+            else:
+                payload = b''
+            if inj.cookies:
+                headers['Cookie'] = '; '.join(f'{k}={v}' for k, v in inj.cookies.items())
+
+            r = state.pool.request(api['method'], url, headers, params, payload,
+                                   timeout_s, verify=up['transport'].get('verify', True))
+        except TemplateError as e:
+            return _gw_err(400, 'template_error', str(e))
+        except UpstreamTimeout:
+            last_error = 'timeout'
+            continue
+        except ValueError as e:
+            last_error = str(e)[:60]
+            continue
+        except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
+            if len(state.store.keys.get(up['id'], [])) > 1:
+                state.selector.note_failure(key.id, cooldown_s=10)
+            last_error = f'conn_error:{type(e).__name__}'
+            continue
+
+        if r.status in (401, 403):
+            _disable_denied_key(state, key.id, r.status)
+            last_error = f'auth_{r.status}'
+            continue
+
+        state.selector.note_success(key.id)
+        latency = int((time.monotonic() - t0) * 1000)
+        charset = (api['response_cfg'] or {}).get('charset')
+        ok, err_code, err_msg = _eval_response(api['response_cfg'], r.status, r.content, charset)
+        _log(state, None, api, up, key.id, 'test', api['method'], api['slug'],
+             r.status, t0, ok, None if ok else f'upstream_code:{err_code}')
+        try:
+            parsed = orjson.loads(r.content) if r.content else None
+            if not isinstance(parsed, (dict, list, int, float, bool, type(None))):
+                parsed = r.content.decode(charset or 'utf-8', errors='replace')
+        except (ValueError, UnicodeDecodeError):
+            parsed = r.content.decode(charset or 'utf-8', errors='replace')
+        return api_response({'status_code': r.status, 'latency_ms': latency, 'ok': ok,
+                             'body': parsed})
+
+    _log(state, None, api, up, None, 'test', api['method'], api['slug'],
+         None, t0, False, last_error)
+    if last_error == 'timeout':
+        return _gw_err(504, 'upstream_timeout', '上游超时')
+    return _gw_err(503, 'upstream_error', f'所有尝试失败: {last_error}')
 
 
 @router.put('/admin/apis/{aid}/enabled', dependencies=_ADMIN_AUTH)
@@ -1315,15 +1490,28 @@ def _openapi_call_sync(request: Request, g1: str, g2: str, name: str, body: byte
         state.store.quota_used[token['id']] = used + 1   # 预占-退还
         quota_reserved = True
 
-    # 路径模板变量从 query 提取（?var=值 → /{path.var}），其余 query 原样转发
+    # 路径模板变量从 query 提取（?var=值 → /{path.var}），其余 query 原样转发；
+    # request_cfg.param_defaults 提供缺省（调用方未传该 query 时使用默认值）
     query = dict(request.query_params)
-    path_vars = {}
+    req_cfg = api['request_cfg'] or {}
+    body_cfg = req_cfg.get('body') or {}
+    path_vars = dict(req_cfg.get('param_defaults') or {})
     for var in _PATH_VAR_RE.findall(api['path_tpl']):
-        if not query.get(var):
+        if query.get(var):
+            path_vars[var] = query.pop(var)
+        elif not path_vars.get(var):
             if quota_reserved:
                 state.store.quota_used[token['id']] -= 1
             return _gw_err(400, 'template_error', f'缺少路径变量 {var}（以 query 参数传入）')
-        path_vars[var] = query.pop(var)
+
+    # JSON body 顶层字段缺省（request_cfg.body.defaults，调用方字段优先）
+    if body_cfg.get('defaults') and method not in ('GET', 'HEAD') and body:
+        try:
+            parsed = json.loads(body)
+            if isinstance(parsed, dict):
+                body = json.dumps({**body_cfg['defaults'], **parsed}).encode()
+        except ValueError:
+            pass
 
     inbound = {k: v for k, v in request.headers.items() if k.lower() not in STRIP_HEADERS}
     timeout_s = (api['timeout_ms'] or up['timeout_ms']) / 1000.0
@@ -1338,7 +1526,7 @@ def _openapi_call_sync(request: Request, g1: str, g2: str, name: str, body: byte
             break
         try:
             url = _url_for(up, key, api['path_tpl'], path_vars)
-            inj = apply_providers(up['providers'], key.cred)
+            inj = _auth_injection(state, up, key)
             headers = _build_headers(inbound, inj)
             if body:
                 headers.setdefault('Content-Type', request.headers.get('content-type')

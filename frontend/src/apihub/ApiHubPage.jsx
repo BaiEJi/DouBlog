@@ -10,8 +10,8 @@ import PageHeader from '../shared/PageHeader'
 import { API_BASE } from '../shared/client'
 import {
   apihubAddKey, apihubApis, apihubCreateToken, apihubDeleteApi, apihubDeleteKey,
-  apihubDeleteRule, apihubDeleteToken, apihubDeleteUpstream, apihubKeys, apihubLogs,
-  apihubOverview, apihubProbeAll, apihubRules, apihubSaveApi, apihubSaveRule,
+  apihubDeleteRule, apihubDeleteToken, apihubDeleteUpstream, apihubInvokeApi, apihubKeys,
+  apihubLogs, apihubOverview, apihubProbeAll, apihubRules, apihubSaveApi, apihubSaveRule,
   apihubSaveUpstream, apihubToggleApi, apihubTokens, apihubUpdateKey, apihubUpdateToken,
   apihubUpstreams,
 } from './api'
@@ -444,12 +444,104 @@ const loadFolds = () => {
   try { return JSON.parse(localStorage.getItem(FOLD_KEY)) || {} } catch { return {} }
 }
 
+/** 调用弹窗：页面直发一次上游请求（管理端调试通道，不走平台令牌/限流/配额，日志 mode=test）。
+ *  路径模板变量自动生成输入框（预填 param_defaults），body JSON 编辑器预填 body.defaults。 */
+function InvokeModal({ row, onClose, setErr }) {
+  const reqCfg = row.request_cfg || {}
+  const defaults = reqCfg.param_defaults || {}
+  const pathVars = [...row.path_tpl.matchAll(/\{path\.(\w+)\}/g)].map(m => m[1])
+  const [pv, setPv] = useState(() => Object.fromEntries(pathVars.map(v => [v, defaults[v] ?? ''])))
+  const [bodyText, setBodyText] = useState(
+    () => JSON.stringify(reqCfg.body?.defaults ?? {}, null, 2))
+  const [queryText, setQueryText] = useState('{}')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)   // {status_code,latency_ms,ok,body} | {error}
+
+  const run = async () => {
+    let body = null, query = {}
+    try { body = bodyText.trim() ? JSON.parse(bodyText) : null }
+    catch { setResult({ error: 'body 不是合法 JSON' }); return }
+    try { query = queryText.trim() ? JSON.parse(queryText) : {} }
+    catch { setResult({ error: 'query 不是合法 JSON' }); return }
+    setBusy(true); setResult(null)
+    try {
+      const path = Object.fromEntries(Object.entries(pv).filter(([, v]) => v !== ''))
+      const r = await apihubInvokeApi(row.id, { path, query, body })
+      setResult(r)
+    } catch (e) {
+      setResult({ error: e.message })
+    } finally { setBusy(false) }
+  }
+
+  const statusCls = result?.status_code == null ? ''
+    : result.status_code < 400 ? 'text-emerald-600 dark:text-emerald-400'
+      : 'text-red-600 dark:text-red-400'
+  return (
+    <Modal title={`调用 ${row.slug}（${row.method} ${row.path_tpl}）`} onClose={onClose} wide>
+      <div className="space-y-3.5">
+        {pathVars.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-1.5">路径变量（已预填默认值）</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              {pathVars.map(v => (
+                <label key={v} className="block">
+                  <span className="block text-[11px] font-mono text-stone-400 mb-1">{`{${v}}`}</span>
+                  <input className={`${inputCls} w-full font-mono text-xs`} value={pv[v] || ''}
+                    onChange={e => setPv(p => ({ ...p, [v]: e.target.value }))} />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        <div>
+          <div className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-1.5">
+            请求 body（JSON，已预填默认值——如发 QQ 消息补上 content 即可）
+          </div>
+          <textarea className={`${inputCls} w-full font-mono text-xs`} rows={5}
+            value={bodyText} onChange={e => setBodyText(e.target.value)} spellCheck={false} />
+        </div>
+        <div>
+          <div className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-1.5">query（JSON，可选）</div>
+          <textarea className={`${inputCls} w-full font-mono text-xs`} rows={2}
+            value={queryText} onChange={e => setQueryText(e.target.value)} spellCheck={false} />
+        </div>
+
+        {result && (result.error ? (
+          <div className="rounded-lg px-3 py-2 text-[13px] bg-red-500/10 text-red-600 dark:text-red-400 break-all">
+            ❌ {result.error}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-black/[0.07] dark:border-white/[0.09] bg-black/[0.02] dark:bg-white/[0.03] p-3">
+            <div className="text-[13px] mb-2">
+              <b className={statusCls}>HTTP {result.status_code}</b>
+              <span className="text-stone-400"> · {result.latency_ms}ms · {result.ok ? '业务成功' : '业务失败'}</span>
+            </div>
+            <pre className="font-mono text-xs overflow-auto max-h-72 whitespace-pre-wrap break-all">
+              {typeof result.body === 'string' ? result.body : JSON.stringify(result.body, null, 2)}
+            </pre>
+          </div>
+        ))}
+
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="text-[11px] text-stone-400">
+            调试通道：不走平台令牌/限流/配额；调用以 mode=test 记入日志
+          </span>
+          <button className={btnPri} disabled={busy} onClick={run}>
+            {busy ? '调用中…' : '执行调用'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function Apis({ setErr }) {
   const [rows, setRows] = useState(null)
   const [ups, setUps] = useState([])
   const [editing, setEditing] = useState(null)
   const [grouping, setGrouping] = useState(null)   // 轻量分组弹窗的目标行
   const [probeTip, setProbeTip] = useState(null)
+  const [invoking, setInvoking] = useState(null)   // 调用弹窗的目标行
   const [q, setQ] = useState('')                   // 搜索：按 slug / 名称 / method / 路径过滤
   const [folds, setFolds] = useState(loadFolds)    // 组折叠覆盖表 {组key: 是否折叠}
 
@@ -597,6 +689,7 @@ function Apis({ setErr }) {
                       </td>
                       <td className="pl-2 pr-4 py-2.5">
                         <div className="flex items-center gap-2 whitespace-nowrap">
+                          <button className="text-amber-600 dark:text-amber-400 hover:underline" onClick={() => setInvoking(a)}>调用</button>
                           <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => probeOne(a)}>探活</button>
                           <button className="text-violet-600 dark:text-violet-400 hover:underline" onClick={() => setGrouping(a)}>分组</button>
                           <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => setEditing(a)}>编辑</button>
@@ -617,6 +710,9 @@ function Apis({ setErr }) {
       {editing !== null && (
         <ApiForm row={editing} ups={ups} onClose={() => setEditing(null)}
                  onSaved={async () => { setEditing(null); await load() }} setErr={setErr} />
+      )}
+      {invoking !== null && (
+        <InvokeModal row={invoking} onClose={() => setInvoking(null)} setErr={setErr} />
       )}
       {grouping !== null && (
         <GroupForm row={grouping} onClose={() => setGrouping(null)}
@@ -690,7 +786,7 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
           </label>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <JsonBlock label="请求配置（body 类型 json/form/raw、header 模板）" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
+          <JsonBlock label="请求配置（body 类型 json/form/raw、header 模板；param_defaults 路径变量默认值、body.defaults JSON 字段默认值——如 QQ 的 openid/msg_type 可不传）" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
           <JsonBlock label="响应配置（envelope/charset/error_mapping 双通道）" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
           <JsonBlock label="探活配置（path 默认=API 自身路径；interval_s>0 定时探）" value={form.probe} onChange={v => set('probe', v)} />
         </div>

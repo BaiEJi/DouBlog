@@ -3,10 +3,12 @@
  * - 数据库：所有模块共用的数据库后端（本地 SQLite / 远端 PostgreSQL 一键切换，
  *   切换只换连接读目标库现有数据，两侧互不影响）
  * - 日志上报：lizysdk 日志管道的外发开关/地址/级别
+ * - API Hub 出站代理：上游连接的可选正向代理（QQ 开放平台等直连不通的目标）
  * - 登录账号：用户名/密码管理（system_accounts 表，PBKDF2 哈希，改密需验旧密码）
  */
 import { useCallback, useEffect, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
+import { apihubGetProxy, apihubSaveProxy, apihubTestProxy } from '../apihub/api'
 import {
   fetchAccount, fetchDbStatus, testDbConnection, switchDatabase, updateAccount,
   fetchLoggingConfig, saveLoggingConfig, testLoggingSend,
@@ -313,15 +315,90 @@ function AccountCard() {
   )
 }
 
+function ApiHubProxyCard() {
+  const [cfg, setCfg] = useState({ enabled: false, host: '127.0.0.1', port: 7890 })
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    apihubGetProxy()
+      .then(d => setCfg({ enabled: d.enabled, host: d.host, port: d.port }))
+      .catch(e => setMsg({ tone: 'err', text: e.message }))
+  }, [])
+
+  async function onSave() {
+    setBusy('save'); setMsg(null)
+    try {
+      const d = await apihubSaveProxy({ ...cfg, port: Number(cfg.port) || 0 })
+      setMsg({ tone: 'ok', text: '已保存并即时生效' })
+      setCfg({ enabled: d.enabled, host: d.host, port: d.port })
+    } catch (e) {
+      setMsg({ tone: 'err', text: e.message })
+    } finally { setBusy('') }
+  }
+
+  async function onTest() {
+    setBusy('test'); setMsg(null)
+    try {
+      const d = await apihubTestProxy()
+      if (d.ok) setMsg({ tone: 'ok', text: `连通正常：bots.qq.com 返回 HTTP ${d.status_code}（${d.latency_ms}ms，${d.proxy.enabled ? `经 ${d.proxy.host}:${d.proxy.port}` : '直连'}）` })
+      else setMsg({ tone: 'err', text: `不通：${d.error}（${d.proxy.enabled ? `经 ${d.proxy.host}:${d.proxy.port}` : '直连'}）` })
+    } catch (e) {
+      setMsg({ tone: 'err', text: e.message })
+    } finally { setBusy('') }
+  }
+
+  return (
+    <section className={CARD}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-base font-semibold text-stone-900 dark:text-stone-100">API Hub 出站代理</h2>
+          <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+            上游 https 连接的可选正向代理（QQ 开放平台等直连不通的目标）；本机地址与 http 上游始终直连
+          </p>
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input type="checkbox" className="accent-stone-700 dark:accent-stone-300 w-4 h-4"
+            checked={cfg.enabled} onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
+          <span className="text-stone-700 dark:text-stone-300">启用</span>
+        </label>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="col-span-2"><label className={LABEL}>代理地址</label>
+          <input className={INPUT} value={cfg.host} placeholder="127.0.0.1"
+            onChange={e => setCfg({ ...cfg, host: e.target.value })} /></div>
+        <div><label className={LABEL}>端口</label>
+          <input className={INPUT} type="number" value={cfg.port} placeholder="7890"
+            onChange={e => setCfg({ ...cfg, port: e.target.value })} /></div>
+      </div>
+
+      <Banner tone={msg?.tone}>{msg?.text}</Banner>
+
+      <div className="flex flex-wrap gap-2.5 mt-4">
+        <button className={`${BTN} bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] text-stone-800 dark:text-stone-100`}
+          disabled={busy !== ''} onClick={onSave}>
+          {busy === 'save' ? '保存中…' : '保存'}
+        </button>
+        <button className={`${BTN} bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] text-stone-800 dark:text-stone-100`}
+          disabled={busy !== ''} onClick={onTest}>
+          {busy === 'test' ? '测试中…' : '测试连通性'}
+        </button>
+      </div>
+    </section>
+  )
+}
+
 export default function ConfigPage() {
   return (
     <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e]">
-      <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报"  />
+      <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报 · API Hub 出站代理"  />
 
 
       <main className="w-full max-w-full mx-auto p-0 grid grid-cols-2 gap-6 items-start">
         <DbCard />
         <LoggingCard />
+        <ApiHubProxyCard />
         <AccountCard />
       </main>
     </div>

@@ -12,7 +12,7 @@ import time
 from sqlalchemy import select
 
 from app.apihub.core import CryptoBox, HealthMonitor, KeyCfg, KeySelector, \
-    LevelSpec, RateLimiter, level_key, merge_probe, strictest
+    LevelSpec, RateLimiter, TokenExchanger, level_key, merge_probe, strictest
 from app.apihub.models import ApihubApi, ApihubCallLog, ApihubKey, ApihubRule, ApihubToken, \
     ApihubUpstream
 from app.apihub.pool import UpstreamPool
@@ -244,6 +244,7 @@ class ApiHubState:
         self.selector = KeySelector()
         self.monitor = HealthMonitor()
         self.pool = UpstreamPool()
+        self.token_exchange = TokenExchanger()   # qq_bot 等动态令牌缓存（区别于 store.tokens 平台令牌）
         self.writer = LogWriter(app)
         self.reload()
 

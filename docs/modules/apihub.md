@@ -114,7 +114,12 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 - 平台令牌：`generate_token/hash_token/token_hint`。
 - `render/render_obj`：`{a.b.c}` 点路径模板，缺变量/空值抛 `TemplateError`。
 - `apply_providers`：七式静态鉴权编译为 `Injection{headers, query, cookies}`；`path_token`
-  无注入动作（凭证变量供 URL/路径模板用）。
+  无注入动作（凭证变量供 URL/路径模板用）。**`qq_bot`（2026-10-17）**：动态令牌 provider，
+  经 `token_fetch(provider, cred)` 回调取 `Authorization: QQBot <token>`（网关/探活绑定
+  `state.token_exchange`，纯函数调用不绑定时抛 TemplateError）。
+- `TokenExchanger`：QQ access_token 交换（POST token_url JSON {appId, clientSecret}），按
+  (token_url, app_id) 进程内缓存、`expires_in - 300s` 自动刷新；请求走共享连接池（含出站代理）；
+  非 200/无 token 抛 ValueError（routes 归入 upstream_error）。
 - `RateLimiter`：进程内多级限流（令牌桶 `TokenBucket` + 固定窗口 `FixedWindow`），
   check 依次判定 L1..Ln 任一拒绝短路；空闲桶 600s / 每 60s 清扫一次；`snapshot` 供规则列表。
   桶键格式统一走 `level_key(scope, api_id, token_id)`（state 构建层级与 routes 用量快照共用，
@@ -126,7 +131,10 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 
 ### pool.py（上游 HTTP 连接池：标准库 http.client，零新增依赖）
 
-- 按 `(scheme, host, port, verify)` 分目标池；**每目标并发封顶 128**（Semaphore，超额短暂
+- 按 `(scheme, host, port, verify, proxy)` 分目标池；**出站代理（2026-10-17，全局可选）**：
+  `app/apihub/proxy.py`（data/apihub_proxy.json，/config 页读写），仅 https 目标且非 localhost
+  走正向代理 CONNECT 隧道（`HTTPSConnection.set_tunnel`），配置变更即生效（池键含代理，旧空闲
+  连接 4.5s 自然淘汰；PUT 时主动 close_all）；**每目标并发封顶 128**（Semaphore，超额短暂
   等待，超时按 UpstreamTimeout）；空闲连接 **4.5s 过期**（低于常见服务端 keepalive 5s）、
   每目标空闲上限 256。
 - **陈旧连接重试一次**：空闲连接被服务端提前关闭（RemoteDisconnected/BadStatusLine/
@@ -136,7 +144,7 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
   显式 `Connection: keep-alive`（不发 Accept-Encoding，上游响应按 identity 返回）；
   响应体上限 32MB（MAX_BODY）。
 - 异常三分类：`UpstreamTimeout` / `UpstreamConnectError` / `UpstreamProtocolError`，
-  routes 按类决定重试与冷却。复杂 transport（代理/自定义 CA/HTTP2）不支持；
+  routes 按类决定重试与冷却。自定义 CA/HTTP2 不支持；
   `transport.verify=false` 走全局共享的 unverified SSL context。
 
 ### state.py（app.state.apihub，每 app 一份）
@@ -197,6 +205,15 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 - mock 上游：`ThreadingHTTPServer`（module 级 fixture，随机端口）——`/echo`（回显方法/query/
   敏感头/body）、`/protected`（Bearer good-key 校验 401）、`/biz`（HTTP 200 + body code 表错）、
   `/slow`（sleep 1.2s）、`/health`。
+- **test_apihub_qq.py（13 例，2026-10-17）**：QQ 接入三件套——qq_bot provider 端到端
+  （mock token 端点 + C2C 发送端点：QQBot 头注入/默认值填充）、token 缓存与过期重交换、
+  调用方显式值覆盖、错误凭证 5xx、缺路径变量 400、apply_providers 未绑 fetch 抛错、
+  OpenAPI 入口默认值、代理 resolve 规则（https-only/localhost/开关）+ admin 接口校验 +
+  池代理建连路径（端口 1 拒连/超时证明走代理）。
+- **admin invoke（2026-10-17）**：`POST /admin/apis/{id}/invoke` 页面调试调用——与 gw invoke
+  同一套默认值/转发构件，但不走平台令牌/限流/配额，响应为 api_response 信封包上游原文
+  （status_code/latency_ms/ok/body），日志 mode='test'；前端 API 表格行「调用」按钮弹窗
+  （路径变量预填 param_defaults、body 预填 body.defaults、query 可选；结果面板显示状态/延迟/响应体）。
 - **test_apihub_selfreg.py（6 例）**：自注册脚本（tools/apihub_register_self.py）纯函数——
   路由枚举完整性（FastAPI 0.14x 惰性 `_IncludedRouter` 展平、排除 apihub 自身）、slug
   合法/唯一（超长路径哈希后缀防撞）、`{param}` → `{path.param}` 模板转换（含 `{slug:path}`

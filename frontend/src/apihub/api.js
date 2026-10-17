@@ -48,3 +48,11 @@ export const apihubDeleteRule = (id) => json(`/api/apihub/admin/rules/${id}`, { 
 
 export const apihubProbeAll = (apiIds = null) =>
   json('/api/apihub/probes/run', { method: 'POST', body: JSON.stringify(apiIds ? { api_ids: apiIds } : {}) })
+
+export const apihubGetProxy = () => json('/api/apihub/admin/proxy')
+export const apihubSaveProxy = (cfg) =>
+  json('/api/apihub/admin/proxy', { method: 'PUT', body: JSON.stringify(cfg) })
+export const apihubTestProxy = () => json('/api/apihub/admin/proxy/test', { method: 'POST' })
+
+export const apihubInvokeApi = (id, payload) =>
+  json(`/api/apihub/admin/apis/${id}/invoke`, { method: 'POST', body: JSON.stringify(payload) })
