@@ -294,7 +294,7 @@ export default function LifePlansView({ toast, dark }) {
   }
 
   return (
-    <div className="flex flex-row gap-4 items-start">
+    <div className="h-full min-h-0 overflow-y-auto flex flex-row gap-4 items-start">
       {/* 左：总览侧栏 */}
       <div className="w-[260px] shrink-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
         <div className="flex items-center justify-between mb-3">

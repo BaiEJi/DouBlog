@@ -35,13 +35,15 @@ export default function LifeView({ toast, dark }) {
   }
 
   return (
-    <div>
-      <h2 className="text-base font-semibold mb-6">{SUBS.find(s => s.key === sub)?.label}</h2>
-      {sub === 'today' && <LifeTodayView toast={toast} dark={dark} />}
-      {sub === 'plans' && <LifePlansView toast={toast} dark={dark} />}
-      {sub === 'calendar' && <CalendarView variant="life" onOpenDay={openDay} toast={toast} />}
-      {sub === 'stats' && <LifeStatsView toast={toast} dark={dark} />}
-      {sub === 'review' && <LifeReviewView toast={toast} dark={dark} />}
+    <div className="h-full min-h-0 flex flex-col">
+      <h2 className="text-base font-semibold mb-6 shrink-0">{SUBS.find(s => s.key === sub)?.label}</h2>
+      <div className="flex-1 min-h-0">
+        {sub === 'today' && <LifeTodayView toast={toast} dark={dark} />}
+        {sub === 'plans' && <LifePlansView toast={toast} dark={dark} />}
+        {sub === 'calendar' && <CalendarView variant="life" onOpenDay={openDay} toast={toast} />}
+        {sub === 'stats' && <LifeStatsView toast={toast} dark={dark} />}
+        {sub === 'review' && <LifeReviewView toast={toast} dark={dark} />}
+      </div>
     </div>
   )
 }

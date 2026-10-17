@@ -108,9 +108,9 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
   const todayAnchor = new Date()
 
   return (
-    <div>
+    <div className="h-full min-h-0 flex flex-col">
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center gap-2 mb-4">
+      <div className="shrink-0 flex flex-wrap items-center gap-2 mb-4">
         <Segmented value={mode} onChange={setMode}
           options={[{ label: '周', value: 'week' }, { label: '月', value: 'month' }, { label: '年', value: 'year' }]} />
         <div className="inline-flex rounded-lg border border-black/10 dark:border-white/10 overflow-hidden">
@@ -135,18 +135,18 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 周视图 */}
       {mode === 'week' && (
-        <div className="grid grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-2 flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>
           {Array.from({ length: 7 }, (_, i) => addDays(range.start, i)).map(d => {
             const key = fmtDate(d)
             const list = byDate.get(key) || []
             const pending = list.filter(t => t.status === 'pending' || t.status === 'in_progress').length
             return (
               <button key={key} onClick={() => onOpenDay(key)} title="点击查看当天明细"
-                className={'flex flex-col text-left rounded-2xl border p-3 min-h-[280px] transition-colors ' +
+                className={'flex flex-col text-left rounded-2xl border p-3 min-h-0 transition-colors ' +
                   (key === today
                     ? 'border-indigo-400/70 bg-indigo-500/[0.06]'
                     : 'border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] hover:border-black/20 dark:hover:border-white/20')}>
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex items-center gap-2 mb-1 shrink-0">
                   <span className="text-[11px] text-stone-400">{WEEKDAY_LABELS[weekdayIndex(d)]}</span>
                   <span className={'text-sm font-semibold tabular-nums ' + (key === today ? 'text-indigo-600 dark:text-indigo-400' : '')}>{d.getDate()}</span>
                   {pending > 0 && (
@@ -155,7 +155,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
                     </span>
                   )}
                 </div>
-                <div className="flex flex-col gap-1 overflow-y-auto">
+                <div className="flex flex-col gap-1 overflow-y-auto min-h-0">
                   {list.slice(0, 50).map(t => {
                     const m = quadrantMeta(t.quadrant)
                     return (
@@ -177,28 +177,28 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 月视图 */}
       {mode === 'month' && (
-        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
-          <div className="grid grid-cols-7 mb-1.5">
+        <div className="flex-1 min-h-0 flex flex-col rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
+          <div className="grid grid-cols-7 mb-1.5 shrink-0">
             {WEEKDAY_LABELS.map(w => (
               <div key={w} className="text-center text-[11px] text-stone-400 py-1">{w}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1.5">
+          <div className="grid grid-cols-7 gap-1.5 flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>
             {monthMatrix(anchor).flatMap((row, ri) =>
               row.map((d, ci) => {
                 const key = `${ri}-${ci}`
-                if (!d) return <div key={key} className="min-h-[92px] rounded-xl bg-black/[0.015] dark:bg-white/[0.012]" />
+                if (!d) return <div key={key} className="min-h-0 rounded-xl bg-black/[0.015] dark:bg-white/[0.012]" />
                 const ds = fmtDate(d)
                 const list = byDate.get(ds) || []
                 return (
                   <button key={key} onClick={() => onOpenDay(ds)} title="点击查看当天明细"
-                    className={'flex flex-col text-left rounded-xl border p-1.5 min-h-[92px] align-start transition-colors ' +
+                    className={'flex flex-col text-left rounded-xl border p-1.5 min-h-0 overflow-hidden align-start transition-colors ' +
                       (ds === today
                         ? 'border-indigo-400/70 bg-indigo-500/[0.06]'
                         : list.length
                           ? 'border-black/[0.08] dark:border-white/[0.09] hover:border-black/20 dark:hover:border-white/25'
                           : 'border-black/[0.05] dark:border-white/[0.06] hover:border-black/15 dark:hover:border-white/20')}>
-                    <span className={'text-[11.5px] font-medium tabular-nums px-0.5 ' +
+                    <span className={'text-[11.5px] font-medium tabular-nums px-0.5 shrink-0 ' +
                       (ds === today ? 'text-indigo-600 dark:text-indigo-400' : 'text-stone-500 dark:text-stone-400')}>{d.getDate()}</span>
                     <TaskMiniList list={list} />
                   </button>
@@ -211,25 +211,27 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 年视图 */}
       {mode === 'year' && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-3 flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>
           {Array.from({ length: 12 }, (_, m) => {
             const monthAnchor = new Date(anchor.getFullYear(), m, 1)
             return (
-              <div key={m} className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-3">
-                <div className="text-xs font-medium mb-2">{m + 1} 月</div>
-                <div className="grid grid-cols-7 gap-[3px]">
+              <div key={m} className="flex flex-col min-h-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-3">
+                <div className="text-xs font-medium mb-1.5 shrink-0">{m + 1} 月</div>
+                <div className="grid grid-cols-7 gap-[3px] mb-1 shrink-0">
                   {WEEKDAY_LABELS.map(w => (
                     <div key={w} className="text-[9px] text-stone-300 dark:text-stone-600 text-center">{w}</div>
                   ))}
+                </div>
+                <div className="grid grid-cols-7 gap-[3px] flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>
                   {monthMatrix(monthAnchor).flat().map((d, i) => {
-                    if (!d) return <div key={i} className="aspect-square rounded-[3px]" />
+                    if (!d) return <div key={i} className="rounded-[3px]" />
                     const ds = fmtDate(d)
                     const list = byDate.get(ds) || []
                     const done = list.filter(t => t.status === 'done').length
                     return (
                       <button key={i} onClick={() => onOpenDay(ds)}
                         title={`${ds}：共 ${list.length} 项${done ? `，完成 ${done}` : ''}`}
-                        className={'aspect-square rounded-[3px] transition-transform hover:scale-125 ' +
+                        className={'rounded-[3px] transition-transform hover:scale-110 ' +
                           intensityCls(list.length) +
                           (ds === today ? ' ring-2 ring-indigo-400 ring-offset-1 ring-offset-white dark:ring-offset-[#1c1b1a]' : '')} />
                     )

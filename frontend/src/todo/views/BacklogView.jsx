@@ -146,7 +146,7 @@ export default function BacklogView({ toast }) {
   ]
 
   return (
-    <div>
+    <div className="h-full min-h-0 overflow-y-auto">
       {/* Tab 行 + 快速添加 */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <h2 className="text-sm font-medium">{TABS.find(t => t.key === tab)?.label}</h2>

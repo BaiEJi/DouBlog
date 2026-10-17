@@ -93,7 +93,7 @@ export default function LifeTodayView({ toast, dark }) {
   const catOf = id => categories.find(c => c.id === id)
 
   return (
-    <div className="max-w-[860px]">
+    <div className="h-full min-h-0 overflow-y-auto">
       {/* 英雄卡：日期导航 + 环形进度 */}
       <div className="rounded-3xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/[0.10] to-transparent p-6 mb-4">
         <div className="flex items-center gap-5">
@@ -158,7 +158,7 @@ export default function LifeTodayView({ toast, dark }) {
                   else { setNote(''); setNoteTitle(it.title); setCompleting(task.id) }
                 }} disabled={!task} aria-label={`打卡 ${it.title}`}
                   className={'w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center shrink-0 transition-colors disabled:opacity-30 ' +
-                    (done ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-black/25 dark:border-white/30 hover:border-indigo-400')}>
+                    (done ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white dark:bg-white/[0.14] border-black/30 dark:border-white/45 hover:border-indigo-500')}>
                   {done && (
                     <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>
                   )}

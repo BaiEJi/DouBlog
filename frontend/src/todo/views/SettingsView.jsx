@@ -247,7 +247,7 @@ export default function SettingsView({ toast, dark }) {
     setPrefs(p => (p ? { ...p, [key]: { ...p[key], [`q${q}`]: v } } : p))
 
   return (
-    <div className="space-y-4 max-w-[900px]">
+    <div className="h-full min-h-0 overflow-y-auto space-y-4">
       {/* 基本偏好 */}
       <Card title="基本偏好">
         {!prefs ? (

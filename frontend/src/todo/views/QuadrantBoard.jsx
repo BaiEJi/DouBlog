@@ -110,7 +110,7 @@ export const TaskCardContent = memo(function TaskCardContent({
         className={'w-4 h-4 rounded-[4px] border flex items-center justify-center shrink-0 transition-colors ' +
           (done
             ? 'bg-indigo-500 border-indigo-500 text-white'
-            : 'border-black/25 dark:border-white/30 hover:border-indigo-400 dark:hover:border-indigo-400')}>
+            : 'bg-white dark:bg-white/[0.14] border-black/30 dark:border-white/45 hover:border-indigo-500 dark:hover:border-indigo-400')}>
         {done && <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>}
       </button>
       <span className={'min-w-0 flex-1 truncate text-sm leading-5 ' + (done ? 'line-through text-stone-400 dark:text-stone-500' : '')}>{task.title}</span>

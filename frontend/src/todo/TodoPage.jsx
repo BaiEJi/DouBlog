@@ -52,7 +52,7 @@ export default function TodoPage({ dark }) {
   }
 
   return (
-    <div className={'min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors ' + (view === 'today' ? 'h-[calc(100vh-64px)] flex flex-col' : '')}>
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors h-[calc(100vh-64px)] flex flex-col">
       {/* ── 顶栏 ── */}
       <PageHeader title="MyTodo" subtitle="四象限 · 迁移 · 规律生活"
 
@@ -61,8 +61,8 @@ export default function TodoPage({ dark }) {
         onTabChange={goTab}
         accent="indigo" />
 
-      {/* ── 主区 ── */}
-      <main className={'mx-auto w-full max-w-full p-0 ' + (view === 'today' ? 'flex-1 min-h-0' : '')}><Suspense fallback={<div className="h-64 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] animate-pulse" aria-label="视图加载中" />}>
+      {/* ── 主区：所有视图统一占满内容区（日历撑满高度，其余超高内部滚动） ── */}
+      <main className="mx-auto w-full max-w-full p-0 flex-1 min-h-0"><Suspense fallback={<div className="h-64 rounded-2xl bg-black/[0.03] dark:bg-white/[0.04] animate-pulse" aria-label="视图加载中" />}>
         {view === 'today' && <TodayView toast={toast} dark={dark} />}
         {view === 'backlog' && <BacklogView toast={toast} />}
         {view === 'calendar' && <CalendarView variant="todo" onOpenDay={openDay} toast={toast} />}

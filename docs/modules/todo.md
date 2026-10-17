@@ -69,3 +69,7 @@ test_api（任务 CRUD/过滤/象限/排序/乐观锁/软删恢复/401 鉴权/�
 前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 待办池的收件箱 / 迁移池 / 搁置计划使用侧栏二级菜单，URL 为 `?v=backlog&bsub=inbox|migrate|shelved`；生活子视图仍使用 `lsub`。长表单通用 Modal 限制到视口高度，正文内部滚动，标题与操作按钮固定可见。
+
+### 内容画布占满约定（2026-10-17）
+
+TodoPage 主区对所有视图统一为 `h-[calc(100vh-64px)]`（64px = ModuleShell 内容画布 `py-8`）的 flex 列：今日看板与日历（周/月/年）直接撑满可用高度（月/年网格 `gridAutoRows: minmax(0,1fr)` 均分行高），其余视图根容器 `h-full min-h-0 overflow-y-auto` 超高内部滚动、页面本身不滚；回顾/设置/生活各子视图不再限宽（原 `max-w-[900px]/[1100px]/[860px]` 已移除），与今日/统计同宽对齐。统计页年度热力图为单幅 CSS grid（`20px + 53×minmax(0,1fr)`，方格 aspect-square）随卡片宽度自适应。任务卡与打卡勾选框在类别底色上为白底（暗色 `white/[0.14]`）实底保证可见；Segmented 档位对齐 UI 基线 `text-sm h-9`。

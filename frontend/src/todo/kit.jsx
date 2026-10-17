@@ -292,13 +292,13 @@ export function Card({ title, extra, children, className = '' }) {
   )
 }
 
-/** 段选器（antd Segmented 的平替） */
+/** 段选器（antd Segmented 的平替）——档位对齐 UI 基线：控件文字 text-sm */
 export function Segmented({ value, onChange, options }) {
   return (
     <div className="inline-flex p-0.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.06]">
       {options.map(o => (
         <button key={o.value} onClick={() => onChange(o.value)}
-          className={'px-3 h-7 rounded-md text-xs transition-colors whitespace-nowrap ' +
+          className={'px-3 h-9 rounded-md text-sm transition-colors whitespace-nowrap ' +
             (value === o.value
               ? 'bg-white dark:bg-white/[0.12] text-stone-900 dark:text-stone-100 shadow-sm font-medium'
               : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300')}>

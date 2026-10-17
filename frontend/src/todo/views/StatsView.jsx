@@ -40,11 +40,14 @@ function Heatmap({ year, days }) {
     return cols
   }, [year, days])
 
+  const cols = grid.length
+  const colTpl = `20px repeat(${cols}, minmax(0, 1fr))`
+
   return (
-    <div className="overflow-x-auto pb-1" style={{ '--cell': 'clamp(10px, 1.4vw, 15px)', '--gap': 'clamp(2px, 0.38vw, 4px)' }}>
+    <div className="w-full overflow-x-auto pb-1" style={{ '--gap': 'clamp(2px, 0.38vw, 4px)' }}>
       <div className="min-w-[680px]">
         {/* 月份标签 */}
-        <div className="relative ml-[22px] h-3.5 mb-0.5">
+        <div className="grid mb-1" style={{ gridTemplateColumns: colTpl, gap: 'var(--gap)' }}>
           {(() => {
             const marks = []
             let lastM = -1
@@ -54,27 +57,26 @@ function Heatmap({ year, days }) {
               if (first && m !== lastM) { marks.push({ ci, m }); lastM = m }
             })
             return marks.map(({ ci, m }) => (
-              <span key={m} className="absolute top-0 text-[10px] text-stone-400 whitespace-nowrap"
-                style={{ left: `calc((var(--cell) + var(--gap)) * ${ci})` }}>{MONTHS[m]}</span>
+              <span key={m} className="text-[10px] text-stone-400 whitespace-nowrap"
+                style={{ gridColumn: ci + 2 }}>{MONTHS[m]}</span>
             ))
           })()}
         </div>
-        <div className="flex gap-[var(--gap)]">
-          <div className="flex flex-col gap-[var(--gap)] pt-[1px] mr-0.5">
-            {['一', '', '三', '', '五', '', '日'].map((w, i) => (
-              <span key={i} className="h-[var(--cell)] text-[9px] text-stone-400 dark:text-stone-500 w-[20px] text-right leading-[var(--cell)]">{w}</span>
-            ))}
-          </div>
-          {grid.map((col, ci) => (
-            <div key={ci} className="flex flex-col gap-[var(--gap)]">
-              {col.map((cell, ri) => cell ? (
-                <span key={cell.key}
-                  onMouseEnter={() => setHover({ ...cell, x: ci, y: ri })}
-                  onMouseLeave={() => setHover(null)}
-                  className={'w-[var(--cell)] h-[var(--cell)] rounded-[3px] transition-transform hover:scale-125 cursor-default ' + LEVELS[levelOf(cell.count)]} />
-              ) : <span key={ri} className="w-[var(--cell)] h-[var(--cell)]" />)}
-            </div>
+        {/* 方格：周列 × 日行的整幅网格，随卡片宽度自适应撑满 */}
+        <div className="grid" style={{ gridTemplateColumns: colTpl, gap: 'var(--gap)' }}>
+          {['一', '', '三', '', '五', '', '日'].map((w, i) => (
+            <span key={i} className="flex items-center justify-end pr-1 text-[9px] text-stone-400 dark:text-stone-500"
+              style={{ gridColumn: 1, gridRow: i + 1 }}>{w}</span>
           ))}
+          {grid.map((col, ci) =>
+            col.map((cell, ri) => cell ? (
+              <span key={cell.key}
+                onMouseEnter={() => setHover({ ...cell, x: ci, y: ri })}
+                onMouseLeave={() => setHover(null)}
+                style={{ gridColumn: ci + 2, gridRow: ri + 1 }}
+                className={'aspect-square rounded-[3px] transition-transform hover:scale-125 cursor-default ' + LEVELS[levelOf(cell.count)]} />
+            ) : <span key={ri} className="aspect-square" style={{ gridColumn: ci + 2, gridRow: ri + 1 }} />)
+          )}
         </div>
         {/* 图例 + 悬浮 */}
         <div className="flex items-center gap-1.5 mt-3 text-[11px] text-stone-400">
@@ -164,7 +166,7 @@ export default function StatsView({ toast, dark }) {
   if (loading) return <Empty text="统计加载中…" />
 
   return (
-    <div className="space-y-4">
+    <div className="h-full min-h-0 overflow-y-auto space-y-4">
       {/* 指标卡 */}
       <div className="grid grid-cols-4 gap-3">
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 flex items-center">

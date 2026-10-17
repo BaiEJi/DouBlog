@@ -58,7 +58,7 @@ export default function LifeReviewView({ toast, dark }) {
   )
 
   return (
-    <div className="space-y-4 max-w-[1100px]">
+    <div className="h-full min-h-0 overflow-y-auto space-y-4">
       {/* 日打卡回顾 */}
       <Card title="日打卡回顾"
         extra={<input type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} className={inputCls + ' w-auto'} />}>

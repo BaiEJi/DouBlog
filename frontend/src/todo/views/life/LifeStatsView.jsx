@@ -68,7 +68,7 @@ export default function LifeStatsView({ toast, dark }) {
   if (loading) return <Empty text="统计加载中…" />
 
   return (
-    <div className="space-y-4">
+    <div className="h-full min-h-0 overflow-y-auto space-y-4">
       <div className="grid grid-cols-4 gap-3">
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 flex items-center">
           <div className="flex-1">
