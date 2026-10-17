@@ -669,7 +669,8 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
       </div>
 
       <div className="mt-4">
-        <div className="flex items-center justify-between gap-3 mb-1.5">
+        {/* h-6 固定标签行高：json 的格式化/压缩按钮出现/消失不引起弹窗高度跳变 */}
+        <div className="flex h-6 items-center justify-between gap-3 mb-1.5">
           <label htmlFor="conf-entry-value" className={LBL}>值</label>
           {type === 'json' && (
             <span className="flex items-center gap-1.5">
@@ -680,13 +681,16 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
             </span>
           )}
         </div>
+        {/* str 与 json 编辑器同高（16 行 × leading-6 + p-3，与 JsonEditor 度量一致），切换类型弹窗尺寸不变 */}
         {type === 'json' ? (
           <JsonEditor id="conf-entry-value" value={data} onChange={setData} onBlur={checkJson}
             rows={16} invalid={!!jsonErr} />
         ) : (
-          <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} rows={12}
+          <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} rows={16}
             spellCheck={false}
-            className={`${inputCls} w-full font-mono text-[15px] leading-relaxed resize-y ` +
+            className={'block w-full font-mono text-[15px] leading-6 p-3 resize-y rounded-lg border border-black/10 dark:border-white/10 ' +
+              'bg-white dark:bg-white/[0.04] text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none ' +
+              'focus:border-black/30 dark:focus:border-white/30 transition-colors ' +
               (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
         )}
         {jsonErr && (

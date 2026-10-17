@@ -44,7 +44,7 @@
 
 ## 7. 前端（frontend/src/confcenter/）
 
-先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧只展示该空间的 KV 表（类型徽章/等高单行值预览；长值省略，换行以 ↵ 标识，空字符串显式标注，点击弹窗查看完整值及格式化 JSON，并可进入编辑；JSON 字符串标量在预览和编辑时保留引号）；新建/编辑 Modal（**加宽档 max-w-4xl**（Mask xwide，比值预览的 max-w-2xl 再宽一档），编辑器 json 16 行/str 12 行；namespace 固定为当前空间，只填写 key/value；type 段选；str 多行原样；**json=JSON 编辑器**——`JsonEditor.jsx` textarea 透明覆层 + highlight.js 着色（GitHub 亮暗主题沿用 index.css，零新依赖），Tab 两空格缩进、格式化/压缩按钮、失焦校验非法标红禁存且错误带行列定位（`jsonTools.js`，devtoolbox 同款 V8 position 约定））；值预览弹窗 json 类型同款着色（`JsonHighlightedView`，折行只读）；删除两步确认；搜索仅在当前空间内防抖查询，切换空间重置搜索和分页，过期请求不覆盖新空间；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）；**限流状态条**（绿=Redis 滑动窗口/琥珀=本地降级/灰=未启用 + 当前规则与放行/拒绝计数 + 重置当前空间计数）+ 限流配置 Modal（默认额度/窗口 + 按空间覆盖行编辑，limit=0 豁免，namespace 输入带已有空间 datalist）。
+先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧只展示该空间的 KV 表（类型徽章/等高单行值预览；长值省略，换行以 ↵ 标识，空字符串显式标注，点击弹窗查看完整值及格式化 JSON，并可进入编辑；JSON 字符串标量在预览和编辑时保留引号）；新建/编辑 Modal（**加宽档 max-w-4xl**（Mask xwide，比值预览的 max-w-2xl 再宽一档），str 与 json 编辑器同高（16 行 × leading-6 + p-3 同度量，切换类型弹窗尺寸不变），namespace 固定为当前空间，只填写 key/value；type 段选；str 多行原样；**json=JSON 编辑器**——`JsonEditor.jsx` textarea 透明覆层 + highlight.js 着色（GitHub 亮暗主题沿用 index.css，零新依赖），Tab 两空格缩进、格式化/压缩按钮、失焦校验非法标红禁存且错误带行列定位（`jsonTools.js`，devtoolbox 同款 V8 position 约定））；值预览弹窗 json 类型同款着色（`JsonHighlightedView`，折行只读）；删除两步确认；搜索仅在当前空间内防抖查询，切换空间重置搜索和分页，过期请求不覆盖新空间；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）；**限流状态条**（绿=Redis 滑动窗口/琥珀=本地降级/灰=未启用 + 当前规则与放行/拒绝计数 + 重置当前空间计数）+ 限流配置 Modal（默认额度/窗口 + 按空间覆盖行编辑，limit=0 豁免，namespace 输入带已有空间 datalist）。
 
 配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值预览保持单行。表格类型、时间和操作列同步加宽；删除确认展示“确认删除 / 取消”两步按钮。
 
