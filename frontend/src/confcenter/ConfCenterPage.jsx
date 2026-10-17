@@ -17,11 +17,11 @@ import {
 
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
 const modalCard = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.1] bg-white dark:bg-[#1c1b1a]'
-const inputCls = 'px-3 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
-const btn = 'px-4 py-2 text-sm font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50'
-const btnPri = 'px-4 py-2 text-sm font-medium rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors disabled:opacity-50'
-const btnDanger = 'px-4 py-2 text-sm font-medium rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50'
-const LBL = 'text-xs text-stone-500 dark:text-stone-400'
+const inputCls = 'px-3 py-2 text-base bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
+const btn = 'px-4 py-2 text-base font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50'
+const btnPri = 'px-4 py-2 text-base font-medium rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white transition-colors disabled:opacity-50'
+const btnDanger = 'px-4 py-2 text-base font-medium rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50'
+const LBL = 'text-sm text-stone-500 dark:text-stone-400'
 /** namespace / key 命名约束（与后端一致，防注入） */
 const NAME_RE = /^[A-Za-z0-9_.:-]+$/
 
@@ -59,7 +59,7 @@ function ValuePreview({ entry, onEdit }) {
     <>
       <button ref={trigger} type="button" onClick={() => setOpen(true)} aria-label={`预览 ${entry.key}`} title="查看完整值"
         className="group flex w-full min-w-0 items-center gap-2 h-8 px-2.5 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-stone-50 dark:bg-black/15 text-left hover:bg-stone-100 dark:hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-600 transition-colors">
-        <span className={`min-w-0 flex-1 truncate font-mono text-xs ${text === '' ? 'text-stone-400 dark:text-stone-500 italic' : 'text-stone-600 dark:text-stone-300'}`}>
+        <span className={`min-w-0 flex-1 truncate font-mono text-sm ${text === '' ? 'text-stone-400 dark:text-stone-500 italic' : 'text-stone-600 dark:text-stone-300'}`}>
           {text === '' ? '空字符串' : text.replace(/\r\n|\r|\n/g, ' ↵ ')}
         </span>
         <svg className="w-3.5 h-3.5 shrink-0 text-stone-400 dark:text-stone-500 group-hover:text-stone-700 dark:group-hover:text-stone-200" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -67,12 +67,12 @@ function ValuePreview({ entry, onEdit }) {
         </svg>
       </button>
       {open && <Mask onClose={close} wide label="值预览">
-        <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">值预览</h3>
+        <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">值预览</h3>
         <div className="mt-2 flex items-center gap-2 pr-4 min-w-0">
-          <span className="min-w-0 truncate font-mono text-xs text-stone-500 dark:text-stone-400" title={`${entry.namespace}/${entry.key}`}>{entry.namespace} / {entry.key}</span>
+          <span className="min-w-0 truncate font-mono text-sm text-stone-500 dark:text-stone-400" title={`${entry.namespace}/${entry.key}`}>{entry.namespace} / {entry.key}</span>
           <TypeBadge type={entry.type} />
         </div>
-        <pre tabIndex={0} aria-label="完整值" className="mt-4 min-h-40 max-h-[55vh] overflow-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-stone-50 dark:bg-black/20 p-4 font-mono text-[13px] leading-6 whitespace-pre-wrap break-all text-stone-700 dark:text-stone-200 selection:bg-cyan-500/20">{text === '' ? <span className="italic text-stone-400 dark:text-stone-500">空字符串</span> : valueText(entry, true)}</pre>
+        <pre tabIndex={0} aria-label="完整值" className="mt-4 min-h-40 max-h-[55vh] overflow-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-stone-50 dark:bg-black/20 p-4 font-mono text-[15px] leading-6 whitespace-pre-wrap break-all text-stone-700 dark:text-stone-200 selection:bg-cyan-500/20">{text === '' ? <span className="italic text-stone-400 dark:text-stone-500">空字符串</span> : valueText(entry, true)}</pre>
         <div className="mt-5 flex justify-end gap-2.5">
           <button type="button" className={btn} onClick={close} autoFocus>关闭</button>
           <button type="button" className={btnPri} onClick={() => { setOpen(false); onEdit() }}>编辑 KV</button>
@@ -85,9 +85,9 @@ function ValuePreview({ entry, onEdit }) {
 /** 类型徽章：str=stone 中性；json=cyan 个性色 */
 function TypeBadge({ type }) {
   return type === 'json' ? (
-    <span className="px-1.5 py-0.5 rounded-md text-[11px] font-mono font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">json</span>
+    <span className="px-1.5 py-0.5 rounded-md text-[13px] font-mono font-medium bg-cyan-500/10 text-cyan-700 dark:text-cyan-300">json</span>
   ) : (
-    <span className="px-1.5 py-0.5 rounded-md text-[11px] font-mono font-medium bg-stone-500/10 text-stone-600 dark:text-stone-300">str</span>
+    <span className="px-1.5 py-0.5 rounded-md text-[13px] font-mono font-medium bg-stone-500/10 text-stone-600 dark:text-stone-300">str</span>
   )
 }
 
@@ -95,7 +95,7 @@ function TypeBadge({ type }) {
 function Toast({ t }) {
   if (!t?.msg) return null
   return (
-    <div className={'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] rounded-lg px-3 py-2 text-[13px] shadow-lg animate-fade-in ' +
+    <div className={'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] rounded-lg px-3 py-2 text-[15px] shadow-lg animate-fade-in ' +
       (t.kind === 'error'
         ? 'bg-red-500 text-white'
         : 'bg-stone-800 dark:bg-stone-100 dark:text-stone-900 text-white')}>
@@ -144,7 +144,7 @@ function CacheBar({ cache, onOpen }) {
   else if (cache?.configured) { dot = 'bg-amber-500'; label = '已配置 · 连接异常（降级直连）' }
   else if (cache == null) label = '状态加载中…'
   return (
-    <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-xs`}>
+    <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-sm`}>
       <span className="flex items-center gap-2 shrink-0">
         <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
         <span className="font-medium text-stone-700 dark:text-stone-200">Redis · {label}</span>
@@ -158,7 +158,7 @@ function CacheBar({ cache, onOpen }) {
         </span>
       )}
       <button onClick={onOpen}
-        className="ml-auto px-3 h-7 rounded-lg text-xs font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
+        className="ml-auto px-3 h-7 rounded-lg text-sm font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
         {cache?.configured ? '缓存配置' : '去配置'}
       </button>
     </div>
@@ -248,12 +248,12 @@ function CacheModal({ status, onClose, onSaved, say }) {
 
   return (
     <Mask onClose={onClose}>
-      <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">Redis 缓存配置</h3>
-      <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+      <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Redis 缓存配置</h3>
+      <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
         读穿缓存 + 写失效；未启用或不可达时自动降级直连数据库（写语义不受影响）
       </p>
 
-      <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer select-none">
+      <label className="flex items-center gap-2 mt-4 text-base cursor-pointer select-none">
         <input type="checkbox" className="accent-cyan-600 w-4 h-4" checked={cfg.enabled}
           onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
         <span className="text-stone-700 dark:text-stone-200">启用缓存</span>
@@ -288,7 +288,7 @@ function CacheModal({ status, onClose, onSaved, say }) {
       </div>
 
       {msg && (
-        <div className={'mt-4 rounded-lg px-3 py-2 text-[13px] break-all ' +
+        <div className={'mt-4 rounded-lg px-3 py-2 text-[15px] break-all ' +
           (msg.tone === 'ok'
             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
             : 'bg-red-500/10 text-red-600 dark:text-red-400')}>
@@ -331,16 +331,16 @@ function NamespaceModal({ onClose, onCreated }) {
   }
   return (
     <Mask onClose={onClose}>
-      <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">新建 namespace</h3>
-      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">创建一个独立空间，再在其中添加 KV 配置。</p>
+      <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">新建 namespace</h3>
+      <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">创建一个独立空间，再在其中添加 KV 配置。</p>
       <form onSubmit={create} className="mt-5">
         <label htmlFor="conf-new-namespace" className={`${LBL} block mb-1.5`}>namespace 名称</label>
         <input id="conf-new-namespace" autoFocus autoComplete="off" maxLength={100}
           value={name} onChange={e => { setName(e.target.value); setError('') }} placeholder="如 app、service-prod"
           className={`${inputCls} w-full font-mono`} aria-invalid={!!error || (!!namespace && !valid)} />
-        <p className="mt-2 text-xs text-stone-400 dark:text-stone-500">支持字母、数字及 _ . : -，最多 100 个字符。</p>
-        {namespace && !valid && <p className="mt-2 text-xs text-red-600 dark:text-red-400">名称包含不支持的字符。</p>}
-        {error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+        <p className="mt-2 text-sm text-stone-400 dark:text-stone-500">支持字母、数字及 _ . : -，最多 100 个字符。</p>
+        {namespace && !valid && <p className="mt-2 text-sm text-red-600 dark:text-red-400">名称包含不支持的字符。</p>}
+        {error && <p role="alert" className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
         <div className="mt-5 flex justify-end gap-2.5">
           <button type="button" onClick={onClose} className={btn}>取消</button>
           <button type="submit" disabled={!valid || busy} className={btnPri}>{busy ? '创建中…' : '创建空间'}</button>
@@ -410,7 +410,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
 
   return (
     <Mask onClose={onClose} wide>
-      <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">
+      <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">
         {isEdit ? '编辑 KV' : '新建 KV'}
       </h3>
 
@@ -420,7 +420,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
           <input id="conf-entry-namespace" className={`${inputCls} w-full font-mono text-stone-500 dark:text-stone-400`}
             value={ns} readOnly />
           {ns && !nsOk && (
-            <div className="mt-1 text-xs text-red-600 dark:text-red-400">仅允许字母数字 _ . : -（≤100 字符）</div>
+            <div className="mt-1 text-sm text-red-600 dark:text-red-400">仅允许字母数字 _ . : -（≤100 字符）</div>
           )}
         </div>
         <div>
@@ -429,12 +429,12 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
             value={key} disabled={isEdit} placeholder="如 feature_flags"
             onChange={e => setKey(e.target.value)} />
           {key && !keyOk && (
-            <div className="mt-1 text-xs text-red-600 dark:text-red-400">仅允许字母数字 _ . : -（≤200 字符）</div>
+            <div className="mt-1 text-sm text-red-600 dark:text-red-400">仅允许字母数字 _ . : -（≤200 字符）</div>
           )}
         </div>
       </div>
       {isEdit && (
-        <p className="mt-1.5 text-[11px] text-stone-400 dark:text-stone-500">
+        <p className="mt-1.5 text-[13px] text-stone-400 dark:text-stone-500">
           编辑时不可改 namespace / key（复合主键）——需要请另存新条目
         </p>
       )}
@@ -445,7 +445,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
           {['str', 'json'].map(t => (
             <button key={t} type="button"
               onClick={() => { setType(t); setJsonErr(null) }}
-              className={'px-5 h-8 rounded-lg text-sm font-mono font-medium transition-colors ' +
+              className={'px-5 h-8 rounded-lg text-base font-mono font-medium transition-colors ' +
                 (type === t
                   ? 'bg-cyan-600 text-white'
                   : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200')}>
@@ -453,7 +453,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
             </button>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-stone-400 dark:text-stone-500">
+        <p className="mt-1.5 text-[13px] text-stone-400 dark:text-stone-500">
           {type === 'str' ? 'str —— 原样字符串，不做任何解析' : 'json —— 保存时须为合法 JSON 文本（对象 / 数组 / 数字…）'}
         </p>
       </div>
@@ -462,10 +462,10 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
         <label htmlFor="conf-entry-value" className={`${LBL} block mb-1.5`}>值</label>
         <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} onBlur={checkJson} rows={8}
           spellCheck={false}
-          className={`${inputCls} w-full font-mono text-[13px] leading-relaxed resize-y ` +
+          className={`${inputCls} w-full font-mono text-[15px] leading-relaxed resize-y ` +
             (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
         {jsonErr && (
-          <div className="mt-1 text-xs text-red-600 dark:text-red-400">{jsonErr}——修正后再保存</div>
+          <div className="mt-1 text-sm text-red-600 dark:text-red-400">{jsonErr}——修正后再保存</div>
         )}
       </div>
 
@@ -588,26 +588,26 @@ export default function ConfCenterPage() {
   }
 
   return (
-    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors [&_h1]:text-lg">
       <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存" />
       <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
       <div className="mt-4 flex items-start gap-4">
         <aside aria-label="Namespaces" className={`${card} w-52 shrink-0 p-2 sticky top-8`}>
           <div className="px-2 py-2 flex items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold text-stone-500 dark:text-stone-400">Namespaces</h2>
-            <span className="text-[11px] tabular-nums text-stone-400 dark:text-stone-500">{namespaces?.length ?? '…'}</span>
+            <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400">Namespaces</h2>
+            <span className="text-[13px] tabular-nums text-stone-400 dark:text-stone-500">{namespaces?.length ?? '…'}</span>
           </div>
-          <button type="button" className={`${btn} w-full mb-2 text-xs`} onClick={() => setNamespaceOpen(true)}>＋ 新建 namespace</button>
+          <button type="button" className={`${btn} w-full mb-2`} onClick={() => setNamespaceOpen(true)}>＋ 新建 namespace</button>
           <nav aria-label="namespace 列表" className="space-y-0.5 max-h-[calc(100vh-300px)] overflow-y-auto">
-            {namespaces == null && !nsError && <p className="px-2 py-3 text-xs text-stone-400 dark:text-stone-500">加载中…</p>}
-            {nsError && <div className="px-2 py-3 text-xs text-red-600 dark:text-red-400"><p>空间加载失败</p><button type="button" onClick={loadNamespaces} className="mt-2 underline">重试</button></div>}
-            {namespaces?.length === 0 && <p className="px-2 py-3 text-xs text-stone-400 dark:text-stone-500">还没有 namespace</p>}
+            {namespaces == null && !nsError && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">加载中…</p>}
+            {nsError && <div className="px-2 py-3 text-sm text-red-600 dark:text-red-400"><p>空间加载失败</p><button type="button" onClick={loadNamespaces} className="mt-2 underline">重试</button></div>}
+            {namespaces?.length === 0 && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">还没有 namespace</p>}
             {(namespaces || []).map(n => (
               <button key={n.namespace} type="button" onClick={() => selectNamespace(n.namespace)} aria-pressed={ns === n.namespace}
-                className={'w-full flex items-center justify-between gap-2 px-2.5 h-9 rounded-lg text-sm transition-colors ' +
+                className={'w-full flex items-center justify-between gap-2 px-2.5 h-9 rounded-lg text-base transition-colors ' +
                   (ns === n.namespace ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-medium' : 'text-stone-600 dark:text-stone-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]')}>
-                <span className="min-w-0 truncate font-mono text-[13px]" title={n.namespace}>{n.namespace}</span>
-                <span className="text-xs text-stone-400 dark:text-stone-500 tabular-nums shrink-0">{n.count}</span>
+                <span className="min-w-0 truncate font-mono text-[15px]" title={n.namespace}>{n.namespace}</span>
+                <span className="text-sm text-stone-400 dark:text-stone-500 tabular-nums shrink-0">{n.count}</span>
               </button>
             ))}
           </nav>
@@ -618,50 +618,49 @@ export default function ConfCenterPage() {
               <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
                 <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" strokeLinejoin="round" /></svg>
               </div>
-              <h2 className="text-base font-semibold">{nsError ? '暂时无法加载空间' : namespaces == null ? '正在加载 namespace…' : '先创建一个 namespace'}</h2>
-              <p className="text-sm text-stone-500 dark:text-stone-400">按应用或环境组织空间，在选中的空间内管理 KV。</p>
+              <h2 className="text-lg font-semibold">{nsError ? '暂时无法加载空间' : namespaces == null ? '正在加载 namespace…' : '先创建一个 namespace'}</h2>
+              <p className="text-base text-stone-500 dark:text-stone-400">按应用或环境组织空间，在选中的空间内管理 KV。</p>
               {namespaces != null && !nsError && <button type="button" className={btnPri} onClick={() => setNamespaceOpen(true)}>创建 namespace</button>}
             </div>
           ) : (
             <>
               <div className="flex items-center gap-3 mb-4 min-w-0">
-                <h2 className="font-mono text-lg font-semibold break-all">{ns}</h2>
-                <span className="shrink-0 text-xs text-stone-400 dark:text-stone-500">{currentNamespace?.count ?? 0} 条配置</span>
+                <h2 className="font-mono text-xl font-semibold break-all">{ns}</h2>
+                <span className="shrink-0 text-sm text-stone-400 dark:text-stone-500">{currentNamespace?.count ?? 0} 条配置</span>
               </div>
               <div className="flex items-center gap-2 mb-3">
                 <input value={qInput} onChange={e => setQInput(e.target.value)} aria-label="搜索 key" placeholder="搜索当前空间的 key…" className={`${inputCls} w-60`} />
                 <button type="button" className={`${btnPri} ml-auto shrink-0`} onClick={() => setEditing({ mode: 'new' })}>＋ 新建 KV</button>
               </div>
               <div className={`${card} overflow-x-auto`}>
-                <table className="w-full min-w-[760px] table-fixed text-sm">
+                <table className="w-full min-w-[740px] table-fixed text-base">
                   <colgroup>
-                    <col className="w-[20%]" /><col className="w-16" /><col /><col className="w-[156px]" /><col className="w-[148px]" />
+                    <col className="w-[20%]" /><col className="w-[76px]" /><col /><col className="w-[176px]" /><col className="w-[160px]" />
                   </colgroup>
-                  <thead><tr className="text-left text-xs text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
+                  <thead><tr className="text-left text-sm text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
                     <th className="pl-4 pr-2 py-2 font-normal">key</th><th className="px-2 py-2 font-normal">类型</th><th className="px-2 py-2 font-normal">值预览</th><th className="px-2 py-2 font-normal">更新时间</th><th className="pl-2 pr-4 py-2 font-normal text-right">操作</th>
                   </tr></thead>
                   <tbody>
-                    {visibleList == null && <tr><td colSpan={5} className="py-12 text-center text-xs text-stone-400 dark:text-stone-500">加载中…</td></tr>}
-                    {visibleList?.error && <tr><td colSpan={5} className="py-12 text-center text-xs text-red-600 dark:text-red-400">加载失败：{visibleList.error}<button type="button" onClick={() => refreshEntries()} className="ml-3 underline">重试</button></td></tr>}
+                    {visibleList == null && <tr><td colSpan={5} className="py-12 text-center text-sm text-stone-400 dark:text-stone-500">加载中…</td></tr>}
+                    {visibleList?.error && <tr><td colSpan={5} className="py-12 text-center text-sm text-red-600 dark:text-red-400">加载失败：{visibleList.error}<button type="button" onClick={() => refreshEntries()} className="ml-3 underline">重试</button></td></tr>}
                     {visibleList && !visibleList.error && !visibleList.rows.length && <tr><td colSpan={5} className="py-14 text-center">
-                      <p className="text-sm text-stone-500 dark:text-stone-400">{q ? `没有匹配“${q}”的 key` : '这个空间还没有 KV'}</p>
-                      {!q && <button type="button" onClick={() => setEditing({ mode: 'new' })} className="mt-3 text-xs font-medium text-cyan-600 dark:text-cyan-400 hover:underline">添加第一条 KV</button>}
+                      <p className="text-base text-stone-500 dark:text-stone-400">{q ? `没有匹配“${q}”的 key` : '这个空间还没有 KV'}</p>
+                      {!q && <button type="button" onClick={() => setEditing({ mode: 'new' })} className="mt-3 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:underline">添加第一条 KV</button>}
                     </td></tr>}
                     {visibleList?.rows.map(e => {
                       const id = `${e.namespace}\u0000${e.key}`
                       return <tr key={id} className="border-b border-black/[0.04] dark:border-white/[0.04] last:border-0 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] transition-colors">
-                        <td className="pl-4 pr-2 py-2.5 font-mono text-[13px] text-stone-800 dark:text-stone-100"><span className="block truncate" title={e.key}>{e.key}</span></td>
+                        <td className="pl-4 pr-2 py-2.5 font-mono text-[15px] text-stone-800 dark:text-stone-100"><span className="block truncate" title={e.key}>{e.key}</span></td>
                         <td className="px-2 py-2.5 whitespace-nowrap"><TypeBadge type={e.type} /></td>
                         <td className="px-2 py-2.5"><ValuePreview entry={e} onEdit={() => setEditing({ mode: 'edit', entry: e })} /></td>
-                        <td className="px-2 py-2.5 whitespace-nowrap text-xs text-stone-500 dark:text-stone-400">{fmtTime(e.updated_at)}</td>
+                        <td className="px-2 py-2.5 whitespace-nowrap text-sm text-stone-500 dark:text-stone-400">{fmtTime(e.updated_at)}</td>
                         <td className="pl-2 pr-4 py-2.5 text-right whitespace-nowrap">
                           {delTarget === id ? <span className="inline-flex items-center gap-1.5">
-                            <span className="text-[11.5px] text-red-600 dark:text-red-400">确认删除？</span>
-                            <button type="button" onClick={() => onDel(e.namespace, e.key)} className="px-2 h-7 rounded-md text-xs bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认</button>
-                            <button type="button" onClick={disarmDel} className="px-2 h-7 rounded-md text-xs text-stone-400 dark:text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">取消</button>
+                            <button type="button" onClick={() => onDel(e.namespace, e.key)} className="px-2 h-7 rounded-md text-sm bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认删除</button>
+                            <button type="button" onClick={disarmDel} className="px-2 h-7 rounded-md text-sm text-stone-400 dark:text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">取消</button>
                           </span> : <span className="inline-flex items-center gap-1.5">
-                            <button type="button" onClick={() => setEditing({ mode: 'edit', entry: e })} className="px-2.5 h-7 rounded-md text-xs text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">编辑</button>
-                            <button type="button" onClick={() => armDel(id)} className="px-2.5 h-7 rounded-md text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors">删除</button>
+                            <button type="button" onClick={() => setEditing({ mode: 'edit', entry: e })} className="px-2.5 h-7 rounded-md text-sm text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">编辑</button>
+                            <button type="button" onClick={() => armDel(id)} className="px-2.5 h-7 rounded-md text-sm text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors">删除</button>
                           </span>}
                         </td>
                       </tr>
@@ -669,7 +668,7 @@ export default function ConfCenterPage() {
                   </tbody>
                 </table>
               </div>
-              {visibleList && visibleList.pages > 1 && <div className="flex items-center justify-between mt-3 text-xs text-stone-500 dark:text-stone-400">
+              {visibleList && visibleList.pages > 1 && <div className="flex items-center justify-between mt-3 text-sm text-stone-500 dark:text-stone-400">
                 <span>共 {visibleList.total} 条</span><div className="flex items-center gap-2">
                   <button type="button" disabled={visibleList.page <= 1} onClick={() => setPage(visibleList.page - 1)} className={btn}>‹ 上一页</button>
                   <span className="tabular-nums">{visibleList.page} / {visibleList.pages}</span>

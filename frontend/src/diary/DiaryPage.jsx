@@ -113,22 +113,22 @@ export default function DiaryPage({ dark }) {
   useModuleNavigation({
     items: VIEWS, activeKey: view, onSelect: setView,
     sidebar: <><div className="mt-4 space-y-1">        {/* 日记本 */}
-        <div className="mt-5 mb-1 px-2.5 text-[13px] font-medium uppercase tracking-widest text-stone-400">日记本</div>
+        <div className="mt-5 mb-1 px-2.5 text-[11px] font-medium uppercase tracking-widest text-stone-400">日记本</div>
         <button onClick={() => setActiveJournal(undefined)}
-          className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[15px] transition-colors ' +
+          className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors ' +
             (activeJournal === undefined ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
           📚 全部随记
-          <span className="ml-auto text-[13px] text-stone-300 dark:text-stone-600 tabular-nums">
+          <span className="ml-auto text-[11px] text-stone-300 dark:text-stone-600 tabular-nums">
             {journals.reduce((a, j) => a + (j.entry_count || 0), 0)}
           </span>
         </button>
         {journals.map(j => (
           <button key={String(j.id)} onClick={() => setActiveJournal(j.id)}
-            className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[15px] transition-colors group ' +
+            className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors group ' +
               (activeJournal === j.id ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
             <span>{j.emoji}</span>
             <span className="truncate">{j.name}</span>
-            <span className="ml-auto text-[13px] text-stone-300 dark:text-stone-600 tabular-nums">{j.entry_count}</span>
+            <span className="ml-auto text-[11px] text-stone-300 dark:text-stone-600 tabular-nums">{j.entry_count}</span>
           </button>
         ))}
         <div className="flex gap-1 px-1 mt-1">
@@ -140,10 +140,10 @@ export default function DiaryPage({ dark }) {
               }
             }}
             placeholder="新本子名…"
-            className="flex-1 min-w-0 h-7 px-2 text-[13.5px] bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none placeholder:text-stone-400" />
+            className="flex-1 min-w-0 h-7 px-2 text-[11.5px] bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none placeholder:text-stone-400" />
         </div>
 
-</div><button onClick={diaryExportZip} className="mt-4 px-2.5 h-9 text-left rounded-xl text-base text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5">↓ 导出全部</button></>,
+</div><button onClick={diaryExportZip} className="mt-4 px-2.5 h-9 text-left rounded-xl text-sm text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5">↓ 导出全部</button></>,
   })
 
   return (

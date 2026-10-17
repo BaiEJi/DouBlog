@@ -67,6 +67,7 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 - 顶部 Redis 状态条三态（调 cache/status）：绿=已启用（探活可达）/ 琥珀=已配置但连接异常（降级直连）/ 灰=未启用，附 url_masked 与命中计数；未配置时按钮文案「去配置」
 - 缓存配置 Modal（GET /cache/config 回显，密码不回显、留空=沿用已存）：enabled/host/port/db/password/ttl + 测试连接 + 保存 + 清空缓存
 - `api.js` 走 apiFetch + unwrap（模块内全部端点均有包装，组件不裸调 fetch）；个性色 **cyan**；遵循 docs/ui-baseline.md
+- 字号：主要控件/正文 16px；状态、表头及辅助说明 14px；namespace/key 和完整值 15px；类型徽章 13px；弹窗标题 18px。类型、时间和操作列配合加宽，删除确认使用“确认删除 / 取消”两步按钮。
 - 值预览：中性浅底的等高单行预览，长值省略，多行字符串以 ↵ 标识换行，空字符串明确标注；点击打开只读弹窗查看完整原文或格式化 JSON，可直接进入编辑。JSON 字符串标量保留引号。表格固定列宽，长 key 省略并支持悬停查看。
 
 ## 6. 测试（tests/confcenter/，46 例，FakeRedis 内存假客户端——不连真实 Redis）
