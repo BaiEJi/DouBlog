@@ -1,4 +1,9 @@
-"""confcenter 测试共享件：假 Redis 客户端（内存 dict）+ 一键启用缓存的夹具。"""
+"""confcenter 测试共享件：假 Redis 客户端（内存 dict）+ 一键启用缓存的夹具。
+
+FakeRedis 除 KV（get/setex/delete/ping/scan_iter）外，还实现 lizysdk
+SlidingWindowCounter 依赖的 EVAL/ZRANGE/ZCARD：按脚本内容识别 lizysdk 的
+两段 Lua（incr / count）并以内存 ZSET 语义等价执行（TTL 忽略——测试不等待）。
+"""
 import base64
 
 import pytest
@@ -7,14 +12,19 @@ AUTH = {'Authorization': 'Basic ' + base64.b64encode(b"admin:lizy111A").decode()
 
 
 class FakeRedis:
-    """内存版 Redis 客户端：记录 DEL/SETEX 调用，可模拟连接故障。"""
+    """内存版 Redis 客户端：记录 DEL/SETEX 调用，可模拟连接故障。
 
-    def __init__(self, fail=False):
+    eval_fail=True 时仅 EVAL 抛错（其余命令正常）——模拟限流降级而缓存可用。
+    """
+
+    def __init__(self, fail=False, eval_fail=False):
         self.store = {}
         self.ttls = {}
         self.deleted = []
         self.set_calls = []
+        self.zsets = {}          # key -> {member: score}
         self.fail = fail
+        self.eval_fail = eval_fail
 
     def _check(self):
         if self.fail:
@@ -38,6 +48,9 @@ class FakeRedis:
             if k in self.store:
                 del self.store[k]
                 n += 1
+            if k in self.zsets:
+                del self.zsets[k]
+                n += 1
         return n
 
     def ping(self):
@@ -46,10 +59,49 @@ class FakeRedis:
 
     def scan_iter(self, match=None):
         self._check()
+        keys = list(self.store) + list(self.zsets)
         if match is None:
-            return iter(list(self.store))
+            return iter(keys)
         import fnmatch
-        return iter([k for k in self.store if fnmatch.fnmatch(k, match)])
+        return iter([k for k in keys if fnmatch.fnmatch(k, match)])
+
+    # ─── ZSET（lizysdk SlidingWindowCounter 所需）──────────
+
+    def zcard(self, key):
+        self._check()
+        return len(self.zsets.get(key, {}))
+
+    def zrange(self, key, start, stop, withscores=False):
+        self._check()
+        items = sorted(self.zsets.get(key, {}).items(), key=lambda kv: kv[1])
+        n = len(items)
+
+        def norm(i):
+            if i < 0:
+                i += n
+            return max(0, min(n - 1, i)) if n else 0
+
+        sel = items[norm(start):norm(stop) + 1] if n else []
+        return [(m, s) for m, s in sel] if withscores else [m for m, _ in sel]
+
+    def eval(self, script, numkeys, *args):
+        self._check()
+        if self.eval_fail:
+            raise ConnectionError('fake redis eval down')
+        key = args[0]
+        argv = args[1:]
+        zset = self.zsets.setdefault(key, {})
+        if 'ZADD' in script:      # lizysdk _INCR_LUA：ZADD×amount → 清窗 → ZCARD
+            now, member, cutoff, amount = float(argv[0]), argv[1], float(argv[2]), int(argv[4])
+            for i in range(1, amount + 1):
+                zset[member if amount == 1 else f'{member}:{i}'] = now
+            for m in [m for m, s in zset.items() if s <= cutoff]:
+                del zset[m]
+        else:                      # lizysdk _COUNT_LUA：清窗 → ZCARD
+            cutoff = float(argv[0])
+            for m in [m for m, s in zset.items() if s <= cutoff]:
+                del zset[m]
+        return len(zset)
 
 
 @pytest.fixture

@@ -1,5 +1,6 @@
 """
-配置中心 API：KV 配置浏览/读写 + Redis 缓存管理（全部 require_basic，Doublog 信封）。
+配置中心 API：KV 配置浏览/读写 + Redis 缓存管理 + namespace 限流管理
+（全部 require_basic，Doublog 信封）。
 
 值语义（读写约定）：
 - type=str → data 原样字符串（"123" 就是字符串，不会被误判 JSON）
@@ -9,7 +10,10 @@
 
 缓存：读单条先缓存后 DB 回填、写/删先落库再 DEL，详见 cache.py。
 
-路由顺序注意：字面量路径（/namespaces /entries /cache/*）必须先于
+限流：单条 KV 路由（GET/PUT/DELETE /{namespace}/{key}）按 namespace 维度
+限流（优先 Redis/lizysdk 滑动窗口，无 Redis 降级本地），超限 429；详见 ratelimit.py。
+
+路由顺序注意：字面量路径（/namespaces /entries /cache/* /ratelimit/*）必须先于
 /{namespace}/{key} 注册，否则会被两段参数路由吞掉。
 """
 
@@ -22,7 +26,7 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import bindparam, func, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from app.confcenter import cache
+from app.confcenter import cache, ratelimit
 from app.confcenter.models import ConfEntry, ConfNamespace
 from app.config import settings
 from app.db import db, run_db
@@ -291,11 +295,59 @@ async def flush_cache(request: Request):
                         200, message if not ok else '缓存已清空')
 
 
-# ─── 单条 CRUD（参数路由放最后）─────────────────────────
+# ─── 限流管理（系统配置页用；先于参数路由注册）────────────
+
+@router.get('/ratelimit/status')
+async def get_ratelimit_status(request: Request):
+    """限流状态 {enabled, mode: off|local|redis, limit, window_seconds,
+    overrides, allowed, rejected, tracked, redis}。"""
+    return api_response(ratelimit.status(request.app))
+
+
+@router.get('/ratelimit/config')
+async def get_ratelimit_config(request: Request):
+    """当前限流配置（配置 Modal 回显用）。"""
+    state = ratelimit.get_state(request.app)
+    cfg = dict(state.config)
+    cfg['overrides'] = dict(cfg.get('overrides') or {})
+    return api_response(cfg)
+
+
+@router.put('/ratelimit/config')
+async def put_ratelimit_config(request: Request):
+    """保存限流配置 {enabled, limit, window_seconds, overrides} → data/ratelimit_config.json。
+
+    overrides 整体替换（每行 {limit, window_seconds}，limit=0 表示豁免该空间）。
+    """
+    state = ratelimit.get_state(request.app)
+    body = await _json_body(request)
+    try:
+        cfg = ratelimit.normalize_config(body, current=state.config)
+    except ValueError as e:
+        raise ParamError(message=str(e))
+    ratelimit.save_config(cfg)
+    state.apply_config(cfg)       # 快照更新 + 本地窗口清空（新额度立即生效）
+    return api_response(cfg, 200, '限流配置已保存')
+
+
+@router.post('/ratelimit/reset')
+async def reset_ratelimit(request: Request):
+    """清零某 namespace 的限流窗口计数（本地 + Redis 双路径）。"""
+    body = await _json_body(request)
+    namespace = body.get('namespace')
+    if (not isinstance(namespace, str) or not namespace
+            or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
+        raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
+    return api_response(ratelimit.reset(request.app, namespace), 200, '已清零')
+
+
+# ─── 单条 CRUD（参数路由放最后；三条路由开头均按 namespace 限流）──
 
 @router.get('/{namespace}/{key}')
 async def get_entry(namespace: str, key: str, request: Request):
     """读单条：先缓存后 DB（未命中回填）；data 按解析后返回。"""
+    await run_db(lambda: ratelimit.check(request.app, namespace))
+
     def _read():
         state = cache.get_cache_state(request.app)
         payload = cache.cache_get(state, namespace, key)
@@ -318,6 +370,7 @@ async def get_entry(namespace: str, key: str, request: Request):
 @router.put('/{namespace}/{key}')
 async def put_entry(namespace: str, key: str, request: Request):
     """upsert {type:'str'|'json', data}：新建 201 / 整体覆盖 200（type 可变更）。"""
+    await run_db(lambda: ratelimit.check(request.app, namespace))
     if len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace):
         raise ParamError(message='namespace 含非法字符（仅允许字母数字 _ . : -）')
     if len(key) > KEY_MAX or not NAME_RE.match(key):
@@ -381,6 +434,8 @@ async def put_entry(namespace: str, key: str, request: Request):
 @router.delete('/{namespace}/{key}')
 async def delete_entry(namespace: str, key: str, request: Request):
     """删除单条：200；不存在 404。写路径同样先落库再 DEL 缓存。"""
+    await run_db(lambda: ratelimit.check(request.app, namespace))
+
     def _delete():
         state = cache.get_cache_state(request.app)
 

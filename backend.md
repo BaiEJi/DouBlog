@@ -69,7 +69,7 @@ backend/
 │   ├── gamemap/               # 剧情图谱（gamemap 迁入）：13 表 + routers 9 组 + response_cache
 │   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
-│   ├── confcenter/            # 配置中心：独立 namespace + KV + 幂等回填 + Redis 读穿缓存
+│   ├── confcenter/            # 配置中心：独立 namespace + KV + 幂等回填 + Redis 读穿缓存 + namespace 限流（lizysdk 优先/本地降级）
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
 │   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
@@ -395,7 +395,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 653 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 46；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟）
+cd backend && python -m pytest tests/ -q -n 8   # 689 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 69；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟；WSL2 缺失的本机 clash 14 例环境性失败）
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**

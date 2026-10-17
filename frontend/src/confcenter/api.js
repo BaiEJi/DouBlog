@@ -61,3 +61,19 @@ export const confCacheTest = (cfg) =>
 /** 清空本模块缓存键（confcenter:* 前缀 SCAN+DEL，非整库 FLUSHDB），管理用 */
 export const confCacheFlush = () =>
   json('/api/confcenter/cache/flush', { method: 'POST' })
+
+// ── namespace 限流管理 ──────────────────────────────────
+
+/** {enabled, mode: off|local|redis, limit, window_seconds, overrides, allowed, rejected, tracked, redis} */
+export const confRatelimitStatus = () => json('/api/confcenter/ratelimit/status')
+
+/** 当前限流配置回显 {enabled, limit, window_seconds, overrides} */
+export const confRatelimitConfig = () => json('/api/confcenter/ratelimit/config')
+
+/** 保存限流配置（overrides 整体替换；覆盖行 limit=0 表示该空间豁免） */
+export const confRatelimitSave = (cfg) =>
+  json('/api/confcenter/ratelimit/config', { method: 'PUT', body: JSON.stringify(cfg) })
+
+/** 清零某 namespace 的限流窗口计数（本地 + Redis 双路径） */
+export const confRatelimitReset = (namespace) =>
+  json('/api/confcenter/ratelimit/reset', { method: 'POST', body: JSON.stringify({ namespace }) })

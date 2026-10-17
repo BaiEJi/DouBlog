@@ -1032,11 +1032,14 @@ POST   /api/confcenter/namespaces              # {namespace} → 201；重名 40
 GET    /api/confcenter/entries                 # ?namespace= &q= &page= &page_size=
 GET    /api/confcenter/{ns}/{key}              # 读：str→字符串，json→解析后结构
 PUT    /api/confcenter/{ns}/{key}              # upsert {type, data}（201 新建/200 覆盖；json 非法 400）
-DELETE /api/confcenter/{ns}/{key}              # 200 / 404
+DELETE /api/confcenter/{ns}/{key}              # 200 / 404；以上三条单条 KV 路由受 namespace 限流约束
 GET    /api/confcenter/cache/status            # {enabled, configured, reachable, url_masked, hits, misses}
 GET/PUT /api/confcenter/cache/config           # Redis 配置（enabled/host/port/db/password/ttl；密码留空沿用）
 POST   /api/confcenter/cache/test              # 连通性测试（可带候选配置）
 POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
+GET    /api/confcenter/ratelimit/status        # {enabled, mode: off|local|redis, limit, window_seconds, overrides, allowed, rejected, tracked, redis}
+GET/PUT /api/confcenter/ratelimit/config       # 限流配置 {enabled, limit, window_seconds, overrides}（部分缺省沿用；overrides 整体替换）
+POST   /api/confcenter/ratelimit/reset         # {namespace} → 清零该空间的限流窗口计数（本地 + Redis）
 ```
 
 
@@ -1053,6 +1056,13 @@ POST   /api/confcenter/cache/flush             # 清空 confcenter:* 缓存键
 ```
 
 名称为 1–100 个 `[A-Za-z0-9_.:-]` 字符。空 namespace 独立保存，删除最后一条 KV 后仍会在列表中返回 `count: 0`；启动时幂等登记历史 KV 的 namespace。为兼容已有客户端，直接 PUT 到新 namespace 仍会在创建 KV 的同一事务内登记该空间；前端流程固定先建空间，再在选中空间内创建 KV。`GET /entries` 省略 namespace 的旧版全量浏览契约保留。
+
+**namespace 限流**（`ratelimit.py`，默认未启用）：启用后单条 KV 路由（GET/PUT/DELETE `/{ns}/{key}`）按 namespace 计数，超限返回 `429 RATE_LIMITED`，`data.details` 携带 `{namespace, limit, window_seconds, retry_after, mode}`。判定优先走 Redis 滑动窗口（`lizysdk.dist.SlidingWindowCounter`，复用缓存层 `data/redis_config.json` 连接），无 Redis（库缺失/未启用/连接失败）自动降级为进程内本地窗口（单进程部署语义一致）。配置存 `data/ratelimit_config.json`：`{enabled, limit=100, window_seconds=60, overrides}`，`overrides` 按 namespace 覆盖 `{limit, window_seconds}`（`limit:0` 表示该空间豁免）。浏览（/namespaces /entries）与缓存管理端点不受限流约束。超限响应示例：
+
+```json
+{"success":false,"code":429,"message":"namespace app 请求过于频繁（限 100 次 / 60s）",
+ "data":{"error_code":"RATE_LIMITED","details":{"namespace":"app","limit":100,"window_seconds":60,"retry_after":42,"mode":"local"}}}
+```
 
 ## 20. Clash API（代理管理：clashctl 全能力的 Web 迁移）
 

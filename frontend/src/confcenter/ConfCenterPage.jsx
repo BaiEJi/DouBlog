@@ -1,18 +1,25 @@
 /**
- * 配置中心页 /confcenter：namespace → key → value 的 KV 存储 + 可选 Redis 缓存层。
+ * 配置中心页 /confcenter：namespace → key → value 的 KV 存储 + 可选 Redis 缓存层
+ * + namespace 维度限流（优先 Redis/lizysdk 滑动窗口，无 Redis 降级本地）。
  *
  * - 先创建独立 namespace；左侧选择空间，右侧只管理当前空间的 KV
- * - 新建/编辑 Modal：type 切换 str|json——str=多行文本原样；json=失焦校验，非法标红禁止保存
+ * - 新建/编辑 Modal：type 切换 str|json——str=多行文本原样；json=JSON 编辑器
+ *   （highlight.js 着色 + 格式化/压缩 + 失焦校验非法标红禁止保存）；值预览弹窗 json 同款着色
  * - 删除两步确认（第一步入列就位，3.5s 自动撤销）；搜索框 q（防抖）；分页
- * - 顶部 Redis 状态条（cache/status：已启用/未启用+去配置）+ 缓存配置 Modal（测试连接/保存/清空缓存）
+ * - 顶部 Redis 缓存状态条（cache/status）+ 缓存配置 Modal（测试连接/保存/清空缓存）
+ * - 限流状态条（ratelimit/status：Redis 滑动窗口/本地降级/未启用 + 放行/拒绝计数，
+ *   可重置当前空间计数）+ 限流配置 Modal（默认额度 + 按 namespace 覆盖行，0=豁免）
  * 接口全部走 ./api（apiFetch + unwrap）；个性色 cyan——只用于徽章、主按钮、选中态；其余中性 stone。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
+import JsonEditor, { JsonHighlightedView } from './JsonEditor'
+import { jsonValidate } from './jsonTools'
 import {
   confNamespaces, confCreateNamespace, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
   confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
+  confRatelimitStatus, confRatelimitConfig, confRatelimitSave, confRatelimitReset,
 } from './api'
 
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
@@ -54,6 +61,7 @@ function ValuePreview({ entry, onEdit }) {
   const [open, setOpen] = useState(false)
   const trigger = useRef(null)
   const text = valueText(entry)
+  const pretty = valueText(entry, true)
   const close = () => { setOpen(false); trigger.current?.focus() }
   return (
     <>
@@ -72,7 +80,11 @@ function ValuePreview({ entry, onEdit }) {
           <span className="min-w-0 truncate font-mono text-sm text-stone-500 dark:text-stone-400" title={`${entry.namespace}/${entry.key}`}>{entry.namespace} / {entry.key}</span>
           <TypeBadge type={entry.type} />
         </div>
-        <pre tabIndex={0} aria-label="完整值" className="mt-4 min-h-40 max-h-[55vh] overflow-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-stone-50 dark:bg-black/20 p-4 font-mono text-[15px] leading-6 whitespace-pre-wrap break-all text-stone-700 dark:text-stone-200 selection:bg-cyan-500/20">{text === '' ? <span className="italic text-stone-400 dark:text-stone-500">空字符串</span> : valueText(entry, true)}</pre>
+        {text === ''
+          ? <pre tabIndex={0} aria-label="完整值" className="mt-4 min-h-40 max-h-[55vh] overflow-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-stone-50 dark:bg-black/20 p-4 font-mono text-[15px] leading-6 whitespace-pre-wrap break-all text-stone-700 dark:text-stone-200 selection:bg-cyan-500/20"><span className="italic text-stone-400 dark:text-stone-500">空字符串</span></pre>
+          : entry.type === 'json'
+            ? <div className="mt-4"><JsonHighlightedView text={pretty} /></div>
+            : <pre tabIndex={0} aria-label="完整值" className="mt-4 min-h-40 max-h-[55vh] overflow-auto rounded-xl border border-black/[0.06] dark:border-white/[0.08] bg-stone-50 dark:bg-black/20 p-4 font-mono text-[15px] leading-6 whitespace-pre-wrap break-all text-stone-700 dark:text-stone-200 selection:bg-cyan-500/20">{pretty}</pre>}
         <div className="mt-5 flex justify-end gap-2.5">
           <button type="button" className={btn} onClick={close} autoFocus>关闭</button>
           <button type="button" className={btnPri} onClick={() => { setOpen(false); onEdit() }}>编辑 KV</button>
@@ -104,8 +116,8 @@ function Toast({ t }) {
   )
 }
 
-/** 通用 Modal 壳：半透明遮罩（点击/Esc 关闭）+ 居中面板 */
-function Mask({ onClose, children, wide, label }) {
+/** 通用 Modal 壳：半透明遮罩（点击/Esc 关闭）+ 居中面板；xwide 比 wide 再宽一档 */
+function Mask({ onClose, children, wide, xwide, label }) {
   function containFocus(e) {
     if (e.key !== 'Tab') return
     const controls = [...e.currentTarget.querySelectorAll('button, input, textarea, select, [tabindex]')]
@@ -123,7 +135,7 @@ function Mask({ onClose, children, wide, label }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 overflow-y-auto"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`${modalCard} w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} relative p-6 my-4 max-h-[calc(100vh-32px)] overflow-y-auto shadow-2xl`} role="dialog" aria-modal="true" aria-label={label} onKeyDown={containFocus}>
+      <div className={`${modalCard} w-full ${xwide ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-lg'} relative p-6 my-4 max-h-[calc(100vh-32px)] overflow-y-auto shadow-2xl`} role="dialog" aria-modal="true" aria-label={label} onKeyDown={containFocus}>
         <button type="button" onClick={onClose} aria-label="关闭弹窗" className="absolute right-3 top-3 w-8 h-8 rounded-lg text-stone-500 hover:bg-black/5 dark:hover:bg-white/10">×</button>
         {children}
       </div>
@@ -311,6 +323,193 @@ function CacheModal({ status, onClose, onSaved, say }) {
   )
 }
 
+// ─── 限流状态条 + 配置 ──────────────────────────────────────
+
+/**
+ * namespace 维度限流条：mode 三态——绿=Redis 滑动窗口（lizysdk）/ 琥珀=本地限流
+ * （Redis 不可用降级）/ 灰=未启用；附当前规则与放行/拒绝计数；启用时可重置
+ * 当前选中空间的窗口计数。
+ */
+function RateLimitBar({ rl: status, currentNs, onOpen, onReset, resetBusy }) {
+  let dot = 'bg-stone-400 dark:bg-stone-500'
+  let label = '未启用'
+  let note = ''
+  if (status?.mode === 'redis') { dot = 'bg-emerald-500'; label = '限流 · Redis 滑动窗口' }
+  else if (status?.mode === 'local') { dot = 'bg-amber-500'; label = '限流 · 本地窗口'; note = '（Redis 不可用，已降级）' }
+  else if (status == null) label = '限流状态加载中…'
+  return (
+    <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-sm`}>
+      <span className="flex items-center gap-2 shrink-0">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
+        <span className="font-medium text-stone-700 dark:text-stone-200">{label}<span className="font-normal text-stone-400 dark:text-stone-500">{note}</span></span>
+      </span>
+      {status?.enabled && (
+        <span className="text-stone-500 dark:text-stone-400 tabular-nums whitespace-nowrap">
+          {status.limit} 次 / {status.window_seconds}s
+          {Object.keys(status.overrides || {}).length > 0 && ` · ${Object.keys(status.overrides).length} 个覆盖`}
+        </span>
+      )}
+      {status?.enabled && (
+        <span className="text-stone-500 dark:text-stone-400 tabular-nums whitespace-nowrap">
+          放行 {status.allowed ?? 0} / 拒绝 {status.rejected ?? 0}
+        </span>
+      )}
+      {status?.enabled && currentNs && (
+        <button type="button" onClick={onReset} disabled={resetBusy}
+          className="px-3 h-7 rounded-lg text-sm font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
+          {resetBusy ? '清零中…' : `重置 ${currentNs} 计数`}
+        </button>
+      )}
+      <button onClick={onOpen}
+        className="ml-auto px-3 h-7 rounded-lg text-sm font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
+        {status?.enabled ? '限流配置' : '去配置'}
+      </button>
+    </div>
+  )
+}
+
+/** 限流配置 Modal：默认额度 + 按 namespace 覆盖行（limit=0 表示豁免该空间） */
+function RateLimitModal({ namespaces, onClose, onSaved, say }) {
+  const [cfg, setCfg] = useState({ enabled: false, limit: 100, window_seconds: 60 })
+  const [rows, setRows] = useState([])      // 覆盖行编辑态 [{ns, limit, window}]
+  const [loaded, setLoaded] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const d = await confRatelimitConfig()
+        if (!alive || !d) return
+        setCfg({ enabled: !!d.enabled, limit: d.limit ?? 100, window_seconds: d.window_seconds ?? 60 })
+        setRows(Object.entries(d.overrides || {}).map(([ns, r]) =>
+          ({ ns, limit: r.limit, window: r.window_seconds })))
+      } catch {
+        // 回显失败不阻断表单，按默认值编辑
+      } finally {
+        if (alive) setLoaded(true)
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
+  const nsOk = ns => ns.length > 0 && ns.length <= 100 && NAME_RE.test(ns)
+  const numOk = (v, lo) => Number.isInteger(+v) && +v >= lo
+  const rowsValid = rows.every(r => nsOk(r.ns.trim()) && numOk(r.limit, 0) && numOk(r.window, 1)
+    && rows.filter(x => x.ns.trim() === r.ns.trim()).length === 1)
+  const canSave = !busy && loaded && numOk(cfg.limit, 1) && numOk(cfg.window_seconds, 1) && rowsValid
+
+  async function onSave() {
+    if (!canSave) return
+    setBusy(true); setMsg(null)
+    try {
+      const overrides = {}
+      for (const r of rows) overrides[r.ns.trim()] = { limit: +r.limit, window_seconds: +r.window }
+      await confRatelimitSave({
+        enabled: !!cfg.enabled, limit: +cfg.limit,
+        window_seconds: +cfg.window_seconds, overrides,
+      })
+      say('限流配置已保存')
+      onSaved()
+      onClose()
+    } catch (e) {
+      setMsg({ tone: 'err', text: e.message })
+    } finally { setBusy(false) }
+  }
+
+  const setRow = (i, patch) => setRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r))
+  const numField = 'w-24 h-8 px-2 rounded-lg text-sm tabular-nums bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 text-stone-800 dark:text-stone-100 outline-none focus:border-black/30 dark:focus:border-white/30'
+
+  return (
+    <Mask onClose={onClose}>
+      <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">namespace 限流配置</h3>
+      <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
+        按 namespace 计数限流单条 KV 读写（GET/PUT/DELETE）；优先 Redis 滑动窗口（lizysdk），
+        Redis 不可用时自动降级为本地窗口
+      </p>
+
+      <label className="flex items-center gap-2 mt-4 text-base cursor-pointer select-none">
+        <input type="checkbox" className="accent-cyan-600 w-4 h-4" checked={cfg.enabled}
+          onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
+        <span className="text-stone-700 dark:text-stone-200">启用限流</span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3 mt-4">
+        <div>
+          <label className={`${LBL} block mb-1.5`}>默认额度（次/窗口）</label>
+          <input className={`${inputCls} w-full tabular-nums`} type="number" min="1" value={cfg.limit}
+            aria-invalid={!numOk(cfg.limit, 1)}
+            onChange={e => setCfg({ ...cfg, limit: +e.target.value })} />
+        </div>
+        <div>
+          <label className={`${LBL} block mb-1.5`}>窗口（秒）</label>
+          <input className={`${inputCls} w-full tabular-nums`} type="number" min="1" value={cfg.window_seconds}
+            aria-invalid={!numOk(cfg.window_seconds, 1)}
+            onChange={e => setCfg({ ...cfg, window_seconds: +e.target.value })} />
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-center justify-between mb-1.5">
+          <label className={LBL}>按空间覆盖（limit=0 表示豁免不限流）</label>
+          <button type="button"
+            className="px-2 h-7 rounded-md text-[13px] font-medium text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/10 transition-colors"
+            onClick={() => setRows(rs => [...rs, { ns: '', limit: 10, window: 60 }])}>＋ 添加覆盖</button>
+        </div>
+        {rows.length === 0 && (
+          <p className="text-sm text-stone-400 dark:text-stone-500">没有覆盖行——所有空间使用默认额度。</p>
+        )}
+        {rows.length > 0 && (
+          <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.08] divide-y divide-black/[0.05] dark:divide-white/[0.06]">
+            {rows.map((r, i) => {
+              const dup = rows.filter(x => x.ns.trim() === r.ns.trim()).length > 1
+              const bad = loaded && (!nsOk(r.ns.trim()) || !numOk(r.limit, 0) || !numOk(r.window, 1) || dup)
+              return (
+                <div key={i} className="flex items-center gap-2 px-2.5 py-2">
+                  <input list="conf-rl-namespaces" value={r.ns} aria-invalid={bad}
+                    onChange={e => setRow(i, { ns: e.target.value })}
+                    placeholder="namespace"
+                    className={'flex-1 min-w-0 h-8 px-2 rounded-lg font-mono text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 ' +
+                      (bad ? '!border-red-400 dark:!border-red-500' : '')} />
+                  <input type="number" min="0" value={r.limit} aria-label="覆盖额度" className={numField}
+                    onChange={e => setRow(i, { limit: +e.target.value })} />
+                  <span className="text-sm text-stone-400 dark:text-stone-500 shrink-0">次 /</span>
+                  <input type="number" min="1" value={r.window} aria-label="覆盖窗口秒数" className={numField}
+                    onChange={e => setRow(i, { window: +e.target.value })} />
+                  <span className="text-sm text-stone-400 dark:text-stone-500 shrink-0">s</span>
+                  <button type="button" aria-label={`删除覆盖 ${r.ns || '(未命名)'}`}
+                    onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}
+                    className="w-7 h-7 shrink-0 rounded-md text-stone-400 dark:text-stone-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors">×</button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <datalist id="conf-rl-namespaces">
+          {(namespaces || []).map(n => <option key={n.namespace} value={n.namespace} />)}
+        </datalist>
+      </div>
+
+      {msg && (
+        <div className={'mt-4 rounded-lg px-3 py-2 text-[15px] break-all ' +
+          (msg.tone === 'ok'
+            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+            : 'bg-red-500/10 text-red-600 dark:text-red-400')}>
+          {msg.text}
+        </div>
+      )}
+
+      <div className="flex justify-end gap-2.5 mt-5">
+        <button className={btn} onClick={onClose}>取消</button>
+        <button className={btnPri} disabled={!canSave} onClick={onSave}>
+          {busy ? '保存中…' : '保存'}
+        </button>
+      </div>
+    </Mask>
+  )
+}
+
 function NamespaceModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -385,8 +584,19 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   /** json 失焦校验：非法 → 标红 + 禁存（保存前 canSave 兜底再校一次） */
   function checkJson() {
     if (type !== 'json') return
-    try { JSON.parse(data); setJsonErr(null) }
-    catch { setJsonErr('不是合法的 JSON 文本') }
+    setJsonErr(jsonValidate(data))
+  }
+
+  /** 格式化 / 压缩（devtoolbox JsonFormatTool 同款语义；非法时提示不改动） */
+  function reformat(minify) {
+    if (type !== 'json') return
+    try {
+      const v = JSON.parse(data)
+      setData(JSON.stringify(v, null, minify ? undefined : 2))
+      setJsonErr(null)
+    } catch {
+      setJsonErr(jsonValidate(data))
+    }
   }
 
   const nsOk = ns.length <= 100 && NAME_RE.test(ns)
@@ -409,7 +619,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   }
 
   return (
-    <Mask onClose={onClose} wide>
+    <Mask onClose={onClose} xwide>
       <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">
         {isEdit ? '编辑 KV' : '新建 KV'}
       </h3>
@@ -459,11 +669,26 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
       </div>
 
       <div className="mt-4">
-        <label htmlFor="conf-entry-value" className={`${LBL} block mb-1.5`}>值</label>
-        <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} onBlur={checkJson} rows={8}
-          spellCheck={false}
-          className={`${inputCls} w-full font-mono text-[15px] leading-relaxed resize-y ` +
-            (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
+        <div className="flex items-center justify-between gap-3 mb-1.5">
+          <label htmlFor="conf-entry-value" className={LBL}>值</label>
+          {type === 'json' && (
+            <span className="flex items-center gap-1.5">
+              <button type="button" onClick={() => reformat(false)}
+                className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">格式化</button>
+              <button type="button" onClick={() => reformat(true)}
+                className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">压缩</button>
+            </span>
+          )}
+        </div>
+        {type === 'json' ? (
+          <JsonEditor id="conf-entry-value" value={data} onChange={setData} onBlur={checkJson}
+            rows={16} invalid={!!jsonErr} />
+        ) : (
+          <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} rows={12}
+            spellCheck={false}
+            className={`${inputCls} w-full font-mono text-[15px] leading-relaxed resize-y ` +
+              (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
+        )}
         {jsonErr && (
           <div className="mt-1 text-sm text-red-600 dark:text-red-400">{jsonErr}——修正后再保存</div>
         )}
@@ -490,6 +715,9 @@ export default function ConfCenterPage() {
   const [namespaces, setNamespaces] = useState(null)
   const [nsError, setNsError] = useState('')
   const [cache, setCache] = useState(null)
+  const [rl, setRl] = useState(null)
+  const [rlResetBusy, setRlResetBusy] = useState(false)
+  const [rlOpen, setRlOpen] = useState(false)
   const [list, setList] = useState(null)
   const [listVersion, setListVersion] = useState(0)
   const [editing, setEditing] = useState(null)
@@ -521,6 +749,10 @@ export default function ConfCenterPage() {
     try { setCache(await confCacheStatus()) }
     catch (e) { say(`缓存状态加载失败：${e.message}`, 'error') }
   }, [say])
+  const loadRl = useCallback(async () => {
+    try { setRl(await confRatelimitStatus()) }
+    catch { /* 限流状态加载失败不阻断页面，条内显示加载中 */ }
+  }, [])
   useEffect(() => {
     let alive = true
     const requestId = ++namespaceRequest.current
@@ -528,6 +760,7 @@ export default function ConfCenterPage() {
       .catch(e => { if (alive && requestId === namespaceRequest.current) setNsError(e.message) })
     confCacheStatus().then(status => { if (alive) setCache(status) })
       .catch(e => { if (alive) say(`缓存状态加载失败：${e.message}`, 'error') })
+    confRatelimitStatus().then(status => { if (alive) setRl(status) }).catch(() => {})
     return () => { alive = false }
   }, [say])
 
@@ -587,10 +820,23 @@ export default function ConfCenterPage() {
     } catch (e) { say(`删除失败：${e.message}`, 'error') }
   }
 
+  async function onRlReset() {
+    if (!ns || rlResetBusy) return
+    setRlResetBusy(true)
+    try {
+      await confRatelimitReset(ns)
+      say(`已清零 ${ns} 的限流计数`)
+      loadRl()
+    } catch (e) { say(`清零失败：${e.message}`, 'error') }
+    finally { setRlResetBusy(false) }
+  }
+
   return (
     <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors [&_h1]:text-lg">
-      <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存" />
+      <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存 · 限流" />
       <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
+      <div className="mt-2"><RateLimitBar rl={rl} currentNs={ns} onOpen={() => setRlOpen(true)}
+        onReset={onRlReset} resetBusy={rlResetBusy} /></div>
       <div className="mt-4 flex items-start gap-4">
         <aside aria-label="Namespaces" className={`${card} w-52 shrink-0 p-2 sticky top-8`}>
           <div className="px-2 py-2 flex items-center justify-between gap-2">
@@ -682,6 +928,7 @@ export default function ConfCenterPage() {
       {namespaceOpen && <NamespaceModal onClose={() => setNamespaceOpen(false)} onCreated={onNamespaceCreated} />}
       {editing && ns && <EntryModal init={editing} defaultNs={ns} onClose={() => setEditing(null)} onSaved={onEntrySaved} say={say} />}
       {cacheOpen && <CacheModal status={cache} onClose={() => setCacheOpen(false)} onSaved={loadCache} say={say} />}
+      {rlOpen && <RateLimitModal namespaces={namespaces} onClose={() => setRlOpen(false)} onSaved={loadRl} say={say} />}
       <Toast t={toast} />
     </div>
   )
