@@ -160,7 +160,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
 
 ### DiaryPage.jsx（blog/diary/，Memos × Day One 超集 UI——知识库模块 tab）
-- blog 模块侧栏「日记」项（children：时间线/日历/热力图/统计/回收站，useModuleNavigation 仅注册 activeKey/onSelect；日记本列表经 sidebar 插槽挂模块侧栏，含导出）
+- blog 模块侧栏「日记」项（children：时间线/日历/热力图/统计/回收站，useModuleNavigation 仅注册 activeKey/onSelect）；日记本列表为页内左列内侧栏（卡片式 sticky，timeline 视图显示，含行内新建与导出全部）
 - 时间线：那年今日横幅（往年同月同日 + 随机记忆）→ QuickCapture 快捷录入盒（自动增高 + 心情 + 标签 + 模板下拉 + ✦每日引导问题 + 🌤️天气位置一键采集 open-meteo）→ 日期分组 EntryCard 卡（元信息行：日期/心情/天气图标/位置/字数；hover 操作：置顶/编辑/分享/归档/回收站）
 - Editor 全屏弹层：日期/心情/本子/模板/预览/自动保存（1.2s 防抖，状态行"已保存 HH:MM"）
 - CalendarView 月历（心情着色+今日环+点选过滤）、HeatmapView 年度热力图（365 格色阶+悬浮详情+点选）、StatsView（6 指标卡 + SVG 柱状/折线（纯手写无依赖）+ 年度回顾大卡）、ShareDialog（有效期选项+复制+撤销）、PublicShare 免登录只读页（/diary/s/:token，柔和阅读排版）

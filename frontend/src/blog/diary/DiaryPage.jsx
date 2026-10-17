@@ -1,7 +1,8 @@
 /**
  * 日记视图（知识库模块 tab，路由 /diary）—— Memos × Day One 超集。
  * 布局：blog 模块侧栏（ModuleShell 静态菜单含「日记」项，五视图为其 children，
- * 经 useModuleNavigation 注册 activeKey 切换；日记本列表走 sidebar 插槽）+
+ * 经 useModuleNavigation 注册 activeKey 切换）+ 页内左列「日记本」内侧栏
+ * （timeline 视图，卡片式 sticky，同 confcenter namespace / assets 过滤栏先例）+
  * 主区（时间线/日历/热力图/统计/回收站）。
  * 时间线：那年今日横幅 → 快捷录入盒 → 置顶 → 日期分组（总结卡+随记卡）。
  */
@@ -113,47 +114,57 @@ export default function DiaryPage({ dark }) {
   const dateStr = `${today.getMonth() + 1} 月 ${today.getDate()} 日 · 周${'日一二三四五六'[today.getDay()]}`
 
   // 注册到 blog 模块侧栏：不覆盖静态菜单（「日记」项 children 即五视图），只声明当前视图；
-  // 日记本列表经 sidebar 插槽挂在模块侧栏底部（与独立模块时代一致）
-  useModuleNavigation({
-    activeKey: view, onSelect: setView,
-    sidebar: <><div className="mt-4 space-y-1">        {/* 日记本 */}
-        <div className="mt-5 mb-1 px-2.5 text-[11px] font-medium uppercase tracking-widest text-stone-400">日记本</div>
-        <button onClick={() => setActiveJournal(undefined)}
-          className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors ' +
-            (activeJournal === undefined ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
-          📚 全部随记
-          <span className="ml-auto text-[11px] text-stone-300 dark:text-stone-600 tabular-nums">
+  // 日记本列表为页内侧栏（timeline 视图左列，同 confcenter namespace / assets 过滤栏先例）
+  useModuleNavigation({ activeKey: view, onSelect: setView })
+
+  const journalsAside = (
+    <aside aria-label="日记本" className="w-52 shrink-0 sticky top-4 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-2">
+      <div className="px-2 py-2 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400">日记本</h2>
+        <span className="text-[11px] tabular-nums text-stone-400 dark:text-stone-500">{journals.length}</span>
+      </div>
+      <nav aria-label="日记本列表" className="space-y-0.5">
+        <button type="button" onClick={() => setActiveJournal(undefined)} aria-pressed={activeJournal === undefined}
+          className={'w-full flex items-center gap-2 px-2.5 h-9 rounded-lg text-[13px] transition-colors ' +
+            (activeJournal === undefined ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]')}>
+          <span>📚</span>
+          <span className="flex-1 min-w-0 truncate text-left">全部随记</span>
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 tabular-nums">
             {journals.reduce((a, j) => a + (j.entry_count || 0), 0)}
           </span>
         </button>
         {journals.map(j => (
-          <button key={String(j.id)} onClick={() => setActiveJournal(j.id)}
-            className={'flex items-center gap-2 px-2.5 h-8 rounded-lg text-[13px] transition-colors group ' +
-              (activeJournal === j.id ? 'text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-500 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
+          <button key={String(j.id)} type="button" onClick={() => setActiveJournal(j.id)} aria-pressed={activeJournal === j.id}
+            className={'w-full flex items-center gap-2 px-2.5 h-9 rounded-lg text-[13px] transition-colors ' +
+              (activeJournal === j.id ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]')}>
             <span>{j.emoji}</span>
-            <span className="truncate">{j.name}</span>
-            <span className="ml-auto text-[11px] text-stone-300 dark:text-stone-600 tabular-nums">{j.entry_count}</span>
+            <span className="flex-1 min-w-0 truncate text-left">{j.name}</span>
+            <span className="text-[11px] text-stone-400 dark:text-stone-500 tabular-nums">{j.entry_count}</span>
           </button>
         ))}
-        <div className="flex gap-1 px-1 mt-1">
-          <input value={newJournal} onChange={e => setNewJournal(e.target.value)}
-            onKeyDown={async e => {
-              if (e.key === 'Enter' && newJournal.trim()) {
-                const d = await diaryCreateJournal({ name: newJournal.trim() })
-                if (d.success) { setNewJournal(''); loadJournals() }
-              }
-            }}
-            placeholder="新本子名…"
-            className="flex-1 min-w-0 h-7 px-2 text-[11.5px] bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none placeholder:text-stone-400" />
-        </div>
-
-</div><button onClick={diaryExportZip} className="mt-4 px-2.5 h-9 text-left rounded-xl text-sm text-stone-600 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5">↓ 导出全部</button></>,
-  })
+      </nav>
+      <div className="flex gap-1 px-1 mt-2">
+        <input value={newJournal} onChange={e => setNewJournal(e.target.value)}
+          onKeyDown={async e => {
+            if (e.key === 'Enter' && newJournal.trim()) {
+              const d = await diaryCreateJournal({ name: newJournal.trim() })
+              if (d.success) { setNewJournal(''); loadJournals() }
+            }
+          }}
+          placeholder="新本子名…"
+          className="flex-1 min-w-0 h-7 px-2 text-[11.5px] bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none placeholder:text-stone-400" />
+      </div>
+      <button type="button" onClick={diaryExportZip}
+        className="w-full mt-1 px-2.5 h-9 text-left rounded-lg text-[13px] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">↓ 导出全部</button>
+    </aside>
+  )
 
   return (
     <div className="min-h-0 text-stone-800 dark:text-stone-100 transition-colors">
-      <main className="flex-1 min-w-0 w-full">
-        <h1 className="text-base font-semibold mb-6">日记 · {VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
+      <h1 className="text-base font-semibold mb-6">日记 · {VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
+      <div className={view === 'timeline' ? 'flex gap-6 items-start' : undefined}>
+        {view === 'timeline' && journalsAside}
+        <main className="flex-1 min-w-0 w-full">
         {view === 'timeline' && (
           <div>
             {/* 搜索与过滤行 */}
@@ -273,6 +284,7 @@ export default function DiaryPage({ dark }) {
           </div>
         )}
       </main>
+      </div>
 
       {/* 编辑器 */}
       {editing && (

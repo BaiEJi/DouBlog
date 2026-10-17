@@ -282,7 +282,7 @@ JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量
 日记（Memos × Day One 超集）原为独立模块 `app/diary/` + `src/diary/`，现并入 blog 能力包：
 **后端** `app/blog/diary/` 子包（路由前缀 `/api/diary` 不变，router 由 blog `__init__` 挂载，
 `ensure_migrations` 由 blog 链式调用）；**前端** `src/blog/diary/`（知识库模块侧栏「日记」项，
-五视图为其 children，日记本列表经 sidebar 插槽仍挂模块侧栏）；sys_name 并入 `doublog.blog`；
+五视图为其 children，日记本为**页内左列内侧栏**（timeline 视图，同 confcenter namespace 模式））；sys_name 并入 `doublog.blog`；
 表名保留 `diary_` 前缀（免数据迁移）；门户独立卡片已移除，入口在知识库模块内；公开分享页
 `/diary/s/:token` 免登录行为不变。
 
@@ -350,8 +350,9 @@ JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `
 ### 前端（`frontend/src/blog/diary/`，路由 `/diary`）
 
 - `DiaryPage.jsx`：知识库模块侧栏「日记」项（children：时间线/日历/热力图/统计/回收站，经
-  `useModuleNavigation` 仅注册 activeKey/onSelect 不覆盖 blog 静态菜单；**日记本列表经 sidebar 插槽**
-  挂模块侧栏底部含行内新建）+ 主区。时间线 = 搜索/心情过滤行 → 那年今日横幅 → 快捷录入盒 →
+  `useModuleNavigation` 仅注册 activeKey/onSelect 不覆盖 blog 静态菜单）+ **页内左列「日记本」内侧栏**
+  （卡片式 sticky，全部随记/各本含计数 + 行内新建 + 导出全部；仅 timeline 视图显示）+ 主区。
+  时间线 = 搜索/心情过滤行 → 那年今日横幅 → 快捷录入盒 →
   按日期分组（粘性日期头 + 总结卡在前、随记卡缩进挂线在后）；回收站 = 恢复/彻底删除
 - `components/`：QuickCapture（Memos 式录入盒：本子必选/心情/天气/模板/引导问题/Ctrl+Enter）、
   EntryCard、SummaryCard、Editor（右滑抽屉，1.2s 停输入自动保存）、CalendarView（月历跳时间线）、
