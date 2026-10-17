@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.bookmarks.fetcher import (
+from app.blog.bookmarks.fetcher import (
     count_words,
     extract_content,
     normalize_url,
@@ -370,7 +370,7 @@ def test_queue_next(client, rich_data):
 def test_duplicates_groups_by_normalized(client, app):
     # API 层创建会查重拦截——重复组来自规范化规则变化等历史数据，直插模拟
     from app.db import db
-    from app.bookmarks.models import BookmarkItem
+    from app.blog.bookmarks.models import BookmarkItem
     from app.shared.timeutil import now_utc, uuid7
     _mk_item(client, "https://dup.com/a?utm_source=x")
     _mk_item(client, "https://uniq.com/b")
@@ -387,7 +387,7 @@ def test_duplicates_groups_by_normalized(client, app):
 # ─── 元信息 / 快照 / 死链（monkeypatch 网络）────────────────
 
 def test_meta_endpoint(client, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     monkeypatch.setattr(fetcher, "fetch_meta",
                         lambda url: {"url": url, "title": "页面标题", "description": "描述",
                                      "site_name": "站名", "favicon_url": "https://x.com/f.ico"})
@@ -400,7 +400,7 @@ def test_meta_endpoint(client, monkeypatch):
 
 
 def test_snapshot_lifecycle(client, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     it = _mk_item(client)
     monkeypatch.setattr(fetcher, "fetch_snapshot",
                         lambda url: {"content_md": "# 标题\n\n正文", "words": 5,
@@ -424,7 +424,7 @@ def test_snapshot_missing_item(client, monkeypatch):
 
 
 def test_check_links_updates_status(client, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     a = _mk_item(client, "https://ok.com/1")
     b = _mk_item(client, "https://dead.com/2")
 
@@ -443,7 +443,7 @@ def test_check_links_updates_status(client, monkeypatch):
 
 
 def test_check_links_default_picks_unchecked(client, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     for i in range(3):
         _mk_item(client, f"https://x.com/{i}")
     seen = []
@@ -459,7 +459,7 @@ def test_check_links_default_picks_unchecked(client, monkeypatch):
 # ─── 统计 ───────────────────────────────────────────────────
 
 def test_stats_overview(client, rich_data, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     monkeypatch.setattr(fetcher, "fetch_snapshot",
                         lambda url: {"content_md": "正文" * 60, "words": 120, "final_url": url})
     client.post(f"{P}/items/{rich_data['items'][0]['id']}/snapshot")
@@ -552,7 +552,7 @@ def test_export_html_and_roundtrip(client):
 
 
 def test_export_import_json_roundtrip_with_snapshot(client, monkeypatch):
-    from app.bookmarks import fetcher
+    from app.blog.bookmarks import fetcher
     cat = _mk_cat(client, "一级")
     sub = _mk_cat(client, "二级", parent_id=cat["id"])
     it = _mk_item(client, "https://rt.com/1", title="往返", category_id=sub["id"],

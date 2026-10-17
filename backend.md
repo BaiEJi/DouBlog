@@ -55,11 +55,11 @@ backend/
 │   │   ├── pools.py           # lizysdk 并发池注册表：get_pool(module) / DB_POOL / shutdown_pools
 │   │   ├── timestamps.py      # _iso / _utcnow（双后端时间序列化）
 │   │   └── logging_setup.py   # lizysdk 日志装配（自摄 + 防回环三闸）
-│   ├── blog/                  # 博客/知识库能力
+│   ├── blog/                  # 博客/知识库能力（含子域：assets 资产库 / diary 日记 / bookmarks 书签）
 │   │   ├── models.py          # Workspace / Post / AuditLog（blog_posts/blog_workspaces/blog_audit_logs）
 │   │   ├── routes/            # posts / images / workspaces / export
 │   │   └── services/          # tree_order（children_order+ROOT_ID）/ view_count / audit / migrations(列级迁移钩子)
-│   ├── diary/                 # 日记：models(diary_diaries) + routes + ensure_migrations
+│   │   ├── diary/             # 日记子域：models(diary_diaries) + routes + ensure_migrations（2026-10-17 并入）
 │   ├── vault/                 # 密码库（零知识）：models + routes
 │   ├── pwsvc/                 # 密码服务（轮换密码）：models + routes（derive/限流/日志）+ ensure_migrations
 │   ├── sdklogs/               # 日志接收（lizysdk 服务端）：models(sdklogs_*) + routes（写者线程/死信/保留）
@@ -70,11 +70,10 @@ backend/
 │   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
 │   ├── confcenter/            # 配置中心：独立 namespace + KV + 幂等回填 + Redis 读穿缓存
-│   ├── bookmarks/            # 书签与稍后阅读：分类树/队列/快照/死链/导入导出
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
 │   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
-└── tests/                     # 与能力包镜像：shared/ blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ bookmarks/ + test_apihub_*.py
+└── tests/                     # 与能力包镜像：shared/ blog/（含 assets·diary·bookmarks 子域）vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
 ```
 
 **模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
@@ -251,23 +250,23 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 
 > 测试通过 monkeypatch `settings.data_dir` 注入独立临时 SQLite。
 
-## 10.4 日记模块（app/diary/，Memos/Day One 超集）
+## 10.4 日记（blog 子域 app/blog/diary/，Memos/Day One 超集；2026-10-17 自独立模块并入，/api/diary 路径不变）
 
 - 模型：DiaryJournal（分册）+ Diary（entry_date/mood/tags/word_count + journal_id/pinned/archived_at/deleted_at/weather/location/share_token/share_expires）
 - 视图 timeline/archive/trash/pinned + 过滤（日期范围/全文含标签/标签/心情/本子），置顶优先排序；回收站软删除（restore / hard=1 彻底）
 - 分享 token 免登录只读（过期/撤销/进回收站即 404）；快速录入 /quick；热力图 /heatmap；那年今日 /onthisday；趋势 /trends（缺月补零）；年度回顾 /yearend；导出 zip
 - 模板与引导问题内置（routes.py 的 TEMPLATES/PROMPTS，按日期确定性轮换）；存量库幂等迁移 `ensure_migrations`
-- 测试 tests/diary/ 26 例覆盖全部新能力
+- 测试 tests/blog/diary/ 27 例覆盖全部新能力
 
 ## 10.42 模块化日志上报（app/shared/modules.py）
 
-- 每模块一个 sys_name：`doublog.blog / diary / vault / pwsvc / sdklogs / system / shared / main`（请求路径前缀映射 `module_for_path`；全局异常按请求路径标注来源模块）
+- 每模块一个 sys_name：`doublog.blog（含 assets/diary/bookmarks 子域）/ vault / pwsvc / sdklogs / system / shared / main`（请求路径前缀映射 `module_for_path`；全局异常按请求路径标注来源模块）
 - **依赖 basekit(lizysdk) 新能力**：formatter 支持记录级 `extra={'sys_name': ...}` 覆盖（Pipe/JSON 双格式器，非法取值回退默认值）
 - `mod_logger(module)` 取带覆盖的 LoggerAdapter（**坑：必须显式持有模块名**，用 logger 名拼前缀会得 doublog.doublog.x 双前缀）
 - 上报配置持久化 `data/logs_config.json`（enabled/url/level），管理页 PUT 即时重装配；测试端点 /admin/logging/test 发 sys_name=doublog.system 的 WARNING
 
-- 与文章体系零耦合；表 `diary_journals` + `diary_diaries`（日期 YYYY-MM-DD 字符串，mood 枚举，word_count 保存时按 CJK 逐字+西文按词重算；随记必选本）
-- 模块细节（22 端点/分册/置顶/归档/回收站/分享/统计/ensure_migrations 迁移）见 `docs/modules/diary.md`
+- 与文章体系零耦合；表 `diary_journals` + `diary_diaries`（日期 YYYY-MM-DD 字符串，mood 枚举，word_count 保存时按 CJK 逐字+西文按词重算；随记必选本）；迁移由 blog `ensure_migrations` 链式调用
+- 模块细节（22 端点/分册/置顶/归档/回收站/分享/统计/ensure_migrations 迁移）见 `docs/modules/blog.md` 日记子域节
 
 ## 10.45 Vault（零知识密码库，app/vault/；四表含 vault_attachments，附件 5MB/文件/8MB 总量、purge 级联，详见 docs/modules/vault.md）
 
@@ -368,7 +367,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 - 独立原型期的压测报告（FastAPI 版，含 h11 连接复用/端口耗尽等结论，连接池设计
   直接继承）见 `docs/apihub-loadtest-report.md`
 
-## 10.52 Bookmarks（书签与稍后阅读，app/bookmarks/；4 表 bookmarks_*，docs/modules/bookmarks.md）
+## 10.52 Bookmarks（书签与稍后阅读，blog 子域 app/blog/bookmarks/，2026-10-17 并入；4 表 bookmarks_*，docs/modules/blog.md 书签子域节）
 
 单用户书签管理 + 稍后阅读队列：分类树（≤3 层）/条目状态机（unread→reading→read + archived/starred）/标签 M2M/URL 规范化查重（host 小写、去 utm_*、剥 fragment）/离线快照（HTML→Markdown 启发式抽取，列表 defer 大字段）/死链批量检测（模块池并发 HEAD→GET 回退，手动触发无后台线程）/阅读队列下一篇/统计/Netscape HTML + JSON 导入导出（浏览器书签互操作）。网络全在 fetcher.py（FetchError 分类文案收敛），无跨模块依赖。
 

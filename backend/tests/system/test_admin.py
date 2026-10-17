@@ -195,7 +195,9 @@ def test_logging_config_endpoints(client, auth_headers, tmp_path, monkeypatch):
 
     d = client.get('/api/admin/logging', headers=auth_headers).json()['data']
     assert d['enabled'] is True and d['url'].startswith('http')
-    assert {'module': 'diary', 'sys_name': 'doublog.diary'} in d['modules']
+    assert {'module': 'blog', 'sys_name': 'doublog.blog'} in d['modules']
+    # diary/bookmarks 已并入 blog 子域，模块枚举不应再出现
+    assert all(m['module'] not in ('diary', 'bookmarks') for m in d['modules'])
 
     r = client.put('/api/admin/logging', json={'enabled': False, 'url': 'http://127.0.0.1:60100/api/v1/logs', 'level': 'INFO'},
                    headers=auth_headers)

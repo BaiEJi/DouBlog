@@ -21,7 +21,7 @@ import requests
 
 from app.shared.modules import mod_logger
 
-_log = mod_logger("bookmarks")
+_log = mod_logger("blog")
 
 UA = "Mozilla/5.0 (compatible; DouBookmarks/1.0)"
 FETCH_TIMEOUT = (5, 10)          # 连接 5s / 读取 10s

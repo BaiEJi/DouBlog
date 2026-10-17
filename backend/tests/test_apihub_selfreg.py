@@ -87,9 +87,11 @@ def test_rule_tiering_by_method():
 
 
 def test_all_business_modules_present(app):
-    """13 个业务模块里除 apihub 外都应有注册项（system 有 /api/admin/*）"""
+    """业务模块里除 apihub 外都应有注册项（system 有 /api/admin/*）。
+    diary / bookmarks 已并入 blog 子域（/api/diary、/api/bookmarks 均枚举为 blog）"""
     mods = {i['module'] for i in _tool.enumerate_routes(app)}
-    for m in ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'system',
+    for m in ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'system',
               'todo', 'gamemap', 'practice', 'steamidler', 'confcenter', 'shared'):
         assert m in mods, f'模块 {m} 未被枚举到'
     assert 'apihub' not in mods
+    assert 'diary' not in mods and 'bookmarks' not in mods

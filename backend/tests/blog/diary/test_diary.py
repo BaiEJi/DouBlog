@@ -295,7 +295,7 @@ def test_share_blocked_after_trash(client, auth_headers):
 def test_share_expired_same_message(client, auth_headers, monkeypatch):
     """过期分享与不存在的 token 返回同一 404 文案（不泄露存在性）"""
     from datetime import datetime
-    import app.diary.routes as routes
+    import app.blog.diary.routes as routes
     d = _create(client, content='会过期的分享')
     token = client.post(f"/api/diary/entries/{d['id']}/share", json={'expires_hours': 1},
                         headers=AUTH).json()['data']['token']

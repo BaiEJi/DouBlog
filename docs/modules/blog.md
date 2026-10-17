@@ -20,7 +20,7 @@
 | SWR 预取 | 链接 hover/focus → `prefetchPost(?no_view=1)`；详情页命中缓存即渲染、后台重拉覆盖；保存/删除后 `invalidatePost` |
 | 其他 | 浏览计数实时写库、操作审计（AuditLog）、keyword 全文搜索（标题/摘要/英文名/正文，跨库）、gzip（全局中间件 ≥1KB） |
 
-模块包契约：`app/blog/__init__.py` 导出 `router`（挂 posts/images/workspaces/export 四个子 router）+ `ensure_migrations(engine)`；无 `start_background`（本模块无后台线程）。
+模块包契约：`app/blog/__init__.py` 导出 `router`（挂 posts/images/workspaces/export + 子域 assets/diary/bookmarks 七个子 router）+ `ensure_migrations(engine)`（链式调用知识库/资产库/日记三组迁移）；无 `start_background`（本模块无后台线程）。
 
 ---
 
@@ -272,3 +272,146 @@ JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量
 - 标签含引号/反斜杠 400 兜底（前端不硬拦截）
 - 使用趋势 UTC 日期分桶；导入的历史版本重排为连续链；单条导出 md frontmatter 为 JSON 格式
 - Skill 包二进制文件仅元数据入库（本体在 archive 原包）
+
+---
+
+## 日记子域（`app/blog/diary/`，2026-10-17 自独立模块迁入）
+
+日记（Memos × Day One 超集）原为独立模块 `app/diary/` + `src/diary/`，现并入 blog 能力包：
+**后端** `app/blog/diary/` 子包（路由前缀 `/api/diary` 不变，router 由 blog `__init__` 挂载，
+`ensure_migrations` 由 blog 链式调用）；**前端** `src/blog/diary/`（知识库模块侧栏「日记」项，
+五视图为其 children，日记本列表经 sidebar 插槽仍挂模块侧栏）；sys_name 并入 `doublog.blog`；
+表名保留 `diary_` 前缀（免数据迁移）；门户独立卡片已移除，入口在知识库模块内；公开分享页
+`/diary/s/:token` 免登录行为不变。
+
+### 功能概述
+
+单用户私人日记，"随记（note）+ 每日总结（summary）"两种条目共存：
+
+| 能力 | 说明 |
+|---|---|
+| 随记分本 | 随记必须归属一个日记本（DiaryJournal，预置 日常🏡/工作💼/感悟🌱，可自建/改名/排序）；每日总结不属于任何本（journal_id=NULL） |
+| 每日总结 upsert | `POST /api/diary/summary` 每天一篇：当天已有未删除总结则整包更新，否则新建（返回 `created` 标志）；时间线里总结排在当天随记之前 |
+| 置顶 / 归档 | `PUT ?action=pin/unpin/archive/unarchive`；置顶条目排时间线最前；归档从时间线移入归档视图（archive 同时取消置顶） |
+| 回收站软删 | DELETE = 软删除（deleted_at 置位、取消置顶）；`?hard=1` 彻底删除（仅回收站内允许，且先清分享字段）；`?action=restore` 恢复 |
+| 分享 token | 单篇免登录只读链接（token_urlsafe(24) + 有效期 1h~1 年）；过期/撤销/进回收站一律 404，不泄露存在性 |
+| 快速录入 | `POST /api/diary/quick` 一句话打卡（外部脚本/快捷指令），服务端取当天日期，journal_id 必填 |
+| 热力图 / 日历 | 年度每天篇数+心情色阶（含归档）；月历每天篇数+当天最好心情（不含归档） |
+| 那年今日 | 往年同月同日条目（至多 20 条）；不足 3 条时从最近 300 条旧记忆中按日期确定性挑 1 条 |
+| 趋势 / 年度回顾 | 近 N 月（1-36）每月篇数/字数/心情均值（缺月补零）；年度篇数/字数/心情分布/最长连续/最活跃月 |
+| 统计 | 总篇数/总字数/当前连续/最长连续/本月篇数/本数（口径均排除回收站与归档） |
+| 导出 | 全量 Markdown zip（按 `本子/日期-ID.md` 组织，frontmatter 含日期/心情/标签/天气/位置） |
+| 模板 / 引导问题 | 内置 5 个模板（晨间/晚间/周回顾/感恩/自由书写）；21 条引导问题按日期确定性轮换（无状态） |
+| 天气 / 位置 | 前端 open-meteo + 浏览器定位采集（用户点按钮才触发），后端只存白名单字段（数字保留 5 位小数、字符串 ≤80 字符） |
+
+### 数据模型（`app/blog/diary/models.py`）
+
+`diary_journals`：id / name(String50 UNIQUE，重名 409) / emoji / sort（预置 日常0/工作1/感悟2）/ created_at。
+`diary_diaries`（随记与总结同表）：content(Text ≤20 万) / **entry_date(String10 index，日记日期 `YYYY-MM-DD` 字符串，同一天可多篇)** /
+mood(great~bad) / tags(遗留列，API 不写入不检索，仅导出读旧数据) / word_count(**保存时服务端计算**) /
+journal_id(FK，随记必填、总结恒 NULL) / kind(note/summary，每天一篇由 upsert 保证) / pinned / archived_at / deleted_at(软删) /
+weather / location(JSON 白名单) / share_token(UNIQUE) / share_expires(naive UTC) / created_at / updated_at。
+
+**日期一律 `YYYY-MM-DD` 字符串**：SQLite 与 PG 对 DATE/DATETIME 返回与时区处理不一致，字符串形式让两后端
+JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `LIKE 'YYYY-MM%'` 前缀匹配）。
+
+### API 契约（22 端点，`app/blog/diary/routes.py`，正本见 api.md 第 9 节）
+
+统一信封；错误抛 lizysdk ParamError(400)/NotFoundError(404)/ConflictError(409)；鉴权=路由器级
+`Depends(require_basic)`，仅公开分享在独立 public_router：
+
+- **条目**：GET entries（`?view=timeline|archive|trash|pinned`、`?date=`/`?start=&end=`、`?search=` 仅正文 LIKE、
+  `?mood=`、`?journal_id=`、limit≤500；**日记列表带正文**，与文章列表不含正文的约定不同；排序=置顶→日期倒序→
+  当天总结在随记前→id 倒序）；POST entries（entry_date/content 必填，kind=note 时 journal_id 必填；
+  **传 kind=summary 得 400**——总结只能走 summary upsert）；PUT `?action=pin|unpin|archive|unarchive|restore`
+  或 body 部分更新（kind 不可改）；DELETE 软删 / `?hard=1` 彻底删除（必须先软删，硬删前清分享字段）；
+  POST quick（一句话打卡，entry_date 取服务端当天）；POST summary（每天一篇 upsert，返回 created 与当天随记列表）
+- **日记本**：GET journals（带 entry_count 未删除计数含归档）；POST（重名 409）；PUT；DELETE（仍有未删除条目 409）
+- **日历/热力图/回忆**：GET dates?year=&month=（排除归档与回收站，mood 取当天最好）；GET heatmap?year=
+  （**含归档**、排除回收站，返回 max 供色阶归一）；GET onthisday（往年今日 ≤20 条 + 不足 3 条补 1 条确定性随机）
+- **统计/趋势/年度**：GET stats（排除归档+回收站，streak 口径同）；GET trends?months=1-36（缺月补零）；
+  GET yearend?year=（含归档；无 top_tags——标签已废弃）
+- **分享**：POST entries/{id}/share（expires_hours 1-8760 缺省 72；重复创建=轮换 token）；DELETE .../share（撤销）；
+  GET share/{token}（**免登录**；找不到/回收站/过期同一 404 文案）
+- **导出/模板/引导**：GET export（全量 Markdown zip 直下，不走信封；含归档不含回收站）；GET templates（5 模板）；
+  GET prompt?date=（21 条按日期确定性轮换）
+
+### 后端要点
+
+- **字数后端计算**（`_count_words`）：CJK 逐字 + 西文按词；create/update/quick/summary 保存时重算，不信任前端
+- **ensure_migrations**（由 blog 链式调用）：幂等四件事——缺列补列（journal_id/kind/pinned/archived_at/deleted_at/
+  weather/location/share_token/share_expires）；确保预置三本存在；存量无本随记归入「日常」；缺索引补建
+- 路由内不 try/except，直接 raise lizysdk 错误由全局处理器转信封；DB 操作包 `run_db`
+- `_json_body` 坏 JSON 一律 `{}`；`_clean_meta` weather/location 白名单清洗（数值 round5、字符串 ≤80）
+- 与文章体系零耦合：不经过 posts/workspaces，任何 diary 接口都不写 blog 文章表
+
+### 前端（`frontend/src/blog/diary/`，路由 `/diary`）
+
+- `DiaryPage.jsx`：知识库模块侧栏「日记」项（children：时间线/日历/热力图/统计/回收站，经
+  `useModuleNavigation` 仅注册 activeKey/onSelect 不覆盖 blog 静态菜单；**日记本列表经 sidebar 插槽**
+  挂模块侧栏底部含行内新建）+ 主区。时间线 = 搜索/心情过滤行 → 那年今日横幅 → 快捷录入盒 →
+  按日期分组（粘性日期头 + 总结卡在前、随记卡缩进挂线在后）；回收站 = 恢复/彻底删除
+- `components/`：QuickCapture（Memos 式录入盒：本子必选/心情/天气/模板/引导问题/Ctrl+Enter）、
+  EntryCard、SummaryCard、Editor（右滑抽屉，1.2s 停输入自动保存）、CalendarView（月历跳时间线）、
+  HeatmapView（GitHub 式热力图）、StatsView（指标卡+纯 SVG 柱状/折线+年度回顾）、ShareDialog、kit.jsx
+- `PublicShare.jsx`（`/diary/s/:token`）：免登录只读页，裸 fetch 直连不走 apiFetch
+- `api.js` 全走 apiFetch；例外 `diaryPublicShare`（裸 fetch）与 `diaryExportZip`（blob 下载）
+- `api-entry.js`：open-meteo 天气采集（点按钮才请求定位，坐标只发天气 API）
+
+### 测试（`backend/tests/blog/diary/test_diary.py`，27 例）
+
+预置本 / 随记必选本 / 总结 upsert 与排序 / CRUD 校验 / 置顶归档回收站 / 快速录入 / 过滤搜索 /
+日历热力图那年今日 / 统计趋势年度（断言无 top_tags）/ 分享生命周期（过期与坏 token 同文案）/
+本子管理 409 / 元数据白名单 / 导出 zip / 模板引导 / 鉴权 401。
+
+### 已知边界
+
+1. 列表上限 500（total 全量计数，无分页 UI）；search 只搜正文（无 ?tag=）
+2. trash 视图忽略 journal_id/mood 过滤；hard=1 必须先软删（硬删连带撤销分享）
+3. 删本守卫只数未删除条目——回收站内条目在 PG 有 FK 约束下删本会 500（先彻底删除回收站条目再删本）
+4. quick 的 entry_date 取服务端本地日期（与浏览器时区可能差一天）
+5. PUT 部分更新无 kind 联动校验（可给总结设本/随记清本，接口层未拦，前端不会这么发）
+6. 导出不含回收站；总结与无本条目落 `默认/` 目录；分享过期比较用 naive UTC
+7. word_count 按 Markdown 源文本计；日历排除归档、热力图含归档（口径刻意不同）
+
+## 书签子域（`app/blog/bookmarks/`，2026-10-17 自独立模块迁入）
+
+书签与稍后阅读原为独立模块 `app/bookmarks/` + `src/bookmarks/`，现并入 blog 能力包：
+**后端** `app/blog/bookmarks/` 子包（路由前缀 `/api/bookmarks` 不变，router 由 blog `__init__` 挂载；
+无 ensure_migrations——全新表由 create_all 建）；**前端** `src/blog/bookmarks/`（知识库模块侧栏
+「书签 · 稍后阅读」项，五子视图为其 children）；sys_name 并入 `doublog.blog`（fetcher 的
+`mod_logger('blog')`）；表名保留 `bookmarks_` 前缀；门户独立卡片已移除。
+
+### 模块契约（`app/blog/bookmarks/__init__.py`）
+
+仅导出 `router`（~23 端点）；无 start_background、无 ensure_migrations（死链检测是手动触发的批量任务）；
+无跨模块依赖；网络抓取（元信息/快照/死链）在 `fetcher.py` 纯函数不落库；导入导出（Netscape HTML + JSON）
+在 `transfer.py`。
+
+### 数据模型（4 表 `bookmarks_` 前缀）
+
+- `bookmarks_categories`：分类树 ≤3 层（与文章树同口径），sort_order 浮点中点插入；删除时子孙与条目上提一级
+- `bookmarks_items`：`normalized_url` 查重统一口径（host 小写/去默认端口与 fragment/剥 utm_*；裸域名补 https）；
+  status ∈ unread/reading/read/archived（read_at 随状态机）；starred 独立维度；link_status ∈ unknown/ok/dead/error
+  （死链检测）；snapshot_md/words/at（离线快照大字段，**列表查询必须 defer**）；软删 deleted_at → 回收站
+- `bookmarks_tags` + `bookmarks_item_tags`：标签 M2M（同 practice 模式，name 唯一色板轮询）
+
+### API 要点（正本见 api.md 第 22 节）
+
+分类树（含累计计数）/条目 CRUD/标签 CRUD/多维筛选（q、status、category_id 含子孙、tag_ids、starred、
+link_status、trash、6 排序、分页）；状态机 →read 记 read_at、离开清空；batch 七动作；
+**URL 查重**（创建/改链/还原按 normalized_url 校验，回收站旧档不阻塞）；**元信息抓取** GET /meta?url=
+（不落库表单填充）；**离线快照** POST /items/{id}/snapshot（启发式正文抽取→Markdown，词数 <20 视为失败 502）；
+**死链检测** POST /check（显式 ids ≤50 或全库最久未检前 50；HEAD 优先受限回退 GET；并发走 get_pool('bookmarks', 8)）；
+**阅读队列** GET /items/queue/next；**导入导出**（Netscape HTML 属性往返 + JSON 全量备份含快照）。
+
+### 前端（`frontend/src/blog/bookmarks/`，路由 `/bookmarks`）
+
+`BookmarksPage` 壳 → `BookmarksView` 五子视图（收藏夹/稍后阅读/统计/工具/回收站）注册到 blog 模块侧栏
+（children 即五视图；**待读徽标经 useModuleNavigation 的 badges 合并到「稍后阅读」子项**）；详情与收录/编辑为
+覆盖层（state 切换，同 practice 先例）；kit/charts 跨模块引自 `src/todo/`；快照正文经 shared/md.js 渲染。
+
+### 测试（`backend/tests/blog/bookmarks/test_bookmarks.py`，50 例）
+
+URL 规范化/正文抽取单元参数化；网络端点 meta/snapshot/check 全 monkeypatch 不连外网；
+Netscape/JSON 导入导出往返含快照/分类/标签/已读状态还原。

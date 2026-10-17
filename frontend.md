@@ -50,16 +50,10 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
 ├── portal/PortalPage.jsx           # /        统一入口（13 卡含"剧情图谱" /gamemap、"刷题" /practice、"Steam 挂机" /steamidler 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组 + 跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
-├── blog/                           # /blog /post/:id /create
+├── blog/                           # /blog /post/:id /create + 模块 tab：/assets /diary /bookmarks（assets·diary·bookmarks 子目录）
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
 │   ├── pages/                      # HomePage PostDetail CreatePost EditPost
 │   └── editor/                     # useEditorShortcuts / useEditorEnhancements
-├── diary/                          # /diary（Memos/Day One 超集 UI）
-│   ├── api.js / api-entry.js       # API 封装 / 天气位置采集（open-meteo）
-│   ├── kit.jsx                     # 心情模型/天气码/图标/Chip/Confirm
-│   ├── DiaryPage.jsx               # 侧栏（视图/日记本/标签）+ 主区布局
-│   ├── PublicShare.jsx             # /diary/s/:token 免登录只读页
-│   └── components/                 # QuickCapture EntryCard Editor CalendarView
 │                                   #   HeatmapView StatsView ShareDialog SummaryCard
 ├── vault/                          # /vault（零知识密码库 + 密码服务子视图）
 │   ├── api.js                      # vault* + pwsvc* 封装
@@ -110,7 +104,7 @@ invalidatePost(id)     // 编辑保存/删除后失效；LRU 上限 50 条
 **api.js 已按能力分包**（每个能力目录自己的 api.js，公共传输层唯一在 `shared/client.js`）：
 
 - `blog/api.js`：fetchAllPosts / fetchWorkspaces / createWorkspace / searchPosts / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（SWR 预取缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks；并透传 `apiFetch, API_BASE`
-- `diary/api.js`：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
+- `blog/diary/api.js`（日记子域）：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
 - `vault/api.js`：vault*（条目/审计/备份）+ pwsvc*（项目/类型/用户/校验日志/限流）封装，透传 `API_BASE`
 - `logs/api.js`：sdklogSearch / sdklogSysnames
 
@@ -165,8 +159,8 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - **实时预览**：`useDeferredValue(content)` 延后重渲染 + `md.render` + mermaid.run，与详情页同一管线
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
 
-### DiaryPage.jsx（diary/，Memos × Day One 超集 UI）
-- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）
+### DiaryPage.jsx（blog/diary/，Memos × Day One 超集 UI——知识库模块 tab）
+- blog 模块侧栏「日记」项（children：时间线/日历/热力图/统计/回收站，useModuleNavigation 仅注册 activeKey/onSelect；日记本列表经 sidebar 插槽挂模块侧栏，含导出）
 - 时间线：那年今日横幅（往年同月同日 + 随机记忆）→ QuickCapture 快捷录入盒（自动增高 + 心情 + 标签 + 模板下拉 + ✦每日引导问题 + 🌤️天气位置一键采集 open-meteo）→ 日期分组 EntryCard 卡（元信息行：日期/心情/天气图标/位置/字数；hover 操作：置顶/编辑/分享/归档/回收站）
 - Editor 全屏弹层：日期/心情/本子/模板/预览/自动保存（1.2s 防抖，状态行"已保存 HH:MM"）
 - CalendarView 月历（心情着色+今日环+点选过滤）、HeatmapView 年度热力图（365 格色阶+悬浮详情+点选）、StatsView（6 指标卡 + SVG 柱状/折线（纯手写无依赖）+ 年度回顾大卡）、ShareDialog（有效期选项+复制+撤销）、PublicShare 免登录只读页（/diary/s/:token，柔和阅读排版）
@@ -236,8 +230,8 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 
 今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白，标题和工具栏外的剩余高度由两行两列等高看板占满。每象限固定显示 8 行空间，空内容不收缩，超出行数在象限内滚动；任务标题与标记单行，长文省略，说明和完成备注通过悬停或编辑查看。菜单使用 portal 避免被滚动容器裁切。其余视图保留原来的页面流布局；模块细节见 `docs/modules/todo.md`。
 
-### bookmarks（书签与稍后阅读，/bookmarks，个性色 orange）
-- `BookmarksPage` → `BookmarksView`（公共 ModuleShell 侧栏：收藏夹/稍后阅读(徽标=待读数)/统计/工具/回收站）；详情与收录/编辑为覆盖层（state 切换，同 practice 先例）
+### bookmarks（书签与稍后阅读，blog 子域 src/blog/bookmarks/，路由 /bookmarks——知识库模块 tab）
+- `BookmarksPage` → `BookmarksView`（blog 模块侧栏「书签 · 稍后阅读」项的 children：收藏夹/稍后阅读(徽标=待读数，经 useModuleNavigation badges 合并)/统计/工具/回收站）；详情与收录/编辑为覆盖层（state 切换，同 practice 先例）
 - 收藏夹：筛选栏（搜索防抖/分类树拍平下拉/标签/排序）+ 状态 chips + 批量操作条（选中后出现：已读/未读/星标/移动分类/加标签/回收站）+ 行卡片（favicon 回退字母块/状态徽章/链路状态点/快照标记）+ 分页
 - 稍后阅读：「下一篇要读的」英雄卡（开始阅读=打开原文并标 reading）+ 队列列表；统计：指标卡 + 状态环形（DonutPie）+ 30 天趋势柱 + 分类/标签/站点 TOP 横条；工具：导入导出/死链检测/重复链接去重（保留最早）；回收站：还原/彻底删除/清空
 - 表单：URL 一键抓取元信息自动填充（GET /meta，不落库）；标签自由输入逗号分隔 + 已有标签点选；快照正文经 shared/md.js 渲染（prose-content）

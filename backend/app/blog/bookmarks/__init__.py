@@ -1,4 +1,4 @@
-"""bookmarks 能力包：书签与稍后阅读（docs/modules/bookmarks.md）。
+"""bookmarks 能力包（blog 子域）：书签与稍后阅读（docs/modules/blog.md 书签子域节）。
 
 - 导出 router（~23 端点，/api/bookmarks/*）；bookmarks_* 4 表挂 app.db.Base，
   建表由骨架 init_db 的 create_all 完成；全新表无存量迁移——

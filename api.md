@@ -16,7 +16,7 @@
 - [6. 管理 API（数据库切换）](#6-管理-api数据库切换)
 - [7. 图片 API](#7-图片-api)
 - [8. 最近浏览 / 反链 / 导出 API](#8-最近浏览--反链--导出-api)
-- [9. 日记 API](#9-日记-api独立模块memos--day-one-超集)
+- [9. 日记 API](#9-日记-apiblog-模块子域memos--day-one-超集)
 - [10. Vault API](#10-vault-api零知识密码库)
 - [11. Pwsvc API](#11-pwsvc-api密码服务轮换密码非零知识)
 - [12. Sdklogs API](#12-sdklogs-api日志接收lizysdk-send_json-服务端)
@@ -29,7 +29,7 @@
 - [19. 配置中心 API](#19-配置中心-api)
 - [20. Clash API](#20-clash-api代理管理clashctl-全能力的-web-迁移)
 - [21. Assets API](#21-assets-api资产库prompt-与-skill)
-- [22. Bookmarks API](#22-bookmarks-api书签与稍后阅读独立顶级模块23-端点4-表-bookmarks_)
+- [22. Bookmarks API](#22-bookmarks-api书签与稍后阅读blog-子域23-端点4-表-bookmarks_)
 - [23. 错误码与数据模型](#23-错误码与数据模型)
 - [24. 开发者工具箱 API](#24-开发者工具箱devtoolboxapidevtoolbox)
 
@@ -548,7 +548,7 @@ zip 结构：每个知识库一个目录（文章按树嵌套，有子文章的�
 
 ---
 
-## 9. 日记 API（独立模块，Memos/Day One 超集）
+## 9. 日记 API（blog 模块子域，Memos/Day One 超集）
 
 > 日期一律 `YYYY-MM-DD`；同一天可多篇；删除为软删除（回收站）。存储跟随设置页数据库切换。
 
@@ -564,7 +564,7 @@ POST   /api/diary/quick                   一句话快速录入 {content, journa
 
 # 日记本（分册）
 GET/POST /api/diary/journals · PUT/DELETE /api/diary/journals/<id>（有日记 409 拒删；列表含预置 日常/工作/感悟 三本与计数）
-POST   /api/diary/summary                 当日总结 upsert（每天一篇，见 docs/modules/diary.md）
+POST   /api/diary/summary                 当日总结 upsert（每天一篇，见 docs/modules/blog.md 日记子域节）
 
 # 日历 / 热力图 / 回忆
 GET    /api/diary/dates?year=&month=      每月每天 {count, mood(当天最好)}
@@ -1279,9 +1279,10 @@ GET  /api/assets/items/{id}/archive  # 下载原始 zip（无原包 → 404）
 
 
 
-## 22. Bookmarks API（书签与稍后阅读，独立顶级模块；23 端点，4 表 bookmarks_*）
+## 22. Bookmarks API（书签与稍后阅读，blog 模块子域；23 端点，4 表 bookmarks_*）
 
-> 后端 `app/bookmarks/`；前端 `/bookmarks`；权威文档 `docs/modules/bookmarks.md`。
+> **2026-10-17 自独立模块并入 blog**（路径/契约不变，sys_name 由 doublog.bookmarks 改为 doublog.blog）。
+> 后端 `app/blog/bookmarks/`；前端 `/bookmarks`（知识库模块侧栏 tab）；权威文档 `docs/modules/blog.md` 书签子域节。
 > 统一信封 + Basic/会话认证（同全局规范）。状态机：`unread → reading → read`（→read 记 `read_at`，离开清空）；`archived` 归档；`starred` 独立维度；软删（`deleted_at`）进回收站。
 > **URL 规范化**（`normalized_url`，查重/重复检测统一口径）：host 小写、去默认端口/fragment、剥 `utm_*` 参数、路径保持大小写、裸域名补 `https://`；`mailto:` 等非 http(s) 原样。
 

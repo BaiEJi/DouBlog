@@ -10,8 +10,15 @@ const MODULES = {
     { key: 'assets', label: '资产库', to: '/assets', children: [
       { key: 'library', label: '浏览' }, { key: 'trash', label: '回收站' }, { key: 'stats', label: '统计' },
     ] },
+    { key: 'diary', label: '日记', to: '/diary', children: [
+      { key: 'timeline', label: '时间线' }, { key: 'calendar', label: '日历' }, { key: 'heatmap', label: '热力图' },
+      { key: 'stats', label: '统计' }, { key: 'trash', label: '回收站' },
+    ] },
+    { key: 'bookmarks', label: '书签 · 稍后阅读', to: '/bookmarks', children: [
+      { key: 'shelf', label: '收藏夹' }, { key: 'queue', label: '稍后阅读' }, { key: 'stats', label: '统计' },
+      { key: 'tools', label: '工具' }, { key: 'trash', label: '回收站' },
+    ] },
   ] },
-  diary: { title: '日记', subtitle: '随记 · 日历 · 写作统计', accent: 'rose' },
   subs: { title: '订阅管理', subtitle: '会员 · 支出 · 到期提醒', accent: 'amber' },
   todo: { title: 'MyTodo', subtitle: '四象限 · 迁移 · 规律生活', accent: 'indigo' },
   practice: { title: '刷题', subtitle: '题解 · 代码 · 艾宾浩斯复习', accent: 'blue' },
@@ -24,7 +31,6 @@ const MODULES = {
   confcenter: { title: '配置中心', subtitle: 'namespace → key → value', accent: 'cyan', items: [{ key: 'entries', label: '配置管理' }] },
   clash: { title: 'Clash 代理', subtitle: '内核 · 订阅 · Tun · Mixin', accent: 'sky' },
   devtoolbox: { title: '开发者工具箱', subtitle: 'JSON · Diff · 编码 · 哈希 · 正则', accent: 'lime' },
-  bookmarks: { title: '书签', subtitle: '收藏 · 阅读队列 · 快照', accent: 'orange' },
 }
 
 const ACCENTS = {
@@ -45,6 +51,15 @@ const ACCENTS = {
 
 function containsActive(items, activeKey) {
   return items?.some(item => (item.active ?? item.key === activeKey) || containsActive(item.children, activeKey))
+}
+
+/** 把页面经 useModuleNavigation 注册的动态徽标（badges: {key: n}）合并进静态菜单树。 */
+function applyBadges(items, badges) {
+  return items.map(item => {
+    const badge = badges?.[item.key]
+    const next = badge != null ? { ...item, badge } : item
+    return item.children ? { ...next, children: applyBadges(item.children, badges) } : next
+  })
 }
 
 function NavItem({ item, activeKey, onSelect, accent, depth = 0 }) {
@@ -72,7 +87,9 @@ export default function ModuleShell({ module, dark, setDark, children }) {
   const [navigation, setNavigation] = useState(null)
   const { pathname } = useLocation()
   const config = { ...base, ...navigation }
-  const items = config.items || [{ key: module, label: config.title }]
+  const items = navigation?.badges
+    ? applyBadges(config.items || [{ key: module, label: config.title }], navigation.badges)
+    : (config.items || [{ key: module, label: config.title }])
   const activeKey = config.activeKey || items.find(item => item.to === pathname)?.key || items[0]?.key
   return (
     <NavigationContext.Provider value={setNavigation}>

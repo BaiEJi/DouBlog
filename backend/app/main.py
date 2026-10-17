@@ -34,9 +34,10 @@ from app.shared.response import api_response  # noqa: E402
 from lizysdk.errors import AppError  # noqa: E402
 
 #: 业务模块注册表（按此顺序 import；未迁移/导入失败的模块跳过并告警）
-MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
+#: diary / bookmarks 已并入 blog 子域（app/blog/diary、app/blog/bookmarks）
+MODULES = ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
            'todo', 'gamemap', 'practice', 'steamidler', 'confcenter', 'clash',
-           'devtoolbox', 'bookmarks')
+           'devtoolbox')
 
 setup_logging_for_app()
 logger = logging.getLogger('doublog.main')

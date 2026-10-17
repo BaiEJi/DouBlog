@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { createItem, getItem, updateItem, fetchMeta } from '../api'
 import { flattenCategories, STATUSES } from '../api'
-import { Icon, Spinner, inputCls } from '../../todo/kit'
+import { Icon, Spinner, inputCls } from '../../../todo/kit'
 
 const FMT = 'w-full flex flex-col gap-1'
 

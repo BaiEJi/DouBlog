@@ -7,8 +7,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   listItems, batchItems, deleteItem, updateItem, flattenCategories, STATUSES, SORTS,
 } from '../api'
-import { Icon, Spinner, Empty, inputCls } from '../../todo/kit'
-import { useDebouncedValue } from '../../shared/useDebouncedValue'
+import { Icon, Spinner, Empty, inputCls } from '../../../todo/kit'
+import { useDebouncedValue } from '../../../shared/useDebouncedValue'
 import ItemRow from './ItemRow'
 
 const STATUS_CHIPS = [{ value: '', label: '全部' },

@@ -13,9 +13,10 @@ import threading
 from app.config import settings
 
 #: 请求路径前缀 → 模块名（按最长前缀优先顺序排列）
+#: diary / bookmarks / assets 已并入 blog 子域，sys_name 统一 doublog.blog
 MODULE_BY_PREFIX = (
     ('/api/subs', 'subs'),
-    ('/api/diary', 'diary'),
+    ('/api/diary', 'blog'),
     ('/api/vault', 'vault'),
     ('/api/pwsvc', 'pwsvc'),
     ('/api/v1', 'sdklogs'),
@@ -29,7 +30,7 @@ MODULE_BY_PREFIX = (
     ('/api/confcenter', 'confcenter'),
     ('/api/clash', 'clash'),
     ('/api/devtoolbox', 'devtoolbox'),
-    ('/api/bookmarks', 'bookmarks'),
+    ('/api/bookmarks', 'blog'),
     ('/api/auth', 'shared'),
     ('/api/workspaces', 'blog'),
     ('/api/posts', 'blog'),
@@ -38,14 +39,14 @@ MODULE_BY_PREFIX = (
     ('/api/assets', 'blog'),
 )
 
-ALL_MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo',
+ALL_MODULES = ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system', 'todo',
                'gamemap', 'practice', 'steamidler', 'confcenter', 'clash',
-               'devtoolbox', 'bookmarks', 'shared', 'main')
+               'devtoolbox', 'shared', 'main')
 
-#: 有数据库表的模块（init_db 逐个调用其 ensure_migrations 钩子）
-MODULES_WITH_DB = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub',
-                   'system', 'todo', 'gamemap', 'practice', 'steamidler', 'confcenter',
-                   'bookmarks')
+#: 有数据库表的模块（init_db 逐个调用其 ensure_migrations 钩子；
+#: diary 并入 blog 后其迁移由 blog 的 ensure_migrations 链式调用）
+MODULES_WITH_DB = ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub',
+                   'system', 'todo', 'gamemap', 'practice', 'steamidler', 'confcenter')
 
 SYS_PREFIX = 'doublog'
 

@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { queueNext, listItems, updateItem } from '../api'
-import { Spinner, Empty, Icon } from '../../todo/kit'
+import { Spinner, Empty, Icon } from '../../../todo/kit'
 import ItemRow, { Favicon } from './ItemRow'
 
 export default function QueueView({ toast, refreshSignal, onChanged, onOpenDetail }) {

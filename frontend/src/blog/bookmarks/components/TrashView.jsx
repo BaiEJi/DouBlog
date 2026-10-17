@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { listItems, restoreItem, purgeItem, batchItems } from '../api'
-import { Spinner, Empty, Icon } from '../../todo/kit'
+import { Spinner, Empty, Icon } from '../../../todo/kit'
 import ItemRow from './ItemRow'
 
 export default function TrashView({ toast, refreshSignal, onChanged }) {

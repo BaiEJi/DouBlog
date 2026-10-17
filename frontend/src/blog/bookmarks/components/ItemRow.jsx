@@ -3,7 +3,7 @@
  * 链路状态点 / 行内操作。列表、队列、回收站共用（mode 差异只换操作组）。
  */
 import { useState } from 'react'
-import { Icon } from '../../todo/kit'
+import { Icon } from '../../../todo/kit'
 import { statusMeta, linkMeta } from '../api'
 
 /** favicon：字母块常驻底层（bg-orange-500/10 兜底，永不空白），img 成功加载则覆盖其上；

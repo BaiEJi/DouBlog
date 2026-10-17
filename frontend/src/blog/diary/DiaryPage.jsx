@@ -1,12 +1,14 @@
 /**
- * 日记主页面 /diary —— Memos × Day One 超集。
- * 布局：左侧栏（视图导航 / 日记本）+ 主区（时间线/日历/热力图/统计/回收站）。
+ * 日记视图（知识库模块 tab，路由 /diary）—— Memos × Day One 超集。
+ * 布局：blog 模块侧栏（ModuleShell 静态菜单含「日记」项，五视图为其 children，
+ * 经 useModuleNavigation 注册 activeKey 切换；日记本列表走 sidebar 插槽）+
+ * 主区（时间线/日历/热力图/统计/回收站）。
  * 时间线：那年今日横幅 → 快捷录入盒 → 置顶 → 日期分组（总结卡+随记卡）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useModuleNavigation } from '../shared/module-navigation'
-import { useDebouncedValue } from '../shared/useDebouncedValue'
+import { useModuleNavigation } from '../../shared/module-navigation'
+import { useDebouncedValue } from '../../shared/useDebouncedValue'
 
 import {
   diaryList, diaryJournals, diaryCreateJournal, diaryAction, diaryDelete,
@@ -110,8 +112,10 @@ export default function DiaryPage({ dark }) {
   const today = new Date()
   const dateStr = `${today.getMonth() + 1} 月 ${today.getDate()} 日 · 周${'日一二三四五六'[today.getDay()]}`
 
+  // 注册到 blog 模块侧栏：不覆盖静态菜单（「日记」项 children 即五视图），只声明当前视图；
+  // 日记本列表经 sidebar 插槽挂在模块侧栏底部（与独立模块时代一致）
   useModuleNavigation({
-    items: VIEWS, activeKey: view, onSelect: setView,
+    activeKey: view, onSelect: setView,
     sidebar: <><div className="mt-4 space-y-1">        {/* 日记本 */}
         <div className="mt-5 mb-1 px-2.5 text-[11px] font-medium uppercase tracking-widest text-stone-400">日记本</div>
         <button onClick={() => setActiveJournal(undefined)}
@@ -147,9 +151,9 @@ export default function DiaryPage({ dark }) {
   })
 
   return (
-    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors flex">
+    <div className="min-h-0 text-stone-800 dark:text-stone-100 transition-colors">
       <main className="flex-1 min-w-0 w-full">
-        <h1 className="text-base font-semibold mb-6">{VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
+        <h1 className="text-base font-semibold mb-6">日记 · {VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
         {view === 'timeline' && (
           <div>
             {/* 搜索与过滤行 */}

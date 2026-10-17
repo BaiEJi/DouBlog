@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { importBookmarks, exportBookmarks, checkLinks, listDuplicates, batchItems } from '../api'
-import { Card, Icon, Spinner, Empty } from '../../todo/kit'
+import { Card, Icon, Spinner, Empty } from '../../../todo/kit'
 
 export default function ToolsView({ toast, onChanged }) {
   const fileRef = useRef(null)

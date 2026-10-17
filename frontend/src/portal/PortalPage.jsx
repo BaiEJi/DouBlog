@@ -38,25 +38,12 @@ const SYSTEMS = [
   {
     to: '/blog',
     title: '博客 · 知识库',
-    desc: '树形文章、双链、知识库与资产库',
+    desc: '树形文章、双链、知识库 · 资产 · 日记 · 书签',
     box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     icon: (
       <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
         <path d="M4 3.5A1.5 1.5 0 0 1 5.5 2H15a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5.5A1.5 1.5 0 0 1 4 16.5v-13Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="M7 6h6M7 9.5h6M7 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/diary',
-    title: '日记',
-    desc: '私人日记 · 心情 · 日历与写作统计',
-    box: 'bg-rose-500/10 text-rose-500 dark:text-rose-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M3 8h14M6.5 2.5v3M13.5 2.5v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        <path d="M7 11.5l1.8 1.8L13 9.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -96,18 +83,6 @@ const SYSTEMS = [
       <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
         <path d="M7 4.5 3 10l4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M13 4.5 17 10l-4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/bookmarks',
-    title: '书签 · 稍后阅读',
-    desc: '收录网址 · 阅读队列 · 快照与死链检测',
-    box: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M5.5 2.5h9a1 1 0 0 1 1 1v14l-5.5-3.2L4.5 17.5v-14a1 1 0 0 1 1-1z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M7.5 6.5h5M7.5 9.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },

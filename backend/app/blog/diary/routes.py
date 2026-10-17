@@ -34,7 +34,7 @@ from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.response import api_response
 from app.shared.timestamps import _iso, _utcnow
-from app.diary.models import Diary, DiaryJournal
+from app.blog.diary.models import Diary, DiaryJournal
 from lizysdk.errors import ParamError, NotFoundError, ConflictError
 
 # 挂 Basic Auth 的路由器（模块内全部端点）；免认证的分享只读端点在 public_router

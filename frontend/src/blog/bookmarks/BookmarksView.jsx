@@ -1,5 +1,5 @@
 /**
- * 书签与稍后阅读主视图，由 BookmarksPage（顶级路由 /bookmarks）挂载。
+ * 书签与稍后阅读主视图（知识库模块 tab，路由 /bookmarks，由 BookmarksPage 挂载）。
  * 五子视图：收藏夹 / 稍后阅读（徽标=待读数）/ 统计 / 工具 / 回收站；
  * 详情与收录/编辑为覆盖层（state 切换而非 URL，同 practice 先例）。
  * 分类与标签由本视图统一加载（筛选/表单/分类管理共用）。
@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listCategories, listTags, listItems } from './api'
-import { Icon } from '../todo/kit'
-import { useModuleNavigation } from '../shared/module-navigation'
+import { Icon } from '../../todo/kit'
+import { useModuleNavigation } from '../../shared/module-navigation'
 import ListView from './components/ListView'
 import QueueView from './components/QueueView'
 import StatsView from './components/StatsView'
@@ -63,13 +63,12 @@ export default function BookmarksView({ toast, dark }) {
     refreshUnread()
   }, [reloadCategories, reloadTags, refreshUnread])
 
+  // 注册到 blog 模块侧栏：不覆盖静态菜单（「书签 · 稍后阅读」项 children 即五子视图），
+  // 只声明当前视图；待读徽标经 badges 合并到「稍后阅读」子项
   useModuleNavigation({
-    items: SUBS.map(s => ({
-      ...s,
-      badge: s.key === 'queue' ? (unreadCount || undefined) : undefined,
-    })),
     activeKey: sub,
     onSelect: key => { setSub(key); setDetailId(null); setEdit(null) },
+    badges: { queue: unreadCount || undefined },
   })
 
   const inOverlay = edit != null || detailId != null
@@ -79,7 +78,7 @@ export default function BookmarksView({ toast, dark }) {
       {/* ── 子视图头（覆盖层态隐藏） ── */}
       {!inOverlay && (
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-base font-semibold">{SUBS.find(s => s.key === sub)?.label}</h1>
+          <h1 className="text-base font-semibold">书签 · {SUBS.find(s => s.key === sub)?.label}</h1>
           <span className="flex-1" />
           <button type="button" onClick={() => setEdit({ id: null })}
             className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors">

@@ -1,7 +1,9 @@
 /**
  * 应用壳：主题状态 + 统一登录守卫 + 路由表（路由级代码分割）+ 全局行为（ScrollToTop/代码块复制委托）。
- * 各能力包：portal(/) blog(/blog /post /create) diary(/diary) vault(/vault) logs(/logs)
- * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash) bookmarks(/bookmarks)；公开页：/login 与 /diary/s/:token（分享）。
+ * 各能力包：portal(/) blog(/blog /post /create /assets /diary /bookmarks) vault(/vault) logs(/logs)
+ * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash)；
+ * diary 与 bookmarks 已并入 blog 模块（src/blog/ 下，侧栏 tab 展示）。
+ * 公开页：/login 与 /diary/s/:token（分享）。
  */
 import { lazy, Suspense, useState, useEffect, useCallback } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-router-dom'
@@ -13,8 +15,8 @@ const HomePage = lazy(() => import('@/blog/pages/HomePage'))
 const PostDetail = lazy(() => import('@/blog/pages/PostDetail'))
 const CreatePost = lazy(() => import('@/blog/pages/CreatePost'))
 const EditPost = lazy(() => import('@/blog/pages/EditPost'))
-const DiaryPage = lazy(() => import('@/diary/DiaryPage'))
-const DiaryPublicShare = lazy(() => import('@/diary/PublicShare'))
+const DiaryPage = lazy(() => import('@/blog/diary/DiaryPage'))
+const DiaryPublicShare = lazy(() => import('@/blog/diary/PublicShare'))
 const VaultPage = lazy(() => import('@/vault/VaultPage'))
 const LogsPage = lazy(() => import('@/logs/LogsPage'))
 const ApiHubPage = lazy(() => import('@/apihub/ApiHubPage'))
@@ -28,7 +30,7 @@ const SteamIdlerPage = lazy(() => import('@/steamidler/SteamIdlerPage'))
 const ClashPage = lazy(() => import('@/clash/ClashPage'))
 const DevToolboxPage = lazy(() => import('@/devtoolbox/DevToolboxPage'))
 const AssetsPage = lazy(() => import('@/blog/assets/AssetsPage'))
-const BookmarksPage = lazy(() => import('@/bookmarks/BookmarksPage'))
+const BookmarksPage = lazy(() => import('@/blog/bookmarks/BookmarksPage'))
 const PortalPage = lazy(() => import('@/portal/PortalPage'))
 const LoginPage = lazy(() => import('@/app/LoginPage'))
 
