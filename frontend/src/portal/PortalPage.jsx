@@ -8,7 +8,7 @@
  * - 头部「恢复默认」清空布局回默认单组
  * 触屏：长按 180ms 激活拖拽；拖完 120ms 内吞 click 防误跳转。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor,
@@ -337,7 +337,6 @@ function PortalCard({ sys, groupId, guardClick, disabled }) {
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        touchAction: 'manipulation',
       }}
       className="relative">
       {isDragging ? (
@@ -400,7 +399,7 @@ function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisa
       <div className="flex items-center gap-2 mb-3">
         <button
           {...attributes} {...listeners} title="拖拽调整分组顺序"
-          className="w-7 h-7 -ml-1 rounded-lg text-stone-400 dark:text-stone-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] cursor-grab active:cursor-grabbing touch-none shrink-0"
+          className="w-7 h-7 -ml-1 rounded-lg text-stone-400 dark:text-stone-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.07] cursor-grab active:cursor-grabbing shrink-0"
           aria-label={'拖拽排序分组 ' + group.name}>
           <svg className="w-4 h-4 mx-auto" viewBox="0 0 20 20" fill="currentColor">
             <circle cx="7" cy="4.5" r="1.3" /><circle cx="13" cy="4.5" r="1.3" />
@@ -439,7 +438,7 @@ function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisa
       </div>
       <SortableContext items={group.cards} strategy={rectSortingStrategy}>
         {group.cards.length ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3.5">
+          <div className="grid grid-cols-6 gap-3.5">
             {group.cards.map(to => (
               <PortalCard key={to} sys={SYS_BY_TO[to]} groupId={group.id} guardClick={guardClick}
                 disabled={isCardDisabled?.(to)} />
@@ -479,13 +478,9 @@ export default function PortalPage({ dark, setDark }) {
     setActiveCard(sys && rect ? { sys, width: Math.round(rect.width), height: Math.round(rect.height) } : sys ? { sys } : null)
   }, [])
 
-  // 触屏（粗指针）：长按 180ms 激活拖拽（滚动位移 >6px 自动取消）；鼠标：拖动 6px 激活
-  const coarse = useMemo(
-    () => typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches, [])
+  // 鼠标：拖动 6px 激活
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: coarse ? { delay: 180, tolerance: 6 } : { distance: 6 },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -574,12 +569,12 @@ export default function PortalPage({ dark, setDark }) {
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
-      <div className="mx-auto w-full max-w-[1700px] px-4 sm:px-6 xl:px-10 py-10 sm:py-14">
+      <div className="mx-auto w-full max-w-[1700px] px-10 py-14">
         {/* 头部 */}
         <div className="flex items-end justify-between mb-8">
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-stone-400 mb-2">DouBlog</p>
-            <h1 className="text-[30px] sm:text-[34px] font-semibold tracking-tight">工作台</h1>
+            <h1 className="text-[34px] font-semibold tracking-tight">工作台</h1>
             <p className="mt-2 text-[13px] text-stone-400">个人系统统一入口——卡片可拖入任意分组，组内/组间均可拖拽排序</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">

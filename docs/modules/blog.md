@@ -214,6 +214,6 @@
 
 ## 公共 UI 外壳（2026-10-13）
 
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
-文章编辑器在手机将编辑 / 预览上下排列，桌面保留固定高度双栏；Markdown 预览使用 useDeferredValue，正文输入与预览重计算分离。文章内「首页」与取消新建指向 /blog。
+文章编辑器为固定高度双栏（仅桌面布局）；Markdown 预览使用 useDeferredValue，正文输入与预览重计算分离。文章内「首页」与取消新建指向 /blog。

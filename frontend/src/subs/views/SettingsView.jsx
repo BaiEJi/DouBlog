@@ -186,7 +186,7 @@ function DistributionTab({ dark, toast }) {
   return (
     <div>
       <p className="text-xs text-stone-500 dark:text-stone-400 mb-3">查看各分类下的会员分布情况（点击进入对应筛选）</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         {cards.map(c => {
           const color = dark ? adjustForDark(c.color) : (c.color || '#d97706')
           return (
@@ -236,7 +236,7 @@ function BackupTab({ toast }) {
           {Icon.backup} {running ? '备份中…' : '立即备份'}
         </button>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+      <div className="grid grid-cols-4 gap-3 mb-3">
         <Stat label="备份数" value={stats?.total_count ?? '—'} />
         <Stat label="总大小" value={stats ? `${stats.total_size_mb} MB` : '—'} />
         <Stat label="最新备份" value={stats?.newest_backup?.slice(5, 16) ?? '—'} />

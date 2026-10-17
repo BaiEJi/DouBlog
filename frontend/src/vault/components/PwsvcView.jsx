@@ -226,7 +226,7 @@ export default function PwsvcView({ copier }) {
   }
 
   return (
-    <div className="p-5 sm:p-8 overflow-y-auto h-full animate-fade-in">
+    <div className="p-8 overflow-y-auto h-full animate-fade-in">
       <div className="max-w-[1700px] w-full">
         <div className="flex items-center gap-2.5 mb-1">
           <span className="text-stone-400">{I.key}</span>
@@ -262,7 +262,7 @@ export default function PwsvcView({ copier }) {
               {projects.length === 0 ? (
                 <p className="text-sm text-stone-400 py-12 text-center">还没有项目——新建一个，为它的用户发放轮换密码</p>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-3 gap-2.5">
                   {projects.map(p => (
                     <button key={p.id} onClick={() => openProject(p)}
                       className="group text-left p-4 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] hover:border-black/[0.15] dark:hover:border-white/[0.15] hover:shadow-sm transition-all">

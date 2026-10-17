@@ -145,8 +145,7 @@ function SortableTaskCard(props) {
       id={`task-${task.id}`}
       style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.35 : 1 }}
       {...attributes}
-      {...listeners}
-      className="touch-none">
+      {...listeners}>
       <TaskCardContent task={task} focused={focused} {...rest} />
     </div>
   )
@@ -348,7 +347,7 @@ export default function QuadrantBoard({ data, focusedId, cardHandlers, onAddFirs
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {QUADRANT_DISPLAY_ORDER
           .map(q => data.quadrants.find(b => b.quadrant === q))
           .filter(Boolean)

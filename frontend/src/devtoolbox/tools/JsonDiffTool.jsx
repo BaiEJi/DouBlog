@@ -54,7 +54,7 @@ export default function JsonDiffTool() {
     <div>
       <ToolHead title="JSON Diff" desc="深度对比：对象按键、数组按 LCS 对齐，按路径列出差异"
         right={<Check checked={ignoreArrayOrder} onChange={setIgnoreArrayOrder} label="忽略数组顺序" />} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <textarea className={areaCls} rows={12} value={a} spellCheck={false} onChange={e => setA(e.target.value)} placeholder="JSON A（旧）" aria-label="JSON A" />
         <textarea className={areaCls} rows={12} value={b} spellCheck={false} onChange={e => setB(e.target.value)} placeholder="JSON B（新）" aria-label="JSON B" />
       </div>
@@ -87,7 +87,7 @@ export default function JsonDiffTool() {
                 {c.type === 'added' && <pre className="mt-1.5 font-mono text-[12px] text-emerald-700 dark:text-emerald-300 whitespace-pre-wrap break-all">+ {shortValue(c.b, 400)}</pre>}
                 {c.type === 'removed' && <pre className="mt-1.5 font-mono text-[12px] text-red-700 dark:text-red-300 whitespace-pre-wrap break-all">- {shortValue(c.a, 400)}</pre>}
                 {c.type === 'changed' && (
-                  <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                     <pre className="font-mono text-[12px] text-red-700 dark:text-red-300 whitespace-pre-wrap break-all">- {shortValue(c.a, 400)}</pre>
                     <pre className="font-mono text-[12px] text-emerald-700 dark:text-emerald-300 whitespace-pre-wrap break-all">+ {shortValue(c.b, 400)}</pre>
                   </div>

@@ -55,7 +55,7 @@ export default function UnitsTool() {
           {unitKeys.map(k => <option key={k} value={k}>{table.units[k][0]}</option>)}
         </select>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {results.map(([k, label, v]) => (
           <div key={k} className={'flex items-center gap-3 p-4 ' + card + (k === unit ? ' ring-1 ring-lime-500/40' : '')}>
             <div className="flex-1 min-w-0">

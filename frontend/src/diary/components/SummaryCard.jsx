@@ -11,7 +11,7 @@ export default function SummaryCard({ summary, dateStr, onEdit }) {
   const mood = moodOf(summary.mood)
 
   return (
-    <div className="relative rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent p-4 sm:p-5">
+    <div className="relative rounded-2xl border border-rose-500/30 bg-gradient-to-br from-rose-500/[0.08] to-transparent p-5">
       <div className="flex items-center gap-2 mb-2.5 text-[11.5px]">
         <span className="inline-flex items-center gap-1 px-2 h-6 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 font-medium">
           📝 每日总结

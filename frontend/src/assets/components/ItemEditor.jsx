@@ -85,7 +85,7 @@ export default function ItemEditor({ item, categories, onClose, onSave }) {
         </div>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3.5">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-2 gap-3.5">
             <div>
               <label className="block text-[12px] font-medium text-stone-500 mb-1.5" htmlFor="asset-title">标题 *</label>
               <input id="asset-title" className={INPUT} value={title} maxLength={200} autoFocus

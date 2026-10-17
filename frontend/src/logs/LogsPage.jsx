@@ -350,7 +350,7 @@ function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px] flex items-start justify-center p-6 overflow-y-auto"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={'w-full ' + (wide ? 'max-w-[980px]' : 'max-w-[720px]') + ' mt-4 max-h-[calc(100dvh-80px)] flex flex-col rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#161514] shadow-2xl'}
+      <div className={'w-full ' + (wide ? 'max-w-[980px]' : 'max-w-[720px]') + ' mt-4 max-h-[calc(100vh-80px)] flex flex-col rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#161514] shadow-2xl'}
         role="dialog" aria-modal="true" aria-label={title} onKeyDown={e => e.key === 'Escape' && onClose()}>
         <div className="shrink-0 flex items-center gap-3 px-5 h-12 border-b border-black/[0.06] dark:border-white/[0.07]">
           <h3 className="text-base font-semibold">{title}</h3>
@@ -366,11 +366,11 @@ function Modal({ title, onClose, children, wide }) {
 function MiniRow({ log, anchor, term, onClick }) {
   return (
     <div onClick={onClick} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.() } }}
-      className={'grid grid-cols-[104px_70px_1fr] sm:flex items-center gap-2.5 px-3 py-[5px] cursor-pointer border-t border-black/[0.06] dark:border-white/[0.06] transition-colors ' +
+      className={'flex items-center gap-2.5 px-3 py-[5px] cursor-pointer border-t border-black/[0.06] dark:border-white/[0.06] transition-colors ' +
         (anchor ? 'bg-amber-500/10' : 'hover:bg-black/[0.02] dark:hover:bg-white/[0.03]')}>
       <span className="text-[11px] text-stone-400 tabular-nums shrink-0 w-[104px]">{fmtLocal(log.ts)}</span>
       <span className={'shrink-0 w-[70px] text-center px-1 py-px rounded border text-[9.5px] font-semibold ' + (LEVEL_STYLE[log.level_text] || '')}>{log.level_text}</span>
-      <span className="min-w-0 text-[10.5px] text-stone-400 sm:w-[70px] truncate">{log.sys_name}</span>
+      <span className="min-w-0 text-[10.5px] text-stone-400 w-[70px] truncate">{log.sys_name}</span>
       <span className="col-span-3 flex-1 min-w-0 text-[12px] truncate"><Highlight text={log.message} term={term} /></span>
     </div>
   )
@@ -439,7 +439,7 @@ function TraceModal({ traceId, onClose }) {
                   +{new Date(l.ts + 'Z').getTime() - startMs}ms
                 </span>
                 <span className={'shrink-0 w-[70px] text-center px-1 py-px rounded border text-[9.5px] font-semibold ' + (LEVEL_STYLE[l.level_text] || '')}>{l.level_text}</span>
-                <span className="hidden sm:block shrink-0 text-[10.5px] text-stone-400 w-[70px] truncate">{l.sys_name}</span>
+                <span className="block shrink-0 text-[10.5px] text-stone-400 w-[70px] truncate">{l.sys_name}</span>
                 <span className="flex-1 min-w-0 text-[12px] truncate" title={l.message}>{l.message}</span>
               </div>
             ))}
@@ -487,7 +487,7 @@ function AlertModal({ onClose }) {
         <>
           <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.06] p-4 mb-4">
             <div className="text-[12.5px] font-medium mb-3">阈值规则</div>
-            <div className="grid sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               <label className="flex items-center gap-2 text-[12px]">
                 <span className="text-stone-500 w-[92px] shrink-0">启用</span>
                 <button type="button" onClick={() => setCfg(c => ({ ...c, enabled: !c.enabled }))}
@@ -512,7 +512,7 @@ function AlertModal({ onClose }) {
                   onChange={e => setCfg(c => ({ ...c, sys_name: e.target.value }))}
                   className={inputCls + ' w-36'} />
               </label>
-              <label className="flex items-center gap-2 text-[12px] sm:col-span-2">
+              <label className="flex items-center gap-2 text-[12px] col-span-2">
                 <span className="text-stone-500 w-[92px] shrink-0">Webhook</span>
                 <input value={cfg.webhook_url} placeholder="https://…（可选，POST JSON 通知）"
                   onChange={e => setCfg(c => ({ ...c, webhook_url: e.target.value }))}
@@ -606,15 +606,15 @@ function LogRow({ log, term, selected, newFlash, expanded, onToggle, onKvFilter,
       (newFlash ? 'animate-newlog bg-amber-500/[0.12]' : '')}>
       <div onClick={onToggle} role="button" tabIndex={0} aria-expanded={expanded}
         onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); onToggle() } }}
-        className="grid grid-cols-[104px_74px_1fr_12px] sm:flex items-center gap-2.5 px-3 py-[5px] cursor-pointer select-none">
+        className="flex grid-cols-[104px_74px_1fr_12px] items-center gap-2.5 px-3 py-[5px] cursor-pointer select-none">
         <span className="text-[11.5px] text-stone-400 tabular-nums shrink-0 w-[104px]">{fmtLocal(log.ts)}</span>
         <span className={'shrink-0 w-[74px] text-center px-1 py-px rounded border text-[10px] font-semibold ' + (LEVEL_STYLE[log.level_text] || '')}>{log.level_text}</span>
-        <span className="hidden sm:block shrink-0 w-[112px] text-[11px] text-stone-500 dark:text-stone-400 font-mono truncate" title={log.sys_name}>{log.sys_name}</span>
-        <span className="hidden md:block shrink-0 w-[92px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : ''}>{log.file ? `${log.file}:${log.line ?? '?'}` : ''}</span>
+        <span className="block shrink-0 w-[112px] text-[11px] text-stone-500 dark:text-stone-400 font-mono truncate" title={log.sys_name}>{log.sys_name}</span>
+        <span className="block shrink-0 w-[92px] text-[11px] text-stone-400 font-mono truncate" title={log.file ? `${log.file}:${log.line ?? '?'}` : ''}>{log.file ? `${log.file}:${log.line ?? '?'}` : ''}</span>
         <span role="button" tabIndex={log.trace_id ? 0 : -1} onClick={e => { if (log.trace_id) { e.stopPropagation(); onOpenTrace(log.trace_id) } }}
           onKeyDown={event => { if (log.trace_id && event.key === 'Enter') { event.stopPropagation(); onOpenTrace(log.trace_id) } }}
-          title={log.trace_id ? '查看 trace 时间线' : ''} className="hidden md:block shrink-0 w-[100px] text-[11px] font-mono truncate text-sky-600 dark:text-sky-400 hover:underline">{log.trace_id || ''}</span>
-        <span className="col-span-4 sm:flex-1 min-w-0 text-[12.5px] truncate" title={log.message}>
+          title={log.trace_id ? '查看 trace 时间线' : ''} className="block shrink-0 w-[100px] text-[11px] font-mono truncate text-sky-600 dark:text-sky-400 hover:underline">{log.trace_id || ''}</span>
+        <span className="flex-1 min-w-0 text-[12.5px] truncate" title={log.message}>
           <Highlight text={firstLine} term={term} />
           {multiline && <span onClick={e => { e.stopPropagation(); setStackOpen(s => !s) }}
             className="ml-1.5 text-[10px] text-amber-600 dark:text-amber-400 border border-amber-500/30 rounded px-1 py-px hover:bg-amber-500/10" title="展开/收起堆栈">
@@ -1034,7 +1034,7 @@ export default function LogsPage() {
         <form onSubmit={e => { e.preventDefault(); setRangeKey('custom'); runQuery({ ...filtersRef.current, rangeKey: 'custom' }) }}
           className="flex flex-wrap items-stretch gap-1.5 mb-2.5">
           {/* 相对时间 chips */}
-          <div className="flex items-center gap-1 w-full sm:w-auto">
+          <div className="flex items-center gap-1 w-auto">
             {RANGES.map(r => (
               <button key={r.key} type="button" onClick={() => {
                 const rr = RANGES.find(x => x.key === r.key)

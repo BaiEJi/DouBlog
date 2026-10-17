@@ -32,7 +32,7 @@ export default function StatsView({ onOpenItem, toast }) {
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-6 gap-3">
         <StatCard label="Prompt" value={t.prompts} />
         <StatCard label="Skill" value={t.skills} />
         <StatCard label="收藏" value={t.favorites} />
@@ -60,7 +60,7 @@ export default function StatsView({ onOpenItem, toast }) {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-2 gap-6">
         <section>
           <h3 className="text-[13.5px] font-semibold mb-3">分类分布</h3>
           <div className="px-4 py-3 rounded-2xl border border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-white/[0.025] divide-y divide-black/[0.05] dark:divide-white/[0.06]">

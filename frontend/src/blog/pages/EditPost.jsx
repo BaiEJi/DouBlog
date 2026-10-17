@@ -221,7 +221,7 @@ export default function EditPost({ dark, setDark }) {
         <main className="mx-auto w-full max-w-full p-0">
           <div className="animate-pulse space-y-4">
             <div className="h-8 w-32 bg-black/5 dark:bg-white/5 rounded" />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
               <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
               <div className="h-10 bg-black/5 dark:bg-white/5 rounded-lg" />
@@ -263,7 +263,7 @@ export default function EditPost({ dark, setDark }) {
         <h1 className="text-2xl font-semibold tracking-tight mb-8">编辑文章</h1>
 
         {/* Meta Info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">标题 *</label>
             <input
@@ -360,9 +360,9 @@ export default function EditPost({ dark, setDark }) {
           </div>
 
           {/* Split View */}
-          <div className="flex flex-col md:flex-row h-auto md:h-[70vh] min-h-[420px]">
+          <div className="flex flex-row h-[70vh] min-h-[420px]">
             {/* Editor */}
-            <div className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] border-b md:border-b-0 md:border-r border-black/5 dark:border-white/5">
+            <div className="w-1/2 h-auto min-h-[280px] border-r border-black/5 dark:border-white/5">
               <textarea
                 id="md-editor"
                 ref={ed.editorRef}
@@ -376,7 +376,7 @@ export default function EditPost({ dark, setDark }) {
               />
             </div>
             {/* Preview */}
-            <div ref={ed.previewRef} className="w-full md:w-1/2 h-[50vh] md:h-auto min-h-[280px] px-5 py-4 overflow-y-auto">
+            <div ref={ed.previewRef} className="w-1/2 h-auto min-h-[280px] px-5 py-4 overflow-y-auto">
               {content ? (
                 <div className="prose-content" dangerouslySetInnerHTML={previewProps} />
               ) : (

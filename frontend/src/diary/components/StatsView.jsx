@@ -60,7 +60,7 @@ export default function StatsView() {
 
 
       {/* 指标卡 */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+      <div className="grid grid-cols-6 gap-2">
         {cards.map(c => (
           <div key={c.label} className={'p-3 rounded-2xl border text-center ' + (c.hot
             ? 'border-rose-500/30 bg-rose-500/[0.06]'
@@ -75,7 +75,7 @@ export default function StatsView() {
 
       {/* 趋势双图 */}
       {trends && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <Panel title="每月字数">
             <Bars data={trends.months.map(m => ({ x: m.month.slice(5) + '月', v: m.words }))} />
           </Panel>
@@ -101,7 +101,7 @@ export default function StatsView() {
           </p>
         ) : ye && (
           <div className="p-5 rounded-2xl border border-rose-500/25 bg-gradient-to-br from-rose-500/[0.07] to-transparent">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-4 gap-4 mb-4">
               <Big n={ye.entries} label="篇日记" />
               <Big n={fmtWords(ye.words).n} label={fmtWords(ye.words).unit} />
               <Big n={ye.days} label="天有记录" />

@@ -69,7 +69,7 @@ export default function LifeStatsView({ toast, dark }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 flex items-center">
           <div className="flex-1">
             <div className="text-[11px] text-stone-500 dark:text-stone-400 mb-1">🔥 当前连续</div>
@@ -92,7 +92,7 @@ export default function LifeStatsView({ toast, dark }) {
           b={{ label: '完成', color: '#10b981' }} height={240} />
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title="计划完成情况（近 30 天）">
           {rows.length === 0 ? (
             <Empty text="还没有计划" />

@@ -135,7 +135,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 周视图 */}
       {mode === 'week' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2">
+        <div className="grid grid-cols-7 gap-2">
           {Array.from({ length: 7 }, (_, i) => addDays(range.start, i)).map(d => {
             const key = fmtDate(d)
             const list = byDate.get(key) || []
@@ -177,7 +177,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 月视图 */}
       {mode === 'month' && (
-        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-3 sm:p-4">
+        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
           <div className="grid grid-cols-7 mb-1.5">
             {WEEKDAY_LABELS.map(w => (
               <div key={w} className="text-center text-[11px] text-stone-400 py-1">{w}</div>
@@ -211,7 +211,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
       {/* 年视图 */}
       {mode === 'year' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {Array.from({ length: 12 }, (_, m) => {
             const monthAnchor = new Date(anchor.getFullYear(), m, 1)
             return (

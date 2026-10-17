@@ -270,19 +270,19 @@ export default function VaultPage() {
         <LockView account={account} onUnlock={unlock} />
       )}
       {phase === 'unlocked' && (
-        <div className="h-[calc(100dvh-64px)] min-h-[600px] flex flex-col">
+        <div className="h-[calc(100vh-64px)] min-h-[600px] flex flex-col">
           {/* 顶栏 */}
           <header className="min-h-10 shrink-0 flex flex-wrap items-center gap-3 mb-5">
 
             <span className="text-base font-semibold flex items-center gap-1.5">
               <span className="text-stone-400">{I.key}</span> 密码库
-              <span className="hidden md:inline text-[11px] font-normal text-stone-400 dark:text-stone-600 ml-1">端到端加密</span>
+              <span className="inline text-[11px] font-normal text-stone-400 dark:text-stone-600 ml-1">端到端加密</span>
             </span>
             <div className="ml-auto flex items-center gap-1">
               <button onClick={() => setPaletteOpen(true)}
                 className="h-8 px-2.5 rounded-lg text-[12px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-1.5">
-                {I.search} <span className="hidden sm:inline">搜索</span>
-                <kbd className="hidden md:inline text-[11px] px-1 py-px rounded border border-black/10 dark:border-white/15 font-mono">⌘K</kbd>
+                {I.search} <span className="inline">搜索</span>
+                <kbd className="inline text-[11px] px-1 py-px rounded border border-black/10 dark:border-white/15 font-mono">⌘K</kbd>
               </button>
               <button onClick={() => setGenOpen(true)} title="密码生成器"
                 className="h-8 px-2.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{I.dice}</button>
@@ -292,7 +292,7 @@ export default function VaultPage() {
               </button>
               <button onClick={lockNow}
                 className="h-8 px-2.5 rounded-lg text-[12px] text-stone-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center gap-1.5">
-                {I.lock} <span className="hidden sm:inline">锁定</span>
+                {I.lock} <span className="inline">锁定</span>
               </button>
             </div>
           </header>
@@ -314,8 +314,7 @@ export default function VaultPage() {
               </main>
             ) : (
               <>
-                <section className="flex-1 min-w-0 flex flex-col border-r border-black/[0.07] dark:border-white/[0.07]
-                  lg:max-w-[340px]">
+                <section className="flex-1 min-w-0 flex flex-col border-r border-black/[0.07] dark:border-white/[0.07] max-w-[340px]">
                   <div className="p-2.5 border-b border-black/[0.07] dark:border-white/[0.07] flex items-center gap-2">
                     <div className="relative flex-1">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400">{I.search}</span>
@@ -358,7 +357,7 @@ export default function VaultPage() {
                 </section>
 
                 {/* 详情 / 编辑器 */}
-                <section className="hidden lg:block flex-1 min-w-0">
+                <section className="block flex-1 min-w-0">
                   {editing ? (
                     <ItemEditor
                       key={editing === 'new' ? 'new' : editing.id}
@@ -387,39 +386,6 @@ export default function VaultPage() {
                   )}
                 </section>
               </>
-            )}
-
-            {/* 移动端详情/编辑覆盖层 */}
-            {(selectedId || editing) && (
-              <div className="lg:hidden fixed inset-0 top-12 z-40 bg-white dark:bg-[#100f0e] flex flex-col">
-                <div className="flex-1 min-h-0">
-                  {editing ? (
-                    <ItemEditor
-                      key={editing === 'new' ? 'new' : editing.id}
-                      initial={editing === 'new' ? null : editing.data}
-                      onCancel={() => setEditing(null)}
-                      onSave={(data) => saveItem(data, editing === 'new' ? null : editing)}
-                      saving={busy}
-                    />
-                  ) : selectedItem ? (
-                    <ItemDetail
-                      item={selectedItem}
-                      copier={copier}
-                      vek={vekRef.current}
-                      onEdit={() => setEditing(selectedItem)}
-                      onTrash={doTrash}
-                      onRestore={doRestore}
-                      onPurge={(it) => setConfirmPurge(it)}
-                      onToggleFav={toggleFavorite}
-                      inTrash={!!selectedItem.deleted_at}
-                    />
-                  ) : null}
-                </div>
-                <button onClick={() => { setSelectedId(null); setEditing(null) }}
-                  className="shrink-0 h-11 border-t border-black/[0.07] dark:border-white/[0.07] text-sm text-stone-500">
-                  ← 返回列表
-                </button>
-              </div>
             )}
           </div>
 
@@ -680,7 +646,7 @@ function Overview({ items, security, identities, onSelect, onGoSection, onNew })
       )}
 
       <SecTitle>安全概览</SecTitle>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-2.5 mb-9">
+      <div className="grid grid-cols-6 gap-2.5 mb-9">
         {secCards.map(c => (
           <button key={c.label} onClick={() => onGoSection('security')}
             className={'group text-left p-3.5 rounded-2xl border transition-all ' + (c.n > 0
@@ -697,7 +663,7 @@ function Overview({ items, security, identities, onSelect, onGoSection, onNew })
       </div>
 
       {/* 双栏内容区 */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-2">
+      <div className="grid grid-cols-2 gap-x-8 gap-y-2">
         <div>
           {recentUsed.length > 0 && (
             <>
@@ -774,7 +740,7 @@ function IdentitiesView({ identities, onPick }) {
       {identities.length === 0 ? (
         <p className="text-sm text-stone-400">暂无身份信息，先在条目里添加邮箱 / 手机号。</p>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-3 gap-2.5">
           {identities.map(idv => (
             <button key={idv.type + idv.value} onClick={() => onPick(idv)}
               className="group text-left p-4 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] hover:border-black/[0.15] dark:hover:border-white/[0.15] hover:shadow-sm transition-all">

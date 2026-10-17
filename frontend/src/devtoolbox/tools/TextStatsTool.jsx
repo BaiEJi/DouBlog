@@ -33,7 +33,7 @@ export default function TextStatsTool() {
       <ToolHead title="文本统计" desc="字符 / CJK 字数 / 单词 / 行 / 字节 / 词频（纯本地计算）" />
       <textarea className={areaCls} rows={10} value={text} spellCheck={false}
         onChange={e => setText(e.target.value)} placeholder="输入或粘贴文本…" aria-label="待统计文本" />
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-4 gap-3 mt-4">
         {items.map(([label, value, hint]) => (
           <div key={label} className={card + ' p-4'}>
             <p className="text-lg font-semibold tabular-nums">{value.toLocaleString?.() ?? value}</p>

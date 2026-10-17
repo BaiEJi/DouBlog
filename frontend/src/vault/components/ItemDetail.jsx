@@ -190,7 +190,7 @@ export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onResto
     .filter(t => /^[A-Za-z2-7]+=*$/.test(t.secret) && t.secret.length >= 8)
 
   return (
-    <div className="p-5 sm:p-7 animate-fade-in overflow-y-auto h-full">
+    <div className="p-7 animate-fade-in overflow-y-auto h-full">
       {/* 头部 */}
       <div className="flex items-start gap-4">
         <Favicon domain={domain} name={d.service} size={40} />

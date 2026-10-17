@@ -12,6 +12,7 @@
 4. **所有模块的存储放在同一个库**，表名规则 **`模块名_表名`**（如 `blog_posts`、`diary_diaries`、`sdklogs_logs`；`vault_*`/`pwsvc_*`/`subs_*`/`apihub_*` 本就符合）。存量库由启动迁移幂等改名（映射表见 `docs/fastapi-migration.md`）
 5. **压测门槛**：任何模块迁移/重构前后必须对照压测，**吞吐不得下降**；改动后全量单测回归通过
 6. **改动的前端页面必须做可视化验收**（渲染页面截图走查）；未改动页面不用重验
+7. **前端不适配移动端（2026-10-17 起，长期有效）**：已移除全部移动端适配（ModuleShell 抽屉/移动端顶栏、响应式断点类 `sm:/md:/lg:/xl:/2xl:`、`pointer: coarse` 触屏分支、`touch-*`/`dvh`/viewport meta）。**禁止新增任何响应式断点类与移动端专属 UI**；栅格/间距直接写桌面目标值（如 `grid-cols-4`、`px-10`），视口单位用 `vh`；`prefers-color-scheme`（暗色初始化）不是移动端适配，保留
 
 ## 项目是什么
 
@@ -39,7 +40,7 @@
 1. **端口**：后端 `60100`、前端 `60101`；**api-hub 子服务 `8300`**（见第 17 条）
 2. **凭据与登录**：凭据存 **system_accounts 表**（PBKDF2-SHA256 哈希，system 模块播种/管理，`config.py` 的 auth_username/auth_password 仅作首次播种默认与中间态回退）；管理页 `/config` 登录账号卡可改用户名/密码（PUT /api/admin/account，验旧密码）。**统一登录**：前端 `/login` 登录一次 → HttpOnly 会话 Cookie（30 天，HMAC secret_key 在 config.py）全站生效；`require_basic` 依赖=Cookie 优先、Basic 兼容（API/测试通道）；前端 bundle **不持有任何凭据**（`shared/client.js` 仅 credentials:include + 401 跳 /login）；免认证例外：图片 GET / sdklogs 摄入 / diary 分享 / apihub gw(sk-)；vault 主密码解锁是加密步骤不是登录
 3t. **请求级 trace**：main.py 纯 ASGI 中间件每请求绑 lizysdk trace_id（响应头 X-Trace-Id 透传/回写；所有日志行自动携带——经 shared/logging_setup 的 LogRecord 工厂注入，勿用 handler filter 方案，SDK 队列 handler 会绕过）
-3h. **统一侧栏/内容画布（2026-10-13）**：全部业务模块由 App 的 ModuleFrame 包入 `shared/ModuleShell.jsx`（220px sticky 侧栏 + 多级菜单 + 移动端抽屉）；PageHeader 为 tabs 注册适配器，不再绘制顶栏。页面使用 `useModuleNavigation` 注册视图/徽标/插槽；内容全局留白只在 ModuleShell 提供（`max-w-[1700px] px-4 sm:px-6 xl:px-10 py-8`），禁止内页再包一层全局 padding。门户/登录/公开分享独立外壳。gamemap 画布须保留显式容器高度与明暗主题变量；导航不得重挂正文/画布组件。
+3h. **统一侧栏/内容画布（2026-10-13；2026-10-17 移除移动端）**：全部业务模块由 App 的 ModuleFrame 包入 `shared/ModuleShell.jsx`（220px 常驻 sticky 侧栏（`h-screen`）+ 多级菜单）；PageHeader 为 tabs 注册适配器，不再绘制顶栏。页面使用 `useModuleNavigation` 注册视图/徽标/插槽；内容全局留白只在 ModuleShell 提供（`max-w-[1700px] px-10 py-8`），禁止内页再包一层全局 padding。门户/登录/公开分享独立外壳。gamemap 画布须保留显式容器高度与明暗主题变量；导航不得重挂正文/画布组件。
 3. **双数据库**：运行时后端由 `data/db_config.json` 决定（sqlite/postgres）；切换走 `POST /api/admin/database/switch`——**只换连接不迁移数据**（空库自动建表播种，PG 库不存在自动创建；dev 模式 touch `_reload_stamp.py` 触发 uvicorn 重启，生产需手动重启）；**前端总配置页 `/config`**（数据库 + 日志上报）与 `/admin` 均可操作
 3z. **FastAPI 骨架契约**（详见 `docs/fastapi-migration.md`，改骨架前必读）：`app/db.py`（`Base` 自带 `Model.query` 描述符 / scoped session / `run_db`）/ `app/shared/`（`api_response` 信封、`require_basic` 依赖、`pools.get_pool`）；**模块包三契约**：`__init__.py` 导出 `router` + 可选 `start_background(app)`（`app.state.testing` 空转）+ 可选 `ensure_migrations(engine)`；模块运行态挂 `app.state.<mod>`（禁模块级单例，测试多 app）；`init_db` 顺序 = 存量 RENAME **先于** create_all；Flask 原版快照 `backend/tools/flask-snapshot/`（只读）；压测工具 `backend/tools/bench/`（`launch.py` 支持 flask/fastapi 两实现对照）
 4. **虚拟根节点**：id=0 的 Post 行；所有查询过滤 `id != 0`；建库时自动播种（`db.py`）

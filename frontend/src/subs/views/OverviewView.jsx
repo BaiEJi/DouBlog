@@ -257,7 +257,7 @@ export default function OverviewView({ dark }) {
       </div>
 
       {/* 指标卡 + 分类汇总 */}
-      <div className="flex flex-col xl:flex-row gap-4">
+      <div className="flex flex-row gap-4">
         <div className="grid grid-cols-2 gap-3 flex-1">
           <StatCard label="会员总数" value={overview?.total_members ?? '—'} />
           <StatCard label="活跃会员" value={overview?.active_members ?? '—'}
@@ -269,7 +269,7 @@ export default function OverviewView({ dark }) {
             hint="按日均价格 × 本年覆盖天数计算（整年）"
             tone="text-violet-600 dark:text-violet-400" />
         </div>
-        <div className="p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] xl:w-[420px]">
+        <div className="p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] w-[420px]">
           <div className="text-sm font-semibold mb-2">分类支出汇总</div>
           <CategorySummaryTable summary={summary} sort={sort} setSort={setSort} />
         </div>
@@ -284,7 +284,7 @@ export default function OverviewView({ dark }) {
       </div>
 
       {/* 排行榜 + 日历 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <RankingCard dark={dark} onGo={go} />
         <Suspense fallback={<div className="h-[640px] rounded-2xl bg-white dark:bg-white/[0.025] border border-black/[0.07] dark:border-white/[0.07] animate-pulse" aria-label="日历加载中" />}><ExpiryCalendar dark={dark} onGo={go} onRefresh={() => setStamp(s => s + 1)} /></Suspense>
       </div>

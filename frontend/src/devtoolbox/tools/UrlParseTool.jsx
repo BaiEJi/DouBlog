@@ -37,7 +37,7 @@ export default function UrlParseTool() {
         onChange={e => setInput(e.target.value)} placeholder="https://…" aria-label="URL 输入" />
       <div className="mt-2"><StatusLine ok={!!url} err={error} okText="解析成功" /></div>
       {url && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div className={'divide-y divide-black/[0.05] dark:divide-white/[0.06] ' + card}>
             {parts.map(([k, v]) => (
               <div key={k} className="flex items-center gap-3 px-4 py-2">

@@ -88,7 +88,7 @@ export default function SteamIdlerView({ toast }) {
       {accounts.length === 0 ? (
         <Empty text="还没有账号，使用上方表单添加第一个 Steam 账号" />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {accounts.map((a) => (
             <AccountCard
               key={a.steamid}

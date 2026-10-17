@@ -146,7 +146,7 @@ export default function StatsPanel({ toast, dark }) {
   return (
     <div className="space-y-4">
       {/* ── 指标卡 ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <StatTile title="总题数" value={total} suffix="题" />
         <StatTile title="已解" value={data?.solved ?? 0} suffix="题" tone="text-emerald-600 dark:text-emerald-400" />
         <StatTile title="复习中" value={data?.reviewing ?? 0} suffix="题" tone="text-indigo-600 dark:text-indigo-400" />
@@ -154,7 +154,7 @@ export default function StatsPanel({ toast, dark }) {
       </div>
 
       {/* ── 难度 / 来源分布 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title="难度分布">
           <DonutPie data={diffData} centerLabel="总题数" centerValue={total} />
         </Card>
@@ -164,7 +164,7 @@ export default function StatsPanel({ toast, dark }) {
       </div>
 
       {/* ── 语言分布 + 复习完成率 ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title="语言分布">
           {langRows.length === 0
             ? <Empty text="还没有代码记录" />

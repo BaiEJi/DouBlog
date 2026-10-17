@@ -440,7 +440,7 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
 
       {/* ── 基本信息 ── */}
       <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Field label="来源">
             <select value={source} onChange={e => setSource(e.target.value)} className={selectCls + ' w-full'}>
               {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}

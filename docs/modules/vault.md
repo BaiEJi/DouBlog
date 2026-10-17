@@ -10,7 +10,7 @@
 单用户零知识密码库（`/vault`）：服务端**只存密文**，所有加密/解密/搜索/分析在浏览器完成。
 
 - **零知识加密模型**：主密码 --Argon2id--> KEK₁ --AES-GCM-wrap--> VEK（256-bit 随机）；Recovery Key --Argon2id(salt₂)--> KEK₂ 包裹**同一** VEK；条目/附件用 VEK + AES-256-GCM（每次全新 12-byte nonce）。VEK 以不可导出 `CryptoKey` 只存内存，锁定/刷新/关浏览器即清除。Argon2id 用 `@noble/hashes`，AEAD 用原生 WebCrypto——不发明密码学。
-- **三面板主界面**（解锁后）：左侧栏（概览/全部/收藏/最近使用/分类/标签/身份/安全中心/密码服务/回收站）｜中栏条目列表（客户端解密后搜索）｜右栏详情或编辑器；移动端单栏层级推进；⌘K Command Palette 全局搜索。
+- **三面板主界面**（解锁后）：左侧栏（概览/全部/收藏/最近使用/分类/标签/身份/安全中心/密码服务/回收站）｜中栏条目列表（客户端解密后搜索）｜右栏详情或编辑器；⌘K Command Palette 全局搜索。
 - **概览 Dashboard**：大数字统计 + 库健康度进度条 + 密码到期提醒横条 + 六卡安全风险网格 + 最近使用/收藏/身份/最近修改双栏。
 - **TOTP 验证码**（`components/totp.js`，RFC 6238）：2FA Secret 支持 Base32 或 `otpauth://` URI（编辑器粘贴自动解析，签发方回填服务名）；详情页实时生成 6-8 位码 + 30s 环形倒计时 + 一键复制；HMAC-SHA1 走 WebCrypto，密钥不出设备。
 - **HIBP 泄露检查**（`components/hibp.js`）：k-anonymity——仅上传密码 SHA-1 前 5 位；结果缓存 localStorage（键为完整 SHA-1，单向不可逆）；网络不可达返回 -1（未知 ≠ 安全）。
@@ -103,7 +103,7 @@
 
 ## 5. 前端（`frontend/src/vault/`）
 
-- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）→ unlocked（三面板）`。进入时 `GET /account` 探测（200=已初始化→locked，404→setup）；`unlock()` 调 `unlockVault` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**），随后并行拉取 live+trash 两列表并逐条解密；`lockNow()` 清 VEK/条目/选择态回 locked。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。其余职责：设置弹层（自动锁定/剪贴板/改主密码/轮换 Recovery Key/备份导入导出/活动记录）、⌘K Command Palette、purge 确认、移动端覆盖层。
+- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）→ unlocked（三面板）`。进入时 `GET /account` 探测（200=已初始化→locked，404→setup）；`unlock()` 调 `unlockVault` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**），随后并行拉取 live+trash 两列表并逐条解密；`lockNow()` 清 VEK/条目/选择态回 locked。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。其余职责：设置弹层（自动锁定/剪贴板/改主密码/轮换 Recovery Key/备份导入导出/活动记录）、⌘K Command Palette、purge 确认。
   - **解锁≠登录**：锁屏文案"密码库已锁定/输入主密码/解锁保险库"；错误提示"主密码不正确"——这是本地解密步骤，与站点会话登录（Cookie）无关。
 - **`components/crypto.js`（加密核心，独立可复用）**：`createVaultMaterial`（初始化）/ `unlockVault`（解锁，错误密码→GCM 校验失败抛错）/ `rewrapVaultKey`（改主密码/轮换恢复密钥，仅重包裹不重加密条目）/ `encryptBlob`/`decryptBlob`/`generateRecoveryKey`/`normalizeRecoveryKey`。Argon2id `@noble/hashes`（默认参数 t=2, m=32768, p=1，解锁以服务端账号参数为准），AEAD 原生 WebCrypto；VEK 以 `extractable:false` 的 CryptoKey 只存内存。**任何函数不 console 输出密钥/明文**。
 - **`components/core.js`（纯逻辑，无 UI/网络）**：枚举常量 + 中文映射、`emptyItem()`、生成器（`randomInt` 拒绝采样无 modulo 偏差）、熵/强度（`passwordEntropy`/`passphraseEntropy`/`strengthLabel`）、`extractIdentities`、`analyzeSecurity`（弱/复用/过旧/expired/no2fa/重复/缺恢复）、`expiryInfo`（到期判定）、`applyPasswordChange`（历史推进）、`itemMatches`/`domainOf`/`daysAgo`。
@@ -152,6 +152,6 @@
 
 ## 公共 UI 外壳（2026-10-13）
 
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册，移动端使用同一菜单抽屉。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
-锁定界面的返回与主题控制归入公共侧栏；设置弹窗页签在手机换行。Argon2id 的 m 参数显示单位修正为 KiB（与本地 hashes 实现一致），不改变加密参数。
+锁定界面的返回与主题控制归入公共侧栏。Argon2id 的 m 参数显示单位修正为 KiB（与本地 hashes 实现一致），不改变加密参数。

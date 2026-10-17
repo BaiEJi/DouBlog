@@ -176,8 +176,8 @@ export default function BacklogView({ toast }) {
                       <div className="text-sm font-medium truncate">{t.title}</div>
                       <div className="text-[11px] text-stone-400 tabular-nums">{mdhmOf(t.created_at)}</div>
                     </div>
-                    <span className="hidden lg:inline-flex"><QuadrantBadge quadrant={t.quadrant} label={labels(t.quadrant)} small /></span>
-                    <span className="hidden sm:inline-flex"><CategoryBadge name={t.category_name} color={t.category_color} small /></span>
+                    <span className="inline-flex"><QuadrantBadge quadrant={t.quadrant} label={labels(t.quadrant)} small /></span>
+                    <span className="inline-flex"><CategoryBadge name={t.category_name} color={t.category_color} small /></span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button onClick={() => { setScheduleDate(todayStr()); setScheduleTask(t) }} className={btn.mini}>排期</button>
                       <button onClick={() => { setEditing(t); setFormOpen(true) }} className={btn.mini}>编辑</button>

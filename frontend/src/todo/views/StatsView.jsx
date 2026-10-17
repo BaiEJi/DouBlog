@@ -166,7 +166,7 @@ export default function StatsView({ toast, dark }) {
   return (
     <div className="space-y-4">
       {/* 指标卡 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 flex items-center">
           <div className="flex-1">
             <div className="text-[11px] text-stone-500 dark:text-stone-400 mb-1">🔥 当前连续</div>
@@ -209,7 +209,7 @@ export default function StatsView({ toast, dark }) {
       </Card>
 
       {/* 象限分布 + 类别占比 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title={`象限完成分布（${daily?.date?.slice(5) || '今日'}）`}>
           {completedTotal === 0 ? (
             <Empty text="今天还没有完成的任务" />

@@ -106,7 +106,7 @@ export default function ItemForm({ itemId, categories, tags, onBack, onSaved, to
         <input value={form.title} onChange={e => set('title', e.target.value)} className={inputCls} placeholder="页面标题" />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div className={FMT}>
           <label className="text-xs font-medium text-stone-500 dark:text-stone-400">分类</label>
           <select value={form.category_id} onChange={e => set('category_id', e.target.value)} className={inputCls}>

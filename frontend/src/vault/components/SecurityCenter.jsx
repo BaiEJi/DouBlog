@@ -10,7 +10,7 @@ import { Favicon, I } from './ui'
 
 function Group({ icon, title, tone, items, empty, children, gref, neutral }) {
   return (
-    <section ref={gref} className="p-4 sm:p-5 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.012] dark:bg-white/[0.015] scroll-mt-4">
+    <section ref={gref} className="p-5 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.012] dark:bg-white/[0.015] scroll-mt-4">
       <div className="flex items-center gap-2 mb-3">
         <span className={'shrink-0 ' + tone}>{icon}</span>
         <h3 className="text-sm font-semibold">{title}</h3>
@@ -49,7 +49,7 @@ function ScoreRing({ score, total, checked, onDive }) {
   const label = score >= 80 ? '良好' : score >= 60 ? '一般' : score >= 40 ? '较差' : '高危'
   return (
     <button onClick={onDive}
-      className="w-full flex items-center gap-6 p-5 sm:p-6 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.012] dark:bg-white/[0.015] hover:border-black/[0.12] dark:hover:border-white/[0.14] transition-colors text-left">
+      className="w-full flex items-center gap-6 p-6 rounded-2xl border border-black/[0.06] dark:border-white/[0.06] bg-black/[0.012] dark:bg-white/[0.015] hover:border-black/[0.12] dark:hover:border-white/[0.14] transition-colors text-left">
       <div className="relative shrink-0">
         <svg className="-rotate-90" width="132" height="132" viewBox="0 0 132 132">
           <circle cx="66" cy="66" r={R} className="stroke-black/[0.07] dark:stroke-white/10" strokeWidth="10" fill="none" />
@@ -140,7 +140,7 @@ export default function SecurityCenter({ items, onSelect }) {
   const dive = key => groupRefs.current[key]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   return (
-    <div className="p-5 sm:p-8 overflow-y-auto h-full animate-fade-in">
+    <div className="p-8 overflow-y-auto h-full animate-fade-in">
       <div className="max-w-[1700px] w-full mx-auto">
         <div className="flex items-center gap-2.5 mb-1.5">
           <span className="text-stone-400">{I.shield}</span>
@@ -153,10 +153,10 @@ export default function SecurityCenter({ items, onSelect }) {
           <ScoreRing score={score} total={items.length} checked={checked} onDive={() => dive(pwnedItems.length ? 'pwned' : s.weak.length ? 'weak' : 'first')} />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
 
           {/* 泄露检查（HIBP）：操作条常驻 Group 之外（结果为空时也要能点） */}
-          <div className="xl:col-span-2">
+          <div className="col-span-2">
             <div className="flex items-center gap-3 mb-2">
               <button onClick={runCheck} disabled={checking || withPw.length === 0}
                 className="px-3 h-7 rounded-lg text-[12px] text-white bg-stone-900 dark:bg-stone-100 dark:text-stone-900 hover:opacity-90 disabled:opacity-40 transition-opacity">

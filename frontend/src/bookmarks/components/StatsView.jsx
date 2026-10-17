@@ -59,7 +59,7 @@ export default function StatsView({ toast, dark, refreshSignal }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+      <div className="grid grid-cols-7 gap-3">
         <StatTile title="总书签" value={s.total} />
         <StatTile title="待读" value={s.by_status?.unread || 0} tone="text-orange-600 dark:text-orange-400" />
         <StatTile title="已读" value={s.by_status?.read || 0} tone="text-emerald-600 dark:text-emerald-400" />
@@ -69,7 +69,7 @@ export default function StatsView({ toast, dark, refreshSignal }) {
         <StatTile title="快照字数" value={s.snapshot_words?.toLocaleString?.() || s.snapshot_words} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title="状态分布">
           {donut.length ? (
             <div className="flex items-center justify-center gap-6 flex-wrap">
@@ -92,7 +92,7 @@ export default function StatsView({ toast, dark, refreshSignal }) {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4">
         <Card title="分类分布">
           {(s.by_category || []).length ? (
             <div className="space-y-3">

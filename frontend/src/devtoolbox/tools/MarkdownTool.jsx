@@ -68,7 +68,7 @@ export default function MarkdownTool() {
           { key: 'edit', label: '编辑' },
           { key: 'preview', label: '预览' },
         ]} />} />
-      <div className={view === 'split' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : ''}>
+      <div className={view === 'split' ? 'grid grid-cols-2 gap-4' : ''}>
         {view !== 'preview' && (
           <textarea className={areaCls} rows={24} value={text} spellCheck={false}
             onChange={e => setText(e.target.value)} aria-label="Markdown 源码" />

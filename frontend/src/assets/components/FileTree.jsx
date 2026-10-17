@@ -56,7 +56,7 @@ function buildTree(files) {
 
 function TreeRow({ depth, active, hasChildren, expanded, icon, label, meta, onClick }) {
   return (
-    <div className={`flex items-center gap-1.5 min-h-9 sm:min-h-0 py-1.5 pr-2 rounded-lg text-[13px] cursor-pointer transition-colors ${active
+    <div className={`flex items-center gap-1.5 py-1.5 pr-2 rounded-lg text-[13px] cursor-pointer transition-colors ${active
       ? 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 font-medium'
       : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.05] text-stone-600 dark:text-stone-300'}`}
       style={{ paddingLeft: 8 + depth * 18 }}

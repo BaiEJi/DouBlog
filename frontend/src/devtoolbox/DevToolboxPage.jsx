@@ -108,7 +108,7 @@ export default function DevToolboxPage() {
                   <span className="text-[11px] text-stone-400 tabular-nums">{g.tools.length} 个</span>
                   <span className="flex-1 border-b border-black/[0.05] dark:border-white/[0.06]" />
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                <div className="grid grid-cols-4 gap-3">
                   {g.tools.map(t => (
                     <button key={t.id}
                       className={'group text-left p-4 rounded-2xl border transition-all duration-200 ' + card + ' hover:border-black/[0.18] dark:hover:border-white/[0.2] hover:shadow-md hover:-translate-y-0.5'}

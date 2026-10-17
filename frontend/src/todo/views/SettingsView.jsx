@@ -254,7 +254,7 @@ export default function SettingsView({ toast, dark }) {
           <div className="text-xs text-stone-400 py-4">加载中…</div>
         ) : (
           <div className="space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-4">
               <Field label="时区" hint="决定「今天」的划分与统计口径">
                 <select value={prefs.timezone} onChange={e => setPref('timezone', e.target.value)} className={inputCls + ' appearance-none pr-8 bg-no-repeat'} style={{ backgroundImage: 'linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)', backgroundPosition: 'calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px)', backgroundSize: '5px 5px, 5px 5px' }}>
                   {TIMEZONES.includes(prefs.timezone)
@@ -290,12 +290,12 @@ export default function SettingsView({ toast, dark }) {
             {/* 象限文案 */}
             <div>
               <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">象限文案（留空使用默认）</div>
-              <div className="hidden sm:grid grid-cols-[150px_1fr_1fr] gap-3 mb-1.5 text-[11px] text-stone-400 px-1">
+              <div className="grid grid-cols-[150px_1fr_1fr] gap-3 mb-1.5 text-[11px] text-stone-400 px-1">
                 <span>象限</span><span>名称</span><span>行动建议</span>
               </div>
               <div className="space-y-2">
                 {QUADRANT_META.map(m => (
-                  <div key={m.quadrant} className="grid grid-cols-1 sm:grid-cols-[150px_1fr_1fr] gap-2 sm:gap-3 items-center">
+                  <div key={m.quadrant} className="grid grid-cols-[150px_1fr_1fr] gap-3 items-center">
                     <span className={'text-[12.5px] font-medium flex items-center gap-1.5 ' + m.text}>
                       <Dot color={m.color} />Q{m.quadrant} · {m.subtitle}
                     </span>
@@ -374,7 +374,7 @@ export default function SettingsView({ toast, dark }) {
           ))}
         </div>
         {notif && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Field label="SMTP 服务器">
               <input value={notif.smtp_host} onChange={e => setNotif(n => ({ ...n, smtp_host: e.target.value }))}
                 placeholder="如 smtp.qq.com" className={inputCls} />

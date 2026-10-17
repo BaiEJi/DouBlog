@@ -155,8 +155,7 @@ function WorkspaceSwitcher({ workspaces, current, onSelect, onCreate }) {
       <button
         type="button"
         onClick={() => (open ? close() : setOpen(true))}
-        className="flex items-center gap-2 pl-2.5 pr-2 py-1.5 max-w-[9.5rem] sm:max-w-52 rounded-xl border border-black/[0.08] dark:border-white/[0.1]
-          bg-black/[0.02] dark:bg-white/[0.05] hover:bg-black/[0.05] dark:hover:bg-white/[0.09] transition-colors"
+        className="flex items-center gap-2 pl-2.5 pr-2 py-1.5 max-w-52 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-black/[0.02] dark:bg-white/[0.05] hover:bg-black/[0.05] dark:hover:bg-white/[0.09] transition-colors"
       >
         <span className="w-5 h-5 rounded-md bg-blue-500/10 dark:bg-blue-400/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
           {Icons.folder}
@@ -358,7 +357,7 @@ export default function HomePage({ dark, setDark }) {
       {/* Main */}
       <main className="flex-1 w-full max-w-full mx-auto p-0">
         <div className="mb-10 animate-fade-in-up">
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-4">
+          <h1 className="text-4xl font-bold tracking-tight leading-tight mb-4">
             思考，记录，沉淀。
           </h1>
           <p className="text-xl text-[#666] dark:text-[#888]">
@@ -384,7 +383,7 @@ export default function HomePage({ dark, setDark }) {
                   <span className="text-sm text-[#333] dark:text-[#ccc] group-hover:text-[#111] dark:group-hover:text-[#eee] transition-colors truncate max-w-[16rem]">
                     {r.title}
                   </span>
-                  <span className="text-[11px] text-[#bbb] dark:text-[#555] shrink-0 truncate max-w-[8rem] hidden sm:inline">
+                  <span className="text-[11px] text-[#bbb] dark:text-[#555] shrink-0 truncate max-w-[8rem] inline">
                     {r.workspace_name}
                   </span>
                 </Link>

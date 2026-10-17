@@ -94,9 +94,9 @@ function Mask({ onClose, children, wide }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-start sm:items-center justify-center p-4 overflow-y-auto"
+    <div className="fixed inset-0 z-50 bg-black/40 dark:bg-black/60 backdrop-blur-[2px] flex items-center justify-center p-4 overflow-y-auto"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`${card} w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} relative p-5 sm:p-6 my-4 max-h-[calc(100dvh-32px)] overflow-y-auto shadow-2xl`} role="dialog" aria-modal="true">
+      <div className={`${card} w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} relative p-6 my-4 max-h-[calc(100vh-32px)] overflow-y-auto shadow-2xl`} role="dialog" aria-modal="true">
         <button type="button" onClick={onClose} aria-label="关闭弹窗" className="absolute right-3 top-3 w-8 h-8 rounded-lg text-stone-500 hover:bg-black/5 dark:hover:bg-white/10">×</button>
         {children}
       </div>
@@ -232,7 +232,7 @@ function CacheModal({ status, onClose, onSaved, say }) {
         <span className="text-stone-700 dark:text-stone-200">启用缓存</span>
       </label>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-4 gap-3 mt-4">
         <div className="col-span-2">
           <label className={`${LBL} block mb-1.5`}>主机</label>
           <input className={`${inputCls} w-full`} value={cfg.host} placeholder="localhost"
@@ -349,7 +349,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
         {isEdit ? '编辑配置' : '新建配置'}
       </h3>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
+      <div className="grid grid-cols-2 gap-3 mt-4">
         <div>
           <label className={`${LBL} block mb-1.5`}>namespace</label>
           <input className={`${inputCls} w-full font-mono disabled:opacity-60 disabled:cursor-not-allowed`}
@@ -515,9 +515,9 @@ export default function ConfCenterPage() {
       <div className="p-0 max-w-full mx-auto">
         <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
 
-        <div className="mt-4 flex flex-col lg:flex-row gap-4 items-stretch">
+        <div className="mt-4 flex flex-row gap-4 items-stretch">
           {/* 左：namespace 列表（计数） */}
-          <aside className={`${card} w-full lg:w-56 shrink-0 p-2 lg:self-start lg:sticky lg:top-20`}>
+          <aside className={`${card} w-56 shrink-0 p-2 self-start sticky top-20`}>
             <button
               onClick={() => { setNs(''); setPage(1) }}
               className={'w-full flex items-center justify-between gap-2 px-3 h-9 rounded-lg text-sm transition-colors ' +
@@ -553,7 +553,7 @@ export default function ConfCenterPage() {
             <div className="flex flex-wrap items-center gap-2 mb-3">
               <input value={qInput} onChange={e => setQInput(e.target.value)}
                 placeholder="搜索 key…"
-                className={`${inputCls} w-full sm:w-60`} />
+                className={`${inputCls} w-60`} />
               <span className="text-[11.5px] text-stone-400">
                 {list == null ? '' : `共 ${list.total} 条${ns ? ` · ${ns}` : ''}`}
               </span>

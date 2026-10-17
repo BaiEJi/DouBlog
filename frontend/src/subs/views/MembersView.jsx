@@ -209,7 +209,7 @@ export default function MembersView({ dark, toast }) {
         <div className="py-16 text-center text-sm text-stone-400">加载中…</div>
       ) : viewMode === 'card' ? (
         items.length ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             {items.map(m => (
               <MemberCardItem key={m.id} m={m} dark={dark}
                 onGo={id => navigate(`/subs/members/${id}`)}

@@ -142,7 +142,7 @@ function Overview({ setErr }) {
   if (!stats) return <div className="text-xs text-stone-400 py-16 text-center">加载中…</div>
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {[
           ['24h 调用量', stats.total_calls],
           ['24h 错误率', (stats.error_rate * 100).toFixed(1) + '%'],
@@ -297,7 +297,7 @@ function UpstreamForm({ row, onClose, onSaved, setErr }) {
   return (
     <Modal wide title={row.id ? `编辑上游：${row.name}` : '新建上游'} onClose={onClose}>
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">名称</span>
             <input className={`${inputCls} w-full mt-1`} value={form.name} onChange={e => set('name', e.target.value)} />
@@ -313,7 +313,7 @@ function UpstreamForm({ row, onClose, onSaved, setErr }) {
           </span>
           <input className={`${inputCls} w-full mt-1 font-mono`} value={form.base_url} onChange={e => set('base_url', e.target.value)} />
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">超时(ms)</span>
             <input type="number" className={`${inputCls} w-full mt-1`} value={form.timeout_ms} onChange={e => set('timeout_ms', e.target.value)} />
@@ -517,7 +517,7 @@ function Apis({ setErr }) {
     <div className="space-y-3">
       {/* 工具条：搜索 + 批量折叠 + 新建（搜索中折叠无意义，批量按钮禁用） */}
       <div className="flex flex-wrap items-center gap-2">
-        <input className={`${inputCls} w-full sm:w-72`} placeholder="搜索：slug / 名称 / method / 路径"
+        <input className={`${inputCls} w-72`} placeholder="搜索：slug / 名称 / method / 路径"
                value={q} onChange={e => setQ(e.target.value)} />
         {kw && <span className="text-xs text-stone-500 dark:text-stone-400 tabular-nums">命中 {matchCount} 条</span>}
         <div className="flex-1" />
@@ -660,7 +660,7 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
   return (
     <Modal wide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">名称</span>
             <input className={`${inputCls} w-full mt-1`} value={form.name} onChange={e => set('name', e.target.value)} />
@@ -676,7 +676,7 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
             </select>
           </label>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">Method</span>
             <select className={`${selectCls} w-full mt-1`} value={form.method} onChange={e => set('method', e.target.value)}>
@@ -689,7 +689,7 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
                    value={form.path_tpl} onChange={e => set('path_tpl', e.target.value)} />
           </label>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <JsonBlock label="请求配置（body 类型 json/form/raw、header 模板）" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
           <JsonBlock label="响应配置（envelope/charset/error_mapping 双通道）" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
           <JsonBlock label="探活配置（path 默认=API 自身路径；interval_s>0 定时探）" value={form.probe} onChange={v => set('probe', v)} />
@@ -699,7 +699,7 @@ function ApiForm({ row, ups, onClose, onSaved, setErr }) {
           <div className="text-xs font-medium text-stone-500 dark:text-stone-400">
             OpenAPI 发布（留空一级分组 = 不发布；对外路径 /openapi/一级/二级/名称）
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <label className="block">
               <span className="text-xs text-stone-500 dark:text-stone-400">一级分组</span>
               <input className={`${inputCls} w-full mt-1 font-mono`} placeholder="如 self / weather"
@@ -782,7 +782,7 @@ function GroupForm({ row, onClose, onSaved, setErr }) {
   return (
     <Modal title={`分组设置：${row.name}（${row.slug}）`} onClose={onClose}>
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">一级分组（留空 = 不发布）</span>
             <input className={`${inputCls} w-full mt-1 font-mono`} placeholder="如 self / weather"
@@ -912,7 +912,7 @@ function Tokens({ setErr }) {
               <input className={`${inputCls} w-full mt-1 font-mono`} value={form.expires_at}
                      onChange={e => setForm({ ...form, expires_at: e.target.value })} />
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-xs text-stone-500 dark:text-stone-400">IP 白名单（逗号分隔）</span>
                 <input className={`${inputCls} w-full mt-1`} value={form.allowed_ips}
@@ -1071,7 +1071,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
   return (
     <Modal title={row.id ? '编辑限流规则' : '新建限流规则'} onClose={onClose}>
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">层级</span>
             <select className={`${selectCls} w-full mt-1`} value={f.scope} onChange={e => set('scope', e.target.value)}>
@@ -1108,7 +1108,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
           </label>
         )}
         {f.algorithm === 'token_bucket' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-stone-500 dark:text-stone-400">速率（令牌/秒）</span>
               <input type="number" step="0.1" className={`${inputCls} w-full mt-1`} value={f.rate_per_sec} onChange={e => set('rate_per_sec', e.target.value)} />
@@ -1119,7 +1119,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
             </label>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-stone-500 dark:text-stone-400">窗口（秒）</span>
               <input type="number" className={`${inputCls} w-full mt-1`} value={f.window_s} onChange={e => set('window_s', e.target.value)} />

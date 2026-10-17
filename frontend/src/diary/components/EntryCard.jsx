@@ -22,7 +22,7 @@ export default function EntryCard({ entry, onEdit, onAction, onDelete, onShare, 
         : 'border-black/[0.07] dark:border-white/[0.07] hover:border-black/[0.12] dark:hover:border-white/[0.14]')}>
       {entry.pinned && <span className="absolute left-0 top-4 bottom-4 w-[3px] rounded-full bg-rose-400/70" />}
       {attached && <span className="absolute -left-4 top-6 bottom-6 w-px bg-rose-500/50" aria-hidden />}
-      <div className="p-4 sm:p-5">
+      <div className="p-5">
         {/* 元信息行 */}
         <div className="flex flex-wrap items-center gap-2 mb-2.5 text-[11.5px] text-stone-400">
           <span className="font-medium text-stone-500 dark:text-stone-400 tabular-nums">{dateStr}</span>

@@ -62,13 +62,13 @@ export default function LifeReviewView({ toast, dark }) {
       {/* 日打卡回顾 */}
       <Card title="日打卡回顾"
         extra={<input type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} className={inputCls + ' w-auto'} />}>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           <StatTile title="安排" value={items.length} suffix="项" />
           <StatTile title="完成" value={doneList.length} suffix="项" />
           <StatTile title="完成率" value={rateText} />
           <StatTile title="错过" value={missedList.length} suffix="项" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <div className="grid grid-cols-2 gap-6 mt-6">
           <div>
             <div className="text-sm font-semibold mb-3">当日完成（{doneList.length}）</div>
             {doneList.length === 0 ? (
@@ -109,13 +109,13 @@ export default function LifeReviewView({ toast, dark }) {
       {/* 趋势回顾 */}
       <Card title="趋势回顾"
         extra={<Segmented value={days} onChange={setDays} options={[{ label: '近 7 天', value: 7 }, { label: '近 30 天', value: 30 }]} />}>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 items-start">
+        <div className="grid grid-cols-4 gap-6 items-start">
           <div className="flex flex-col gap-3">
             <StatTile title="总安排" value={totals.scheduled} suffix="项" />
             <StatTile title="总完成" value={totals.completed} suffix="项" />
             <StatTile title="完成率" value={totals.scheduled ? `${Math.round((totals.completed / totals.scheduled) * 100)}%` : '—'} />
           </div>
-          <div className="md:col-span-3">
+          <div className="col-span-3">
             <GroupedBars data={trendData}
               a={{ label: '安排', color: '#a8a29e' }}
               b={{ label: '完成', color: '#6366f1' }} />

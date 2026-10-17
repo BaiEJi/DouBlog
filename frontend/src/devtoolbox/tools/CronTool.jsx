@@ -34,7 +34,7 @@ export default function CronTool() {
       </div>
       <div className="mt-3"><StatusLine ok={!parsed.error && !!expr.trim()} err={parsed.error} okText={describe ? describe.summary : '有效'} /></div>
       {describe && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div className={card + ' p-4'}>
             <p className="text-sm font-semibold mb-3">字段解释</p>
             <div className="space-y-2">

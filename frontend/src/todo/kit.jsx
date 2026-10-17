@@ -172,7 +172,7 @@ export function Modal({ title, open, onClose, children, footer, width = 'max-w-l
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 overflow-y-auto"
       onClick={onClose}>
-      <div className={`w-full ${width} my-4 max-h-[calc(100dvh-32px)] flex flex-col rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown`}
+      <div className={`w-full ${width} my-4 max-h-[calc(100vh-32px)] flex flex-col rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown`}
         role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}
         onClick={e => e.stopPropagation()}>
         <div className="shrink-0 flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">

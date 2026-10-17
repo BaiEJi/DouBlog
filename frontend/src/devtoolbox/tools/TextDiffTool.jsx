@@ -79,7 +79,7 @@ export default function TextDiffTool() {
           <Check checked={ignoreWs} onChange={setIgnoreWs} label="忽略空白" />
           <Check checked={inline} onChange={setInline} label="行内高亮" />
         </>} />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <textarea className={areaCls} rows={12} value={a} spellCheck={false} onChange={e => setA(e.target.value)} aria-label="原文本" placeholder="原文本" />
         <textarea className={areaCls} rows={12} value={b} spellCheck={false} onChange={e => setB(e.target.value)} aria-label="新文本" placeholder="新文本" />
       </div>

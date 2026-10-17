@@ -43,7 +43,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
 ├── shared/                         # 公共层
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
-│   ├── ModuleShell.jsx             # 全模块公共侧栏、递归多级菜单、移动端抽屉、统一内容画布
+│   ├── ModuleShell.jsx             # 全模块公共侧栏（常驻 sticky）、递归多级菜单、统一内容画布
 │   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
@@ -142,7 +142,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### blog/pages（博客各页）
 - `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
 - **WorkspaceSwitcher**（正文工具行，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
-- 公共左侧栏提供知识库 / 新建文章 / 内容管理导航；正文工具行保留知识库切换器、搜索与新建按钮，移动端换行
+- 公共左侧栏提供知识库 / 新建文章 / 内容管理导航；正文工具行保留知识库切换器、搜索与新建按钮
 
 ### PostDetail.jsx（最重的页面）
 - **数据**：先 `GET /api/posts/id/:id`（正文 + 得知所属知识库）→ 再 `GET /api/posts/tree?workspace_id=`（侧边栏树只含同库文章）；文章一到即解除内容区骨架，树在后台刷新。挂载时先查 `takeCachedPost`（hover 预取缓存）命中即渲染再后台刷新（SWR）；侧栏树链接/首页卡片/子文章卡均挂 `onPointerEnter/onFocus → prefetchPost`
@@ -157,7 +157,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### blog/editor（编辑器增强）
 - `useEditorEnhancements`（共用 hook）：图片**粘贴/拖拽/工具栏按钮**上传（`POST /api/images/upload`，成功后光标处插入 `![alt](/api/images/x.png)`）、**预览同步滚动**（编辑区滚动→预览按比例跟随，用户滚预览时暂停 400ms；EditPost 需传 `active: !loading`——其编辑器在 loading 放行后才渲染）、块模板（表格/mermaid/代码块）
-- 桌面分栏为固定高 `h-[70vh]`，两栏各自内部滚动；手机编辑与预览上下排列，各占 50vh，工具栏换行
+- 编辑/预览左右分栏，固定高 `h-[70vh]`，两栏各自内部滚动
 
 ### AdminPage.jsx（管理页）
 - **状态卡**：当前后端徽章（SQLite/PostgreSQL）、文章数/日志数、数据目录（`fetchDbStatus`，PG 连接参数自动预填）
@@ -174,7 +174,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
 
 ### DiaryPage.jsx（diary/，Memos × Day One 超集 UI）
-- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）；移动端用同一菜单的抽屉
+- 侧栏（视图导航 时间线/日历/热力图/统计/回收站 + 日记本带计数 + 导出）
 - 时间线：那年今日横幅（往年同月同日 + 随机记忆）→ QuickCapture 快捷录入盒（自动增高 + 心情 + 标签 + 模板下拉 + ✦每日引导问题 + 🌤️天气位置一键采集 open-meteo）→ 日期分组 EntryCard 卡（元信息行：日期/心情/天气图标/位置/字数；hover 操作：置顶/编辑/分享/归档/回收站）
 - Editor 全屏弹层：日期/心情/本子/模板/预览/自动保存（1.2s 防抖，状态行"已保存 HH:MM"）
 - CalendarView 月历（心情着色+今日环+点选过滤）、HeatmapView 年度热力图（365 格色阶+悬浮详情+点选）、StatsView（6 指标卡 + SVG 柱状/折线（纯手写无依赖）+ 年度回顾大卡）、ShareDialog（有效期选项+复制+撤销）、PublicShare 免登录只读页（/diary/s/:token，柔和阅读排版）
@@ -182,7 +182,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### SubsPage.jsx（subs/，订阅管理 —— CrownFlow 迁移 UI）
 - 壳：侧栏（返回入口 / 概览/会员/统计/设置导航；概览带即将到期计数徽标、会员带 活跃/总数）+ 内嵌 `<Routes>`
-  （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）；移动端用同一菜单的抽屉
+  （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）
 - **OverviewView**：4 指标卡（总数/活跃/本月/年度支出，月年口径=整月整年）+ 分类汇总表（列排序+合计行）+
   即将到期提醒列表（点击进详情）+ 会员支出排行榜（4 维度切换：累计花费/平均订阅/订阅次数/累计时长，金银铜奖杯+火焰）+
   **订阅到期日历**（月历：`lunar-javascript` 农历与节日（红字优先显示法定节假日/补班）、timor.tech 节假日着色、
@@ -276,7 +276,7 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 **改前端的验收门槛**：`npm run build` 零报错 + 浏览器过一遍门户/首页/详情/新建/日记/日志/密码库/管理（详见 AGENTS.md 验证清单）。
 
-- **页面布局约定（2026-10-13）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。220px 左侧栏，桌面 sticky + 100dvh；内容画布一律 `max-w-[1700px] px-4 sm:px-6 xl:px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。移动端顶部 56px 菜单入口打开同一侧栏，带背景遮罩、滚动锁定、Escape 与焦点循环。
+- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑/管理均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`）；内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
 - **布局细节**：日记本与导出放公共侧栏 sidebar 插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心 namespace 区为内容过滤器。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。
 - **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。

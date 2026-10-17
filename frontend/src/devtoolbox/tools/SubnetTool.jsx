@@ -56,7 +56,7 @@ export default function SubnetTool() {
         onChange={e => setInput(e.target.value)} placeholder="192.168.1.10/24（省略 /24 时按 /24 计）" aria-label="CIDR 输入" />
       <div className="mt-2"><StatusLine ok={!!result?.ip} err={result?.error || (input.trim() && !result ? '输入无效' : null)} okText="解析成功" /></div>
       {result?.ip && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div className={'divide-y divide-black/[0.05] dark:divide-white/[0.06] ' + card}>
             {[
               ['IP 地址', result.ip],

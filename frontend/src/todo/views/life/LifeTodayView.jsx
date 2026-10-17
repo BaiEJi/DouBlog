@@ -95,7 +95,7 @@ export default function LifeTodayView({ toast, dark }) {
   return (
     <div className="max-w-[860px]">
       {/* 英雄卡：日期导航 + 环形进度 */}
-      <div className="rounded-3xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/[0.10] to-transparent p-5 sm:p-6 mb-4">
+      <div className="rounded-3xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/[0.10] to-transparent p-6 mb-4">
         <div className="flex items-center gap-5">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-2.5">

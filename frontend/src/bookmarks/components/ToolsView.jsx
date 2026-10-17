@@ -59,7 +59,7 @@ export default function ToolsView({ toast, onChanged }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <Card title="导入书签">
           <p className="text-xs text-stone-500 dark:text-stone-400 leading-6 mb-3">
             支持浏览器导出的 <span className="font-mono">Netscape HTML</span> 书签文件

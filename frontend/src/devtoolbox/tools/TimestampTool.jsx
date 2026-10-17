@@ -99,7 +99,7 @@ export default function TimestampTool() {
         </>
       )}
       {tab === 'now' && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4">
           <div className={card + ' p-6 text-center'}>
             <p className="text-4xl font-semibold tabular-nums tracking-tight">{nowDate.toLocaleTimeString('zh-CN', { hour12: false })}</p>
             <p className="mt-2 text-sm text-stone-500 dark:text-stone-400">{nowDate.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}</p>
@@ -120,7 +120,7 @@ export default function TimestampTool() {
       )}
       {tab === 'dur' && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <label className="block">
               <span className={LBL + ' mb-1 block'}>时间 A</span>
               <input className={inputCls + ' w-full font-mono'} value={d1} onChange={e => setD1(e.target.value)} spellCheck={false} />
@@ -133,7 +133,7 @@ export default function TimestampTool() {
           {dur ? (
             <>
               <p className={'mt-4 ' + card + ' p-4 text-base font-semibold'}>时间差：{dur.span}</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
+              <div className="grid grid-cols-3 gap-3 mt-3">
                 {dur.totals.map(([k, v]) => (
                   <div key={k} className={card + ' p-4'}>
                     <p className="text-lg font-semibold tabular-nums">{v.toLocaleString()}</p>

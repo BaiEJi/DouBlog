@@ -62,7 +62,7 @@ export default function ItemEditor({ initial, onCancel, onSave, saving }) {
   const genOpts = { length: 20, uppercase: true, lowercase: true, numbers: true, symbols: true }
 
   return (
-    <div className="p-5 sm:p-7 overflow-y-auto h-full animate-fade-in">
+    <div className="p-7 overflow-y-auto h-full animate-fade-in">
       <div className="flex items-center gap-3 mb-6">
         <button onClick={onCancel} className="w-8 h-8 -ml-2 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{I.back}</button>
         <h2 className="text-base font-semibold">{initial ? '编辑条目' : '新建条目'}</h2>

@@ -103,7 +103,7 @@ export function StatusLine({ ok, err, okText = '格式正确' }) {
 /** 双栏编辑器布局（对比/转换类工具共用）：左输入右输出，移动端上下 */
 export function TwoPane({ leftTitle, rightTitle, left, right, leftActions, rightActions }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div className="grid grid-cols-2 gap-4">
       <div className="min-w-0">
         <div className="flex items-center justify-between gap-2 mb-2">
           <span className={LBL}>{leftTitle}</span>

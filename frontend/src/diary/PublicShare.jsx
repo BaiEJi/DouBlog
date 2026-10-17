@@ -23,7 +23,7 @@ export default function PublicShare() {
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-14">
+      <div className="max-w-3xl mx-auto px-6 py-14">
         <div className="text-center mb-10">
           <span className="text-[11px] font-medium uppercase tracking-[0.3em] text-stone-400">DouBlog · 日记分享</span>
         </div>

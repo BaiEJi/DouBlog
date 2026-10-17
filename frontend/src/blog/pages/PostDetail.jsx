@@ -742,7 +742,7 @@ export default function PostDetail({ dark, setDark }) {
       {/* ── Layout ─────────────────────────────────────── */}
       <div className="flex w-full min-w-0">
         {/* Left Sidebar */}
-        <aside className="hidden lg:block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-48px)] sticky top-8 overflow-hidden py-6 px-2" style={{ width: leftWidth }}>
+        <aside className="block shrink-0 border-r border-black/5 dark:border-white/5 h-[calc(100vh-48px)] sticky top-8 overflow-hidden py-6 px-2" style={{ width: leftWidth }}>
           <div className="mb-4 px-2 flex items-center justify-between">
             <div className="text-[11px] font-semibold text-[#999] dark:text-[#555] uppercase tracking-widest">
               文档
@@ -819,7 +819,7 @@ export default function PostDetail({ dark, setDark }) {
               </div>
             </div>
 
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight leading-tight mb-3">
+            <h1 className="text-4xl font-bold tracking-tight leading-tight mb-3">
               {post.title}
             </h1>
 
@@ -873,7 +873,7 @@ export default function PostDetail({ dark, setDark }) {
                         {bl.title}
                       </span>
                       {bl.summary && (
-                        <span className="text-[12px] text-[#999] dark:text-[#666] truncate hidden sm:inline">{bl.summary.slice(0, 60)}</span>
+                        <span className="text-[12px] text-[#999] dark:text-[#666] truncate inline">{bl.summary.slice(0, 60)}</span>
                       )}
                     </Link>
                   ))}
@@ -892,7 +892,7 @@ export default function PostDetail({ dark, setDark }) {
 
         {/* Right TOC：切换期间不显示旧文章的目录 */}
         <ResizeHandle onDragStart={onRightDragStart} onDrag={onRightDrag} />
-        <aside className="hidden xl:block shrink-0 h-[calc(100vh-48px)] sticky top-8 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
+        <aside className="block shrink-0 h-[calc(100vh-48px)] sticky top-8 overflow-y-auto overflow-x-hidden scrollbar-hide py-6 px-4" style={{ width: rightWidth }}>
           <TableOfContents headings={loading ? [] : headings} activeId={activeTocId} dark={dark} />
         </aside>
       </div>

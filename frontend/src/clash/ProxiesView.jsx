@@ -115,7 +115,7 @@ export default function ProxiesView({ toast, unavailable }) {
               {testingGroup === g.name ? '测速中…' : '整组测速'}
             </button>
           </div>
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+          <div className="p-4 grid grid-cols-3 gap-2.5">
             {g.nodes.map(n => {
               const isNow = g.now === n.name
               const isSwitching = switching === `${g.name}/${n.name}`

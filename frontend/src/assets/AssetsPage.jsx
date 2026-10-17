@@ -291,7 +291,7 @@ export default function AssetsPage({ dark }) {
       ) : (
         <div className="flex gap-6 items-start">
           {/* 左过滤栏 */}
-          <aside className="hidden lg:flex flex-col w-52 shrink-0 sticky top-4 space-y-5" aria-label="资产过滤">
+          <aside className="flex flex-col w-52 shrink-0 sticky top-4 space-y-5" aria-label="资产过滤">
             <div className="space-y-1">
               {quickFilters.map(f => (
                 <button key={f.key} type="button" onClick={f.onClick}
@@ -438,8 +438,8 @@ export default function AssetsPage({ dark }) {
               </div>
             ) : (
               <div className={`grid gap-3.5 ${view === 'trash'
-                ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
-                : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'}`}>
+                ? 'grid-cols-3'
+                : 'grid-cols-4'}`}>
                 {data.items.map(item => view === 'trash' ? (
                   <div key={item.id}
                     className={`flex items-center gap-3 p-4 rounded-2xl border ${selection.has(item.id)

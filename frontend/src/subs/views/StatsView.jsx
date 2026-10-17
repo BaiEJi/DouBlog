@@ -163,12 +163,12 @@ export default function StatsView({ dark, toast }) {
       )}
 
       {/* 图表 */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        <div className="lg:col-span-3 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
+      <div className="grid grid-cols-5 gap-4">
+        <div className="col-span-3 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
           <div className="text-sm font-semibold mb-2">支出趋势</div>
           <AreaTrend data={trendData} height={340} color={palette[1]} renderTip={TrendTip} />
         </div>
-        <div className="lg:col-span-2 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
+        <div className="col-span-2 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
           <div className="text-sm font-semibold mb-2">
             分类支出（总计：{fmtPrice(cats?.total || 0)}）
           </div>

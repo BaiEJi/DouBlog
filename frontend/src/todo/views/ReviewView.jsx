@@ -66,13 +66,13 @@ export default function ReviewView({ toast }) {
           <Empty text="加载中…" />
         ) : (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <StatTile title="创建" value={daily?.created ?? 0} suffix="项" />
               <StatTile title="完成" value={daily?.completed ?? 0} suffix="项" />
               <StatTile title="完成率" value={rateText} />
               <StatTile title="迁入" value={daily?.migrated_in ?? 0} suffix="项" />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div className="grid grid-cols-2 gap-6 mt-6">
               <div>
                 <div className="text-sm font-semibold mb-3">当日完成（{completedList.length}）</div>
                 {completedList.length === 0 ? (
@@ -120,13 +120,13 @@ export default function ReviewView({ toast }) {
             <input type="date" value={to} onChange={e => e.target.value && setTo(e.target.value)} className={dateInput} />
           </div>
         }>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6 items-start">
+        <div className="grid grid-cols-4 gap-6 items-start">
           <div className="flex flex-col gap-3">
             <StatTile title="总创建" value={rangeStats?.totals.created ?? 0} suffix="项" />
             <StatTile title="总完成" value={rangeStats?.totals.completed ?? 0} suffix="项" />
             <StatTile title="总迁入" value={rangeStats?.totals.migrated ?? 0} suffix="项" />
           </div>
-          <div className="md:col-span-3">
+          <div className="col-span-3">
             <GroupedBars data={weekData}
               a={{ label: '创建', color: '#a8a29e' }}
               b={{ label: '完成', color: '#6366f1' }} />

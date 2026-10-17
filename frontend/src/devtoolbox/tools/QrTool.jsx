@@ -50,7 +50,7 @@ export default function QrTool() {
         placeholder="输入文本或 URL…" aria-label="二维码内容" />
       <div className="mt-2"><StatusLine ok={!error && !!result} err={error} okText={result ? `生成成功 · 版本 ${result.version} · 纠错 ${result.ecc.toUpperCase()}` : ''} /></div>
       {result && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-2 gap-4 mt-4">
           <div className={card + ' p-5 flex flex-col items-center justify-center gap-3'}>
             <img src={result.png_data_url} alt="二维码预览" className="max-w-56 rounded-lg" />
             <div className="flex gap-2">

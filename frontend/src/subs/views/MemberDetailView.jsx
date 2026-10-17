@@ -88,7 +88,7 @@ function SubscriptionModal({ open, sub, onSubmit, onClose, loading }) {
         </>
       }>
       {err && <div className="mb-3 px-3 py-2 rounded-lg bg-red-500/10 text-red-600 dark:text-red-400 text-[13px] flex items-center">{err}</div>}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field label="会员级别">
           <input className={inputCls} value={form.level} maxLength={50}
             onChange={e => setForm(f => ({ ...f, level: e.target.value }))} placeholder="如: 豪华版、家庭版" />

@@ -68,7 +68,7 @@ export default function JwtTool() {
               {expState.valid ? '● 有效' : '● 已过期'} · {expState.d.toLocaleString()} （{relTime(expState.d, now)}）
             </div>
           )}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+          <div className="grid grid-cols-2 gap-4 mt-3">
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-sm font-semibold">Header</span>

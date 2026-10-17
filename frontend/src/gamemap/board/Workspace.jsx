@@ -633,7 +633,7 @@ export default function Workspace() {
   if (game.isLoading || !chapters.data) {
     // #5 骨架屏：侧栏 + 顶栏 + 画布的形状占位，替代白屏
     return (
-      <div role="status" aria-label="游戏工作区加载中" style={{ height: 'calc(100dvh - 100px)', minHeight: 600, padding: 16, background: 'var(--gm-canvas-bg)' }}>
+      <div role="status" aria-label="游戏工作区加载中" style={{ height: 'calc(100vh - 100px)', minHeight: 600, padding: 16, background: 'var(--gm-canvas-bg)' }}>
         <div style={{ height: 32, borderRadius: 8, background: 'var(--gm-border)', marginBottom: 14, width: '60%', animation: 'gmPulse 1.2s infinite' }} />
         <div style={{ height: 'calc(100% - 60px)', borderRadius: 12, background: 'var(--gm-panel-bg)', animation: 'gmPulse 1.2s infinite' }} />
       </div>
@@ -657,7 +657,7 @@ export default function Workspace() {
   ])
 
   return (
-    <div className="gm-hud gm-workspace" style={{ display: 'flex', height: 'calc(100dvh - 100px)', minHeight: 600, background: 'var(--gm-canvas-bg)' }}>
+    <div className="gm-hud gm-workspace" style={{ display: 'flex', height: 'calc(100vh - 100px)', minHeight: 600, background: 'var(--gm-canvas-bg)' }}>
       {/* 中间工作区 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Toolbar

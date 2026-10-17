@@ -43,7 +43,7 @@ export default function RulesView({ toast, unavailable }) {
       {rows.length === 0 ? (
         <div className="px-5 py-10 text-center text-[13px] text-stone-400">{data == null ? '加载中…' : '无匹配规则'}</div>
       ) : (
-        <div className="max-h-[calc(100dvh-260px)] overflow-y-auto">
+        <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
           <table className="w-full text-sm">
             <tbody className="divide-y divide-black/[0.06] dark:divide-white/[0.06]">
               {rows.map((r, i) => (

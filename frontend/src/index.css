@@ -27,16 +27,12 @@
 
 /* All module pages use the subscription layout's sidebar and content canvas. */
 .module-shell { display: flex; align-items: flex-start; }
-.module-main { min-height: 100dvh; }
+.module-main { min-height: 100vh; }
 .module-nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
 .module-content select { color-scheme: light; }
 .dark .module-content select { color-scheme: dark; }
 .module-content input[type="date"], .module-content input[type="datetime-local"] { color-scheme: light; }
-.dark .module-content input[type="date"], .dark .module-content input[type="datetime-local"] { color-scheme: dark; }
-@media (max-width: 767px) {
-  .module-shell { display: block; }
-  .module-main { min-height: calc(100dvh - 56px); }
-}
+.dark .module-content input[type="date"], .module-content input[type="datetime-local"] { color-scheme: dark; }
 
 @theme {
   --color-background: hsl(var(--background));

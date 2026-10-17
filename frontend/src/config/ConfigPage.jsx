@@ -101,7 +101,7 @@ function DbCard() {
       </div>
 
       {status && (
-        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5 text-sm">
+        <dl className="grid grid-cols-4 gap-3 mb-5 text-sm">
           <div><dt className="text-xs text-stone-500 dark:text-stone-400">文章数</dt>
             <dd className="font-medium text-stone-900 dark:text-stone-100">{status.counts?.posts ?? '-'}</dd></div>
           <div><dt className="text-xs text-stone-500 dark:text-stone-400">审计日志</dt>
@@ -115,7 +115,7 @@ function DbCard() {
 
       <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.06] p-4 mb-4">
         <p className="text-xs font-medium text-stone-500 dark:text-stone-400 mb-3">PostgreSQL 连接参数（切换目标）</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div><label className={LABEL}>主机</label>
             <input className={INPUT} value={pg.host} onChange={e => setPg({ ...pg, host: e.target.value })} /></div>
           <div><label className={LABEL}>端口</label>
@@ -206,8 +206,8 @@ function LoggingCard() {
         </label>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        <div className="sm:col-span-2"><label className={LABEL}>服务地址</label>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="col-span-2"><label className={LABEL}>服务地址</label>
           <input className={INPUT} value={cfg.url} placeholder="http://127.0.0.1:60100/api/v1/logs"
             onChange={e => setCfg({ ...cfg, url: e.target.value })} /></div>
         <div><label className={LABEL}>外发最低级别</label>
@@ -285,7 +285,7 @@ function AccountCard() {
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <label className="block">
           <span className={LABEL}>新用户名（留空不改，3-64 位字母数字_-）</span>
           <input className={INPUT} value={form.username} placeholder={cur?.username || 'admin'}
@@ -319,7 +319,7 @@ export default function ConfigPage() {
       <PageHeader title="系统配置" subtitle="数据库一键切换 · 日志上报"  />
 
 
-      <main className="w-full max-w-full mx-auto p-0 grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
+      <main className="w-full max-w-full mx-auto p-0 grid grid-cols-2 gap-6 items-start">
         <DbCard />
         <LoggingCard />
         <AccountCard />

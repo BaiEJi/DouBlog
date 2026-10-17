@@ -50,7 +50,7 @@ export default function ColorTool() {
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-2 gap-4 mt-4">
             <div className={card + ' p-4'}>
               <p className="text-sm font-semibold mb-3">WCAG 对比度</p>
               <div className="space-y-2">

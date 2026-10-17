@@ -294,9 +294,9 @@ export default function LifePlansView({ toast, dark }) {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 items-start">
+    <div className="flex flex-row gap-4 items-start">
       {/* 左：总览侧栏 */}
-      <div className="w-full lg:w-[260px] shrink-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
+      <div className="w-[260px] shrink-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-semibold">计划（{plans?.length ?? 0}）</span>
           <button onClick={() => { setEditing(null); setFormOpen(true) }} className={btn.miniPrimary}>
@@ -400,7 +400,7 @@ export default function LifePlansView({ toast, dark }) {
                 <h3 className="text-sm font-semibold">总体看板</h3>
                 <button onClick={load} className={btn.mini}>↻ 刷新</button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="grid grid-cols-3 gap-5">
                 <Bucket title={`历史待完成（${todoHistory.length}）`} tone="text-orange-600 dark:text-orange-400" list={todoHistory} note="没有欠账" />
                 <Bucket title={`历史已完成（${doneHistory.length}）`} tone="text-emerald-600 dark:text-emerald-400" list={doneHistory} strike note="还没有完成记录" />
                 <Bucket title={`未来（${future.length}）`} tone="" list={future} note="没有未来的安排" />
