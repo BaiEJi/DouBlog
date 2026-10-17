@@ -43,7 +43,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
 ├── shared/                         # 公共层
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
-│   ├── ModuleShell.jsx             # 全模块公共侧栏（220px 常驻 sticky）、递归多级菜单、统一内容画布
+│   ├── ModuleShell.jsx             # 全模块公共侧栏（220px 常驻 sticky）、递归多级菜单（分区作用域：带 to 的顶层 tab 其 children 仅在激活分区展示/匹配，防跨分区 key 重名串扰与误点）、统一内容画布
 │   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用

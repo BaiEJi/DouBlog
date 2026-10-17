@@ -49,8 +49,8 @@ const ACCENTS = {
   orange: 'bg-orange-500/12 text-orange-700 dark:text-orange-400',
 }
 
-function containsActive(items, activeKey) {
-  return items?.some(item => (item.active ?? item.key === activeKey) || containsActive(item.children, activeKey))
+function containsActive(items, activeKey, keyMatch = true) {
+  return keyMatch && items?.some(item => (item.active ?? item.key === activeKey) || containsActive(item.children, activeKey))
 }
 
 /** 把页面经 useModuleNavigation 注册的动态徽标（badges: {key: n}）合并进静态菜单树。 */
@@ -62,11 +62,31 @@ function applyBadges(items, badges) {
   })
 }
 
-function NavItem({ item, activeKey, onSelect, accent, depth = 0 }) {
-  const selected = item.active ?? item.key === activeKey
-  const hasSelectedChild = containsActive(item.children, activeKey)
+/** 当前激活分区：`to` 是 pathname 前缀（最长者胜）的顶层项；无匹配返回 null。 */
+function findActiveSection(items, pathname) {
+  let best = null
+  for (const it of items) {
+    if (!it.to) continue
+    if (pathname === it.to || pathname.startsWith(`${it.to}/`)) {
+      if (!best || it.to.length > best.to.length) best = it
+    }
+  }
+  return best
+}
+
+function NavItem({ item, activeKey, onSelect, accent, depth = 0, keyMatch = true, activeSection = null }) {
+  // 顶层分区项（带 to，如 blog 模块的 资产库/日记/书签 三个 tab）：children 只在本分区
+  // 激活时展示并参与 activeKey 匹配——跨分区 child key 重名（三处 stats/trash）不会
+  // 互相误亮，未激活分区的子项也不可点（进入分区由父项 Link 导航，避免把别的分区的
+  // key 发给当前页面的 onSelect）。无 to 的顶层项（其它模块视图按钮）保持原行为。
+  const isSection = depth === 0 && !!item.to
+  const sectionActive = !isSection || item === activeSection
+  const childKeyMatch = keyMatch && sectionActive
+  const selected = keyMatch && (item.active ?? item.key === activeKey)
+  const hasSelectedChild = containsActive(item.children, activeKey, childKeyMatch)
   const [expanded, setExpanded] = useState(true)
   const active = selected || hasSelectedChild
+  const showChildren = item.children?.length > 0 && (!isSection || item === activeSection)
   const cls = `module-nav-item flex items-center gap-2.5 w-full min-h-9 px-2.5 py-2 rounded-xl text-sm text-left transition-colors ${active ? `${ACCENTS[accent] || ACCENTS.slate} font-medium` : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]'}`
   const content = <>{item.icon || <span className="w-4 h-4 shrink-0 flex items-center justify-center" aria-hidden="true">{depth ? '·' : '▦'}</span>}<span className="truncate">{item.label}</span>{item.badge != null && <span className="ml-auto text-[11px] tabular-nums">{item.badge}</span>}</>
   const select = () => (item.onClick || onSelect)?.(item.key)
@@ -75,9 +95,9 @@ function NavItem({ item, activeKey, onSelect, accent, depth = 0 }) {
       <div className="flex items-center gap-0.5">
         {item.to ? <Link to={item.to} className={cls} aria-current={selected ? 'page' : undefined}>{content}</Link>
           : <button type="button" className={cls} aria-current={selected ? 'page' : undefined} onClick={select}>{content}</button>}
-        {item.children?.length > 0 && <button type="button" className="shrink-0 w-7 h-8 rounded-lg text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5" aria-label={`${expanded ? '收起' : '展开'}${item.label}`} aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{expanded ? '⌄' : '›'}</button>}
+        {showChildren && <button type="button" className="shrink-0 w-7 h-8 rounded-lg text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5" aria-label={`${expanded ? '收起' : '展开'}${item.label}`} aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{expanded ? '⌄' : '›'}</button>}
       </div>
-      {item.children?.length > 0 && expanded && <div className="ml-4 pl-2 mt-1 border-l border-black/[0.07] dark:border-white/[0.08] space-y-1">{item.children.map(child => <NavItem key={child.key} {...{ item: child, activeKey, onSelect, accent }} depth={depth + 1} />)}</div>}
+      {showChildren && expanded && <div className="ml-4 pl-2 mt-1 border-l border-black/[0.07] dark:border-white/[0.08] space-y-1">{item.children.map(child => <NavItem key={child.key} {...{ item: child, activeKey, onSelect, accent, activeSection }} depth={depth + 1} keyMatch={childKeyMatch} />)}</div>}
     </div>
   )
 }
@@ -91,13 +111,14 @@ export default function ModuleShell({ module, dark, setDark, children }) {
     ? applyBadges(config.items || [{ key: module, label: config.title }], navigation.badges)
     : (config.items || [{ key: module, label: config.title }])
   const activeKey = config.activeKey || items.find(item => item.to === pathname)?.key || items[0]?.key
+  const activeSection = findActiveSection(items, pathname)
   return (
     <NavigationContext.Provider value={setNavigation}>
       <div className="module-shell min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
         <aside id="module-sidebar" aria-label={`${config.title}导航`} className="module-sidebar flex flex-col gap-1 p-4 w-[220px] shrink-0 border-r border-black/[0.05] dark:border-white/[0.06] bg-stone-50 dark:bg-[#100f0e] sticky left-0 top-0 h-screen z-30 overflow-y-auto">
           <div className="mb-3"><BackButton /></div>
           <div className="px-2 mb-4 font-mono text-base font-semibold">{config.title}</div>
-          <nav aria-label="模块页面" className="space-y-1">{items.map(item => <NavItem key={item.key} {...{ item, activeKey, onSelect: config.onSelect, accent: config.accent }} />)}</nav>
+          <nav aria-label="模块页面" className="space-y-1">{items.map(item => <NavItem key={item.key} {...{ item, activeKey, onSelect: config.onSelect, accent: config.accent, activeSection }} />)}</nav>
           {config.sidebar}
           <div className="mt-auto pt-5 px-2 flex items-center justify-between gap-2"><span className="text-[11px] text-stone-400 dark:text-stone-500">DouBlog</span><button type="button" onClick={setDark} aria-label="切换主题" title="切换主题" className="w-8 h-8 rounded-lg border border-black/[0.08] dark:border-white/[0.1] text-stone-500 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]">{dark ? '☀' : '☾'}</button></div>
         </aside>
