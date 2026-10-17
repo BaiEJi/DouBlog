@@ -119,7 +119,7 @@ backend/
 
 ### 3.3 表名规范与存量迁移（`db.py`，幂等）
 
-**表名规则：`模块名_表名`**（所有模块同库存储）：`blog_posts` / `blog_workspaces` / `blog_audit_logs` / `diary_diaries` / `diary_journals` / `sdklogs_logs` / `sdklogs_alerts`；`vault_*` / `pwsvc_*` / `subs_*` / `apihub_*` 本就合规。
+**表名规则：`模块名_表名`**（所有模块同库存储）：`blog_posts` / `blog_workspaces` / `blog_audit_logs` / `diary_diaries` / `diary_journals` / `sdklogs_logs` / `sdklogs_alerts` / `system_accounts` / `system_home_groups` / `system_home_cards`；`vault_*` / `pwsvc_*` / `subs_*` / `apihub_*` 本就合规。
 
 - `init_db` 启动顺序：**存量表 RENAME（必须先于 create_all，否则 create_all 先建空新表导致 RENAME 永不触发）** → `create_all` → 逐模块 `ensure_migrations(engine)` 列级钩子 → 播种虚拟根
 - RENAME 条件：旧表存在且新表不存在 → `ALTER TABLE 旧 RENAME TO 新`（SQLite/PG 同语法；旧索引随表改名保留，功能等价）
@@ -144,6 +144,10 @@ backend/
 **跨库一致性**：模型层 `_iso()` 把时间戳统一为无时区偏移的本地时间字符串（SQLite naive 与 PG timestamptz 归一）。
 
 > `migrate_children_order.py` 是旧库迁移脚本；新库自动播种虚拟根，无需手动运行。
+
+### 3.6 门户工作台布局（`app/system/home.py`，前缀 `/api/home`，2026-10-17）
+
+门户 `/` 卡片布局（分组 / 顺序 / 标题描述覆盖）持久化：`system_home_groups`（name + position 组间顺序）+ `system_home_cards`（key 模块标识主键 / group_id / position / title/desc **覆盖**，null = 前端内置默认）。`GET/PUT/DELETE /api/home/layout`，PUT 整体替换（全删全插一个事务，无 DB 级 FK——SQLite 连接未开 foreign_keys，两后端行为靠应用层对齐）。契约与示例见 api.md 6.5 节，模块细节见 docs/modules/system.md。
 
 ## 4. 树形结构设计
 

@@ -13,7 +13,7 @@
 - [3. 知识库 API](#3-知识库-api)
 - [4. 文章 API](#4-文章-api)
 - [5. 操作日志 API](#5-操作日志-api)
-- [6. 管理 API（数据库切换）](#6-管理-api数据库切换)
+- [6. 管理 API（数据库切换 / 门户布局）](#6-管理-api数据库切换--门户布局)
 - [7. 图片 API](#7-图片-api)
 - [8. 最近浏览 / 反链 / 导出 API](#8-最近浏览--反链--导出-api)
 - [9. 日记 API](#9-日记-apiblog-模块子域memos--day-one-超集)
@@ -394,7 +394,7 @@ GET /api/posts/audit-logs?page=1&page_size=20
 
 ---
 
-## 6. 管理 API（数据库切换）
+## 6. 管理 API（数据库切换 / 门户布局）
 
 后端支持 SQLite / PostgreSQL 双数据库，以下接口完成"测试连接 → 切换"。前端总配置页（`/config`）是本组接口的统一操作界面。
 
@@ -472,6 +472,42 @@ PUT /api/admin/account
 ```
 
 注意：已签发的会话 Cookie（HMAC，30 天）不因改密失效——需要踢出已登录设备时改用户名。
+
+### 6.5 门户工作台布局（system_home_* 表，2026-10-17）
+
+> 门户 `/` 各模块卡片的**分组 / 顺序 / 标题描述自定义覆盖**全量持久化在库
+> （`system_home_groups` 分组 + `system_home_cards` 卡片；此前仅存 localStorage，
+> 现服务端为唯一事实源，localStorage 只作首屏缓存）。`title/desc` 为 null 表示
+> 沿用前端内置默认文案；`key` 是模块标识（`blog`/`diary`/…，前端 `systems.jsx` 单源），
+> 服务端只校验格式（小写字母开头，字母数字`_-`），新增模块无需后端同步。
+
+```
+GET /api/home/layout
+→ { "groups": [ { "id": 1, "name": "常用",
+      "cards": [ { "key": "blog", "title": "我的知识库", "desc": null }, … ] }, … ] }
+# 空库（未自定义过）→ { "groups": [] }，前端渲染内置默认单组
+
+PUT /api/home/layout     # 整体替换（全删全插一个事务）；分组 id 由服务端重新分配
+{ "groups": [ { "name": "常用", "cards": [ { "key": "blog", "title": "我的知识库", "desc": "…" } ] } ] }
+→ 200 返回规整后的布局（同 GET 数据形状，带 id）
+# 400：groups 非空数组 / 分组缺名 / key 非法或跨组重复 / 超 len 上限
+#      （分组 ≤20、每组卡 ≤60、名 ≤64、标题 ≤120、描述 ≤300 字符；空串=清覆盖回默认）
+
+DELETE /api/home/layout
+→ 200 { "groups": [] }   # 清空布局（恢复默认分组与默认文案）
+```
+
+实测（curl，端口 60100）：
+
+```
+$ curl -u admin:*** -X PUT localhost:60100/api/home/layout -H 'Content-Type: application/json' \
+    -d '{"groups":[{"name":"日常","cards":[{"key":"blog","title":"我的知识库","desc":"文章与双链"},{"key":"diary"}]}]}'
+{"success":true,"code":200,"message":"操作成功","data":{"groups":[{"id":1,"name":"日常",
+ "cards":[{"key":"blog","title":"我的知识库","desc":"文章与双链"},{"key":"diary","title":null,"desc":null}]}]}}
+
+$ curl -u admin:*** -X DELETE localhost:60100/api/home/layout
+{"success":true,"code":200,"message":"已恢复默认布局","data":{"groups":[]}}
+```
 
 ## 7. 图片 API
 

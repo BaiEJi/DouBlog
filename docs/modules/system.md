@@ -31,6 +31,7 @@
 | **统一登录与认证** | `POST /api/auth/login`（JSON 或 Basic 头）→ HttpOnly 会话 Cookie `doublog_session`（HMAC-SHA256 签名，30 天）；`require_basic` 依赖 = **Cookie 优先、Basic 兼容**双通道；`POST /api/auth/logout` 清除会话；前端 `/login` 页 + AuthGate 守卫 + 401 兜底重定向 |
 | **数据库后端一键切换** | `GET/POST /api/admin/database(/test|/switch)`：SQLite ↔ PostgreSQL **只换连接不迁移数据**，空库自动建表播种，PG 库不存在自动创建，429 防并发切换，dev 模式戳文件触发 uvicorn 重载 |
 | **日志上报配置** | `GET/PUT/POST /api/admin/logging(/test)`：各模块 lizysdk 日志外发开关/地址/级别，PUT 即时重装配日志管道；配置落 `data/logs_config.json` |
+| **门户布局持久化** | `GET/PUT/DELETE /api/home/layout`：门户卡片分组/顺序/标题描述覆盖全量落库（system_home_groups + system_home_cards；2026-10-17 前仅 localStorage） |
 | **响应信封** | `shared/response.py::api_response`——全站统一 `{success, code, message, data}` JSONResponse（中文不转义） |
 | **SDK 并发池注册表** | `shared/pools.py`：`DB_POOL`（doublog-db，16 worker）+ `get_pool(module)` 模块命名池缓存；全站禁止裸 `ThreadPoolExecutor` |
 | **时间戳** | `shared/timestamps.py::_iso/_utcnow`：SQLite（naive）与 PG（timestamptz 带偏移）双后端输出一致的序列化 |
@@ -127,6 +128,32 @@ CORSMiddleware(
 | `PUT /api/admin/logging` | 部分更新 `enabled`（必须 bool）/`url`（http(s):// 开头）/`level`（仅 INFO/WARNING）；非法 400。保存落 `data/logs_config.json` 后**立即调 `setup_logging_for_app()` 重装配 lizysdk 管道**（幂等），即时生效 |
 | `POST /api/admin/logging/test` | 发一条 WARNING 测试日志（`mod_logger('system')`，sys_name=doublog.system），返回 `{marker}`，到 `/logs` 页搜索 marker 验证链路 |
 
+### 门户工作台布局（`system/home.py`，前缀 `/api/home`，挂 require_basic，2026-10-17）
+
+门户 `/` 各模块卡片的**分组 / 顺序 / 标题描述自定义覆盖**全量持久化（此前仅 localStorage）：
+
+- **表**：`system_home_groups`（id/name/position/updated_at——组间顺序）+
+  `system_home_cards`（key 主键/group_id/position/title/desc/updated_at——归组 +
+  组内顺序 + 文案覆盖）。`title/desc` 为 **null = 沿用前端内置默认文案**（内置文案
+  升级可向前传播；"恢复默认文案"= 清覆盖不动分组）；`key` 是模块标识
+  （`blog`/`diary`/…，前端 `portal/systems.jsx` 单源），服务端只校验格式
+  （`^[a-z][a-z0-9_-]{0,39}$`），新增模块无需后端同步——前端对未知 key 滤除、
+  缺失模块自动补到末组
+- **端点**：`GET /api/home/layout`（空库 → `groups: []`，前端渲染内置默认单组）；
+  `PUT /api/home/layout` **整体替换**（全删全插一个事务，分组 id 重新自增分配；
+  单用户低频操作，无并发顾虑）；`DELETE /api/home/layout` 清空（恢复默认）。
+  校验 400：groups 非空数组（≤20 组、每组 ≤60 卡）、分组名必填 ≤64、key 非法或
+  **跨组重复**、标题 ≤120 / 描述 ≤300（strip 后空串 = null 清覆盖）
+- **无 DB 级外键**：group_id 不建 FK（SQLite 连接未开 PRAGMA foreign_keys，两后端
+  行为对齐靠应用层事务内先删卡后删组）
+- **前端**（`portal/`）：卡片 hover 出铅笔按钮 → `CardEditModal`（标题/描述输入，
+  placeholder = 内置默认；「恢复默认文案」清覆盖；Esc 捕获阶段 stopPropagation 叠层
+  隔离）；每次布局变更（拖拽/建组/改名/删组/编辑文案）乐观提交——本地 setState +
+  localStorage 首屏缓存（`doublog_portal_layout_v2`）+ PUT 服务端；失败顶部红条提示
+  （5s 自动消失，不回滚）。**服务端为唯一事实源**：挂载后 GET 覆盖本地（用户未动过
+  时）；服务端为空且本地有**非默认**布局（含旧 `doublog_portal_layout` /
+  `doublog_portal_order`，路由剥斜杠转 key）时一次性迁移上存
+
 ---
 
 ## 4. shared 层逐文件 + db.py + main.py
@@ -144,7 +171,7 @@ CORSMiddleware(
 lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', workers=16)`（run_db 专用）；`get_pool(module, workers=None)` 首建缓存（`doublog-<module>` 命名）；`shutdown_pools()` 幂等回收。结构性单写者/调度线程保留 threading，执行体经池。
 
 ### shared/modules.py
-- `MODULE_BY_PREFIX`：路径前缀 → 模块（`/api/subs` subs、`/api/diary` diary、`/api/vault` vault、`/api/pwsvc` pwsvc、`/api/v1` sdklogs、`/api/admin` system、`/api/apihub` apihub、`/api/todo` todo、`/api/confcenter` confcenter、`/api/auth` **shared**、`/api/workspaces|posts|images|export` blog）；未命中 → main
+- `MODULE_BY_PREFIX`：路径前缀 → 模块（`/api/subs` subs、`/api/diary` diary、`/api/vault` vault、`/api/pwsvc` pwsvc、`/api/v1` sdklogs、`/api/admin` 与 `/api/home` system、`/api/apihub` apihub、`/api/todo` todo、`/api/confcenter` confcenter、`/api/auth` **shared**、`/api/workspaces|posts|images|export` blog）；未命中 → main
 - `ALL_MODULES`（含 shared/main 共 12 个，管理页下拉数据源）、`MODULES_WITH_DB`（9 个，init_db 调其 `ensure_migrations`）
 - `sys_name_for(m)` = `doublog.<m>`；`mod_logger(module)` 返回 `_SysNameAdapter`——**显式持有模块名**注入 `extra.sys_name`（用 logger 名拼前缀会得 `doublog.doublog.x` 双前缀，禁止）
 - 日志上报配置：`load_logs_config/save_logs_config`（文件 > 环境默认，`data/logs_config.json`，线程锁保护写）
@@ -192,8 +219,8 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`、`/confcenter`、`/todo/*`
 - 全局行为：ScrollToTop（锚点除外）、代码块复制按钮事件委托（clipboard API + execCommand 降级）
 
-### PortalPage（`/`，`portal/PortalPage.jsx`）
-15 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/书签/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/Clash 代理/开发者工具箱），桌面 `grid-cols-6`；“管理”卡片已删除，历史 localStorage 分组会过滤旧卡片，同时保留分组名称及其他卡片顺序。卡片分组布局可自定义（默认单组全卡）；头部“工作台”标题 + 主题切换 + 登出按钮（logout 后跳 `/login`）。
+### PortalPage（`/`，`portal/PortalPage.jsx` + `portal/systems.jsx` + `portal/api.js` + `portal/CardEditModal.jsx`）
+15 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/书签/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/Clash 代理/开发者工具箱），桌面 `grid-cols-6`；"管理"卡片已删除，历史 localStorage 分组会过滤旧卡片，同时保留分组名称及其他卡片顺序。卡片分组布局可自定义（默认单组全卡）：跨组/组内拖拽排序（dnd-kit 多容器 + DragOverlay 悬浮克隆）、分组新建/双击重命名/删除（卡片并入相邻组）；**卡片标题与描述可编辑**（hover 铅笔按钮 → 弹窗，空 = 内置默认文案）；布局与文案覆盖**持久化在服务端**（/api/home/layout，见第 3 节；localStorage `doublog_portal_layout_v2` 仅首屏缓存，旧 key 自动迁移上存）；头部"工作台"标题 + 恢复默认布局 + 主题切换 + 登出按钮（logout 后跳 `/login`）。`systems.jsx` 是卡片定义单源（key/to/默认文案/配色/图标）。
 
 ### client.js（Cookie 化）
 `API_BASE = http://{hostname}:60100`（后端地址全项目唯一持有处）；`apiFetch`：自动 Content-Type（FormData 除外）、`credentials:'include'`、401 统一重定向 `/login?next=`（登录接口与 /login 页排除，防环）。**不含任何凭据/btoa**。
@@ -210,11 +237,19 @@ lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', worke
 - 日志上报 1：GET 默认 → PUT 改三项（落盘 + 重读）→ 非法值 400 ×3 → test 发送返回 marker
 - 辅助：`_prod_semantics`（debug=False 对齐非 reloader 语义）、`_ensure_count_tables`（blog 未迁移中间态护栏）、`_has_blog_routes`（FastAPI 惰性 _IncludedRouter 展开探针）
 
+### tests/system/test_home.py（8 例，2026-10-17）
+- 空库默认：GET → `groups: []`
+- PUT 往返：分组 id 服务端分配、文案 strip 保留、无覆盖/空串 → null；GET 读回一致
+- 整体替换：第二次 PUT 后旧组旧卡无残留；DELETE 重置；未认证 401 ×3
+- 校验拒绝 11 组用例（空体/空数组/缺名/cards 非数组/key 大写或带斜杠/跨组重复/名称·标题·描述超长/分组超 20）
+- 重启持久化：新 app 实例后布局仍在（库持久化非进程态）
+- 真实 PG 往返（pgserver 可选）：切换 → PG 上建表 → PUT/GET → 再起新 app 仍在，且 `system_home_groups`/`system_home_cards` 确在 PG 表清单中
+
 ### tests/shared/（14 例）
 - **test_auth.py（11 例）**：Basic 通道 5（登录成功/无凭据 401/错误凭据 401/check 成功/check 401）+ 会话 6（JSON 登录签发 HttpOnly Cookie；Cookie 登录一次后受保护端点免 Basic；JSON 错误凭据 401 且无 Set-Cookie；logout 清除后 check 401；**篡改令牌 401 且 Basic 通道不受影响**；Basic 兼容通道与既有测试共存）
 - **test_logging_integration.py（3 例）**：AppError 异常信封（sdklogs 摄入非法 JSON→400 PARAM_INVALID；token 错→401 CREDENTIALS_ERROR）；自摄回灌（uvicorn 线程伺服本 app 真实 HTTP，WARNING 10s 内可查且 sys_name=doublog、本地文件同步落盘）；no_remote 闸门（摄入路径错误落盘但 /logs 搜不到）
 
-> 本模块域合计 23 例；后端全量当前 429 例（collect-only 实测；AGENTS.md 常用命令注释写 367 已过时，属跨模块文档同步问题）。
+> 本模块域合计 31 例；后端全量当前 437 例（collect-only 实测；AGENTS.md 常用命令注释写 367 已过时，属跨模块文档同步问题）。
 
 ---
 

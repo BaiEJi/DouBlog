@@ -21,6 +21,7 @@ MODULE_BY_PREFIX = (
     ('/api/pwsvc', 'pwsvc'),
     ('/api/v1', 'sdklogs'),
     ('/api/admin', 'system'),
+    ('/api/home', 'system'),
     ('/api/apihub', 'apihub'),
     ('/api/todo', 'todo'),
     ('/api/gamemap', 'gamemap'),

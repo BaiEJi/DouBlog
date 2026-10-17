@@ -1,14 +1,17 @@
 /**
  * 统一入口（门户）页 `/`：各系统卡片按**自定义分组**展示——
  * - 每个模块卡片可拖入任意分组（跨组拖拽 / 组内拖拽排序，dnd-kit 多容器）
- * - 分组本身可拖拽排序（拖组头把手）
- * - 分组可新建 / 重命名（双击组名）/ 删除（卡片并入相邻组，至少保留一组）
- * - 布局持久化 localStorage（doublog_portal_layout = [{id,name,cards:[to...]}]）；
- *   旧 doublog_portal_order（平铺序）自动迁移为单组；新增模块自动追加到末组
- * - 头部「恢复默认」清空布局回默认单组
- * 触屏：长按 180ms 激活拖拽；拖完 120ms 内吞 click 防误跳转。
+ * - 分组本身可拖拽排序（拖组头把手）；分组可新建 / 重命名（双击组名）/ 删除
+ * - 卡片标题与描述可编辑（hover 铅笔按钮 → 弹窗；空 = 用内置默认文案）
+ * - 布局（分组 / 顺序 / 文案覆盖）全量持久化在服务端 system 模块表
+ *   （system_home_groups / system_home_cards，GET/PUT/DELETE /api/home/layout）；
+ *   localStorage 仅作首屏缓存（doublog_portal_layout_v2），服务端为唯一事实源；
+ *   旧 doublog_portal_layout（分组）/ doublog_portal_order（平铺序）在服务端
+ *   为空时自动一次性迁移上存
+ * - 头部「恢复默认」清空服务端布局回默认单组
+ * 鼠标：拖动 6px 激活；拖完 120ms 内吞 click 防误跳转。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor,
@@ -21,6 +24,9 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { API_BASE } from '../shared/client'
 import { clashAvailability } from '../clash/api'
+import { SYSTEMS, SYS_BY_KEY } from './systems'
+import { fetchHomeLayout, saveHomeLayout, resetHomeLayout } from './api'
+import CardEditModal from './CardEditModal'
 
 function logout() {
   fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' })
@@ -34,242 +40,143 @@ const CARD = 'group text-left p-6 rounded-3xl border transition-all duration-200
 
 const ICON_BOX = 'w-11 h-11 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-105'
 
-const SYSTEMS = [
-  {
-    to: '/blog',
-    title: '博客 · 知识库',
-    desc: '树形文章、双链、知识库 · 资产 · 日记 · 书签',
-    box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M4 3.5A1.5 1.5 0 0 1 5.5 2H15a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5.5A1.5 1.5 0 0 1 4 16.5v-13Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M7 6h6M7 9.5h6M7 13h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/gamemap',
-    title: '剧情图谱',
-    desc: '游戏人物关系画布 · 剧情时间线 · 图鉴',
-    box: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <circle cx="5.5" cy="5" r="2" stroke="currentColor" strokeWidth="1.4" />
-        <circle cx="14.5" cy="7" r="2" stroke="currentColor" strokeWidth="1.4" />
-        <circle cx="9" cy="15" r="2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M7.2 6.1 12.6 6.7M13.6 8.9 10.4 13.2M6.9 6.9 8.4 13.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/todo',
-    title: '待办 · 四象限',
-    desc: 'MyTodo 迁入 · 今日看板 · 规律生活计划',
-    box: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <rect x="3" y="3" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M3 7.5h14M7.5 3v14" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M6 11l1.6 1.6L10.8 9.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/practice',
-    title: '刷题 · 算法练习',
-    desc: 'LeetCode / 洛谷 · 题解与代码 · 艾宾浩斯复习',
-    box: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M7 4.5 3 10l4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M13 4.5 17 10l-4 5.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/steamidler',
-    title: 'Steam 挂机',
-    desc: '账号挂机 · 时长统计 · 运行日志',
-    box: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M6.8 6h6.4A3.3 3.3 0 0 1 16.5 9.3v1.2a3 3 0 0 1-5.3 1.9l-.5-.6H9.3l-.5.6a3 3 0 0 1-5.3-1.9V9.3A3.3 3.3 0 0 1 6.8 6z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M6.9 9v2.6M5.6 10.3h2.6M12.9 9.6h.01M14.2 11h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/subs',
-    title: '订阅管理',
-    desc: '会员订阅 · 支出统计 · 到期日历',
-    box: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M3.2 6.5l3.3 3.3L10 5l3.5 4.8 3.3-3.3-1 8.5H4.2l-1-8.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/vault',
-    title: '密码库',
-    desc: '零知识端到端加密 · 密码服务 · 安全中心',
-    box: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M10 2l6 2.4v4.5c0 3.9-2.6 7.2-6 8.6-3.4-1.4-6-4.7-6-8.6V4.4L10 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <circle cx="10" cy="9" r="2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M10 11v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/apihub',
-    title: 'API Hub',
-    desc: '异构 API 聚合 · 平台令牌 · 多级限流 · 一键探活',
-    box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M10 2.5v3M10 14.5v3M2.5 10h3M14.5 10h3M4.8 4.8l2.1 2.1M13.1 13.1l2.1 2.1M15.2 4.8l-2.1 2.1M6.9 13.1l-2.1 2.1" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/config',
-    title: '系统配置',
-    desc: '数据库一键切换（SQLite/PG）· 日志上报',
-    box: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M4 6.5h8M14 6.5h2M4 13.5h2M8 13.5h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        <circle cx="13" cy="6.5" r="1.8" stroke="currentColor" strokeWidth="1.4" />
-        <circle cx="7" cy="13.5" r="1.8" stroke="currentColor" strokeWidth="1.4" />
-      </svg>
-    ),
-  },
-  {
-    to: '/confcenter',
-    title: '配置中心',
-    desc: 'namespace → key → value · Redis 缓存',
-    box: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <ellipse cx="10" cy="4.8" rx="6" ry="2.3" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M4 4.8v10.4c0 1.27 2.69 2.3 6 2.3s6-1.03 6-2.3V4.8" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M4 10c0 1.27 2.69 2.3 6 2.3s6-1.03 6-2.3" stroke="currentColor" strokeWidth="1.4" />
-      </svg>
-    ),
-  },
-  {
-    to: '/logs',
-    title: '日志查询',
-    desc: 'lizysdk 接收端 · 检索与统计',
-    box: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M3 5h14v10H3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="M5.5 8l2 2-2 2M9.5 12h4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/clash',
-    title: 'Clash 代理',
-    desc: 'clashctl Web 化 · 内核启停 · 订阅 · Tun',
-    box: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M3 10h14M10 3c2.5 2 2.5 12 0 14M10 3c-2.5 2-2.5 12 0 14" stroke="currentColor" strokeWidth="1.4" />
-      </svg>
-    ),
-  },
-  {
-    to: '/devtoolbox',
-    title: '开发者工具箱',
-    desc: '31 个工具 · JSON / Diff / 编码 / 哈希 / 正则',
-    box: 'bg-lime-500/10 text-lime-600 dark:text-lime-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M12.8 3.4a2.6 2.6 0 0 1 3.7 3.7l-1.9 1.9-3.7-3.7 1.9-1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="m10.1 6.1-6.5 6.5a2.6 2.6 0 0 0-.7 1.3l-.5 2.7 2.7-.5a2.6 2.6 0 0 0 1.3-.7l6.5-6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="m9 11 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-]
+const PENCIL = (
+  <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none">
+    <path d="M12.8 3.4a2.6 2.6 0 0 1 3.7 3.7l-1.9 1.9-3.7-3.7 1.9-1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    <path d="m10.1 6.1-6.5 6.5a2.6 2.6 0 0 0-.7 1.3l-.5 2.7 2.7-.5a2.6 2.6 0 0 0 1.3-.7l6.5-6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
 
-// ─── 分组布局持久化（localStorage 存 [{id,name,cards:[to...]}]）──
+// ─── 布局读取与规整（服务端为事实源，localStorage 仅首屏缓存）──
 
-/** 按 to 找系统定义 */
-const SYS_BY_TO = Object.fromEntries(SYSTEMS.map(s => [s.to, s]))
-
-const LAYOUT_KEY = 'doublog_portal_layout'
+const LAYOUT_KEY = 'doublog_portal_layout_v2'
+const LEGACY_LAYOUT_KEY = 'doublog_portal_layout'
 const LEGACY_ORDER_KEY = 'doublog_portal_order'
 const DEFAULT_GROUP_NAME = '常用'
 
 const gid = () => 'g_' + Math.random().toString(36).slice(2, 9)
 
+const defaultGroups = () => [{ id: gid(), name: DEFAULT_GROUP_NAME, cards: SYSTEMS.map(s => s.key) }]
+
+function writeCache(groups, overrides) {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ groups: groups.map(g => ({ id: g.id, name: g.name, cards: g.cards })), overrides }))
+  } catch { /* 存储禁用时仅本次会话生效 */ }
+}
+
+function clearCache() {
+  try {
+    localStorage.removeItem(LAYOUT_KEY)
+    localStorage.removeItem(LEGACY_LAYOUT_KEY)
+    localStorage.removeItem(LEGACY_ORDER_KEY)
+  } catch { /* 同上 */ }
+}
+
+/** 首屏缓存（v2）；损坏回退 null（走默认 + 服务器同步） */
+function readCached() {
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed?.groups) && parsed.groups.length
+      && parsed.groups.every(g => g && typeof g.name === 'string' && Array.isArray(g.cards))
+      && typeof parsed.overrides === 'object' && parsed.overrides) {
+      return { groups: parsed.groups.map(g => ({ id: g.id || gid(), name: g.name, cards: g.cards })), overrides: parsed.overrides }
+    }
+  } catch { /* 损坏 → 回退 */ }
+  return null
+}
+
+/** 旧版 localStorage 布局（卡片存的是路由 '/blog'，剥斜杠转模块标识）；无则 null */
+function readLegacyGroups() {
+  try {
+    const raw = localStorage.getItem(LEGACY_LAYOUT_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length && parsed.every(g => g && typeof g.name === 'string' && Array.isArray(g.cards))) {
+        return parsed.map(g => ({ id: g.id || gid(), name: g.name, cards: g.cards.map(t => t.replace(/^\//, '')) }))
+      }
+    }
+    const orderRaw = localStorage.getItem(LEGACY_ORDER_KEY)
+    if (orderRaw) {
+      const arr = JSON.parse(orderRaw)
+      if (Array.isArray(arr) && arr.length) {
+        return [{ id: gid(), name: DEFAULT_GROUP_NAME, cards: arr.map(t => t.replace(/^\//, '')) }]
+      }
+    }
+  } catch { /* 损坏 → 回退 */ }
+  return null
+}
+
+/**
+ * 布局自愈规整：过滤未知卡（服务端可能存有已下线模块）、跨组重复卡去重、
+ * 新增模块（未出现在任何组）追加到末组；覆盖表收敛到布局内的卡。
+ */
+function normalize(groups, overrides) {
+  const seen = new Set()
+  // 未知卡（服务端存有已下线模块）滤除；跨组重复卡只保留首次出现；空组保留待拖入
+  const healed = groups.map(g => ({ ...g, cards: g.cards.filter(k => SYS_BY_KEY[k] && !seen.has(k) && seen.add(k)) }))
+  for (const s of SYSTEMS) {
+    if (!seen.has(s.key)) healed[healed.length - 1]?.cards.push(s.key)
+  }
+  const keys = new Set(healed.flatMap(g => g.cards))
+  const ov = Object.fromEntries(Object.entries(overrides || {})
+    .filter(([k]) => keys.has(k))
+    .map(([k, v]) => [k, { title: v?.title || null, desc: v?.desc || null }]))
+  return { groups: healed, overrides: ov }
+}
+
+/** 是否等价于"出厂默认"（单组 / 默认名 / 全卡原序 / 无覆盖）——决定要不要迁移上存 */
+function isDefaultLayout(groups, overrides) {
+  if (groups.length !== 1 || Object.keys(overrides || {}).length) return false
+  const defaults = SYSTEMS.map(s => s.key)
+  return groups[0].name === DEFAULT_GROUP_NAME && JSON.stringify(groups[0].cards) === JSON.stringify(defaults)
+}
+
+/** 服务端布局 → 组件态（cards 只留 key；title/desc 抽成覆盖表） */
+function fromServer(data) {
+  const groups = (data?.groups || []).map(g => ({ id: g.id, name: g.name, cards: (g.cards || []).map(c => c.key) }))
+  const overrides = {}
+  for (const g of data?.groups || []) {
+    for (const c of g.cards || []) {
+      if (c.title || c.desc) overrides[c.key] = { title: c.title || null, desc: c.desc || null }
+    }
+  }
+  return { groups, overrides }
+}
+
+/** 组件态 → PUT 载荷（每卡带覆盖；服务端全删全插） */
+const buildPayload = (groups, overrides) => ({
+  groups: groups.map(g => ({
+    name: g.name,
+    cards: g.cards.map(k => ({
+      key: k,
+      title: overrides[k]?.title ?? null,
+      desc: overrides[k]?.desc ?? null,
+    })),
+  })),
+})
+
 /**
  * 多容器落点判定（修复"拖不进空分组"，2026-10-13）：
  * 先取指针所在矩形（pointerWithin，多个包含时按角距排序——卡片天然排在其所在
  * 大 section 之前），指针不在任何矩形内（页面留白/拖出边界）再回退中心距。
- * 此前 closestCorners 按"指针到四角距离"全局比较——全宽分组 section 的四角
- * 离组中心 600+px，悬停空分组中部时随便一张小卡（角距 ~360px）都会胜出，
- * 导致 over 永远解析成别的卡、跨组拖放落空。
  */
 const portalCollision = args => {
   const within = pointerWithin(args)
   return within.length ? within : closestCenter(args)
 }
 
-/** 读取持久化分组布局；兼容旧平铺顺序 key；跨组重复卡去重自愈；新增模块自动追加到末组；损坏数据回退默认 */
-function readLayout() {
-  let groups = null
-  try {
-    const raw = localStorage.getItem(LAYOUT_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length && parsed.every(g => g && typeof g.name === 'string' && Array.isArray(g.cards))) {
-        groups = parsed.map(g => ({ id: g.id || gid(), name: g.name, cards: g.cards.filter(t => SYS_BY_TO[t]) }))
-      }
-    }
-  } catch { /* 损坏 → 回退 */ }
-  if (!groups) {
-    let order = null
-    try {
-      const raw = localStorage.getItem(LEGACY_ORDER_KEY)
-      if (raw) {
-        const arr = JSON.parse(raw)
-        if (Array.isArray(arr)) order = arr.filter(t => SYS_BY_TO[t])
-      }
-    } catch { /* 同上 */ }
-    const cards = order && order.length
-      ? [...order, ...SYSTEMS.map(s => s.to).filter(t => !order.includes(t))]
-      : SYSTEMS.map(s => s.to)
-    groups = [{ id: gid(), name: DEFAULT_GROUP_NAME, cards }]
-  }
-  // 跨组重复的卡只保留首次出现（历史脏数据自愈，防 React key 冲突）
-  const seen = new Set()
-  groups = groups.map(g => ({ ...g, cards: g.cards.filter(t => !seen.has(t) && seen.add(t)) }))
-  // 新增模块（未出现在任何组）追加到末组
-  for (const s of SYSTEMS) {
-    if (!seen.has(s.to)) groups[groups.length - 1].cards.push(s.to)
-  }
-  return groups
+/** 内置定义 + 文案覆盖 → 展示用卡片定义 */
+const resolveSys = (key, overrides) => {
+  const sys = SYS_BY_KEY[key]
+  const ov = overrides?.[key]
+  return ov ? { ...sys, title: ov.title || sys.title, desc: ov.desc || sys.desc } : sys
 }
 
-function saveLayout(groups) {
-  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(groups.map(g => ({ id: g.id, name: g.name, cards: g.cards })))) }
-  catch { /* 存储禁用时仅本次会话生效 */ }
-}
-
-/** 可排序卡片：拖拽经 DragOverlay 悬浮跟随（原槽位显示虚线占位）；data 标记类型与所属组。
- *  disabled（如本机未装 clashctl）：置灰去饱和、不可进入，但仍可拖拽归置。 */
-function PortalCard({ sys, groupId, guardClick, disabled }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: sys.to, data: { type: 'card', group: groupId } })
-  const inner = (
+/** 卡片正文（槽位卡 / 悬浮克隆共用）：图标 + 标题 + 描述 + 进入提示 */
+function CardBody({ sys, disabled }) {
+  return (
     <>
       <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
       <div className="text-[15px] font-medium mb-1">{sys.title}</div>
@@ -282,14 +189,30 @@ function PortalCard({ sys, groupId, guardClick, disabled }) {
       </div>
     </>
   )
+}
+
+/** 可排序卡片：拖拽经 DragOverlay 悬浮跟随（原槽位显示虚线占位）；data 标记类型与所属组。
+ *  hover 出现铅笔按钮——编辑标题与描述（阻止冒泡，与拖拽/跳转互不干扰）。
+ *  disabled（如本机未装 clashctl）：置灰去饱和、不可进入，但仍可拖拽归置。 */
+function PortalCard({ sys, groupId, guardClick, disabled, onEdit }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: sys.key, data: { type: 'card', group: groupId } })
   return (
     <div
-      ref={setNodeRef} {...attributes} {...listeners} data-card={sys.to}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }}
-      className="relative">
+      ref={setNodeRef} {...attributes} {...listeners} data-card={sys.key}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className="relative group/card">
+      {!isDragging && (
+        <button
+          onClick={e => { e.preventDefault(); e.stopPropagation(); onEdit(sys.key) }}
+          title="编辑标题与描述" aria-label={'编辑 ' + sys.title}
+          className="absolute top-3 right-3 z-10 w-8 h-8 rounded-lg flex items-center justify-center
+            bg-white/90 dark:bg-[#1c1b1a]/90 border border-black/[0.07] dark:border-white/[0.1]
+            text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 shadow-sm
+            opacity-0 group-hover/card:opacity-100 transition-opacity">
+          {PENCIL}
+        </button>
+      )}
       {isDragging ? (
         // 原槽位占位（虚线框保持网格高度，随其他卡归位动画流动）
         <div className="h-full min-h-[150px] rounded-3xl border-2 border-dashed
@@ -298,14 +221,14 @@ function PortalCard({ sys, groupId, guardClick, disabled }) {
         <div className={'flex flex-col h-full p-6 rounded-3xl border cursor-not-allowed select-none ' +
           'border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] ' +
           'opacity-55 grayscale'} title="未安装 clashctl，安装后自动恢复">
-          {inner}
+          <CardBody sys={sys} disabled />
         </div>
       ) : (
         <Link
           to={sys.to}
           onClick={e => { if (guardClick.current) { e.preventDefault(); e.stopPropagation() } }}
           className={'flex flex-col h-full ' + CARD + ' cursor-grab active:cursor-grabbing'}>
-          {inner}
+          <CardBody sys={sys} />
         </Link>
       )}
     </div>
@@ -320,15 +243,13 @@ function OverlayCard({ sys, width, height }) {
       className="flex flex-col text-left p-6 rounded-3xl border rotate-2 scale-[1.04]
         border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-[#1c1b1a]
         shadow-2xl ring-1 ring-black/10 dark:ring-white/20 cursor-grabbing select-none">
-      <div className={ICON_BOX + ' ' + sys.box}>{sys.icon}</div>
-      <div className="text-[15px] font-medium mb-1">{sys.title}</div>
-      <div className="text-[12.5px] text-stone-400 leading-relaxed">{sys.desc}</div>
+      <CardBody sys={sys} />
     </div>
   )
 }
 
 /** 分组区块：组头（拖把手 + 名称双击改名 + 计数 + 删除）+ 组内卡网格（空组显示放置占位） */
-function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisabled }) {
+function GroupSection({ group, total, overrides, onRename, onDelete, guardClick, isCardDisabled, onEditCard }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(group.name)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -390,9 +311,9 @@ function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisa
       <SortableContext items={group.cards} strategy={rectSortingStrategy}>
         {group.cards.length ? (
           <div className="grid grid-cols-6 gap-3.5">
-            {group.cards.map(to => (
-              <PortalCard key={to} sys={SYS_BY_TO[to]} groupId={group.id} guardClick={guardClick}
-                disabled={isCardDisabled?.(to)} />
+            {group.cards.map(key => (
+              <PortalCard key={key} sys={resolveSys(key, overrides)} groupId={group.id} guardClick={guardClick}
+                disabled={isCardDisabled?.(key)} onEdit={onEditCard} />
             ))}
           </div>
         ) : (
@@ -406,13 +327,57 @@ function GroupSection({ group, total, onRename, onDelete, guardClick, isCardDisa
 }
 
 export default function PortalPage({ dark, setDark }) {
-  const [groups, setGroups] = useState(readLayout)
+  // 首屏：localStorage 缓存（v2）→ 旧版布局 → 默认单组；随后 GET 服务端覆盖
+  const initial = useMemo(() => {
+    const cached = readCached()
+    if (cached) return normalize(cached.groups, cached.overrides)
+    const legacy = readLegacyGroups()
+    return legacy ? normalize(legacy, {}) : { groups: defaultGroups(), overrides: {} }
+  }, [])
+  const [groups, setGroups] = useState(initial.groups)
+  const [overrides, setOverrides] = useState(initial.overrides)
+
   // 拖拽结束后的 120ms 内吞掉落在卡片上的 click，防止"拖完误跳转"
   const suppressClick = useRef(false)
   // 拖拽悬浮层：DragOverlay 渲染的克隆卡（含源卡尺寸），松手后经 dropAnimation 归位
   const [activeCard, setActiveCard] = useState(null)
   // clashctl 未安装 → 门户 Clash 卡片置灰（检测失败/后端不可达时不置灰，避免误伤）
   const [clashMissing, setClashMissing] = useState(false)
+  // 卡片编辑弹窗（key = 模块标识）
+  const [editingKey, setEditingKey] = useState(null)
+  // 保存失败提示条（5s 自动消失）
+  const [saveError, setSaveError] = useState(null)
+  const errorTimer = useRef(null)
+  // 服务端同步到达前本地已改过 → 本地为准（下次 PUT 覆盖服务端）
+  const mutated = useRef(false)
+
+  const showError = useCallback((err) => {
+    setSaveError(err?.message || String(err))
+    clearTimeout(errorTimer.current)
+    errorTimer.current = setTimeout(() => setSaveError(null), 5000)
+  }, [])
+
+  // 服务端布局同步：非空则覆盖本地（未动过时）；空则把本地非默认布局一次性迁移上存
+  useEffect(() => {
+    let alive = true
+    fetchHomeLayout()
+      .then(data => {
+        if (!alive) return
+        const server = fromServer(data)
+        if (server.groups.length) {
+          if (mutated.current) return
+          const next = normalize(server.groups, server.overrides)
+          setGroups(next.groups)
+          setOverrides(next.overrides)
+          writeCache(next.groups, next.overrides)
+        } else if (!mutated.current && !isDefaultLayout(initial.groups, initial.overrides)) {
+          saveHomeLayout(buildPayload(initial.groups, initial.overrides)).catch(showError)
+        }
+      })
+      .catch(err => showError(err?.message ? `布局加载失败：${err.message}` : err))
+    return () => { alive = false }
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     let alive = true
     clashAvailability()
@@ -420,14 +385,14 @@ export default function PortalPage({ dark, setDark }) {
       .catch(() => {})
     return () => { alive = false }
   }, [])
-  const isCardDisabled = useCallback(to => to === '/clash' && clashMissing, [clashMissing])
+  const isCardDisabled = useCallback(key => key === 'clash' && clashMissing, [clashMissing])
 
   const onDragStart = useCallback(({ active }) => {
     if (active.data.current?.type !== 'card') return
-    const sys = SYS_BY_TO[active.id]
+    const sys = resolveSys(active.id, overrides)
     const rect = document.querySelector(`[data-card="${active.id}"]`)?.getBoundingClientRect()
     setActiveCard(sys && rect ? { sys, width: Math.round(rect.width), height: Math.round(rect.height) } : sys ? { sys } : null)
-  }, [])
+  }, [overrides])
 
   // 鼠标：拖动 6px 激活
   const sensors = useSensors(
@@ -440,6 +405,15 @@ export default function PortalPage({ dark, setDark }) {
     setTimeout(() => { suppressClick.current = false }, 120)
   }, [])
 
+  /** 乐观提交：更新本地 + 写缓存 + PUT 服务端（失败仅提示，不回滚——单用户低频） */
+  const commit = useCallback((nextGroups, nextOverrides) => {
+    mutated.current = true
+    setGroups(nextGroups)
+    setOverrides(nextOverrides)
+    writeCache(nextGroups, nextOverrides)
+    saveHomeLayout(buildPayload(nextGroups, nextOverrides)).catch(showError)
+  }, [showError])
+
   const handleDragEnd = useCallback(({ active, over }) => {
     endDrag()
     setActiveCard(null)
@@ -447,7 +421,7 @@ export default function PortalPage({ dark, setDark }) {
     const aType = active.data.current?.type
     const oType = over.data.current?.type
     setGroups(prev => {
-      let next = prev
+      let next
       if (aType === 'group') {
         // 组排序：over 为组 → 交换位置；over 为卡 → 移到该卡所在组的位置
         const overGroup = oType === 'group' ? over.id : prev.find(g => g.cards.includes(over.id))?.id
@@ -488,22 +462,22 @@ export default function PortalPage({ dark, setDark }) {
           })
         } else return prev
       } else return prev
-      saveLayout(next)
+      commit(next, overrides)
       return next
     })
-  }, [endDrag])
+  }, [endDrag, overrides, commit])
 
-  const update = next => { saveLayout(next); setGroups(next) }
   const addGroup = () => {
     const id = gid()
-    update([...groups, { id, name: '新分组', cards: [] }])
+    commit([...groups, { id, name: '新分组', cards: [] }], overrides)
     // 新组渲染后平滑滚动到位（长页面时新组在折叠线下，看不见也拖不到）
     setTimeout(() => {
       document.querySelector(`[data-gid="${id}"]`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 60)
   }
-  const renameGroup = (id, name) => update(groups.map(g => g.id === id ? { ...g, name } : g))
+  const renameGroup = (id, name) =>
+    commit(groups.map(g => g.id === id ? { ...g, name } : g), overrides)
   const deleteGroup = id => {
     if (groups.length <= 1) return
     const idx = groups.findIndex(g => g.id === id)
@@ -511,11 +485,20 @@ export default function PortalPage({ dark, setDark }) {
     // 卡片并入相邻组（优先下一组，末组并到上一组）
     const target = groups[idx + 1] || groups[idx - 1]
     const moved = groups[idx].cards
-    update(groups.filter(g => g.id !== id).map(g => g.id === target.id ? { ...g, cards: [...g.cards, ...moved] } : g))
+    commit(groups.filter(g => g.id !== id).map(g => g.id === target.id ? { ...g, cards: [...g.cards, ...moved] } : g), overrides)
+  }
+  const saveCardEdit = (key, { title, desc }) => {
+    const next = { ...overrides }
+    if (title || desc) next[key] = { title: title || null, desc: desc || null }
+    else delete next[key]
+    commit(groups, next)
   }
   const resetLayout = () => {
-    try { localStorage.removeItem(LAYOUT_KEY); localStorage.removeItem(LEGACY_ORDER_KEY) } catch { /* 同上 */ }
-    setGroups([{ id: gid(), name: DEFAULT_GROUP_NAME, cards: SYSTEMS.map(s => s.to) }])
+    mutated.current = true
+    resetHomeLayout().catch(showError)
+    clearCache()
+    setGroups(defaultGroups())
+    setOverrides({})
   }
 
   return (
@@ -526,7 +509,7 @@ export default function PortalPage({ dark, setDark }) {
           <div>
             <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-stone-400 mb-2">DouBlog</p>
             <h1 className="text-[34px] font-semibold tracking-tight">工作台</h1>
-            <p className="mt-2 text-[13px] text-stone-400">个人系统统一入口——卡片可拖入任意分组，组内/组间均可拖拽排序</p>
+            <p className="mt-2 text-[13px] text-stone-400">个人系统统一入口——卡片可拖入任意分组，标题描述可编辑，布局云端保存</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button onClick={resetLayout} title="恢复默认布局" aria-label="恢复默认布局"
@@ -554,6 +537,15 @@ export default function PortalPage({ dark, setDark }) {
           </div>
         </div>
 
+        {saveError && (
+          <div role="alert"
+            onClick={() => setSaveError(null)}
+            className="mb-6 rounded-lg px-3 py-2 text-[13px] text-red-700 dark:text-red-300
+              bg-red-500/10 cursor-pointer">
+            布局保存失败：{saveError}（点击关闭，本地改动仍在）
+          </div>
+        )}
+
         {/* 分组卡片（组间/组内均可拖拽） */}
         <DndContext sensors={sensors} collisionDetection={portalCollision}
           onDragStart={onDragStart}
@@ -562,9 +554,9 @@ export default function PortalPage({ dark, setDark }) {
           <SortableContext items={groups.map(g => g.id)} strategy={rectSortingStrategy}>
             <div className="space-y-8">
               {groups.map(g => (
-                <GroupSection key={g.id} group={g} total={groups.length}
+                <GroupSection key={g.id} group={g} total={groups.length} overrides={overrides}
                   onRename={renameGroup} onDelete={deleteGroup} guardClick={suppressClick}
-                  isCardDisabled={isCardDisabled} />
+                  isCardDisabled={isCardDisabled} onEditCard={setEditingKey} />
               ))}
             </div>
           </SortableContext>
@@ -580,6 +572,14 @@ export default function PortalPage({ dark, setDark }) {
             )}
           </DragOverlay>
         </DndContext>
+
+        {editingKey && SYS_BY_KEY[editingKey] && (
+          <CardEditModal
+            sys={SYS_BY_KEY[editingKey]}
+            override={overrides[editingKey]}
+            onSave={payload => saveCardEdit(editingKey, payload)}
+            onClose={() => setEditingKey(null)} />
+        )}
 
         <p className="mt-8 text-center text-[11.5px] text-stone-400 dark:text-stone-500">
           FastAPI + React · 日志与异常由 LizySDK 驱动

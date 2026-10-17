@@ -49,7 +49,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
 │   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
-├── portal/PortalPage.jsx           # /        统一入口（13 卡含"剧情图谱" /gamemap、"刷题" /practice、"Steam 挂机" /steamidler 直达；dnd 自定义分组布局，localStorage doublog_portal_layout 持久化 + 旧 doublog_portal_order 迁移 + 新模块自动追加末组 + 跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
+├── portal/                         # /        统一入口（13 卡；dnd 自定义分组布局——**布局与卡片标题/描述覆盖全量持久化服务端**（/api/home/layout，system_home_* 表，2026-10-17）：localStorage doublog_portal_layout_v2 仅首屏缓存、服务端为唯一事实源，旧 doublog_portal_layout/doublog_portal_order 在服务端为空时一次性迁移上存；卡片 hover 铅笔按钮 → CardEditModal 编辑标题描述（空 = systems.jsx 内置默认文案，"恢复默认文案"清覆盖）；systems.jsx 卡片定义单源（key/to/默认文案/配色/图标）、api.js 布局 API；新模块自动追加末组 + 未知卡/跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
 ├── blog/                           # /blog /post/:id /create + 模块 tab：/assets /diary /bookmarks（assets·diary·bookmarks 子目录）
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
 │   ├── pages/                      # HomePage PostDetail CreatePost EditPost
