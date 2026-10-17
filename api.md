@@ -1110,7 +1110,7 @@ PUT    /api/clash/controller/providers                # body {name} 热更新节
 
 ## 21. Assets API（资产库：Prompt 与 Skill）
 
-模块文档：`docs/modules/assets.md`。前缀 `/api/assets`，全部挂认证（会话 Cookie / Basic）；
+模块文档：`docs/modules/blog.md` 资产库子域节。**2026-10-17 自独立模块并入 blog**（路径/契约不变，sys_name 由 doublog.assets 改为 doublog.blog）。前缀 `/api/assets`，全部挂认证（会话 Cookie / Basic）；
 统一信封；**列表接口不含正文**（`content` 仅详情/导出返回）。
 
 ### 21.1 分类
@@ -1212,7 +1212,7 @@ GET  /api/assets/files/{fid}         # 单文件内容（含 content；二进制
 GET  /api/assets/items/{id}/archive  # 下载原始 zip（无原包 → 404）
 ```
 
-**zip 规格（Agent Skills 惯例，`app/assets/skills.py`）**：必须恰好一个 `SKILL.md`
+**zip 规格（Agent Skills 惯例，`app/blog/assets/skills.py`）**：必须恰好一个 `SKILL.md`
 （根或单层子目录均可，自动剥技能根目录前缀）；SKILL.md 需 YAML frontmatter 且
 必含 `name`（小写字母/数字/连字符 ≤64）与 `description`（非空 ≤1024）——导入后
 `title=name`、`summary=description`（**描述自动提取并先输出**，响应带 `skill`

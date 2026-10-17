@@ -217,3 +217,63 @@
 前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 文章编辑器为固定高度双栏（仅桌面布局）；Markdown 预览使用 useDeferredValue，正文输入与预览重计算分离。文章内「首页」与取消新建指向 /blog。
+
+---
+
+## 资产库子域（`app/blog/assets/`，2026-10-17 自独立模块迁入）
+
+资产库（Prompt 与 Skill）原为独立模块 `app/assets/` + `src/assets/`，现并入 blog 能力包：
+**后端** `app/blog/assets/` 子包（路由前缀 `/api/assets` 不变，router 由 blog `__init__` 挂载，
+`ensure_migrations` 由 blog 链式调用）；**前端** `src/blog/assets/`（知识库模块侧栏第四项「资产库」，
+三视图为其 children）；sys_name 并入 `doublog.blog`；表名保留 `assets_` 前缀（免数据迁移）；
+门户独立卡片已移除（17 卡 → 16 卡，入口 = 知识库模块内）。
+
+### 功能概述
+
+- **双类型资产**：`kind=prompt`/`skill` 统一 CRUD；标题无唯一约束（复制/导入可重名，撞名复制自动加「（副本）」）
+- **组织维度**：分类（emoji + hex 颜色 + 适用类型，删除前校验关联）；标签（≤20 个/条目，禁引号与反斜杠——JSON 列 LIKE 匹配的转义边界）；收藏；归档
+- **变量体系**：正文 `{{name}}` 声明变量，**服务端保存时提取去重**（别信任前端）；详情抽屉「变量填充台」+ 填充值 localStorage 记忆（`doublog_assets_fill_<id>`）
+- **版本管理**：title/summary/content 变更即快照（元数据变更不产生版本；当前版本在链）；行级 LCS diff（前端，>1500 行退化整体替换）；恢复 = 产生新版本
+- **使用统计**：copy/fill/export 计数、30 天趋势、TOP5、最近使用
+- **回收站**：软删 → 恢复/彻底删除（级联版本与日志）；回收站内禁编辑/使用/恢复版本
+- **批量操作**：favorite/unfavorite/archive/unarchive/trash/restore/hard_delete/move（≤500 条）
+- **导入导出**：JSON 附件（可选含版本）/单条 md·json；create/upsert（按「kind+标题」匹配）；dry_run 预检；单次 ≤500 条
+- **Skill 包**（`skills.py`）：`POST /skills/import` 单文件（宽松）/zip（严格：恰好一个 SKILL.md + frontmatter 校验）；描述自动提取先输出；文件存 `assets_files`（文本 ≤512KB 带内容），原包存 `items.archive`；zip-slip/体积防护；详情「文件」tab 可展开树 + 宽幅查看弹窗（Esc 捕获阶段隔离）
+
+### 数据模型（`app/blog/assets/models.py`，五表 `assets_` 前缀）
+
+| 表 | 关键列 | 说明 |
+|---|---|---|
+| `assets_categories` | name(unique) / icon / color / kind / sort_order | 分类 |
+| `assets_items` | kind / title / summary / content / category_id / tags(JSON) / variables(JSON) / favorite / status / usage_count / version / archive / archive_name | 条目；status: active/archived/trash |
+| `assets_versions` | item_id(级联) / version / title / summary / content / note | 版本快照 |
+| `assets_usage_logs` | item_id(级联) / action / created_at | 使用日志 |
+| `assets_files` | item_id(级联) / path / size / is_text / content | Skill 包文件 |
+
+要点：`variables` 由服务端 create/update/restore/import 时重算；状态机 active⇄archived→trash；
+JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量库幂等补 archive 两列。
+
+### API 契约
+
+前缀 `/api/assets`（认证/信封/排序键/搜索转义与错误码详见 `api.md` 第 21 节）：
+分类 CRUD、资产 CRUD+restore/duplicate/use/bulk、版本列表/详情/恢复、`/tags` `/stats` 聚合、
+`/export` `/import` 传输、`/skills/import` 上传。
+
+### 前端（`frontend/src/blog/assets/`）
+
+- `AssetsPage.jsx`：知识库模块侧栏「资产库」项（children：浏览/回收站/统计，经 `useModuleNavigation`
+  仅注册 activeKey/onSelect，不覆盖模块静态菜单）+ 页内左过滤栏 + 卡片网格 + 分页；Ctrl+K 聚焦搜索
+- `ItemDetail.jsx` 右滑抽屉（预览/变量填充/版本 diff 三 tab）、`ItemEditor.jsx`（实时变量检测、Ctrl+S）、
+  `CategoryManager.jsx` / `ImportPanel.jsx` / `StatsView.jsx`、`kit.jsx`（diffLines/copyText/Toast/KIND_META）
+
+### 测试（`tests/blog/assets/test_assets.py`，36 例）
+
+认证 / 分类 CRUD·唯一性·删除保护 / 创建校验 / 列表过滤 / 排序分页 / 版本策略 / 软删恢复 /
+复制 / use 三动作 / 批量 / 版本恢复 / 标签聚合 / 统计 / 导出 / 导入（upsert·dry_run·往返）/ Skill 包。
+
+### 边界与已知限制
+
+- 标题不唯一：upsert 按「kind+标题」取第一条（有意设计）
+- 标签含引号/反斜杠 400 兜底（前端不硬拦截）
+- 使用趋势 UTC 日期分桶；导入的历史版本重排为连续链；单条导出 md frontmatter 为 JSON 格式
+- Skill 包二进制文件仅元数据入库（本体在 archive 原包）

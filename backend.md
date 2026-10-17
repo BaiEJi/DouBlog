@@ -317,12 +317,12 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - 校验：lizysdk ParamError(400)/NotFoundError(404)/ConflictError(409)；币种白名单 5 种、周期白名单 4 种、
   custom 周期必须带 custom_days>0（含 PUT 部分更新的组合校验）、起止日期倒置拒绝、分类删除前查会员关联
 
-## 10.52 Assets（资产库：Prompt 与 Skill，app/assets/；四表详见 docs/modules/assets.md）
+## 10.52 Assets（资产库：Prompt 与 Skill，app/blog/assets/ 子包，2026-10-17 并入 blog 模块；五表详见 docs/modules/blog.md 资产库子域节）
 
 - 四表：assets_categories（名称唯一 + emoji/颜色/适用类型/排序）、assets_items（kind=prompt|skill、tags/variables JSON 列、favorite、status=active|archived|trash、usage_count/last_used_at、version）、assets_versions（内容快照，**当前版本在链**）、assets_usage_logs（copy/fill/export 动作）
 - 变量 `{{name}}` 服务端保存时提取（`services.extract_variables`，去重保序）；版本策略：title/summary/content 实际变更才快照（`content_changed` 只比对出现的键），恢复历史版本=新版本
 - 无后台线程、无 ensure_migrations 实质逻辑（新表由 create_all 建）；无导入导出服务依赖（纯 JSON 附件流）
-- 模块细节（27 测试/导入导出语义/边界）见 `docs/modules/assets.md`
+- 模块细节（36 测试/导入导出语义/边界）见 `docs/modules/blog.md` 资产库子域节
 
 ## 10.53 开发者工具箱（devtoolbox，app/devtoolbox/；无表）
 

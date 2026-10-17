@@ -1,12 +1,12 @@
 /**
- * 资产库主页面 /assets —— Prompt 与 Skill 的沉淀、检索、填充与版本管理。
- * 布局：模块侧栏（ModuleShell，经 PageHeader 注册 资产库/回收站/统计 三视图）+
- * 页内左过滤栏（快速过滤/分类/标签）+ 列表卡片网格 + 右侧详情抽屉；
- * 编辑器/分类管理/导入导出为弹层；支持批量操作与 Ctrl+K 搜索。
+ * 资产库视图（知识库模块 tab，路由 /assets）—— Prompt 与 Skill 的沉淀、检索、填充与版本管理。
+ * 布局：blog 模块侧栏（ModuleShell 静态菜单含「资产库」项，三视图为其 children，
+ * 经 useModuleNavigation 注册 activeKey 切换）+ 页内左过滤栏（快速过滤/分类/标签）+
+ * 列表卡片网格 + 右侧详情抽屉；编辑器/分类管理/导入导出为弹层；支持批量操作与 Ctrl+K 搜索。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import PageHeader from '../shared/PageHeader'
-import { useDebouncedValue } from '../shared/useDebouncedValue'
+import { useModuleNavigation } from '../../shared/module-navigation'
+import { useDebouncedValue } from '../../shared/useDebouncedValue'
 import {
   assetsBulkItems, assetsCategories, assetsCreateItem, assetsDeleteItem,
   assetsDuplicateItem, assetsImportSkill, assetsItems, assetsRestoreItem,
@@ -271,20 +271,17 @@ export default function AssetsPage({ dark }) {
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
 
+  // 注册到 blog 模块侧栏：不覆盖静态菜单，只声明当前视图（「资产库」项的 children 高亮）
+  useModuleNavigation({
+    activeKey: view === 'trash' ? 'trash' : view === 'stats' ? 'stats' : 'library',
+    onSelect: key => { setView(key); setSelection(new Set()); setBulkMode(false) },
+  })
+
   return (
     <div>
-      <PageHeader
-        title="资产库"
-        subtitle="Prompt · Skill · 变量 · 版本"
-        accent="fuchsia"
-        tabs={[
-          { key: 'library', label: '资产库' },
-          { key: 'trash', label: '回收站' },
-          { key: 'stats', label: '统计' },
-        ]}
-        activeTab={view === 'trash' ? 'trash' : view === 'stats' ? 'stats' : 'library'}
-        onTabChange={key => { setView(key); setSelection(new Set()); setBulkMode(false) }}
-      />
+      <div className="mb-6"><h1 className="text-base font-semibold tracking-tight">
+        {view === 'trash' ? '资产库 · 回收站' : view === 'stats' ? '资产库 · 统计' : '资产库'}
+      </h1></div>
 
       {view === 'stats' ? (
         <StatsView onOpenItem={openDetail} toast={toast} />

@@ -9,7 +9,7 @@ import re
 
 from lizysdk.errors import ParamError
 
-from app.assets.models import KINDS, AssetItem, AssetVersion
+from app.blog.assets.models import KINDS, AssetItem, AssetVersion
 
 _VAR_RE = re.compile(r'\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}')
 

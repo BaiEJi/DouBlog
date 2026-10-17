@@ -5,9 +5,12 @@ import { BackButton } from './PageHeader'
 import ModuleErrorBoundary from './ModuleErrorBoundary'
 
 const MODULES = {
-  blog: { title: '博客 · 知识库', subtitle: '文章 · 双链 · 知识库', accent: 'amber', items: [
+  blog: { title: '博客 · 知识库', subtitle: '文章 · 双链 · 知识库 · 资产', accent: 'amber', items: [
     { key: 'blog', label: '知识库', to: '/blog' }, { key: 'create', label: '新建文章', to: '/create' },
     { key: 'admin', label: '内容管理', to: '/admin' },
+    { key: 'assets', label: '资产库', to: '/assets', children: [
+      { key: 'library', label: '浏览' }, { key: 'trash', label: '回收站' }, { key: 'stats', label: '统计' },
+    ] },
   ] },
   diary: { title: '日记', subtitle: '随记 · 日历 · 写作统计', accent: 'rose' },
   subs: { title: '订阅管理', subtitle: '会员 · 支出 · 到期提醒', accent: 'amber' },
@@ -22,7 +25,6 @@ const MODULES = {
   confcenter: { title: '配置中心', subtitle: 'namespace → key → value', accent: 'cyan', items: [{ key: 'entries', label: '配置管理' }] },
   clash: { title: 'Clash 代理', subtitle: '内核 · 订阅 · Tun · Mixin', accent: 'sky' },
   devtoolbox: { title: '开发者工具箱', subtitle: 'JSON · Diff · 编码 · 哈希 · 正则', accent: 'lime' },
-  assets: { title: '资产库', subtitle: 'Prompt · Skill · 变量 · 版本', accent: 'fuchsia' },
   bookmarks: { title: '书签', subtitle: '收藏 · 阅读队列 · 快照', accent: 'orange' },
 }
 

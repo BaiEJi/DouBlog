@@ -35,7 +35,7 @@ from lizysdk.errors import AppError  # noqa: E402
 
 #: 业务模块注册表（按此顺序 import；未迁移/导入失败的模块跳过并告警）
 MODULES = ('blog', 'diary', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
-           'todo', 'gamemap', 'practice', 'steamidler', 'confcenter', 'clash', 'assets',
+           'todo', 'gamemap', 'practice', 'steamidler', 'confcenter', 'clash',
            'devtoolbox', 'bookmarks')
 
 setup_logging_for_app()

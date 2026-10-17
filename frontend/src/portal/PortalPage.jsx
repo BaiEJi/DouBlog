@@ -38,7 +38,7 @@ const SYSTEMS = [
   {
     to: '/blog',
     title: '博客 · 知识库',
-    desc: '树形文章、Markdown、双链与多知识库',
+    desc: '树形文章、双链、知识库与资产库',
     box: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
     icon: (
       <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
@@ -219,18 +219,6 @@ const SYSTEMS = [
         <path d="M12.8 3.4a2.6 2.6 0 0 1 3.7 3.7l-1.9 1.9-3.7-3.7 1.9-1.9Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
         <path d="m10.1 6.1-6.5 6.5a2.6 2.6 0 0 0-.7 1.3l-.5 2.7 2.7-.5a2.6 2.6 0 0 0 1.3-.7l6.5-6.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
         <path d="m9 11 3 3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    to: '/assets',
-    title: '资产库',
-    desc: 'Prompt · Skill 沉淀 · 变量填充 · 版本',
-    box: 'bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M10 2.2 17 5v4.4c0 4-2.9 7.5-7 8.4-4.1-.9-7-4.4-7-8.4V5l7-2.8Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-        <path d="m7.2 10 2 2 3.6-3.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },

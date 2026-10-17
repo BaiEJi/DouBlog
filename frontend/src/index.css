@@ -1,6 +1,5 @@
 @import "tailwindcss" source(none);
 @source "./app";
-@source "./assets";
 @source "./apihub";
 @source "./blog";
 @source "./bookmarks";

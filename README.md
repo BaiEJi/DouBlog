@@ -21,7 +21,7 @@
 
 > **⚠️ 前端不适配移动端**（2026-10-17 起）：已移除全部移动端适配（侧栏抽屉、响应式断点、触屏拖拽分支、viewport meta），所有页面按桌面宽屏单态布局渲染，手机访问得到的是缩放的桌面视图。新增前端页面禁止引入 `sm:/md:/lg:/xl:` 断点类或移动端专属 UI。
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，17 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、**书签与稍后阅读**（`/bookmarks`，收藏夹/阅读队列/离线快照/死链检测/浏览器书签导入导出）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**资产库**（`/assets`，Prompt 与 Skill：变量填充 `{{name}}` / 版本快照与恢复 / 行级 diff / 分类标签 / 使用统计 / 导入导出）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）、管理（`/admin`）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，16 卡可拖拽分组）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`：Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、日记（`/diary`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`）、日志查询（`/logs`）、**书签与稍后阅读**（`/bookmarks`，收藏夹/阅读队列/离线快照/死链检测/浏览器书签导入导出）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）、管理（`/admin`）。
 
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
@@ -45,7 +45,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，17 
 - **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
 - **刷题练习**（`/practice`，独立模块）：题解/代码/标签管理、艾宾浩斯复习、一键抓题（LeetCode/洛谷）
 - **Steam 挂机**（`/steamidler`，独立模块，steam-idler 迁入）：账号登录挂机、时长统计、运行日志
-- **资产库**（`/assets`）：**Prompt 与 Skill 双类型**（`{{变量}}` 声明 + 详情抽屉变量填充台 + 填充值本地记忆）；**版本管理**（内容变更即快照、行级 diff、一键恢复）；分类/标签/收藏/归档/回收站；批量操作；使用统计（copy/fill/export 计数、30 天趋势、最常用 TOP5）；导入导出（upsert/create + dry_run 预检，分类按名自动建）；**Skill 包上传**（单文件或 zip：规格校验、描述自动提取、可展开文件树 + 宽幅弹窗查看、原包下载）
+- **资产库**（知识库模块 tab，`/assets`，2026-10-17 自独立模块并入 blog）：**Prompt 与 Skill 双类型**（`{{变量}}` 声明 + 详情抽屉变量填充台 + 填充值本地记忆）；**版本管理**（内容变更即快照、行级 diff、一键恢复）；分类/标签/收藏/归档/回收站；批量操作；使用统计（copy/fill/export 计数、30 天趋势、最常用 TOP5）；导入导出（upsert/create + dry_run 预检，分类按名自动建）；**Skill 包上传**（单文件或 zip：规格校验、描述自动提取、可展开文件树 + 宽幅弹窗查看、原包下载）
 - **统一导航（仅桌面）**：业务模块共用 220px 多级侧栏与同尺寸内容画布；文章编辑与预览左右分栏
 - 文章支持**最多 3 层**父子结构（`MAX_LEVEL = 2`，即 level 0/1/2），侧边栏树形展示、拖拽排序
 - **统一登录**：`/login` 登录一次全站生效（HttpOnly 会话 Cookie，30 天）——所有模块免二次登录；密码库的"主密码解锁"是零知识加密的解密步骤而非登录；Basic Auth 保留为 API/脚本/测试通道
@@ -87,7 +87,7 @@ DouBlog/
 │   │   ├── config.py         # 配置
 │   │   ├── db.py             # 纯 SQLAlchemy：双后端 + 表名规范(模块名_表名,存量自动改名) + run_db
 │   │   ├── shared/           # 公共层：response / auth(require_basic) / pools(lizysdk) / timestamps / timeutil(todo+practice 共用) / logging_setup / modules
-│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/ assets/ devtoolbox/ bookmarks/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 与 devtoolbox 无表）
+│   │   ├── blog/ diary/ vault/ pwsvc/ sdklogs/ subs/ apihub/ system/ todo/ gamemap/ practice/ steamidler/ confcenter/ clash/ devtoolbox/ bookmarks/  # 能力包（models+routes；导出 router/start_background/ensure_migrations；clash 与 devtoolbox 无表；blog/assets/ 为资产库子包）
 │   └── tests/                # pytest（与能力包镜像分层，自包含）
 ├── extensions/todo/           # MyTodo 客户端平迁：chrome-extension/ + android/（仍指旧 8070）
 ├── frontend/                 # 前端 (React)
@@ -106,7 +106,7 @@ DouBlog/
 │       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler/bookmarks 跨模块引用）
 │       ├── bookmarks/         # /bookmarks：BookmarksPage + BookmarksView（五视图）+ api + components（表单/详情/分类管理）
 │       ├── gamemap/          # /gamemap：GamemapShell（antd6/@xyflow 保留栈）+ board/ + pages/
-│       ├── assets/           # /assets：AssetsPage + api + kit + components（详情抽屉/编辑器/填充/版本/导入导出/统计）
+│       │   └── assets/        # /assets 资产库（blog 模块 tab）：AssetsPage + api + kit + components（详情抽屉/编辑器/填充/版本/导入导出/统计）
 │       ├── practice/         # /practice：PracticePage + PracticeView + components/
 │       ├── steamidler/       # /steamidler：SteamIdlerPage + SteamIdlerView + components/
 │       ├── clash/            # /clash：ClashPage（总览/订阅/配置/日志）+ api.js
@@ -251,7 +251,7 @@ bash shell/backend/stop.sh           # 停止
 | `POST` | `/api/admin/database/switch` | **只换连接切换后端**（SQLite ↔ PostgreSQL，不迁移数据），`/config` 页操作 |
 | `GET/POST/PUT/DELETE` | `/api/clash/*` | **Clash 代理管理**（clashctl 全能力 Web 迁移 + mihomo 控制器：代理组/测速/连接/规则/热配置），见 api.md 第 20 节 |
 | `GET/POST` | `/api/devtoolbox/*` | **开发者工具箱计算端**（哈希/HMAC、字符集互转乱码修复、JSON⇄YAML、二维码），见 api.md 第 24 节 |
-| `GET/POST/PUT/DELETE` | `/api/assets/*` | **资产库**（Prompt/Skill CRUD、版本恢复、批量、标签、统计、导入导出），见 api.md 第 21 节 |
+| `GET/POST/PUT/DELETE` | `/api/assets/*` | **资产库**（blog 模块子域：Prompt/Skill CRUD、版本恢复、批量、标签、统计、导入导出），见 api.md 第 21 节 |
 | `GET/POST/PATCH/DELETE` | `/api/bookmarks/*` | **书签与稍后阅读**：分类树/条目 CRUD 与状态机/标签/查重/快照/死链检测/队列/统计/导入导出（Netscape HTML + JSON），见 api.md 第 22 节 |
 
 ### 图片服务规则

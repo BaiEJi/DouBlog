@@ -32,7 +32,7 @@ from app.shared.auth import require_basic
 from app.shared.modules import mod_logger
 from app.shared.response import api_response
 from app.shared.timestamps import _iso, _utcnow
-from app.assets.models import (
+from app.blog.assets.models import (
     KINDS,
     AssetCategory,
     AssetFile,
@@ -40,18 +40,18 @@ from app.assets.models import (
     AssetUsageLog,
     AssetVersion,
 )
-from app.assets.services import (
+from app.blog.assets.services import (
     content_changed,
     extract_variables,
     snapshot_version,
     validate_item_payload,
 )
-from app.assets.skills import parse_skill_upload
+from app.blog.assets.skills import parse_skill_upload
 from lizysdk.errors import ConflictError, NotFoundError, ParamError
 
 router = APIRouter(prefix='/api/assets', dependencies=[Depends(require_basic)])
 
-logger = mod_logger('assets')
+logger = mod_logger('blog')
 
 SORTS = {
     'updated_desc': (AssetItem.updated_at.desc(), AssetItem.id.desc()),

@@ -1,4 +1,7 @@
-"""Prompt 与 Skill 资产库能力。"""
+"""资产库子域（Prompt 与 Skill）——blog 能力包子包，路由前缀 /api/assets，表 assets_*。
+
+2026-10-17 自独立模块 app/assets/ 迁入；sys_name 并入 doublog.blog，表名保留 assets_ 前缀。
+"""
 from fastapi import APIRouter
 
 from .routes import router as assets_router
