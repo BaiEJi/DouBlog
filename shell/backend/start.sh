@@ -36,7 +36,13 @@ mkdir -p logs
 nohup "$PYTHON" run.py > logs/flask.log 2>&1 &
 disown
 
-sleep 2
+# PG 后端冷启动（建连/建表/迁移）可能超过 2s：最长等 20s，每秒探测一次
+i=0
+while [ $i -lt 20 ]; do
+    [ -n "$(port_pid)" ] && break
+    sleep 1
+    i=$((i+1))
+done
 if [ -n "$(port_pid)" ]; then
     echo "Backend started on http://0.0.0.0:$PORT (log: backend/logs/flask.log)"
 else
