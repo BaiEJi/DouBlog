@@ -169,7 +169,7 @@ function Attachments({ item, vek, copier }) {
   )
 }
 
-export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onRestore, onPurge, onToggleFav, inTrash }) {
+export default function ItemDetail({ item, copier, vek, onEdit, onDelete, onToggleFav, categoryLabel }) {
   const d = item.data
   const domain = domainOf(d.urls?.[0]?.value)
   const entropy = passwordEntropy(d.password?.value)
@@ -199,7 +199,7 @@ export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onResto
           <div className="flex items-center gap-2 mt-1 text-[12px] text-stone-400 dark:text-stone-500 flex-wrap">
             {domain && <span className="truncate">{domain}</span>}
             {d.app_name && <span>· {d.app_name}</span>}
-            {d.category && <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.07] text-[11px]">{CATEGORY_LABELS[d.category] || d.category}</span>}
+            {d.category && <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.07] text-[11px]">{categoryLabel ? categoryLabel(d.category) : (CATEGORY_LABELS[d.category] || d.category)}</span>}
             {d.type && d.type !== 'Website' && <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.07] text-[11px]">{TYPE_LABELS[d.type] || d.type}</span>}
           </div>
           <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
@@ -215,17 +215,8 @@ export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onResto
             className={'w-8 h-8 flex items-center justify-center rounded-lg transition-colors ' + (item.favorite
               ? 'text-amber-500' : 'text-stone-300 dark:text-stone-600 hover:text-stone-500 dark:hover:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5')}
           >{item.favorite ? I.starFill : I.star}</button>
-          {inTrash ? (
-            <>
-              <button onClick={() => onRestore(item)} className="px-2.5 h-8 rounded-lg text-[12px] text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors">恢复</button>
-              <button onClick={() => onPurge(item)} className="px-2.5 h-8 rounded-lg text-[12px] text-red-500 hover:bg-red-500/10 transition-colors">彻底删除</button>
-            </>
-          ) : (
-            <>
-              <button onClick={onEdit} title="编辑" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{I.edit}</button>
-              <button onClick={() => onTrash(item)} title="移入回收站" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-500/10 transition-colors">{I.trash}</button>
-            </>
-          )}
+          <button onClick={onEdit} title="编辑" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{I.edit}</button>
+          <button onClick={() => onDelete(item)} title="删除（不可恢复）" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-500/10 transition-colors">{I.trash}</button>
         </div>
       </div>
 
@@ -242,6 +233,27 @@ export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onResto
         {d.account_id && (
           <FieldRow label="账号昵称">
             <span className="text-sm text-stone-600 dark:text-stone-300 truncate">{d.account_id}</span>
+          </FieldRow>
+        )}
+        {d.phone && (
+          <FieldRow label="手机号">
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-mono truncate text-stone-800 dark:text-stone-100">{d.phone}</span>
+              <CopyButton value={d.phone} copier={copier} />
+            </div>
+          </FieldRow>
+        )}
+        {d.email && (
+          <FieldRow label="邮箱">
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-mono truncate text-stone-800 dark:text-stone-100">{d.email}</span>
+              <CopyButton value={d.email} copier={copier} />
+            </div>
+          </FieldRow>
+        )}
+        {d.real_name && (
+          <FieldRow label="实名人">
+            <span className="text-sm text-stone-600 dark:text-stone-300 truncate">{d.real_name}</span>
           </FieldRow>
         )}
         {d.password?.value ? (
@@ -339,8 +351,8 @@ export default function ItemDetail({ item, copier, vek, onEdit, onTrash, onResto
         </FieldRow>
       </Section>
 
-      {/* 附件（VEK 可用且非回收站） */}
-      {vek && !inTrash && <Attachments item={item} vek={vek} copier={copier} />}
+      {/* 附件（VEK 可用时） */}
+      {vek && <Attachments item={item} vek={vek} copier={copier} />}
 
       {/* PASSWORD HISTORY */}
       {d.password?.value && (

@@ -9,7 +9,7 @@ import {
 } from './core'
 import { generatePassword } from './core'
 import { parseOtpauth } from './totp'
-import { FieldRow, I } from './ui'
+import { FieldRow, I, Select } from './ui'
 
 const input = 'w-full px-3 h-9 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
 const label = 'block text-[11px] font-medium uppercase tracking-wide text-stone-400 dark:text-stone-500 mb-1.5'
@@ -33,7 +33,7 @@ function AddBtn({ onClick, children }) {
   )
 }
 
-export default function ItemEditor({ initial, onCancel, onSave, saving }) {
+export default function ItemEditor({ initial, catalog, onCancel, onSave, saving }) {
   const [d, setD] = useState(() => ({ ...emptyItem(), ...(initial || {}) }))
   const [pwInput, setPwInput] = useState(d.password?.value || '')
   const [pwReason, setPwReason] = useState('')
@@ -82,18 +82,15 @@ export default function ItemEditor({ initial, onCancel, onSave, saving }) {
         </div>
         <div>
           <label className={label}>类型</label>
-          <select className={input} value={d.type} onChange={e => patch({ type: e.target.value })}>
-            {ITEM_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t] || t}</option>)}
-          </select>
+          <Select value={d.type} onChange={v => patch({ type: v })} options={ITEM_TYPES.map(t => ({ value: t, label: TYPE_LABELS[t] || t }))} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
         <div>
           <label className={label}>分类</label>
-          <select className={input} value={d.category} onChange={e => patch({ category: e.target.value })}>
-            {CATEGORIES.map(t => <option key={t} value={t}>{CATEGORY_LABELS[t] || t}</option>)}
-          </select>
+          <Select value={d.category} onChange={v => patch({ category: v })}
+            options={(catalog || CATEGORIES.map(k => ({ key: k, label: CATEGORY_LABELS[k] || k }))).map(c => ({ value: c.key, label: c.label }))} />
         </div>
         <div>
           <label className={label}>App 名称</label>
@@ -104,6 +101,22 @@ export default function ItemEditor({ initial, onCancel, onSave, saving }) {
       <div className="mb-4">
         <label className={label}>用户名</label>
         <input className={input} value={d.username} onChange={e => patch({ username: e.target.value })} placeholder="baieji" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label className={label}>手机号</label>
+          <input className={input} value={d.phone} onChange={e => patch({ phone: e.target.value })} placeholder="可选，如 +86 138****1234" />
+        </div>
+        <div>
+          <label className={label}>邮箱</label>
+          <input className={input} value={d.email} onChange={e => patch({ email: e.target.value })} placeholder="可选，如 name@example.com" />
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <label className={label}>实名人</label>
+        <input className={input} value={d.real_name} onChange={e => patch({ real_name: e.target.value })} placeholder="可选，账号归属人的真实姓名" />
       </div>
 
       <div className="mb-1">
@@ -166,16 +179,12 @@ export default function ItemEditor({ initial, onCancel, onSave, saving }) {
         <div className="space-y-1.5">
           {next(d.identities).map((x, i) => (
             <Row key={i} onRemove={() => patch({ identities: d.identities.filter((_, j) => j !== i) })}>
-              <select className={input} style={{ maxWidth: '6rem' }} value={x.type}
-                onChange={e => patch({ identities: d.identities.map((y, j) => j === i ? { ...y, type: e.target.value } : y) })}>
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-              </select>
-              <select className={input} style={{ maxWidth: '7rem' }} value={x.role || 'primary'}
-                onChange={e => patch({ identities: d.identities.map((y, j) => j === i ? { ...y, role: e.target.value } : y) })}>
-                <option value="primary">主要</option>
-                <option value="recovery">恢复用</option>
-              </select>
+              <Select className="w-[6rem]" value={x.type} title="身份类型"
+                onChange={v => patch({ identities: d.identities.map((y, j) => j === i ? { ...y, type: v } : y) })}
+                options={[{ value: 'email', label: 'Email' }, { value: 'phone', label: 'Phone' }]} />
+              <Select className="w-[7rem]" value={x.role || 'primary'} title="身份用途"
+                onChange={v => patch({ identities: d.identities.map((y, j) => j === i ? { ...y, role: v } : y) })}
+                options={[{ value: 'primary', label: '主要' }, { value: 'recovery', label: '恢复用' }]} />
               <input className={input} value={x.value} placeholder="xxx@gmail.com"
                 onChange={e => patch({ identities: d.identities.map((y, j) => j === i ? { ...y, value: e.target.value } : y) })} />
             </Row>
@@ -189,10 +198,9 @@ export default function ItemEditor({ initial, onCancel, onSave, saving }) {
         <div className="space-y-1.5">
           {next(d.secrets).map((s, i) => (
             <Row key={i} onRemove={() => patch({ secrets: d.secrets.filter((_, j) => j !== i) })}>
-              <select className={input} style={{ maxWidth: '10rem' }} value={s.kind}
-                onChange={e => patch({ secrets: d.secrets.map((y, j) => j === i ? { ...y, kind: e.target.value } : y) })}>
-                {SECRET_KINDS.map(k => <option key={k.key} value={k.key}>{SECRET_KIND_LABELS[k.key] || k.label}</option>)}
-              </select>
+              <Select className="w-[10rem]" value={s.kind} title="密钥类型"
+                onChange={v => patch({ secrets: d.secrets.map((y, j) => j === i ? { ...y, kind: v } : y) })}
+                options={SECRET_KINDS.map(k => ({ value: k.key, label: SECRET_KIND_LABELS[k.key] || k.label }))} />
               {s.kind === 'security_question' && (
                 <input className={input} style={{ maxWidth: '10rem' }} value={s.question || ''} placeholder="问题"
                   onChange={e => patch({ secrets: d.secrets.map((y, j) => j === i ? { ...y, question: e.target.value } : y) })} />

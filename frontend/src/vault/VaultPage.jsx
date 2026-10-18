@@ -8,7 +8,7 @@ import { useModuleNavigation } from '../shared/module-navigation'
 import {
   vaultGetAccount, vaultInitAccount, vaultRotateKeys,
   vaultListItems, vaultCreateItem, vaultUpdateItem, vaultMarkUsed,
-  vaultTrashItem, vaultRestoreItem, vaultPurgeItem, vaultAudit, vaultExport, vaultImport,
+  vaultPurgeItem, vaultAudit, vaultExport, vaultImport,
 } from './api'
 import {
   createVaultMaterial, unlockVault, rewrapVaultKey, encryptBlob, decryptBlob,
@@ -16,13 +16,15 @@ import {
 } from './components/crypto'
 import {
   itemMatches, domainOf, extractIdentities, analyzeSecurity, daysAgo, expiryInfo,
-  CATEGORY_LABELS, TYPE_LABELS,
+  TYPE_LABELS,
 } from './components/core'
-import { makeClipboardCopier, CLIPBOARD_OPTIONS, Favicon, I } from './components/ui'
+import { makeClipboardCopier, CLIPBOARD_OPTIONS, Favicon, I, Select } from './components/ui'
+import { useCategoryCatalog, loadCustomCategories } from './components/categoryCatalog'
 import ItemDetail from './components/ItemDetail'
 import ItemEditor from './components/ItemEditor'
 import Generator from './components/Generator'
 import SecurityCenter from './components/SecurityCenter'
+import CategoriesView from './components/CategoriesView'
 import PwsvcView from './components/PwsvcView'
 
 const LOCK_OPTIONS = [
@@ -60,10 +62,10 @@ export default function VaultPage() {
   const [account, setAccount] = useState(null)
   const vekRef = useRef(null)
   const [items, setItems] = useState([])
-  const [trash, setTrash] = useState([])
 
   const [section, setSection] = useState('overview')
   const [filterValue, setFilterValue] = useState(null)
+  const [catActive, setCatActive] = useState(null)   // 类别页当前选中类别（跨编辑器开关保持）
   const [selectedId, setSelectedId] = useState(null)
   const [editing, setEditing] = useState(null)      // null | 'new' | item
   const [query, setQuery] = useState('')
@@ -95,7 +97,7 @@ export default function VaultPage() {
   // ─── 自动锁定 ──────────────────────────────────────────
   const lockNow = useCallback(() => {
     vekRef.current = null      // 清除内存中的 VEK
-    setItems([]); setTrash([]); setSelectedId(null); setEditing(null)
+    setItems([]); setSelectedId(null); setEditing(null)
     setGenOpen(false); setSettingsOpen(false)
     setPhase('locked')
   }, [])
@@ -131,9 +133,8 @@ export default function VaultPage() {
       }
       return out
     }
-    const [liveRes, trashRes] = await Promise.all([vaultListItems(false), vaultListItems(true)])
+    const liveRes = await vaultListItems(false)
     if (liveRes.success) setItems(await decryptAll(liveRes.data.items))
-    if (trashRes.success) setTrash(await decryptAll(trashRes.data.items))
   }, [])
 
   const unlock = async (secret, isRecovery) => {
@@ -152,7 +153,8 @@ export default function VaultPage() {
       const res = existing ? await vaultUpdateItem(existing.id, meta) : await vaultCreateItem(meta)
       if (res.success) await reloadItems()
       setEditing(null)
-      if (res.success) setSelectedId(res.data.id)
+      // 类别页新建后回到类别表（其余场景选中新条目进详情）
+      if (res.success) setSelectedId(section === 'categories' ? null : res.data.id)
     } finally { setBusy(false) }
   }
 
@@ -170,14 +172,8 @@ export default function VaultPage() {
     }).catch(() => {})
   }
 
-  const doTrash = async (item) => {
-    const res = await vaultTrashItem(item.id)
-    if (res.success) { setSelectedId(null); await reloadItems() }
-  }
-  const doRestore = async (item) => {
-    const res = await vaultRestoreItem(item.id)
-    if (res.success) await reloadItems()
-  }
+  // 回收站已移除：删除即永久删除（密文一并销毁），先弹确认
+  const requestDelete = (item) => setConfirmPurge(item)
   const doPurge = async () => {
     const item = confirmPurge
     setConfirmPurge(null)
@@ -201,6 +197,7 @@ export default function VaultPage() {
   // ─── 派生数据 ──────────────────────────────────────────
   const security = useMemo(() => analyzeSecurity(items), [items])
   const identities = useMemo(() => extractIdentities(items), [items])
+  const { catalog, replaceCustom, addCategory, renameCategory, deleteCategory, labelOf } = useCategoryCatalog(items)
   const allTags = useMemo(() => {
     const s = new Set()
     items.forEach(i => (i.data.tags || []).forEach(t => s.add(t)))
@@ -213,11 +210,8 @@ export default function VaultPage() {
   }, [items])
 
   const listItems = useMemo(() => {
-    let base
-    if (section === 'trash') base = trash
-    else base = items.filter(i => !i.deleted_at)
+    let base = items.filter(i => !i.deleted_at)
     if (section === 'favorites') base = base.filter(i => i.favorite)
-    if (section === 'recent') base = base.filter(i => i.last_used_at).sort((a, b) => (b.last_used_at || '').localeCompare(a.last_used_at || ''))
     if (section === 'category' && filterValue) base = base.filter(i => i.data.category === filterValue)
     if (section === 'tag' && filterValue) base = base.filter(i => (i.data.tags || []).includes(filterValue))
     if (section === 'identity' && filterValue) {
@@ -226,23 +220,23 @@ export default function VaultPage() {
     }
     const q = query.trim()
     return q ? base.filter(i => itemMatches(i, q)) : base
-  }, [items, trash, section, filterValue, query])
+  }, [items, section, filterValue, query])
 
   const selectedItem = useMemo(
-    () => [...items, ...trash].find(i => i.id === selectedId) || null,
-    [items, trash, selectedId])
+    () => items.find(i => i.id === selectedId) || null,
+    [items, selectedId])
 
   useModuleNavigation({
     items: phase === 'unlocked' ? [
       { key: 'overview', label: '概览', icon: I.shield },
+      { key: 'categories', label: '类别', icon: I.folder },
       { key: 'all', label: '全部条目', icon: I.key, badge: items.length, children: [
-        ...allCategories.map(c => ({ key: `category:${c}`, label: CATEGORY_LABELS[c] || c, active: section === 'category' && filterValue === c })),
+        ...allCategories.map(c => ({ key: `category:${c}`, label: labelOf(c), active: section === 'category' && filterValue === c })),
         ...allTags.map(t => ({ key: `tag:${t}`, label: `# ${t}`, active: section === 'tag' && filterValue === t })),
       ] },
       { key: 'favorites', label: '收藏', icon: I.star, badge: items.filter(i => i.favorite).length },
-      { key: 'recent', label: '最近使用', icon: I.clock },
       { key: 'identities', label: '身份' }, { key: 'security', label: '安全中心', icon: I.shield },
-      { key: 'pwsvc', label: '密码服务', icon: I.key }, { key: 'trash', label: '回收站', icon: I.trash, badge: trash.length },
+      { key: 'pwsvc', label: '密码服务', icon: I.key },
     ] : [{ key: 'locked', label: phase === 'setup' ? '初始化密码库' : '解锁密码库' }],
     activeKey: section,
     onSelect: key => {
@@ -300,11 +294,17 @@ export default function VaultPage() {
           {/* 三面板 */}
           <div className="flex-1 flex min-h-0">
             {/* 列表 / 概览 / 安全中心 */}
-            {(section === 'overview' || section === 'identities' || section === 'security' || section === 'pwsvc') && !selectedId && !editing ? (
+            {(section === 'overview' || section === 'categories' || section === 'identities' || section === 'security' || section === 'pwsvc') && !selectedId && !editing ? (
               <main className="flex-1 min-w-0 overflow-y-auto">
                 {section === 'overview' && (
                   <Overview items={items} security={security} identities={identities}
                     onSelect={selectItem} onGoSection={s => { setSection(s) }} onNew={() => setEditing('new')} />
+                )}
+                {section === 'categories' && (
+                  <CategoriesView items={items} catalog={catalog} onNew={() => setEditing('new')}
+                    active={catActive} onActiveChange={setCatActive}
+                    onOpenItem={item => { setSection('category'); setFilterValue(item.data.category); setSelectedId(item.id) }}
+                    onAddCategory={addCategory} onRenameCategory={renameCategory} onDeleteCategory={deleteCategory} />
                 )}
                 {section === 'identities' && (
                   <IdentitiesView identities={identities} onPick={(idv) => { setSection('identity'); setFilterValue(`${idv.type}||${idv.value}`) }} />
@@ -314,7 +314,7 @@ export default function VaultPage() {
               </main>
             ) : (
               <>
-                <section className="flex-1 min-w-0 flex flex-col border-r border-black/[0.07] dark:border-white/[0.07] max-w-[340px]">
+                <section className="flex-1 min-w-0 flex flex-col border-r border-black/[0.07] dark:border-white/[0.07] max-w-[300px]">
                   <div className="p-2.5 border-b border-black/[0.07] dark:border-white/[0.07] flex items-center gap-2">
                     <div className="relative flex-1">
                       <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400">{I.search}</span>
@@ -328,7 +328,7 @@ export default function VaultPage() {
                   <div className="flex-1 overflow-y-auto">
                     {listItems.length === 0 ? (
                       <p className="py-16 text-center text-[12px] text-stone-400">
-                        {query ? '没有匹配的条目' : section === 'trash' ? '回收站是空的' : '还没有条目'}
+                        {query ? '没有匹配的条目' : '还没有条目'}
                       </p>
                     ) : listItems.map(item => (
                       <button key={item.id} onClick={() => selectItem(item)}
@@ -340,12 +340,11 @@ export default function VaultPage() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-medium truncate">{item.data.service || '未命名'}</span>
                             {item.favorite && <span className="text-amber-500 shrink-0">{I.starFill}</span>}
-                            {section === 'trash' && <span className="text-[11px] text-stone-400">已删除</span>}
                           </div>
                           <div className="text-[11px] text-stone-400 truncate">
                             {item.data.username || item.data.account_id
                               || (item.data.identities || [])[0]?.value
-                              || domainOf(item.data.urls?.[0]?.value) || (item.data.category ? (CATEGORY_LABELS[item.data.category] || item.data.category) : '')}
+                              || domainOf(item.data.urls?.[0]?.value) || (item.data.category ? labelOf(item.data.category) : '')}
                           </div>
                         </div>
                         <span className="text-[11px] text-stone-300 dark:text-stone-600 shrink-0">
@@ -362,6 +361,7 @@ export default function VaultPage() {
                     <ItemEditor
                       key={editing === 'new' ? 'new' : editing.id}
                       initial={editing === 'new' ? null : editing.data}
+                      catalog={catalog}
                       onCancel={() => setEditing(null)}
                       onSave={(data) => saveItem(data, editing === 'new' ? null : editing)}
                       saving={busy}
@@ -371,12 +371,10 @@ export default function VaultPage() {
                       item={selectedItem}
                       copier={copier}
                       vek={vekRef.current}
+                      categoryLabel={labelOf}
                       onEdit={() => setEditing(selectedItem)}
-                      onTrash={doTrash}
-                      onRestore={doRestore}
-                      onPurge={(it) => setConfirmPurge(it)}
+                      onDelete={requestDelete}
                       onToggleFav={toggleFavorite}
-                      inTrash={!!selectedItem.deleted_at}
                     />
                   ) : (
                     <div className="h-full flex flex-col items-center justify-center text-stone-300 dark:text-stone-600 gap-3">
@@ -405,6 +403,7 @@ export default function VaultPage() {
               account={account} setAccount={setAccount}
               items={items} copier={copier}
               onRelock={lockNow}
+              onCategoriesImported={replaceCustom}
               onImported={async () => { const { status, data } = await vaultGetAccount(); if (status === 200 && data.success) setAccount(data.data) }}
               onClose={() => setSettingsOpen(false)}
             />
@@ -575,7 +574,6 @@ function Centered({ title, icon, children }) {
 }
 
 function Overview({ items, security, identities, onSelect, onGoSection, onNew }) {
-  const recentUsed = items.filter(i => i.last_used_at).sort((a, b) => (b.last_used_at || '').localeCompare(a.last_used_at || '')).slice(0, 6)
   const recentEdited = items.slice().sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 6)
   const favorites = items.filter(i => i.favorite)
   const secCards = [
@@ -665,12 +663,6 @@ function Overview({ items, security, identities, onSelect, onGoSection, onNew })
       {/* 双栏内容区 */}
       <div className="grid grid-cols-2 gap-x-8 gap-y-2">
         <div>
-          {recentUsed.length > 0 && (
-            <>
-              <SecTitle>最近使用</SecTitle>
-              <MiniList items={recentUsed} onSelect={onSelect} />
-            </>
-          )}
           {favorites.length > 0 && (
             <>
               <SecTitle>收藏</SecTitle>
@@ -801,7 +793,7 @@ function CommandPalette({ items, onClose, onSelect }) {
 }
 
 // ─── 设置（含改密/轮换/备份/审计）────────────────────────
-function SettingsView({ prefs, setPrefs, account, setAccount, items, copier, onRelock, onImported, onClose }) {
+function SettingsView({ prefs, setPrefs, account, setAccount, items, copier, onRelock, onCategoriesImported, onImported, onClose }) {
   const [tab, setTab] = useState('general')
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
@@ -819,7 +811,7 @@ function SettingsView({ prefs, setPrefs, account, setAccount, items, copier, onR
         <div className="overflow-y-auto p-5">
           {tab === 'general' && <GeneralTab prefs={prefs} setPrefs={setPrefs} account={account} />}
           {tab === 'security' && <SecurityTab account={account} setAccount={setAccount} copier={copier} />}
-          {tab === 'backup' && <BackupTab items={items} account={account} onRelock={onRelock} onImported={onImported} />}
+          {tab === 'backup' && <BackupTab items={items} account={account} onRelock={onRelock} onCategoriesImported={onCategoriesImported} onImported={onImported} />}
           {tab === 'activity' && <ActivityTab items={items} />}
         </div>
       </div>
@@ -834,23 +826,18 @@ function GeneralTab({ prefs, setPrefs, account }) {
       localStorage.setItem(k === 'lock' ? 'vault_lock' : 'vault_clipboard', v)
     } catch {}
   }
-  const select = 'flex-1 h-9 px-3 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 focus:outline-none focus:border-black/30 dark:focus:border-white/30'
   return (
     <div className="space-y-6">
       <div>
         <label className="block text-[12px] font-medium text-stone-500 mb-1.5">自动锁定</label>
-        <div className="flex items-center gap-2">
-          <select className={select} value={prefs.lock} onChange={e => set('lock', e.target.value)}>
-            {LOCK_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-          </select>
-        </div>
+        <Select value={prefs.lock} onChange={v => set('lock', v)}
+          options={LOCK_OPTIONS.map(o => ({ value: o.key, label: o.label }))} />
         <p className="mt-1.5 text-[11px] text-stone-400">锁定后清除内存中的加密密钥；页面刷新/关闭浏览器也会自动锁定。</p>
       </div>
       <div>
         <label className="block text-[12px] font-medium text-stone-500 mb-1.5">复制后自动清理剪贴板</label>
-        <select className={select} value={prefs.clipboard} onChange={e => set('clipboard', e.target.value)}>
-          {CLIPBOARD_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-        </select>
+        <Select value={prefs.clipboard} onChange={v => set('clipboard', v)}
+          options={CLIPBOARD_OPTIONS.map(o => ({ value: o.key, label: o.label }))} />
       </div>
       <div className="pt-4 border-t border-black/[0.06] dark:border-white/[0.06]">
         <h4 className="text-[12px] font-medium text-stone-500 mb-2">安全属性</h4>
@@ -934,7 +921,7 @@ function SecurityTab({ account, setAccount, copier }) {
   )
 }
 
-function BackupTab({ items, account, onRelock, onImported }) {
+function BackupTab({ items, account, onRelock, onCategoriesImported, onImported }) {
   const [csvStep, setCsvStep] = useState(0)
   const [csvPw, setCsvPw] = useState('')
   const [csvErr, setCsvErr] = useState('')
@@ -953,7 +940,9 @@ function BackupTab({ items, account, onRelock, onImported }) {
   const exportEncrypted = async () => {
     const res = await vaultExport()
     if (res.success) {
-      download(`vault-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(res.data, null, 2), 'application/json')
+      // 自定义类别目录随备份往返（服务端不存 vault 元数据；后端导入忽略该字段）
+      const payload = { ...res.data, custom_categories: loadCustomCategories() }
+      download(`vault-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(payload, null, 2), 'application/json')
     }
   }
 
@@ -980,6 +969,8 @@ function BackupTab({ items, account, onRelock, onImported }) {
     if (!file) return
     try {
       const backup = JSON.parse(await file.text())
+      // 备份内的自定义类别目录先落到本地（导入替换后立即可见，不依赖重新解锁）
+      if (Array.isArray(backup.custom_categories)) onCategoriesImported(backup.custom_categories)
       setImportConfirm(backup)
     } catch { alert('无法解析备份文件') }
   }

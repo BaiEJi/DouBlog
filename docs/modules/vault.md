@@ -10,8 +10,11 @@
 单用户零知识密码库（`/vault`）：服务端**只存密文**，所有加密/解密/搜索/分析在浏览器完成。
 
 - **零知识加密模型**：主密码 --Argon2id--> KEK₁ --AES-GCM-wrap--> VEK（256-bit 随机）；Recovery Key --Argon2id(salt₂)--> KEK₂ 包裹**同一** VEK；条目/附件用 VEK + AES-256-GCM（每次全新 12-byte nonce）。VEK 以不可导出 `CryptoKey` 只存内存，锁定/刷新/关浏览器即清除。Argon2id 用 `@noble/hashes`，AEAD 用原生 WebCrypto——不发明密码学。
-- **三面板主界面**（解锁后）：左侧栏（概览/全部/收藏/最近使用/分类/标签/身份/安全中心/密码服务/回收站）｜中栏条目列表（客户端解密后搜索）｜右栏详情或编辑器；⌘K Command Palette 全局搜索。
-- **概览 Dashboard**：大数字统计 + 库健康度进度条 + 密码到期提醒横条 + 六卡安全风险网格 + 最近使用/收藏/身份/最近修改双栏。
+- **三面板主界面**（解锁后）：左侧栏（概览/类别/全部条目/收藏/身份/安全中心/密码服务）｜中栏条目列表（客户端解密后搜索）｜右栏详情或编辑器；⌘K Command Palette 全局搜索。
+- **类别页**（`components/CategoriesView.jsx`，个性色玫瑰粉）：布局参考配置中心——左侧类别栏（内置 9 项 + 自定义类别，含条目计数，选中态玫瑰粉），右侧当前类别条目表（名称/用户名/类型/更新时间 + 类别内搜索）；类别存于条目密文 blob 的 `category` 字段，计数与过滤均在客户端解密后进行；点条目行跳转中栏列表（`section='category'` + 过滤值）并选中，详情/编辑/删除流程与全部条目一致。当前选中类别由 `VaultPage` 持有，新建/编辑往返不丢。
+- **自定义类别**（`components/categoryCatalog.js` + `components/CategoryManager.jsx`，类别页左栏「管理类别」入口）：可添加（≤12 字符、禁重名）/ 改名 / 删除；自定义类别仅存浏览器 localStorage（零知识：服务端不存任何 vault 元数据），key 为稳定生成 id（改名不牵连条目），label 为用户可见名；**删除时有条目的类别会被拒绝**（要求先改类，避免密码条目失去归属）。目录 = 内置 9 项 ∪ 自定义 ∪ 条目中的孤儿 key（本地数据被清/备份恢复时兜底展示）。编辑器「分类」下拉、类别页侧栏、详情页徽章、导航子项统一走目录解析。导出备份时以 `custom_categories` 字段随文件往返（后端导入忽略该字段），导入时取出落本地。
+- **统一样式下拉框**（`components/ui.jsx` 的 `Select`）：替代全部原生 `<select>`（编辑器类型/分类/身份/密钥、设置页自动锁定与剪贴板、密码服务用户类型）——触发器与菜单均走应用 stone 配色 + 暗色适配，支持点击外部/Esc 关闭、选中态高亮；禁用了原生下拉在暗色下的白底弹层。
+- **概览 Dashboard**：大数字统计 + 库健康度进度条 + 密码到期提醒横条 + 六卡安全风险网格 + 收藏/身份/最近修改双栏。
 - **TOTP 验证码**（`components/totp.js`，RFC 6238）：2FA Secret 支持 Base32 或 `otpauth://` URI（编辑器粘贴自动解析，签发方回填服务名）；详情页实时生成 6-8 位码 + 30s 环形倒计时 + 一键复制；HMAC-SHA1 走 WebCrypto，密钥不出设备。
 - **HIBP 泄露检查**（`components/hibp.js`）：k-anonymity——仅上传密码 SHA-1 前 5 位；结果缓存 localStorage（键为完整 SHA-1，单向不可逆）；网络不可达返回 -1（未知 ≠ 安全）。
 - **健康总评分**（安全中心）：0-100 环 = 100 − 泄露×15 − 弱×8 − 复用组×10 − 到期×4 − 过旧×3 − 无2FA×2 − 重复组×2 − 缺恢复×1，点击下钻到对应分组。
@@ -89,7 +92,7 @@
 | 16 | `GET /api/vault/export` | — | 备份对象（见下）；审计 exported | 404 未初始化 |
 | 17 | `POST /api/vault/import` | 备份对象整体 | `{imported_items:N}`；审计 imported | 400（format 非法/账号材料不完整/条目密文结构非法/缺 items） |
 
-备份格式：`{format:'doublog-vault-backup', version:1, exported_at, account, items:[全部条目，含回收站]}`；导入为**替换式**（覆盖账号材料、清空并重建全部条目），前端导入后强制重新解锁。
+备份格式：`{format:'doublog-vault-backup', version:1, exported_at, account, items:[全部条目，含回收站], custom_categories:[自定义类别目录]}`（末项由前端注入/取出，后端忽略）；导入为**替换式**（覆盖账号材料、清空并重建全部条目），前端导入后强制重新解锁。
 
 ## 4. 后端要点
 
@@ -103,15 +106,19 @@
 
 ## 5. 前端（`frontend/src/vault/`）
 
-- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）→ unlocked（三面板）`。进入时 `GET /account` 探测（200=已初始化→locked，404→setup）；`unlock()` 调 `unlockVault` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**），随后并行拉取 live+trash 两列表并逐条解密；`lockNow()` 清 VEK/条目/选择态回 locked。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。其余职责：设置弹层（自动锁定/剪贴板/改主密码/轮换 Recovery Key/备份导入导出/活动记录）、⌘K Command Palette、purge 确认。
+- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）→ unlocked（三面板）`。进入时 `GET /account` 探测（200=已初始化→locked，404→setup）；`unlock()` 调 `unlockVault` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**），随后拉取 live 列表逐条解密；`lockNow()` 清 VEK/条目/选择态回 locked。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。其余职责：设置弹层（自动锁定/剪贴板/改主密码/轮换 Recovery Key/备份导入导出/活动记录）、⌘K Command Palette、永久删除确认。**删除即永久删除**（回收站 UI 已移除）：详情页删除按钮 → 确认弹窗 → `DELETE /purge` 物理销毁（后端软删/恢复端点仍保留但前端不再调用）。
   - **解锁≠登录**：锁屏文案"密码库已锁定/输入主密码/解锁保险库"；错误提示"主密码不正确"——这是本地解密步骤，与站点会话登录（Cookie）无关。
 - **`components/crypto.js`（加密核心，独立可复用）**：`createVaultMaterial`（初始化）/ `unlockVault`（解锁，错误密码→GCM 校验失败抛错）/ `rewrapVaultKey`（改主密码/轮换恢复密钥，仅重包裹不重加密条目）/ `encryptBlob`/`decryptBlob`/`generateRecoveryKey`/`normalizeRecoveryKey`。Argon2id `@noble/hashes`（默认参数 t=2, m=32768, p=1，解锁以服务端账号参数为准），AEAD 原生 WebCrypto；VEK 以 `extractable:false` 的 CryptoKey 只存内存。**任何函数不 console 输出密钥/明文**。
 - **`components/core.js`（纯逻辑，无 UI/网络）**：枚举常量 + 中文映射、`emptyItem()`、生成器（`randomInt` 拒绝采样无 modulo 偏差）、熵/强度（`passwordEntropy`/`passphraseEntropy`/`strengthLabel`）、`extractIdentities`、`analyzeSecurity`（弱/复用/过旧/expired/no2fa/重复/缺恢复）、`expiryInfo`（到期判定）、`applyPasswordChange`（历史推进）、`itemMatches`/`domainOf`/`daysAgo`。
 - **`components/ui.jsx`（UI 原子）**：`makeClipboardCopier`（复制后 10/30/60s 自动覆写清理，仅清未被覆盖内容）、`CopyButton`、`SecretField`（默认 `•••` 遮蔽、Reveal 15s 自动隐藏、卸载即隐藏）、`FieldRow`、`Favicon`（DDG icons + 字母回退）、图标集 `I`。
-- **`components/ItemDetail.jsx`**：LOGIN/TOTP/绑定身份/密钥/安全状况/附件/密码历史时间线/自定义字段/备注（Markdown 渲染）分区。
-- **`components/ItemEditor.jsx`**：全字段表单；改密自动推进历史（可填原因）；2FA 字段支持粘贴 otpauth:// 自动解析；`expiry_days` 输入；标签/自定义字段/多 URL/多身份/多密钥。
+- **`components/ItemDetail.jsx`**：LOGIN（用户名/手机号/邮箱/实名人/账号昵称/密码/URL/登录方式，手机号与邮箱带一键复制）/TOTP/绑定身份/密钥/安全状况/附件/密码历史时间线/自定义字段/备注（Markdown 渲染）分区。
+- **`components/ItemEditor.jsx`**：全字段表单；用户名下固定三个可选联系字段——**手机号 / 邮箱 / 实名人**（均存于密文 blob，详情页展示，手机号与邮箱可复制，纳入 `itemMatches` 客户端搜索）；改密自动推进历史（可填原因）；2FA 字段支持粘贴 otpauth:// 自动解析；`expiry_days` 输入；标签/自定义字段/多 URL/多身份/多密钥。
 - **`components/Generator.jsx`**：密码/口令短语双 tab + 熵条 + 复制/重生成/`onUse` 填充编辑器。
 - **`components/SecurityCenter.jsx`**：健康总评分环 + HIBP 检查（密码去重、并发 3、进度）+ 八组风险分组（点击跳条目）。
+- **`components/CategoriesView.jsx`**：类别页（玫瑰粉个性色，布局对齐配置中心）：左侧类别目录栏（内置 9 项 + 自定义 + 孤儿 key，计数 + 选中态 + 「管理类别」入口），右侧当前类别条目表（favicon/名称/用户名/类型徽章/更新时间/查看）+ 类别内搜索；行点击跳 `section='category'` 中栏列表并选中该条目；选中类别由父级 prop 控制（`active`/`onActiveChange`）。
+- **`components/categoryCatalog.js`**：类别目录单源——localStorage 持久化（`vault_custom_categories`）+ `buildCatalog` 合并（内置/自定义/孤儿）+ `useCategoryCatalog` hook（增/改名/删，删前查条目数，`replaceCustom` 供备份导入恢复）。
+- **`components/CategoryManager.jsx`**：类别管理弹窗——内置只读（计数 + 内置标签）、自定义行内改名/删除（拒删带原因）、底部添加行；Esc/遮罩关闭。
+- **`components/ui.jsx` 的 `Select`**：统一样式下拉框（替代原生 select），全 vault 模块共用。
 - **`components/totp.js` / `hibp.js`**：见第 1 节；均零第三方依赖。
 - **`api.js`**：vault 17 端点 + pwsvc 端点的 fetch 封装，全部经 `@/shared/client` 的 `apiFetch`（统一会话 Cookie/凭据）；文件内不出现任何明文口令参数。
 - **`components/PwsvcView.jsx`**：密码服务子视图（侧栏"密码服务"入口），项目/类型/用户/当前轮换密码/校验日志/限流管理，UI 明确标注"非零知识"；见 `docs/modules/pwsvc.md`。

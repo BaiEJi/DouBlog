@@ -49,6 +49,9 @@ export function emptyItem() {
     expiry_days: null,    // 到期提醒周期（天）：密码 N 天未改后在概览/安全中心提醒；null=不提醒
     password_history: [],
     account_id: '',
+    phone: '',             // 手机号（可选）
+    email: '',             // 邮箱（可选）
+    real_name: '',         // 实名人（可选）
     identities: [],       // { type:'email'|'phone', value, role:'primary'|'recovery' }
     login_methods: [],
     secrets: [],          // { kind, question?, value }
@@ -300,7 +303,7 @@ export function itemMatches(item, query) {
   if (!q) return true
   const d = item.data
   const haystack = [
-    d.service, d.username, d.account_id, d.app_name,
+    d.service, d.username, d.account_id, d.app_name, d.phone, d.email, d.real_name,
     ...(d.tags || []),
     ...(d.urls || []).map(u => u.value),
     ...(d.identities || []).map(i => i.value),

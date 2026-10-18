@@ -10,7 +10,7 @@ import {
   pwsvcListLogs,
 } from '../api'
 import { API_BASE } from '../api'
-import { CopyButton, I } from './ui'
+import { CopyButton, I, Select } from './ui'
 
 const ROTATIONS = [
   { v: 30, l: '30 秒' }, { v: 60, l: '60 秒' }, { v: 120, l: '2 分钟' },
@@ -568,9 +568,8 @@ function NewUserForm({ pid, types, onDone, onCancel }) {
       </div>
       <div>
         <label className={label}>用户类型</label>
-        <select className={input} value={typeId} onChange={e => setTypeId(+e.target.value)}>
-          {types.map(t => <option key={t.id} value={t.id}>{t.name}（{t.length} 位 · {t.rotation_seconds}s）</option>)}
-        </select>
+        <Select value={typeId} onChange={v => setTypeId(+v)}
+          options={types.map(t => ({ value: t.id, label: `${t.name}（${t.length} 位 · ${t.rotation_seconds}s）` }))} />
       </div>
       {err && <p className="text-[12px] text-red-500">{err}</p>}
       <p className="text-[11.5px] text-stone-400">创建后立即拥有独立的轮换密码链。</p>
