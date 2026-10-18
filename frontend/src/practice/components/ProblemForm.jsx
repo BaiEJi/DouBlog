@@ -398,7 +398,7 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
   if (loading) return <Spinner text="加载题目中…" />
 
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4">
       {/* ── 顶栏 ── */}
       <div className="flex items-center gap-3">
         <button type="button" onClick={onBack}
