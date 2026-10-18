@@ -7,8 +7,7 @@
 - 分类：GET/POST /api/subs/categories、PUT/DELETE /api/subs/categories/<id>
 - 统计：GET /api/subs/stats/overview | spending | by-category | category-summary | trend
 - 提醒：GET /api/subs/reminders/upcoming | all
-- 备份：POST /api/subs/backup/run（手动）、GET /api/subs/backup（统计+列表）
-  另有每日后台线程：02:00 自动备份、10:00 当日支出摘要日志（settings.subs_backup_enabled 关闭备份）
+  另有每日后台线程：10:00 当日支出摘要日志
 
 支出计算：日均 = 价格 / 计费周期天数；实际支出 = 日均 × 与查询范围重叠天数（闭区间）；
 跨币种按 settings.subs_exchange_rates 静态汇率折算基准币（CNY）。
@@ -30,7 +29,6 @@ from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.modules import mod_logger
 from app.shared.response import api_response
-from app.subs import backup as subs_backup
 from app.subs.currency import (
     VALID_BILLING_CYCLES,
     VALID_CURRENCIES,
@@ -920,29 +918,10 @@ async def reminders_all():
     return await run_db(_impl)
 
 
-# ─── 备份 ─────────────────────────────────────────────────
-
-@router.post('/backup/run')
-async def backup_run():
-    def _impl():
-        """手动触发一次数据库备份（当前 SQLite 库；PG 后端返回 skipped）"""
-        result = subs_backup.backup_database()
-        code = 409 if result['status'] == 'error' else 200   # ok / skipped 均 200
-        return api_response(result, code,
-                            '备份完成' if result['status'] == 'ok' else result.get('reason', ''))
-    return await run_db(_impl)
-
-
-@router.get('/backup')
-async def backup_list():
-    """备份统计 + 文件列表"""
-    return api_response(subs_backup.backup_stats())
-
-
-# ─── 每日后台任务（02:00 备份 / 10:00 支出摘要日志）──────
+# ─── 每日后台任务（10:00 支出摘要日志）────────────────────
 
 _DAILY_LOCK = threading.Lock()
-_DAILY_DONE = {'backup': None, 'spending': None}   # 已执行日期 'YYYY-MM-DD'
+_DAILY_DONE = {'spending': None}   # 已执行日期 'YYYY-MM-DD'
 
 
 def run_daily_spending_log(app) -> str:
@@ -979,8 +958,8 @@ def run_daily_spending_log(app) -> str:
 
 def start_daily_loop(app):
     """
-    每日任务线程（daemon，随进程）：02:00 后自动备份、10:00 后写支出摘要。
-    启动即补跑当天未执行的任务；测试直接调 run_daily_spending_log / backup_database。
+    每日任务线程（daemon，随进程）：10:00 后写当日活跃订阅支出摘要。
+    启动即补跑当天未执行的任务；测试直接调 run_daily_spending_log。
     """
     if getattr(app.state, 'testing', False):
         return   # 测试模式空转（不启动线程）
@@ -998,8 +977,6 @@ def start_daily_loop(app):
             try:
                 now = datetime.now()
                 today = now.strftime(DATE_FMT)
-                if settings.subs_backup_enabled and now.hour >= 2 and _mark_once('backup', today):
-                    subs_backup.backup_database()
                 if now.hour >= 10 and _mark_once('spending', today):
                     run_daily_spending_log(app)
             except Exception:  # noqa: BLE001 后台任务永不中断

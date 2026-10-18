@@ -184,23 +184,27 @@ export default function MembersView({ dark, toast }) {
 
       {/* 筛选栏 */}
       <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative">
+        <div className="relative w-48">
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
             placeholder="搜索会员名称…"
-            className={inputCls + ' w-48 pl-7'} />
+            className={inputCls + ' pl-7'} />
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="6.5" /><path d="M21 21l-4.8-4.8" strokeLinecap="round" /></svg>
         </div>
-        <select value={filters.category_id ?? ''} className={inputCls + ' w-32'}
-          onChange={e => { setFilters(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined })); setPage(1) }}>
-          <option value="">全部分类</option>
-          {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-        <select value={filters.status ?? ''} className={inputCls + ' w-28'}
-          onChange={e => { setFilters(f => ({ ...f, status: e.target.value || undefined })); setPage(1) }}>
-          <option value="">全部状态</option>
-          <option value="active">有效</option>
-          <option value="expired">已过期</option>
-        </select>
+        <div className="w-32">
+          <select value={filters.category_id ?? ''} className={inputCls}
+            onChange={e => { setFilters(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined })); setPage(1) }}>
+            <option value="">全部分类</option>
+            {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          </select>
+        </div>
+        <div className="w-28">
+          <select value={filters.status ?? ''} className={inputCls}
+            onChange={e => { setFilters(f => ({ ...f, status: e.target.value || undefined })); setPage(1) }}>
+            <option value="">全部状态</option>
+            <option value="active">有效</option>
+            <option value="expired">已过期</option>
+          </select>
+        </div>
         <span className="text-xs text-stone-400 tabular-nums">共 {total} 条</span>
       </div>
 

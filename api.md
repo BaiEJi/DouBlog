@@ -797,10 +797,6 @@ GET    /api/subs/stats/trend?start_date=&end_date=&granularity=month
 # 提醒
 GET    /api/subs/reminders/upcoming                end_date≥今天 且 剩余天数 ≤ 会员 reminder_days（按剩余天数升序）
 GET    /api/subs/reminders/all                     全部未到期订阅（到期日历数据源）
-
-# 备份（当前 SQLite 库快照 → data/backups/subs_YYYYMMDD_HHMMSS.db，自动清理超期；PG 后端返回 skipped）
-POST   /api/subs/backup/run                        {status: ok|skipped|error, path?, size?}（status=error 时 HTTP 409）
-GET    /api/subs/backup                            {total_count, total_size_mb, retention_days, newest/oldest_backup, backups[]}
 ```
 
 **实测示例**（种子数据：Netflix 月付 ¥89/¥199、Disney+ 年付 $58 等 9 会员）：
@@ -822,7 +818,7 @@ GET /api/subs/members?keyword=netflix
 **错误码**：401 认证失败；400 参数缺失/格式非法/日期倒置/币种或周期非法/分类或会员不存在/有关联分类不可删；404 资源不存在；409 分类重名。
 **会员状态口径**：任意一条订阅 `end_date ≥ 今天` ⇒ `active`，否则 `expired`。
 **月/年支出口径**（CrownFlow 原口径）：按日均 × **整月/整年** 覆盖天数计算（非"至今"）。
-**后台任务**：每日 02:00 自动备份（`SUBS_BACKUP_ENABLED=0` 关闭）、10:00 当日活跃订阅支出摘要写模块日志（sys_name=doublog.subs）。
+**后台任务**：每日 10:00 当日活跃订阅支出摘要写模块日志（sys_name=doublog.subs）。
 
 ---
 

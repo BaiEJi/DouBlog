@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { subsStatsTrend, subsStatsByCategory } from '../api'
 import { AreaTrend, DonutPie } from '../charts'
-import { fmtPrice, adjustForDark } from '../kit'
+import { fmtPrice, adjustForDark, DateInput } from '../kit'
 
 const PALETTE = ['#0ea5e9', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#14b8a6', '#ec4899', '#f97316']
 const DARK_PALETTE = ['#38bdf8', '#fbbf24', '#34d399', '#f87171', '#a78bfa', '#2dd4bf', '#f472b6', '#fb923c']
@@ -124,10 +124,10 @@ export default function StatsView({ dark, toast }) {
       {/* 控制栏 */}
       <div className="flex flex-wrap items-center gap-2.5 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
         <div className="flex items-center gap-1.5">
-          <input type="date" className={inputCls} value={range[0]}
+          <DateInput className={inputCls} value={range[0]}
             onChange={e => { setRange([e.target.value, range[1]]); setQuick('') }} />
           <span className="text-stone-400">→</span>
-          <input type="date" className={inputCls} value={range[1]}
+          <DateInput className={inputCls} value={range[1]}
             onChange={e => { setRange([range[0], e.target.value]); setQuick('') }} />
         </div>
         <select className={inputCls + ' w-24'} value={granularity} onChange={e => setGranularity(e.target.value)}>

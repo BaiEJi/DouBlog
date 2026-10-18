@@ -1,8 +1,8 @@
 /**
  * 订阅模块公共小件：格式化（价格/剩余天数/周期） / 状态与分类标签 /
- * 弹层（Modal/Confirm）/ 图标 / 暗色下用户自配颜色的提亮。
+ * 弹层（Modal/Confirm）/ 日期输入 / 图标 / 暗色下用户自配颜色的提亮。
  */
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 // ─── 格式化 ───────────────────────────────────────────────
 
@@ -197,6 +197,26 @@ export const btn = {
   danger: 'inline-flex items-center gap-1 px-2 h-7 rounded-lg text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors',
 }
 
+/**
+ * 日期输入：原生 date 控件只有点击右侧日历小图标才会弹选择器（点击日期文本无效），
+ * 这里在输入框任意位置被点击时主动 showPicker()，保证整块可点弹出日历。
+ * 用捕获阶段调用：showPicker 先于原生图标处理器执行，原生两处「已打开则跳过」的
+ * 守卫会挡住重复弹开，点击图标与点击文本都只开一次。
+ */
+export function DateInput({ value, onChange, className = inputCls, ...rest }) {
+  const ref = useRef(null)
+  const openPicker = useCallback(() => {
+    const el = ref.current
+    if (typeof el?.showPicker === 'function') {
+      try { el.showPicker() } catch { /* 无用户手势/不可渲染时忽略，交由原生行为兜底 */ }
+    }
+  }, [])
+  return (
+    <input ref={ref} type="date" value={value} onChange={onChange}
+      onClickCapture={openPicker} className={className} {...rest} />
+  )
+}
+
 // ─── 图标 ────────────────────────────────────────────────
 
 const I = (paths, size = 16) => (
@@ -224,5 +244,4 @@ export const Icon = {
   eye: I(<><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" /><circle cx="12" cy="12" r="2.6" /></>, 13),
   clock: I(<><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></>),
   timeline: I(<path d="M4 6h16M4 12h10M4 18h13" />),
-  backup: I(<><ellipse cx="12" cy="5.5" rx="7" ry="2.8" /><path d="M5 5.5V18.5c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8V5.5" /><path d="M5 12c0 1.5 3.1 2.8 7 2.8s7-1.3 7-2.8" /></>),
 }

@@ -57,8 +57,6 @@ class Settings:
         'CNY': 1.0, 'USD': 7.0, 'EUR': 10.0, 'GBP': 9.0, 'JPY': 0.05,
     }
     subs_default_reminder_days: int = 7      # 新会员默认提前提醒天数
-    subs_backup_retention_days: int = 90     # 备份保留期（天）
-    subs_backup_enabled: bool = os.environ.get('SUBS_BACKUP_ENABLED', '1') != '0'  # 每日 02:00 自动备份
 
     # ── 日志接收模块（sdklogs，lizysdk send_json 的服务端）────
     # 环境变量名与 lizylog 设计文档保持一致（LOGSDB_*）

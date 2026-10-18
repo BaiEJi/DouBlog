@@ -1,10 +1,10 @@
 # Subs 模块文档（订阅管理 / CrownFlow 全量迁移）
 
-> 模块：`backend/app/subs/`（`__init__.py` + `models.py` + `routes.py` + `currency.py` + `backup.py`）
+> 模块：`backend/app/subs/`（`__init__.py` + `models.py` + `routes.py` + `currency.py`）
 > ＋ 前端 `frontend/src/subs/`（`SubsPage.jsx` + `api.js` + `kit.jsx` + `charts.jsx` + `useHolidays.js` + `views/×5`）
 > 契约入口：`app/subs/__init__.py` 导出 `router` + `start_background(app)`（`app.state.testing` 时空转）；
 > **无 `ensure_migrations`**（三表均为新建，`create_all` 直接覆盖，无存量改名需求）
-> 生成日期：**2026-10-10**（依据当日代码；含 `tests/subs/test_subs.py` 15 用例）
+> 生成日期：**2026-10-10**（依据当日代码；含 `tests/subs/test_subs.py` 13 用例）
 
 ---
 
@@ -21,8 +21,8 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 - **到期提醒**：`reminders/upcoming`（剩余天数 ≤ 会员 `reminder_days` 阈值）与 `reminders/all`（到期日历数据源）
 - **前端可视化全家桶**：概览（指标卡 + 分类汇总表 + 提醒列表 + 会员支出排行榜 4 维度 + **农历/法定节假日到期日历**）、
   会员列表（表格/卡片双视图 + 筛选分页）、会员详情（订阅表 + **时间轴视图** 3m/6m/12m/全部）、
-  统计图表（面积趋势图 + 环形饼图，纯 SVG 零依赖）、设置（分类 CRUD / 会员分布 / 备份面板）
-- **每日后台线程**：02:00 自动备份当前 SQLite 库（90 天保留）+ 10:00 当日支出摘要写模块日志
+  统计图表（面积趋势图 + 环形饼图，纯 SVG 零依赖）、设置（分类 CRUD）
+- **每日后台线程**：10:00 当日支出摘要写模块日志
 
 ## 2. 数据模型（`app/subs/models.py`）
 
@@ -140,13 +140,6 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 | `GET /api/subs/reminders/upcoming` | `end_date ≥ 今天` 且 `days_remaining ≤ 会员 reminder_days`（null 按 0）的订阅，按剩余天数升序 → `{reminders: [{subscription_id, member_id, member_name, level, category_name/icon/color, end_date, days_remaining, price, currency}]}` |
 | `GET /api/subs/reminders/all` | 全部未到期订阅（到期日历数据源），升序，结构同上 |
 
-### 备份
-
-| 端点 | 说明 |
-|---|---|
-| `POST /api/subs/backup/run` | 手动触发一次备份 → 200 `{status:'ok', path, size}` 或 200 `{status:'skipped', reason}`（PG 后端/库文件不存在）；失败 → 409 `{status:'error', reason}` |
-| `GET /api/subs/backup` | `{total_count, total_size, total_size_mb, retention_days, oldest_backup, newest_backup, backups: [{name, size, size_mb, created_at}]}`（新→旧） |
-
 ## 4. 后端要点
 
 ### 4.1 统计口径红线（AGENTS.md 13g 原文照录）
@@ -174,24 +167,14 @@ routes.py 模块注释的口径表述：
 
 - `app.state.testing=True`（测试模式）→ **直接 return，不启动线程**
 - 线程 `subs-daily`（daemon，随进程）：先 sleep 10s，主循环每 60s 检查——
-  - `now.hour ≥ 2` 且当天未执行过 且 `settings.subs_backup_enabled` → `backup_database()`
   - `now.hour ≥ 10` 且当天未执行过 → `run_daily_spending_log(app)`
 - 当日去重：`_DAILY_LOCK` + `_DAILY_DONE`（进程内存，'YYYY-MM-DD' 字符串）；**启动即补跑当天未执行的任务**
   （进程重启后同一天会再跑一次，属设计内）；循环体异常吞掉，后台任务永不中断
 - `run_daily_spending_log(app)`：当日活跃订阅（start ≤ 今天 ≤ end）按分类汇总日均支出，多行 info 写模块日志
   （sys_name=`doublog.subs`），末尾 `db.session.remove()` 还连接
-- **测试直接调 `run_daily_spending_log` / `backup_database`，不要 sleep 等线程**
+- **测试直接调 `run_daily_spending_log`，不要 sleep 等线程**
 
-### 4.3 backup.py
-
-- 备份对象：`data/blog.db`（当前 SQLite 库文件，路径由 `data/db_config.json` 的 backend 判定；
-  **PG 后端返回 `{status:'skipped'}`**）——注意是**整库快照**（所有模块同库），非仅 subs 三表
-- **WAL 一致性**：用 `sqlite3` backup API（source→target 连接对）出快照；直接 copy 文件可能丢 `-wal` 内容
-- 落盘 `data/backups/subs_YYYYMMDD_HHMMSS.db`；成功后 `cleanup_old_backups()`（只匹配 `subs_*.db`，
-  mtime 早于 `now − subs_backup_retention_days`（默认 90 天）即删除）；失败清理半成品文件并返回 error
-- `list_backups()`（新→旧）/ `backup_stats()` 供 `GET /api/subs/backup` 展示
-
-### 4.4 currency.py
+### 4.3 currency.py
 
 - `get_billing_cycle_days(cycle, custom_days, start_date)`：**monthly = 起始月实际天数**
   （`monthrange`，按 `start_date` 的年月，**终身固定**）；quarterly = 90；yearly = 365/366（闰年按起始年）；
@@ -201,15 +184,13 @@ routes.py 模块注释的口径表述：
 - 常量：`VALID_CURRENCIES = ('CNY','USD','EUR','GBP','JPY')`、`VALID_BILLING_CYCLES =
   ('monthly','quarterly','yearly','custom')`（币种符号映射在前端 kit.jsx）
 
-### 4.5 配置（`config.py`）
+### 4.4 配置（`config.py`）
 
 | 配置 | 默认 | 说明 |
 |---|---|---|
 | `subs_base_currency` | `'CNY'` | 支出统计折算基准币 |
 | `subs_exchange_rates` | `{CNY:1.0, USD:7.0, EUR:10.0, GBP:9.0, JPY:0.05}` | **静态汇率表**（不联网更新） |
 | `subs_default_reminder_days` | `7` | 新会员默认提前提醒天数 |
-| `subs_backup_retention_days` | `90` | 备份保留期（天） |
-| `subs_backup_enabled` | `True` | 每日 02:00 自动备份开关（env `SUBS_BACKUP_ENABLED=0` 关闭） |
 
 ## 5. 前端（`frontend/src/subs/`）
 
@@ -235,15 +216,18 @@ routes.py 模块注释的口径表述：
   （改开始日期按周期自动推算结束日期 = 整周期 − 1 天、custom 显自定义天数输入、前端预校验与后端同规则）
 - **StatsView**：日期范围 + 快速选择（本周/本月/本季度/本年）+ 粒度（跨度 ≥90 天禁用按天并自动回落按周）+
   面积趋势图与环形饼图（hover 提示，"支出明细"开关展开分类/订阅明细）
-- **SettingsView**：分类管理（CRUD / 16 色预设 + 任意 hex / emoji / 搜索）、会员分布卡（计数徽标，点击跳转
-  `?category_id=` 筛选）、备份面板（手动立即备份 + 保留策略说明 + 备份文件列表）
+- **SettingsView**：分类管理（CRUD / 16 色预设 + 任意 hex / emoji / 搜索）
+- **DateInput**（kit.jsx）：原生 `type="date"` 封装的受控组件；**捕获阶段**调 `showPicker()`——
+  点击日期文本（原生仅图标可弹）也弹选择器，且先于原生图标处理器执行，两处「已打开则跳过」守卫
+  挡住重复弹开； StatsView 日期范围与 MemberDetailView 订阅表单/日期筛选在用
 
 ### 5.3 kit.jsx / charts.jsx / useHolidays.js
 
 - **kit.jsx**：格式化（`fmtPrice` 价格+币种符号、`daysRemaining` 本地零点差值、`cycleLabel`/`fmtDuration`/
   `toDateInput`）；**`adjustForDark(hex)`**——暗色下用户自配分类色按相对亮度向白混合提亮（对比度循环，
   `#100f0e` 底色常量），保证深底可读；`StatusTag`（active/expiring/expired 三态）/`CategoryTag`（hex 色 + 14 透明度底）；
-  `Modal`（Esc 关闭/遮罩点击）`Confirm` `Toast`；表单 `inputCls`/`Field`/`btn` 四档按钮；Icon 集（stroke 1.7）
+  `Modal`（Esc 关闭/遮罩点击）`Confirm` `Toast`；表单 `inputCls`/`Field`/`btn` 四档按钮；`DateInput`（见 5.2）；
+  Icon 集（stroke 1.7）
 - **charts.jsx**（**纯 SVG 手写，零依赖**）：`useWidth`（初测 + resize + ResizeObserver 三重兜底）、
   `AreaTrend`（面积+折线+hover 竖线+数据点、x 轴标签按步长抽稀、tooltip 180px 卡片）、
   `DonutPie`（扇区 path 手绘、hover 外扩 3px/其余 35% 透明、中心总计、图例带占比、下方明细区）
@@ -270,24 +254,22 @@ routes.py 模块注释的口径表述：
 | 聚合（1） | `test_member_aggregation`（CNY 30 + USD 10×7.0 = total_spending 100、时长 60、latest 取最新有效订阅、列表同带聚合） |
 | 统计（3） | `test_stats_overview_and_summary`（月/年支出=整月口径 30、category-summary 合计）；`test_stats_spending_and_by_category`（USD 7×7.0 折算、by_currency 原币、占比、日均、by-category 明细降序、缺参/倒置/非法日期 400）；`test_stats_trend_granularities`（month=12 段/quarter=4 段标签、week/day 标签、金额核对、非法粒度/缺日期 400） |
 | 提醒（1） | `test_reminders`（3 天内提醒/30 天不提醒/已过期不出现、reminder_days 收紧后为空、all 含未到期不含过期、升序） |
-| 备份与每日任务（3） | `test_backup_run_and_stats`（手动备份 ok、统计列表、**快照文件可用 sqlite3 打开且含 subs_members 表**）；`test_backup_cleanup_old_files`（伪造超期 mtime 文件被清）；`test_daily_spending_log`（直接调函数，含活跃数/未分类桶/总支出文案、无订阅/重复执行不炸） |
+| 每日任务（1） | `test_daily_spending_log`（直接调函数，含活跃数/未分类桶/总支出文案、无订阅/重复执行不炸） |
 
 ## 7. 已知边界
 
-1. **排行榜/会员分布被分页上限截断**：前端 RankingCard 与 DistributionTab 请求 `page_size: 1000`，
-   服务端被 `settings.max_page_size`(=100) 封顶——会员超 100 时榜单与分布不完整
+1. **排行榜被分页上限截断**：前端 RankingCard 请求 `page_size: 1000`，
+   服务端被 `settings.max_page_size`(=100) 封顶——会员超 100 时榜单不完整
 2. `total_duration_days` = Σ`(end−start).days`，**不含闭区间 +1**（与支出重叠口径 +1 是两套约定）
 3. 汇率为**静态配置表**，不联网更新；未知币种按原值折算（不报错）
-4. 备份是**整库**（`data/blog.db`，所有模块同库）快照而非仅 subs 三表；文件名硬编码 `blog.db`；
-   PG 后端 skipped（无 PG 备份方案）
-5. monthly 日均分母固定为**订阅起始月**的实际天数（跨月不变）；custom 周期若绕过 API 直接入库缺
+4. monthly 日均分母固定为**订阅起始月**的实际天数（跨月不变）；custom 周期若绕过 API 直接入库缺
    `custom_days`，按 30 天兜底
-6. `reminders/upcoming` 中 `reminder_days=null` 的会员按 0 处理（仅当天到期才提醒）
-7. "今天"/状态判定基于**服务器本地时间**（`datetime.now()`，未用 UTC）
-8. `stats/spending`、`stats/by-category` 的分类明细**只含有分类**的会员订阅（未分类订阅计入总额但不出现
+5. `reminders/upcoming` 中 `reminder_days=null` 的会员按 0 处理（仅当天到期才提醒）
+6. "今天"/状态判定基于**服务器本地时间**（`datetime.now()`，未用 UTC）
+7. `stats/spending`、`stats/by-category` 的分类明细**只含有分类**的会员订阅（未分类订阅计入总额但不出现
    在分类列表）；`stats/trend` 则有"未分类"桶（cat_id=0，灰 `#a8a29e`）——两处口径不一致
-9. `useHolidays` 依赖外部 timor.tech 公网接口，失败静默降级仅按周末着色（无重试提示）
-10. 每日线程当日去重是进程内存级（`_DAILY_DONE`），进程重启当天已跑过的任务会再补跑一次
+8. `useHolidays` 依赖外部 timor.tech 公网接口，失败静默降级仅按周末着色（无重试提示）
+9. 每日线程当日去重是进程内存级（`_DAILY_DONE`），进程重启当天已跑过的任务会再补跑一次
 
 ## 公共 UI 外壳（2026-10-13）
 

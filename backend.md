@@ -63,7 +63,7 @@ backend/
 │   ├── vault/                 # 密码库（零知识）：models + routes
 │   ├── pwsvc/                 # 密码服务（轮换密码）：models + routes（derive/限流/日志）+ ensure_migrations
 │   ├── sdklogs/               # 日志接收（lizysdk 服务端）：models(sdklogs_*) + routes（写者线程/死信/保留）
-│   ├── subs/                  # 订阅管理（CrownFlow 迁移）：models + routes（每日备份/支出摘要线程）
+│   ├── subs/                  # 订阅管理（CrownFlow 迁移）：models + routes（每日支出摘要线程）
 │   ├── apihub/                # API Hub（统一 API 网关）：models/core/pool/http连接池/state/routes
 │   ├── todo/                  # 四象限待办（MyTodo 迁入）
 │   ├── gamemap/               # 剧情图谱（gamemap 迁入）：13 表 + routers 9 组 + response_cache
@@ -312,13 +312,10 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
   yearly=365/366、custom=custom_days）；实际支出 = 日均 × 与查询范围重叠天数（闭区间 +1）；
   汇率 `settings.subs_exchange_rates`（CNY/USD/EUR/GBP/JPY 静态表）；overview 的月/年支出口径为
   **整月/整年覆盖**（CrownFlow 原口径，非"至今"）
-- **备份**（`subs/backup.py`）：当前 SQLite 库经 `sqlite3 backup API` 出 WAL 一致快照到
-  `data/backups/subs_YYYYMMDD_HHMMSS.db`（PG 后端返回 skipped）；保留期 `subs_backup_retention_days`（90 天）自动清理
 - **每日后台线程**（`routes.py::start_daily_loop`，daemon，随进程，60s 粒度检查+当日去重，启动补跑）：
-  02:00 后自动备份（`SUBS_BACKUP_ENABLED=0` 关闭）、10:00 后当日活跃订阅支出摘要写模块日志（info 落盘，
-  sys_name=doublog.subs）——与 sdklogs 保留清理线程同款模式，测试直接调 `run_daily_spending_log`/`backup_database`
-- 配置（`config.py`）：`subs_base_currency` / `subs_exchange_rates` / `subs_default_reminder_days`(7) /
-  `subs_backup_retention_days`(90) / `subs_backup_enabled`(env SUBS_BACKUP_ENABLED)
+  10:00 后当日活跃订阅支出摘要写模块日志（info 落盘，sys_name=doublog.subs）——与 sdklogs 保留清理线程同款模式，
+  测试直接调 `run_daily_spending_log`
+- 配置（`config.py`）：`subs_base_currency` / `subs_exchange_rates` / `subs_default_reminder_days`(7)
 - 校验：lizysdk ParamError(400)/NotFoundError(404)/ConflictError(409)；币种白名单 5 种、周期白名单 4 种、
   custom 周期必须带 custom_days>0（含 PUT 部分更新的组合校验）、起止日期倒置拒绝、分类删除前查会员关联
 
@@ -408,11 +405,11 @@ cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap
 - **workspaces 15 例**：CRUD、空库/末库删除保护、**库间树与列表隔离**、同名文章跨库可建/同库拒绝、跨库父子/移动拒绝、默认库自动创建与回填、顶级排序归属知识库
 - **sdklogs 23 例 + shared 日志集成 3 例**（含 sysnames 下拉数据源——lizysdk 落盘/自摄回灌/no_remote 防回环，uvicorn 线程伺服本 app 实现真实 HTTP 回灌）：摄入往返（时区换算/级别规范化/kv 剥离与转 str/trace_id 成列）、RFC3339 偏移、批量（数组+JSONL+超限 400）、坏日志进死信、token 鉴权三态、全部过滤维度、分页与 count、stats、保留策略（含 0=永久）、规范化边界
 - **pwsvc 21 例**：黄金向量防漂移、30s 宽限（含短周期封顶 min(30, rotation)）、API Key 生命周期（重置即失效/伪造 401）、全链路校验、禁用用户、重置 seed 旧密码全失效、策略变更、删除级联与 409、唯一性/参数校验、**无明文落盘断言**；**校验日志**（写入字段/倒序分页/统计与 fail_top/30 天清理/不含密码）、**限流**（额度内 200 超出 429/0=不限/参数校验/429 不落日志/页面改配置生效）
-- **subs 15 例**（CrownFlow 迁移）：分类 CRUD/重名 409/删除保护；会员 CRUD/校验/列表全维度筛选排序
+- **subs 13 例**（CrownFlow 迁移）：分类 CRUD/重名 409/删除保护；会员 CRUD/校验/列表全维度筛选排序
   （keyword/category/status/sort+非法值 400）/首条订阅原子性；订阅 CRUD/十类校验分支（价格/周期/币种/日期/
   custom 天数含 PUT 组合校验）；会员聚合（多币种折算 total_spending/时长/最新订阅）；统计五接口
   （overview 整月口径/by-category 明细/trend 四粒度标签/参数与非法值）；提醒（reminder_days 阈值/all 不含过期）；
-  备份（快照文件可读回查/超期清理）；每日支出摘要日志
+  每日支出摘要日志
 - **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 53 例（CRUD/计划物化/容量/通知/鉴权，docs/modules/todo.md）、gamemap 34 例（docs/modules/gamemap.md）、practice 61 例（docs/modules/practice.md）、steamidler 18 例（docs/modules/steamidler.md）
 - PG 集成测试可选依赖 venv 内 `pip install pgserver`，未安装自动跳过
 - 新增后端行为**必须**附带测试（见 AGENTS.md）

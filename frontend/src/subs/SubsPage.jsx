@@ -26,7 +26,7 @@ export default function SubsPage({ dark }) {
   const [toastMsg, setToastMsg] = useState(null)
   const [toastKind, setToastKind] = useState('')
   const [counts, setCounts] = useState(null)   // { members, active, upcoming }
-  const { pathname, search } = useLocation()
+  const { pathname } = useLocation()
 
   const toast = useCallback((msg, kind) => {
     setToastMsg(msg); setToastKind(kind || '')
@@ -44,7 +44,6 @@ export default function SubsPage({ dark }) {
   useModuleNavigation({
     items: NAV.map(item => ({ key: item.path, label: item.label, icon: item.icon, to: item.path,
       active: item.end ? pathname === item.path : pathname.startsWith(item.path),
-      ...(item.path === '/subs/settings' ? { children: ['category', 'distribution', 'backup'].map((key, i) => ({ key: `settings:${key}`, label: ['分类管理', '会员分布', '备份'][i], to: `/subs/settings?panel=${key}`, active: pathname === '/subs/settings' && (new URLSearchParams(search).get('panel') || 'category') === key })) } : {}),
       badge: item.path === '/subs' ? (counts?.upcoming || undefined) : item.path === '/subs/members' && counts ? `${counts.active_members ?? 0}/${counts.total_members ?? 0}` : undefined,
     })),
   })

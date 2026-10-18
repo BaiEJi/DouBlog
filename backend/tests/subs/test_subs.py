@@ -1,14 +1,11 @@
 """
 订阅管理（subs，CrownFlow 迁移）测试：分类/会员/订阅 CRUD 与校验、
-会员聚合字段、支出统计（含汇率折算/趋势粒度）、到期提醒、备份与每日任务。
+会员聚合字段、支出统计（含汇率折算/趋势粒度）、到期提醒、每日任务。
 """
 import base64
-import os
 from datetime import date, datetime, timedelta
 
 import pytest
-
-from app.config import settings
 
 AUTH = {'Authorization': 'Basic ' + base64.b64encode(b'admin:lizy111A').decode()}
 
@@ -412,43 +409,7 @@ def test_reminders(client, auth_headers):
     assert days == sorted(days)
 
 
-# ─── 备份与每日任务 ───────────────────────────────────────
-
-def test_backup_run_and_stats(client, auth_headers):
-    _member(client, '备份君', subscription=_sub_payload())
-    r = client.post('/api/subs/backup/run', headers=AUTH)
-    assert r.status_code == 200, r.json()
-    d = r.json()['data']
-    assert d['status'] == 'ok' and d['size'] > 0
-    assert d['path'].startswith('subs_') and d['path'].endswith('.db')
-
-    r = client.get('/api/subs/backup', headers=AUTH)
-    stats = r.json()['data']
-    assert stats['total_count'] >= 1
-    assert stats['newest_backup'] is not None
-    assert any(b['name'] == d['path'] for b in stats['backups'])
-
-    # 备份文件确实是可用的 SQLite 快照（含 subs_members 表）
-    import sqlite3
-    path = os.path.join(settings.data_dir, 'backups', d['path'])
-    con = sqlite3.connect(path)
-    n = con.execute("SELECT COUNT(*) FROM subs_members").fetchone()[0]
-    con.close()
-    assert n >= 1
-
-
-def test_backup_cleanup_old_files(client, auth_headers, tmp_path):
-    from app.subs import backup as bk
-    old = os.path.join(settings.data_dir, 'backups', 'subs_20200101_000000.db')
-    os.makedirs(os.path.dirname(old), exist_ok=True)
-    with open(old, 'wb') as f:
-        f.write(b'x' * 16)
-    import time as _time
-    aged = _time.time() - (settings.subs_backup_retention_days + 2) * 86400
-    os.utime(old, (aged, aged))
-    deleted = bk.cleanup_old_backups()
-    assert deleted == 1 and not os.path.exists(old)
-
+# ─── 每日任务 ─────────────────────────────────────────────
 
 def test_daily_spending_log(client, auth_headers, app):
     from app.subs.routes import run_daily_spending_log

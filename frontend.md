@@ -69,11 +69,11 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（创建/切换 namespace、空间内 KV、Redis 状态与配置）
 ├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
-    ├── api.js                     # 会员/订阅/分类/统计/提醒/备份封装
-    ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮
+    ├── api.js                     # 会员/订阅/分类/统计/提醒封装
+    ├── kit.jsx                    # 格式化(价格/剩余天数/周期)/状态与分类标签/Modal/Confirm/Toast/暗色提亮/DateInput(点击整块弹日历)
     ├── charts.jsx                 # 纯 SVG 图表：useWidth + AreaTrend(面积趋势) + DonutPie(环形饼)
     ├── useHolidays.js             # 法定节假日 API（timor.tech，localStorage 缓存 7 天，失败降级按周末）
-    ├── SubsPage.jsx               # /subs/* 壳：公共侧栏导航(概览/会员/统计/设置+计数徽标；设置含分类/分布/备份子项) + 内嵌 <Routes>
+    ├── SubsPage.jsx               # /subs/* 壳：公共侧栏导航(概览/会员/统计/设置+计数徽标) + 内嵌 <Routes>
     └── views/                     # OverviewView MembersView MemberDetailView StatsView SettingsView
 ```
 
@@ -180,8 +180,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
   条形详情弹层含日均）+ 添加/编辑订阅弹窗（周期切换自动推算结束日期=整周期-1 天、custom 显自定义天数输入、组合校验）
 - **StatsView**：日期范围 + 快速选择（本周/本月/本季度/本年）+ 粒度（跨度≥90 天禁用按天并自动回落按周）+
   面积趋势图（hover 提示，明细开关展开分类/订阅明细）+ 环形饼图（中心总计、图例带占比、明细）
-- **SettingsView**：分类管理（CRUD/16 色预设+任意 hex/emoji/搜索）、会员分布卡（计数徽标，点击跳转筛选）、
-  备份面板（手动立即备份 + 保留策略说明 + 备份文件列表）
+- **SettingsView**：分类管理（CRUD/16 色预设+任意 hex/emoji/搜索）
 - 依赖：`lunar-javascript`（仅农历显示，独立到期日历 chunk ~104KB gzip）；图表零依赖（手写 SVG，useWidth 三重兜底自适应）
 
 ### LogsPage.jsx（logs/，日志查询）

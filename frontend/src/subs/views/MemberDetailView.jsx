@@ -9,7 +9,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { subsMember, subsCreateSubscription, subsUpdateSubscription, subsDeleteSubscription } from '../api'
 import {
   fmtPrice, daysRemaining, cycleLabel, Icon, CategoryTag, StatusTag, Modal, Confirm,
-  Field, inputCls, btn, BILLING_CYCLE_OPTIONS, CURRENCY_OPTIONS, adjustForDark, toDateInput,
+  Field, inputCls, btn, BILLING_CYCLE_OPTIONS, CURRENCY_OPTIONS, adjustForDark, toDateInput, DateInput,
 } from '../kit'
 
 // ─── 订阅表单弹窗 ─────────────────────────────────────────
@@ -120,10 +120,10 @@ function SubscriptionModal({ open, sub, onSubmit, onClose, loading }) {
           </Field>
         )}
         <Field label="开始日期">
-          <input type="date" className={inputCls} value={form.start_date} onChange={e => onStartDate(e.target.value)} />
+          <DateInput className={inputCls} value={form.start_date} onChange={e => onStartDate(e.target.value)} />
         </Field>
         <Field label="结束日期">
-          <input type="date" className={inputCls} value={form.end_date}
+          <DateInput className={inputCls} value={form.end_date}
             min={form.start_date}
             onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
         </Field>
@@ -454,22 +454,30 @@ export default function MemberDetailView({ dark, toast }) {
             <>
               {/* 筛选 */}
               <div className="flex flex-wrap gap-2 mb-3">
-                <select value={fLevel} onChange={e => setFLevel(e.target.value)} className={inputCls + ' w-28 h-8'}>
-                  <option value="">全部级别</option>
-                  {levelOptions.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
-                <select value={fCycle} onChange={e => setFCycle(e.target.value)} className={inputCls + ' w-26 h-8'}>
-                  <option value="">全部周期</option>
-                  {BILLING_CYCLE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                </select>
-                <select value={fStatus} onChange={e => setFStatus(e.target.value)} className={inputCls + ' w-28 h-8'}>
-                  <option value="">全部状态</option>
-                  <option value="active">正常</option>
-                  <option value="expiring">即将到期</option>
-                  <option value="expired">已过期</option>
-                </select>
-                <input type="date" value={fDate} onChange={e => setFDate(e.target.value)}
-                  title="筛选覆盖该日期的订阅" className={inputCls + ' w-38 h-8'} />
+                <div className="w-28">
+                  <select value={fLevel} onChange={e => setFLevel(e.target.value)} className={inputCls + ' h-8'}>
+                    <option value="">全部级别</option>
+                    {levelOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="w-26">
+                  <select value={fCycle} onChange={e => setFCycle(e.target.value)} className={inputCls + ' h-8'}>
+                    <option value="">全部周期</option>
+                    {BILLING_CYCLE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </div>
+                <div className="w-28">
+                  <select value={fStatus} onChange={e => setFStatus(e.target.value)} className={inputCls + ' h-8'}>
+                    <option value="">全部状态</option>
+                    <option value="active">正常</option>
+                    <option value="expiring">即将到期</option>
+                    <option value="expired">已过期</option>
+                  </select>
+                </div>
+                <div className="w-38">
+                  <DateInput value={fDate} onChange={e => setFDate(e.target.value)}
+                    title="筛选覆盖该日期的订阅" className={inputCls + ' h-8'} />
+                </div>
                 {fDate && <button className={btn.ghost} onClick={() => setFDate('')}>✕ 日期</button>}
               </div>
               <div className="overflow-x-auto">

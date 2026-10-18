@@ -1,4 +1,4 @@
-// 订阅管理 API（CrownFlow 迁移）：会员/订阅/分类/统计/提醒/备份
+// 订阅管理 API（CrownFlow 迁移）：会员/订阅/分类/统计/提醒
 import { apiFetch } from '@/shared/client'
 
 const j = r => r.json()
@@ -48,7 +48,3 @@ export const subsStatsTrend = (startDate, endDate, granularity) =>
 // ── 提醒 ──
 export const subsRemindersUpcoming = () => apiFetch('/api/subs/reminders/upcoming').then(j)
 export const subsRemindersAll = () => apiFetch('/api/subs/reminders/all').then(j)
-
-// ── 备份 ──
-export const subsBackupRun = () => apiFetch('/api/subs/backup/run', { method: 'POST' }).then(j)
-export const subsBackupStats = () => apiFetch('/api/subs/backup').then(j)
