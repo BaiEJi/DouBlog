@@ -158,7 +158,7 @@
 - **WorkspaceSwitcher**（本文件内组件）：触发按钮 + 下拉面板（库名/文章数/选中态蓝点、新建库内嵌表单 Enter/Esc、点外关闭）；创建成功自动切到新库。
 - **搜索**：300ms 防抖走后端 `searchPosts`（**服务端全文、跨库**，命中显示所属库徽章）；`Ctrl/Cmd+K` 聚焦。非搜索态显示最近浏览横条（hover 预取）。
 - 卡片 hover/focus `prefetchPost`；骨架屏 stagger、空态引导新建。
-- 公共侧栏入口为知识库 / 新建文章 / 资产库；独立管理页和门户管理卡片已移除，旧 `/admin` 地址重定向到 `/blog`。数据库与日志设置统一从 `/config` 操作。
+- 公共侧栏入口为知识库（子项：新建文章）/ 资产库（子项：Prompt/Skill）；独立管理页和门户管理卡片已移除，旧 `/admin` 地址重定向到 `/blog`。数据库与日志设置统一从 `/config` 操作。
 
 ### 5.2 PostDetail（`/post/:id`，pages/PostDetail.jsx，最重页面）
 
@@ -222,7 +222,9 @@
 资产库（Prompt 与 Skill）原为独立模块 `app/assets/` + `src/assets/`，现并入 blog 能力包：
 **后端** `app/blog/assets/` 子包（路由前缀 `/api/assets` 不变，router 由 blog `__init__` 挂载，
 `ensure_migrations` 由 blog 链式调用）；**前端** `src/blog/assets/`（知识库模块侧栏第四项「资产库」，
-三视图为其 children）；sys_name 并入 `doublog.blog`；表名保留 `assets_` 前缀（免数据迁移）；
+children 为 Prompt/Skill 两项——「浏览」按资产类型拆分、列表按 kind 隔离；回收站与统计视图及能力已移除，
+删除为直接彻底删除〔带确认〕）；
+sys_name 并入 `doublog.blog`；表名保留 `assets_` 前缀（免数据迁移）；
 门户独立卡片已移除，入口在知识库模块内；门户现共 15 张卡片。
 
 ### 功能概述
@@ -258,10 +260,13 @@ JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量
 
 ### 前端（`frontend/src/blog/assets/`）
 
-- `AssetsPage.jsx`：知识库模块侧栏「资产库」项（children：浏览/回收站/统计，经 `useModuleNavigation`
-  仅注册 activeKey/onSelect，不覆盖模块静态菜单）+ 页内左过滤栏 + 卡片网格 + 分页；Ctrl+K 聚焦搜索
+- `AssetsPage.jsx`：知识库模块侧栏「资产库」项（children：Prompt/Skill 两项，「浏览」按 kind 拆为
+  Prompt/Skill 两视图，经 `useModuleNavigation` 仅注册 activeKey/onSelect，不覆盖模块静态菜单）
+  + 页内左过滤栏（全部/★收藏 + 分类树 + 标签 chips）+ 卡片网格 + 分页；Ctrl+K 聚焦搜索；
+  「上传 Skill」仅 Skill 视图展示，新建资产按当前视图预填 kind；回收站/统计视图已移除，
+  删除（卡片/详情/批量）均为直接彻底删除（window.confirm 确认）
 - `ItemDetail.jsx` 右滑抽屉（预览/变量填充/版本 diff 三 tab）、`ItemEditor.jsx`（实时变量检测、Ctrl+S）、
-  `CategoryManager.jsx` / `ImportPanel.jsx` / `StatsView.jsx`、`kit.jsx`（diffLines/copyText/Toast/KIND_META）
+  `CategoryManager.jsx` / `ImportPanel.jsx`、`kit.jsx`（diffLines/copyText/Toast/KIND_META）
 
 ### 测试（`tests/blog/assets/test_assets.py`，36 例）
 

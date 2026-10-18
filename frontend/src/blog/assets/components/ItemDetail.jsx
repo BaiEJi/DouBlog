@@ -1,6 +1,6 @@
 /**
  * 资产详情抽屉：元信息 + 正文预览（渲染/原文切换）+ 变量填充台 + 版本历史（行级 diff）
- * + 操作组（复制/编辑/收藏/复制份/归档/回收站/导出）。
+ * + 操作组（复制/编辑/收藏/复制副本/归档/彻底删除/导出）。
  * onAction(action, item) 由页面执行动作并刷新；onRefresh() 仅刷新列表。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -227,7 +227,6 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
   }
 
   const meta = KIND_META[item.kind] || KIND_META.prompt
-  const inTrash = item.status === 'trash'
   const archived = item.status === 'archived'
 
   const refreshAll = () => { load(); onRefresh() }
@@ -272,7 +271,6 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
             <div className="min-w-0">
               <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                 <span className={`px-2 py-0.5 rounded-lg text-[11px] font-medium ${meta.chip}`}>{meta.icon} {meta.label}</span>
-                {inTrash && <span className="px-2 py-0.5 rounded-lg text-[11px] bg-red-500/10 text-red-600 dark:text-red-400">回收站</span>}
                 {archived && <span className="px-2 py-0.5 rounded-lg text-[11px] bg-stone-500/10 text-stone-500">已归档</span>}
                 {item.files_count > 0 && (
                   <span className="px-1.5 py-0.5 rounded-lg text-[11px] bg-sky-500/10 text-sky-700 dark:text-sky-400">📦 {item.files_count} 文件</span>
@@ -294,22 +292,16 @@ export default function ItemDetail({ itemId, dark, onClose, onEdit, onAction, on
           </div>
 
           <div className="flex items-center gap-1.5 flex-wrap">
-            {!inTrash && <>
-              <button type="button" onClick={copyAll}
-                className="px-3 py-1.5 rounded-lg text-[12.5px] font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 transition-opacity">复制全文</button>
-              <PanelButton onClick={() => onEdit(item)} title="编辑">编辑</PanelButton>
-              <PanelButton onClick={() => download('md')}>导出 .md</PanelButton>
-              <PanelButton onClick={() => download('json')}>导出 .json</PanelButton>
-              {item.archive_name && <PanelButton onClick={downloadArchive} title={item.archive_name}>⬇ 原包 .zip</PanelButton>}
-              <PanelButton onClick={() => onAction('duplicate', item)} title="复制一份新资产">复制副本</PanelButton>
-              <PanelButton onClick={() => onAction('favorite', item)}>{item.favorite ? '★ 已收藏' : '☆ 收藏'}</PanelButton>
-              <PanelButton onClick={() => onAction(archived ? 'unarchive' : 'archive', item)}>{archived ? '取消归档' : '归档'}</PanelButton>
-              <PanelButton danger onClick={() => onAction('trash', item)}>移入回收站</PanelButton>
-            </>}
-            {inTrash && <>
-              <PanelButton onClick={() => onAction('restore', item)}>恢复</PanelButton>
-              <PanelButton danger onClick={() => onAction('hard_delete', item)}>彻底删除</PanelButton>
-            </>}
+            <button type="button" onClick={copyAll}
+              className="px-3 py-1.5 rounded-lg text-[12.5px] font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 transition-opacity">复制全文</button>
+            <PanelButton onClick={() => onEdit(item)} title="编辑">编辑</PanelButton>
+            <PanelButton onClick={() => download('md')}>导出 .md</PanelButton>
+            <PanelButton onClick={() => download('json')}>导出 .json</PanelButton>
+            {item.archive_name && <PanelButton onClick={downloadArchive} title={item.archive_name}>⬇ 原包 .zip</PanelButton>}
+            <PanelButton onClick={() => onAction('duplicate', item)} title="复制一份新资产">复制副本</PanelButton>
+            <PanelButton onClick={() => onAction('favorite', item)}>{item.favorite ? '★ 已收藏' : '☆ 收藏'}</PanelButton>
+            <PanelButton onClick={() => onAction(archived ? 'unarchive' : 'archive', item)}>{archived ? '取消归档' : '归档'}</PanelButton>
+            <PanelButton danger onClick={() => onAction('delete', item)}>彻底删除</PanelButton>
           </div>
         </div>
 

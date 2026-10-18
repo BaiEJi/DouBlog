@@ -215,38 +215,38 @@ export default function CreatePost({ dark, setDark }) {
 
 
       <main className="mx-auto w-full max-w-full p-0">
-        <h1 className="text-2xl font-semibold tracking-tight mb-8">新建文章</h1>
+        <h1 className="text-xl font-semibold tracking-tight mb-5">新建文章</h1>
 
         {/* Meta Info */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-2 mb-3">
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">标题 *</label>
+            <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">标题 *</label>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
               placeholder="文章标题"
-              className={`w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all ${errors.title ? 'border-red-400' : 'border-black/10 dark:border-white/10'}`}
+              className={`w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all ${errors.title ? 'border-red-400' : 'border-black/10 dark:border-white/10'}`}
             />
             {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title}</p>}
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">slug *</label>
+            <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">slug *</label>
             <input
               type="text"
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="例如: my-new-post"
-              className={`w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all ${errors.name ? 'border-red-400' : 'border-black/10 dark:border-white/10'}`}
+              className={`w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all ${errors.name ? 'border-red-400' : 'border-black/10 dark:border-white/10'}`}
             />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name}</p>}
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">所属知识库</label>
+            <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">所属知识库</label>
             <select
               value={wsId}
               onChange={e => { setWsId(e.target.value); setParentId('') }}
-              className="w-full px-3 py-2 text-[14px] bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
+              className="w-full px-2.5 py-1.5 text-[13px] bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
             >
               {workspaces.map(w => (
                 <option key={w.id} value={w.id}>{w.name}</option>
@@ -254,11 +254,11 @@ export default function CreatePost({ dark, setDark }) {
             </select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">父文章</label>
+            <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">父文章</label>
             <select
               value={parentId}
               onChange={e => setParentId(e.target.value)}
-              className="w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
+              className="w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
               style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
             >
               <option value="">无（顶级文章）</option>
@@ -268,11 +268,11 @@ export default function CreatePost({ dark, setDark }) {
             </select>
           </div>
           <div>
-            <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">状态</label>
+            <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">状态</label>
             <select
               value={status}
               onChange={e => setStatus(e.target.value)}
-              className="w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
+              className="w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
               style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
             >
               <option value="published">已发布</option>
@@ -280,14 +280,14 @@ export default function CreatePost({ dark, setDark }) {
             </select>
           </div>
         </div>
-        <div className="mb-4">
-          <label className="block text-[13px] font-medium text-[#666] dark:text-[#888] mb-1">摘要</label>
+        <div className="mb-3">
+          <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">摘要</label>
           <textarea
             value={summary}
             onChange={e => setSummary(e.target.value)}
             placeholder="可选"
             rows={2}
-            className="w-full px-3 py-2 text-[14px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all resize-none"
+            className="w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all resize-none"
           />
         </div>
 

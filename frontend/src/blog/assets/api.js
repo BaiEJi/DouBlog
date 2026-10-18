@@ -1,4 +1,4 @@
-// 资产库 API：分类/资产 CRUD、版本、批量、使用记录、标签、统计、导入导出
+// 资产库 API：分类/资产 CRUD、版本、批量、使用记录、标签、导入导出
 import { apiFetch } from '@/shared/client'
 
 const j = r => r.json()
@@ -24,10 +24,9 @@ export const assetsCreateItem = payload =>
   apiFetch('/api/assets/items', { method: 'POST', body: JSON.stringify(payload) }).then(j)
 export const assetsUpdateItem = (id, payload) =>
   apiFetch(`/api/assets/items/${id}`, { method: 'PUT', body: JSON.stringify(payload) }).then(j)
-export const assetsDeleteItem = (id, hard = false) =>
-  apiFetch(`/api/assets/items/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }).then(j)
-export const assetsRestoreItem = id =>
-  apiFetch(`/api/assets/items/${id}/restore`, { method: 'POST' }).then(j)
+// 删除即彻底删除（软删回收站能力已移除）：连同版本与使用记录，不可恢复
+export const assetsDeleteItem = id =>
+  apiFetch(`/api/assets/items/${id}?hard=1`, { method: 'DELETE' }).then(j)
 export const assetsDuplicateItem = id =>
   apiFetch(`/api/assets/items/${id}/duplicate`, { method: 'POST' }).then(j)
 export const assetsUseItem = (id, action = 'copy') =>
@@ -41,9 +40,8 @@ export const assetsVersion = vid => apiFetch(`/api/assets/versions/${vid}`).then
 export const assetsRestoreVersion = (itemId, vid) =>
   apiFetch(`/api/assets/items/${itemId}/versions/${vid}/restore`, { method: 'POST' }).then(j)
 
-// ── 标签 / 统计 ──
+// ── 标签 ──
 export const assetsTags = () => apiFetch('/api/assets/tags').then(j)
-export const assetsStats = () => apiFetch('/api/assets/stats').then(j)
 
 // ── 导入 / 导出 ──
 export const assetsImport = payload =>

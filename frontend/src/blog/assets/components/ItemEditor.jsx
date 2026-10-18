@@ -7,9 +7,9 @@ import { BTN_GHOST, BTN_PRIMARY, INPUT, KIND_META } from '../kit'
 
 const VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/g
 
-export default function ItemEditor({ item, categories, onClose, onSave }) {
+export default function ItemEditor({ item, categories, defaultKind, onClose, onSave }) {
   const editing = !!item
-  const [kind, setKind] = useState(item?.kind || 'prompt')
+  const [kind, setKind] = useState(item?.kind || defaultKind || 'prompt')
   const [title, setTitle] = useState(item?.title || '')
   const [summary, setSummary] = useState(item?.summary || '')
   const [categoryId, setCategoryId] = useState(item?.category_id ?? '')

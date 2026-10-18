@@ -6,9 +6,11 @@ import ModuleErrorBoundary from './ModuleErrorBoundary'
 
 const MODULES = {
   blog: { title: '博客 · 知识库', subtitle: '文章 · 双链 · 知识库 · 资产', accent: 'amber', items: [
-    { key: 'blog', label: '知识库', to: '/blog' }, { key: 'create', label: '新建文章', to: '/create' },
+    { key: 'blog', label: '知识库', to: '/blog', children: [
+      { key: 'create', label: '新建文章', to: '/create' },
+    ] },
     { key: 'assets', label: '资产库', to: '/assets', children: [
-      { key: 'library', label: '浏览' }, { key: 'trash', label: '回收站' }, { key: 'stats', label: '统计' },
+      { key: 'prompt', label: 'Prompt' }, { key: 'skill', label: 'Skill' },
     ] },
     { key: 'diary', label: '日记', to: '/diary', children: [
       { key: 'timeline', label: '时间线' }, { key: 'calendar', label: '日历' }, { key: 'heatmap', label: '热力图' },
@@ -62,16 +64,27 @@ function applyBadges(items, badges) {
   })
 }
 
-/** 当前激活分区：`to` 是 pathname 前缀（最长者胜）的顶层项；无匹配返回 null。 */
+/** 当前激活分区：`to` 是 pathname 前缀（最长者胜）的顶层项；子孙项的 `to` 也算匹配
+ *（如「知识库」下的「新建文章」/create——进入后父分区保持展开高亮）。无匹配返回 null。 */
 function findActiveSection(items, pathname) {
+  const matches = it => it.to && (pathname === it.to || pathname.startsWith(`${it.to}/`))
+    || it.children?.some(matches)
   let best = null
   for (const it of items) {
-    if (!it.to) continue
-    if (pathname === it.to || pathname.startsWith(`${it.to}/`)) {
-      if (!best || it.to.length > best.to.length) best = it
-    }
+    if (!matches(it)) continue
+    if (!best || it.to.length > best.to.length) best = it
   }
   return best
+}
+
+/** 按 pathname 递归查找 `to` 精确匹配的项（含子孙，如知识库下的新建文章）。 */
+function findByPath(items, pathname) {
+  for (const it of items) {
+    if (it.to === pathname) return it
+    const hit = it.children && findByPath(it.children, pathname)
+    if (hit) return hit
+  }
+  return null
 }
 
 function NavItem({ item, activeKey, onSelect, accent, depth = 0, keyMatch = true, activeSection = null }) {
@@ -110,7 +123,7 @@ export default function ModuleShell({ module, dark, setDark, children }) {
   const items = navigation?.badges
     ? applyBadges(config.items || [{ key: module, label: config.title }], navigation.badges)
     : (config.items || [{ key: module, label: config.title }])
-  const activeKey = config.activeKey || items.find(item => item.to === pathname)?.key || items[0]?.key
+  const activeKey = config.activeKey || findByPath(items, pathname)?.key || items[0]?.key
   const activeSection = findActiveSection(items, pathname)
   return (
     <NavigationContext.Provider value={setNavigation}>

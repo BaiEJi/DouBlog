@@ -1,15 +1,16 @@
 /**
  * 资产库视图（知识库模块 tab，路由 /assets）—— Prompt 与 Skill 的沉淀、检索、填充与版本管理。
- * 布局：blog 模块侧栏（ModuleShell 静态菜单含「资产库」项，三视图为其 children，
- * 经 useModuleNavigation 注册 activeKey 切换）+ 页内左过滤栏（快速过滤/分类/标签）+
- * 列表卡片网格 + 右侧详情抽屉；编辑器/分类管理/导入导出为弹层；支持批量操作与 Ctrl+K 搜索。
+ * 布局：blog 模块侧栏（ModuleShell 静态菜单含「资产库」项，children 为 Prompt/Skill
+ * 两项——按资产类型拆分，经 useModuleNavigation 注册 activeKey 切换）+ 页内左过滤栏
+ * （快速过滤/分类/标签）+ 列表卡片网格 + 右侧详情抽屉；编辑器/分类管理/导入导出为弹层；
+ * 支持批量操作与 Ctrl+K 搜索。删除为直接彻底删除（带确认），无回收站/统计视图。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useModuleNavigation } from '../../shared/module-navigation'
 import { useDebouncedValue } from '../../shared/useDebouncedValue'
 import {
   assetsBulkItems, assetsCategories, assetsCreateItem, assetsDeleteItem,
-  assetsDuplicateItem, assetsImportSkill, assetsItems, assetsRestoreItem,
+  assetsDuplicateItem, assetsImportSkill, assetsItems,
   assetsTags, assetsUpdateItem, assetsUseItem,
 } from './api'
 import { KIND_META, Toast, copyText } from './kit'
@@ -17,7 +18,6 @@ import ItemDetail from './components/ItemDetail'
 import ItemEditor from './components/ItemEditor'
 import CategoryManager from './components/CategoryManager'
 import ImportPanel from './components/ImportPanel'
-import StatsView from './components/StatsView'
 
 const PAGE_SIZE = 24
 const SORTS = [
@@ -80,7 +80,7 @@ function ItemCard({ item, selected, bulkMode, onOpen, onToggle, onAction, onTag 
             className="w-6 h-6 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200">⧉</button>
           <button type="button" title="编辑" onClick={() => onAction('edit', item)}
             className="w-6 h-6 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200">✎</button>
-          <button type="button" title="移入回收站" onClick={() => onAction('trash', item)}
+          <button type="button" title="彻底删除" onClick={() => onAction('delete', item)}
             className="w-6 h-6 rounded-lg text-stone-400 hover:text-red-500">🗑</button>
         </div>
       </div>
@@ -89,8 +89,7 @@ function ItemCard({ item, selected, bulkMode, onOpen, onToggle, onAction, onTag 
 }
 
 export default function AssetsPage({ dark }) {
-  const [view, setView] = useState('library')            // library | trash | stats
-  const [kindFilter, setKindFilter] = useState('')       // '' | prompt | skill
+  const [view, setView] = useState('prompt')             // prompt | skill
   const [favoriteOnly, setFavoriteOnly] = useState(false)
   const [categoryId, setCategoryId] = useState('')       // '' | <id> | 'none'
   const [tagFilter, setTagFilter] = useState('')
@@ -118,10 +117,10 @@ export default function AssetsPage({ dark }) {
     setTimeout(() => setToastMsg(null), 2400)
   }, [])
 
-  const status = view === 'trash' ? 'trash' : 'active'
+  const kindOfView = view                          // 视图即类型：prompt | skill
   const filters = useMemo(() => ({
-    kind: kindFilter, category_id: categoryId, tag: tagFilter, favorite: favoriteOnly ? 1 : '',
-  }), [kindFilter, categoryId, tagFilter, favoriteOnly])
+    kind: kindOfView, category_id: categoryId, tag: tagFilter, favorite: favoriteOnly ? 1 : '',
+  }), [kindOfView, categoryId, tagFilter, favoriteOnly])
 
   const loadLists = useCallback(() => {
     assetsCategories().then(r => { if (r.success) setCategories(r.data) })
@@ -130,23 +129,16 @@ export default function AssetsPage({ dark }) {
 
   const load = useCallback(() => {
     const params = { ...filters, q, sort, page, page_size: PAGE_SIZE }
-    if (view === 'trash') {
-      params.status = 'trash'
-      params.kind = params.category_id = params.tag = params.favorite = ''
-      params.q = q
-    } else if (view === 'archived') {
-      params.status = 'archived'
-    }
     assetsItems(params).then(r => {
       if (r.success) setData(r.data)
       else toast(r.message || '列表加载失败', 'error')
     })
-  }, [filters, q, sort, page, view, toast])
+  }, [filters, q, sort, page, toast])
   useEffect(load, [load])
   useEffect(loadLists, [loadLists])
 
   // 过滤条件变化回到第一页
-  useEffect(() => { setPage(1) }, [filters, q, sort, view])
+  useEffect(() => { setPage(1) }, [filters, q, sort])
 
   // Ctrl+K 聚焦搜索
   useEffect(() => {
@@ -200,23 +192,11 @@ export default function AssetsPage({ dark }) {
       } else if (!r.success) toast(r.message || '复制失败', 'error')
       return
     }
-    if (action === 'trash') {
-      const r = await assetsDeleteItem(item.id)
-      if (r.success) { toast('已移入回收站'); refresh(); if (detailId === item.id) setDetailId(null) }
-      else toast(r.message || '操作失败', 'error')
-      return
-    }
-    if (action === 'restore') {
-      const r = await assetsRestoreItem(item.id)
-      if (r.success) { toast('已恢复'); refresh(); if (detailId === item.id) setDetailId(null) }
-      else toast(r.message || '操作失败', 'error')
-      return
-    }
-    if (action === 'hard_delete') {
+    if (action === 'delete') {
       if (!window.confirm(`彻底删除「${item.title}」？连同版本与使用记录，不可恢复。`)) return
-      const r = await assetsDeleteItem(item.id, true)
+      const r = await assetsDeleteItem(item.id)
       if (r.success) { toast('已彻底删除'); refresh(); if (detailId === item.id) setDetailId(null) }
-      else toast(r.message || '操作失败', 'error')
+      else toast(r.message || '删除失败', 'error')
       return
     }
     if (action === 'duplicate') {
@@ -262,222 +242,185 @@ export default function AssetsPage({ dark }) {
     })
   }
 
+  // 资产类型（Prompt/Skill）切换已上移到模块侧栏两项，页内快速过滤只留收藏维度
   const quickFilters = [
-    { key: 'all', label: '全部', active: !kindFilter && !favoriteOnly, onClick: () => { setKindFilter(''); setFavoriteOnly(false) } },
+    { key: 'all', label: '全部', active: !favoriteOnly, onClick: () => setFavoriteOnly(false) },
     { key: 'fav', label: '★ 收藏', active: favoriteOnly, onClick: () => setFavoriteOnly(v => !v) },
-    { key: 'prompt', label: 'Prompt', active: kindFilter === 'prompt' && !favoriteOnly, onClick: () => { setKindFilter(kindFilter === 'prompt' ? '' : 'prompt'); setFavoriteOnly(false) } },
-    { key: 'skill', label: 'Skill', active: kindFilter === 'skill' && !favoriteOnly, onClick: () => { setKindFilter(kindFilter === 'skill' ? '' : 'skill'); setFavoriteOnly(false) } },
   ]
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1
 
   // 注册到 blog 模块侧栏：不覆盖静态菜单，只声明当前视图（「资产库」项的 children 高亮）
   useModuleNavigation({
-    activeKey: view === 'trash' ? 'trash' : view === 'stats' ? 'stats' : 'library',
+    activeKey: view,
     onSelect: key => { setView(key); setSelection(new Set()); setBulkMode(false) },
   })
 
   return (
     <div>
       <div className="mb-6"><h1 className="text-base font-semibold tracking-tight">
-        {view === 'trash' ? '资产库 · 回收站' : view === 'stats' ? '资产库 · 统计' : '资产库'}
+        {view === 'skill' ? '资产库 · Skill' : '资产库 · Prompt'}
       </h1></div>
 
-      {view === 'stats' ? (
-        <StatsView onOpenItem={openDetail} toast={toast} />
-      ) : (
-        <div className="flex gap-6 items-start">
-          {/* 左过滤栏 */}
-          <aside className="flex flex-col w-52 shrink-0 sticky top-4 space-y-5" aria-label="资产过滤">
-            <div className="space-y-1">
-              {quickFilters.map(f => (
-                <button key={f.key} type="button" onClick={f.onClick}
-                  className={`w-full flex items-center px-3 py-2 rounded-xl text-[13px] transition-colors ${f.active
-                    ? 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 font-medium'
-                    : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]'}`}>
-                  {f.label}
+      <div className="flex gap-6 items-start">
+        {/* 左过滤栏 */}
+        <aside className="flex flex-col w-52 shrink-0 sticky top-4 space-y-5" aria-label="资产过滤">
+          <div className="space-y-1">
+            {quickFilters.map(f => (
+              <button key={f.key} type="button" onClick={f.onClick}
+                className={`w-full flex items-center px-3 py-2 rounded-xl text-[13px] transition-colors ${f.active
+                  ? 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 font-medium'
+                  : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.05]'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5 px-1">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-stone-400">分类</span>
+              <button type="button" onClick={() => setShowCategory(true)}
+                className="text-[11px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200">管理</button>
+            </div>
+            <div className="space-y-0.5">
+              <button type="button" onClick={() => setCategoryId('')}
+                className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] ${categoryId === ''
+                  ? 'bg-black/[0.05] dark:bg-white/[0.07] font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}>
+                全部分类
+              </button>
+              {categories.map(c => (
+                <button key={c.id ?? 'none'} type="button" onClick={() => setCategoryId(c.id === null ? 'none' : String(c.id))}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] ${String(categoryId) === String(c.id === null ? 'none' : c.id)
+                    ? 'bg-black/[0.05] dark:bg-white/[0.07] font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}>
+                  <span>{c.icon || '·'}</span>
+                  <span className="flex-1 min-w-0 truncate text-left">{c.name}</span>
+                  <span className="text-[10.5px] text-stone-400 tabular-nums">{c.item_count}</span>
                 </button>
               ))}
             </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5 px-1">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-stone-400">分类</span>
-                <button type="button" onClick={() => setShowCategory(true)}
-                  className="text-[11px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200">管理</button>
-              </div>
-              <div className="space-y-0.5">
-                <button type="button" onClick={() => setCategoryId('')}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] ${categoryId === ''
-                    ? 'bg-black/[0.05] dark:bg-white/[0.07] font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}>
-                  全部分类
-                </button>
-                {categories.map(c => (
-                  <button key={c.id ?? 'none'} type="button" onClick={() => setCategoryId(c.id === null ? 'none' : String(c.id))}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] ${String(categoryId) === String(c.id === null ? 'none' : c.id)
-                      ? 'bg-black/[0.05] dark:bg-white/[0.07] font-medium' : 'text-stone-600 dark:text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.04]'}`}>
-                    <span>{c.icon || '·'}</span>
-                    <span className="flex-1 min-w-0 truncate text-left">{c.name}</span>
-                    <span className="text-[10.5px] text-stone-400 tabular-nums">{c.item_count}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {tags.length > 0 && (
-              <div>
-                <span className="block mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-stone-400">标签</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {tagFilter && (
-                    <button type="button" onClick={() => setTagFilter('')}
-                      className="px-2 py-1 rounded-lg text-[11.5px] bg-fuchsia-600 text-white">✕ {tagFilter}</button>
-                  )}
-                  {tags.filter(t => t.tag !== tagFilter).slice(0, 14).map(t => (
-                    <button key={t.tag} type="button" onClick={() => setTagFilter(t.tag)}
-                      className="px-2 py-1 rounded-lg text-[11.5px] bg-black/[0.05] dark:bg-white/[0.07] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200">
-                      #{t.tag} <span className="text-stone-400">{t.count}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </aside>
-
-          {/* 主区 */}
-          <div className="flex-1 min-w-0 space-y-4">
-            {/* 工具栏 */}
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="relative flex-1 min-w-[220px] max-w-md">
-                <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="搜索资产（Ctrl+K）"
-                  aria-label="搜索资产"
-                  className="w-full pl-9 pr-8 py-2 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-sm outline-none focus:border-black/30 dark:focus:border-white/30" />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-[13px]" aria-hidden="true">⌕</span>
-                {search && (
-                  <button type="button" onClick={() => setSearch('')} aria-label="清空搜索"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">✕</button>
-                )}
-              </div>
-
-              {view === 'library' && (
-                <>
-                  <select value={sort} onChange={e => setSort(e.target.value)} aria-label="排序"
-                    className="px-2.5 py-2 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-[13px] outline-none">
-                    {SORTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-                  </select>
-                  <button type="button" onClick={() => { setBulkMode(v => !v); setSelection(new Set()) }}
-                    className={`px-3 py-2 rounded-xl text-[13px] border transition-colors ${bulkMode
-                      ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 font-medium'
-                      : 'border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07]'}`}>
-                    批量
-                  </button>
-                </>
-              )}
-
-              <span className="flex-1" />
-
-              <button type="button" onClick={() => setShowImport(true)}
-                className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07]">
-                导入 / 导出
-              </button>
-              <button type="button" onClick={() => uploadRef.current?.click()} disabled={uploading}
-                title="上传单个 .md 或 .zip 压缩包（zip 需含合规 SKILL.md）"
-                className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">
-                {uploading ? '解析中…' : '⬆ 上传 Skill'}
-              </button>
-              <input ref={uploadRef} type="file" accept=".zip,.md,.markdown,.txt" className="hidden"
-                onChange={uploadSkill} aria-label="上传 Skill 文件" />
-              <button type="button" onClick={() => setEditing({})}
-                className="px-3.5 py-2 rounded-xl text-[13px] font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 transition-opacity">
-                ＋ 新建资产
-              </button>
-            </div>
-
-            {/* 批量操作条 */}
-            {bulkMode && view === 'library' && (
-              <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/[0.05]">
-                <span className="text-[12.5px]">已选 <b>{selection.size}</b> 项</span>
-                <button type="button" onClick={() => bulk('favorite')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">收藏</button>
-                <button type="button" onClick={() => bulk('unfavorite')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">取消收藏</button>
-                <button type="button" onClick={() => bulk('archive')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">归档</button>
-                <button type="button" onClick={() => bulk('move')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40" title="移到未分类">移出分类</button>
-                <button type="button" onClick={() => bulk('trash')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-40">移入回收站</button>
-                <button type="button" onClick={() => setSelection(new Set())}
-                  className="ml-auto text-[12px] text-stone-400 hover:text-stone-600">全不选</button>
-              </div>
-            )}
-
-            {/* 回收站批量条 */}
-            {view === 'trash' && (
-              <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-2xl border border-black/[0.07] dark:border-white/[0.09]">
-                <span className="text-[12.5px] text-stone-500">回收站 · {data?.total ?? '…'} 项</span>
-                <button type="button" onClick={() => bulk('restore')} disabled={!selection.size}
-                  className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">恢复所选</button>
-                <button type="button" onClick={() => bulk('hard_delete')} disabled={!selection.size}
-                  className="px-2.5 py-1 rounded-lg text-[12px] border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-40">彻底删除所选</button>
-              </div>
-            )}
-
-            {/* 列表 */}
-            {!data ? (
-              <p className="text-[13px] text-stone-400 py-14 text-center">加载中…</p>
-            ) : data.items.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-[13px] text-stone-400 mb-4">
-                  {view === 'trash' ? '回收站是空的' : search || tagFilter || categoryId || kindFilter || favoriteOnly
-                    ? '没有匹配的资产——试试放宽过滤条件'
-                    : '还没有资产——新建一个 Prompt 或 Skill 开始沉淀'}
-                </p>
-                {view === 'library' && !search && !tagFilter && !categoryId && !kindFilter && (
-                  <button type="button" onClick={() => setEditing({})}
-                    className="px-4 py-2 rounded-xl text-sm font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90">＋ 新建第一个资产</button>
-                )}
-              </div>
-            ) : (
-              <div className={`grid gap-3.5 ${view === 'trash'
-                ? 'grid-cols-3'
-                : 'grid-cols-4'}`}>
-                {data.items.map(item => view === 'trash' ? (
-                  <div key={item.id}
-                    className={`flex items-center gap-3 p-4 rounded-2xl border ${selection.has(item.id)
-                      ? 'border-fuchsia-500/50 bg-fuchsia-500/[0.04]'
-                      : 'border-black/[0.07] dark:border-white/[0.09] bg-white dark:bg-white/[0.025]'}`}>
-                    <input type="checkbox" checked={selection.has(item.id)} onChange={() => toggleSelect(item.id)}
-                      className="w-4 h-4 accent-fuchsia-600 shrink-0" aria-label={`选择 ${item.title}`} />
-                    <button type="button" onClick={() => openDetail(item.id)} className="flex-1 min-w-0 text-left">
-                      <div className="text-[13.5px] font-medium truncate mb-0.5">{item.title}</div>
-                      <div className="text-[11px] text-stone-400 truncate">
-                        {(KIND_META[item.kind] || {}).label} · 删除于 {(item.updated_at || '').slice(5, 10)}
-                      </div>
-                    </button>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button type="button" onClick={() => doAction('restore', item)}
-                        className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07]">恢复</button>
-                      <button type="button" onClick={() => doAction('hard_delete', item)}
-                        className="px-2.5 py-1 rounded-lg text-[12px] border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10">彻底删除</button>
-                    </div>
-                  </div>
-                ) : (
-                  <ItemCard key={item.id} item={item} bulkMode={bulkMode} selected={selection.has(item.id)}
-                    onOpen={openDetail} onToggle={toggleSelect} onAction={doAction}
-                    onTag={t => setTagFilter(t === tagFilter ? '' : t)} />
-                ))}
-              </div>
-            )}
-
-            {/* 分页 */}
-            {data && data.total > data.page_size && (
-              <div className="flex items-center justify-center gap-3 pt-2">
-                <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                  className="px-3 py-1.5 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
-                <span className="text-[12.5px] text-stone-400 tabular-nums">{page} / {totalPages} · 共 {data.total} 项</span>
-                <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                  className="px-3 py-1.5 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
-              </div>
-            )}
           </div>
+
+          {tags.length > 0 && (
+            <div>
+              <span className="block mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-stone-400">标签</span>
+              <div className="flex flex-wrap gap-1.5">
+                {tagFilter && (
+                  <button type="button" onClick={() => setTagFilter('')}
+                    className="px-2 py-1 rounded-lg text-[11.5px] bg-fuchsia-600 text-white">✕ {tagFilter}</button>
+                )}
+                {tags.filter(t => t.tag !== tagFilter).slice(0, 14).map(t => (
+                  <button key={t.tag} type="button" onClick={() => setTagFilter(t.tag)}
+                    className="px-2 py-1 rounded-lg text-[11.5px] bg-black/[0.05] dark:bg-white/[0.07] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200">
+                    #{t.tag} <span className="text-stone-400">{t.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </aside>
+
+        {/* 主区 */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* 工具栏 */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-md">
+              <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="搜索资产（Ctrl+K）"
+                aria-label="搜索资产"
+                className="w-full pl-9 pr-8 py-2 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-sm outline-none focus:border-black/30 dark:focus:border-white/30" />
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400 text-[13px]" aria-hidden="true">⌕</span>
+              {search && (
+                <button type="button" onClick={() => setSearch('')} aria-label="清空搜索"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600">✕</button>
+              )}
+            </div>
+
+            <select value={sort} onChange={e => setSort(e.target.value)} aria-label="排序"
+              className="px-2.5 py-2 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-[13px] outline-none">
+              {SORTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+            <button type="button" onClick={() => { setBulkMode(v => !v); setSelection(new Set()) }}
+              className={`px-3 py-2 rounded-xl text-[13px] border transition-colors ${bulkMode
+                ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 font-medium'
+                : 'border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07]'}`}>
+              批量
+            </button>
+
+            <span className="flex-1" />
+
+            <button type="button" onClick={() => setShowImport(true)}
+              className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07]">
+              导入 / 导出
+            </button>
+            {view === 'skill' && (
+              <>
+                <button type="button" onClick={() => uploadRef.current?.click()} disabled={uploading}
+                  title="上传单个 .md 或 .zip 压缩包（zip 需含合规 SKILL.md）"
+                  className="px-3 py-2 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] text-stone-600 dark:text-stone-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">
+                  {uploading ? '解析中…' : '⬆ 上传 Skill'}
+                </button>
+                <input ref={uploadRef} type="file" accept=".zip,.md,.markdown,.txt" className="hidden"
+                  onChange={uploadSkill} aria-label="上传 Skill 文件" />
+              </>
+            )}
+            <button type="button" onClick={() => setEditing({})}
+              className="px-3.5 py-2 rounded-xl text-[13px] font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 transition-opacity">
+              ＋ 新建资产
+            </button>
+          </div>
+
+          {/* 批量操作条 */}
+          {bulkMode && (
+            <div className="flex items-center gap-2.5 flex-wrap px-4 py-2.5 rounded-2xl border border-fuchsia-500/30 bg-fuchsia-500/[0.05]">
+              <span className="text-[12.5px]">已选 <b>{selection.size}</b> 项</span>
+              <button type="button" onClick={() => bulk('favorite')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">收藏</button>
+              <button type="button" onClick={() => bulk('unfavorite')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">取消收藏</button>
+              <button type="button" onClick={() => bulk('archive')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40">归档</button>
+              <button type="button" onClick={() => bulk('move')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40" title="移到未分类">移出分类</button>
+              <button type="button" onClick={() => bulk('hard_delete')} disabled={!selection.size} className="px-2.5 py-1 rounded-lg text-[12px] border border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 disabled:opacity-40">彻底删除</button>
+              <button type="button" onClick={() => setSelection(new Set())}
+                className="ml-auto text-[12px] text-stone-400 hover:text-stone-600">全不选</button>
+            </div>
+          )}
+
+          {/* 列表 */}
+          {!data ? (
+            <p className="text-[13px] text-stone-400 py-14 text-center">加载中…</p>
+          ) : data.items.length === 0 ? (
+            <div className="py-16 text-center">
+              <p className="text-[13px] text-stone-400 mb-4">
+                {search || tagFilter || categoryId || favoriteOnly
+                  ? '没有匹配的资产——试试放宽过滤条件'
+                  : view === 'skill' ? '还没有 Skill——上传一个 .zip/.md 或新建开始沉淀'
+                  : '还没有 Prompt——新建一个开始沉淀'}
+              </p>
+              {!search && !tagFilter && !categoryId && !favoriteOnly && (
+                <button type="button" onClick={() => setEditing({})}
+                  className="px-4 py-2 rounded-xl text-sm font-medium bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90">＋ 新建第一个资产</button>
+              )}
+            </div>
+          ) : (
+            <div className="grid gap-3.5 grid-cols-4">
+              {data.items.map(item => (
+                <ItemCard key={item.id} item={item} bulkMode={bulkMode} selected={selection.has(item.id)}
+                  onOpen={openDetail} onToggle={toggleSelect} onAction={doAction}
+                  onTag={t => setTagFilter(t === tagFilter ? '' : t)} />
+              ))}
+            </div>
+          )}
+
+          {/* 分页 */}
+          {data && data.total > data.page_size && (
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                className="px-3 py-1.5 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed">上一页</button>
+              <span className="text-[12.5px] text-stone-400 tabular-nums">{page} / {totalPages} · 共 {data.total} 项</span>
+              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                className="px-3 py-1.5 rounded-xl text-[13px] border border-black/[0.1] dark:border-white/[0.12] hover:bg-black/[0.04] dark:hover:bg-white/[0.07] disabled:opacity-40 disabled:cursor-not-allowed">下一页</button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* 弹层 */}
       {detailId && (
@@ -488,7 +431,7 @@ export default function AssetsPage({ dark }) {
           onRefresh={() => { load(); loadLists() }} />
       )}
       {editing && (
-        <ItemEditor item={editing.id ? editing : null} categories={categories}
+        <ItemEditor item={editing.id ? editing : null} categories={categories} defaultKind={view === 'skill' ? 'skill' : 'prompt'}
           onClose={() => setEditing(null)} onSave={saveItem} />
       )}
       {showCategory && (

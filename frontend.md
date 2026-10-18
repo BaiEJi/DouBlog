@@ -135,7 +135,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### blog/pages（博客各页）
 - `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
 - **WorkspaceSwitcher**（正文工具行，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
-- 公共左侧栏提供知识库 / 新建文章 / 资产库导航；正文工具行保留知识库切换器、搜索与新建按钮
+- 公共左侧栏提供知识库（含子项新建文章）/ 资产库（Prompt/Skill）导航；正文工具行保留知识库切换器、搜索与新建按钮
 - 门户“管理”卡片、知识库“内容管理”导航及旧独立管理页已移除；历史 `/admin` 地址通过 replace 重定向到 `/blog`，保存的门户分组会自动过滤旧卡片。
 
 ### PostDetail.jsx（最重的页面）
@@ -207,7 +207,7 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 
 ### AssetsPage.jsx（blog/assets/，资产库 UI——知识库模块 tab）
 
-单页 `/assets`（2026-10-17 自独立模块并入 blog，module-routes 归 blog；模块侧栏「资产库」项的 children 为 浏览/回收站/统计 三视图，经 useModuleNavigation 仅注册 activeKey/onSelect，不覆盖 blog 静态菜单）。资产库视图 = 页内左过滤栏（全部/★收藏/Prompt/Skill 快速过滤 + 分类树含计数 + 标签 chips）+ 工具栏（Ctrl+K 搜索/排序/批量/导入导出/新建）+ 卡片网格（kind 徽标、`{{}}` 变量数、标签、版本/使用数 footer、hover 操作；批量模式行内勾选）。
+单页 `/assets`（2026-10-17 自独立模块并入 blog，module-routes 归 blog；模块侧栏「资产库」项的 children 为 Prompt/Skill 两项——「浏览」按资产类型拆分、列表按 kind 隔离，经 useModuleNavigation 仅注册 activeKey/onSelect，不覆盖 blog 静态菜单；回收站与统计视图及能力已移除，删除为直接彻底删除〔带确认〕）。资产库视图 = 页内左过滤栏（全部/★收藏 快速过滤 + 分类树含计数 + 标签 chips）+ 工具栏（Ctrl+K 搜索/排序/批量/导入导出/上传 Skill〔仅 Skill 视图〕/新建〔按视图预填 kind〕）+ 卡片网格（kind 徽标、`{{}}` 变量数、标签、版本/使用数 footer、hover 操作；批量模式行内勾选）。
 详情为右滑抽屉（ItemDetail）：操作组（复制全文/编辑/导出 md·json/复制副本/收藏/归档/回收站）+ 三 tab——预览（`shared/md.js` 渲染与原文切换）、变量填充（{{变量}} 表单 + 实时填充预览 + 复制计使用，值记忆 localStorage）、版本（列表 + 行级 LCS diff + 恢复）。编辑器为弹窗（ItemEditor：kind 分段、实时变量检测 chips、版本备注、Ctrl+S/Esc）。导入面板先预检后执行（dry_run 结果展示、分类自动创建提示）；导出走 blob 下载解析 filename*。统计视图为纯 CSS 柱图（30 天趋势零依赖）。kit.jsx 提供 Toast/Modal/diffLines/copyText/KIND_META。
 
 ### DevToolboxPage.jsx（devtoolbox/，开发者工具箱 UI）
