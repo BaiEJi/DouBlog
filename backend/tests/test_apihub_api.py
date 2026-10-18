@@ -97,22 +97,20 @@ BEARER_AUTH = {'providers': [{'type': 'bearer', 'value': '{cred.token}'}],
 
 
 def _setup_env(client, auth_headers, system_base, *, slug_suffix='', providers=None,
-               keys=None, path_tpl='/echo', method='POST', request_cfg=None,
+               credential=None, path_tpl='/echo', method='POST', request_cfg=None,
                response_cfg=None, probe=None, token_kwargs=None):
-    """建 系统+key(s)+API+令牌，返回 (api_id, token_id, sk 明文)。"""
+    """建 系统+API（鉴权内联 auth_config）+令牌，返回 (api_id, token_id, sk 明文)。"""
     suffix = slug_suffix or 'env'
     r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
         'name': f'u-{suffix}', 'slug': f'u-{suffix}', 'base_url': system_base,
-        'timeout_ms': 3000, 'max_retry': 0, 'auth_config': providers or BEARER_AUTH})
+        'timeout_ms': 3000, 'max_retry': 0})
     assert r.status_code == 200, r.json()
     uid = r.json()['data']['id']
-    for cred in (keys or [{'token': 'good-key'}]):
-        rr = client.post(f'/api/apihub/admin/systems/{uid}/keys', headers=auth_headers,
-                         json={'credential': cred, 'weight': 1})
-        assert rr.status_code == 200
+    auth_cfg = {**(providers or BEARER_AUTH), 'credential': credential or {'token': 'good-key'}}
     r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
         'name': f'a-{suffix}', 'slug': f'a-{suffix}', 'system_id': uid,
         'method': method, 'path_tpl': path_tpl,
+        'auth_config': auth_cfg,
         'request_cfg': request_cfg, 'response_cfg': response_cfg, 'probe': probe})
     assert r.status_code == 200, r.json()
     api_id = r.json()['data']['id']
@@ -138,38 +136,42 @@ class TestAdmin:
                   '/api/apihub/logs', '/api/apihub/stats/overview'):
             assert client.get(p).status_code == 401, p
 
-    def test_system_crud_and_masking(self, client, auth_headers, system_base):
-        # 无效 providers
+    def test_system_crud(self, client, auth_headers, system_base):
+        # 创建（系统只存连接参数，无鉴权字段）
         r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
-            'name': 'x', 'slug': 'x', 'base_url': 'http://x',
-            'auth_config': {'providers': [{'type': 'nope'}], 'credential_fields': ['a']}})
-        assert r.status_code == 400
-        # 创建 + auth_config 回读
-        r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
-            'name': 'U', 'slug': 'crud-u', 'base_url': system_base,
-            'auth_config': BEARER_AUTH})
+            'name': 'U', 'slug': 'crud-u', 'base_url': system_base})
         assert r.status_code == 200
         uid = r.json()['data']['id']
-        assert r.json()['data']['auth_config']['providers'][0]['type'] == 'bearer'
         # slug 冲突
         r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
-            'name': 'U2', 'slug': 'crud-u', 'base_url': 'http://x', 'auth_config': BEARER_AUTH})
+            'name': 'U2', 'slug': 'crud-u', 'base_url': 'http://x'})
         assert r.status_code == 400
-        # key 增删 + 脱敏（不回明文）
-        r = client.post(f'/api/apihub/admin/systems/{uid}/keys', headers=auth_headers,
-                        json={'credential': {'token': 'verylongsecret123'}})
-        assert r.status_code == 200
-        keys = client.get(f'/api/apihub/admin/systems/{uid}/keys',
-                          headers=auth_headers).json()['data']
-        assert 'verylongsecret123' not in json.dumps(keys)
-        assert keys[0]['credential']['token'] == 'ver***23'
         # 更新 + 删除
         r = client.put(f'/api/apihub/admin/systems/{uid}', headers=auth_headers, json={
-            'name': 'U2', 'slug': 'crud-u', 'base_url': 'http://updated',
-            'auth_config': BEARER_AUTH})
+            'name': 'U2', 'slug': 'crud-u', 'base_url': 'http://updated'})
         assert r.status_code == 200
         assert client.delete(f'/api/apihub/admin/systems/{uid}',
                              headers=auth_headers).status_code == 200
+
+    def test_api_auth_config_inline(self, client, auth_headers, system_base):
+        """API 级 auth_config：无效 providers 拒存；合法配置（含 credential）明文回读。"""
+        r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
+            'name': 'auth-s', 'slug': 'auth-s', 'base_url': system_base})
+        uid = r.json()['data']['id']
+        base = {'name': 'a', 'slug': 'a-auth', 'system_id': uid,
+                'method': 'GET', 'path_tpl': '/echo'}
+        r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
+            **base, 'auth_config': {'providers': [{'type': 'nope'}], 'credential_fields': ['a']}})
+        assert r.status_code == 400
+        r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
+            **base, 'auth_config': {**BEARER_AUTH, 'credential': {'token': 'sekret123'}}})
+        assert r.status_code == 200, r.json()
+        api = r.json()['data']
+        assert api['auth_config']['providers'][0]['type'] == 'bearer'
+        assert api['auth_config']['credential'] == {'token': 'sekret123'}   # 明文回读
+        items = client.get('/api/apihub/admin/apis', headers=auth_headers).json()['data']
+        assert next(a for a in items if a['slug'] == 'a-auth'
+                    )['auth_config']['credential']['token'] == 'sekret123'
 
     def test_system_delete_blocked_by_api(self, client, auth_headers, system_base):
         _api_id, _tid, _sk = _setup_env(client, auth_headers, system_base,
@@ -178,6 +180,39 @@ class TestAdmin:
         uid = next(u['id'] for u in items if u['slug'] == 'u-blk')
         assert client.delete(f'/api/apihub/admin/systems/{uid}',
                              headers=auth_headers).status_code == 400
+
+    def test_system_scoped_apis_and_count(self, client, auth_headers, system_base):
+        """系统详情页契约：GET /admin/apis?system_id= 只回该系统 API；
+        系统字典带 api_count（列表页数量列/详情页信息卡用）。"""
+        uids = []
+        for suffix in ('sc-a', 'sc-b'):
+            r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
+                'name': f'u-{suffix}', 'slug': f'u-{suffix}', 'base_url': system_base})
+            assert r.status_code == 200, r.json()
+            uid = r.json()['data']['id']
+            uids.append(uid)
+            assert r.json()['data']['api_count'] == 0
+            r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
+                'name': f'a-{suffix}', 'slug': f'a-{suffix}', 'system_id': uid,
+                'method': 'GET', 'path_tpl': '/echo'})
+            assert r.status_code == 200, r.json()
+        # 只取 sc-a：一条，且属于它
+        items = client.get(f'/api/apihub/admin/apis?system_id={uids[0]}',
+                           headers=auth_headers).json()['data']
+        assert [a['slug'] for a in items] == ['a-sc-a']
+        assert all(a['system_id'] == uids[0] for a in items)
+        # 无过滤仍回全部（含其它测试建的）
+        assert len(client.get('/api/apihub/admin/apis',
+                              headers=auth_headers).json()['data']) >= 2
+        # api_count 随增删变化
+        r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
+            'name': 'a-sc-a2', 'slug': 'a-sc-a2', 'system_id': uids[0],
+            'method': 'GET', 'path_tpl': '/echo'})
+        assert r.status_code == 200
+        items = client.get('/api/apihub/admin/systems', headers=auth_headers).json()['data']
+        counts = {u['slug']: u['api_count'] for u in items}
+        assert counts['u-sc-a'] == 2
+        assert counts['u-sc-b'] == 1
 
     def test_token_plaintext_once(self, client, auth_headers):
         r = client.post('/api/apihub/admin/tokens', headers=auth_headers,
@@ -290,20 +325,14 @@ class TestGateway:
             codes = list(ex.map(burst, range(80)))
         assert codes.count(200) == 20 and codes.count(429) == 60
 
-    def test_system_401_disable_key_retry(self, client, auth_headers, system_base):
+    def test_upstream_401_surfaces(self, client, auth_headers, system_base):
+        """上游回 401：无密钥池可换，同一凭证不重试，503 upstream_error 归一返回。"""
         _a, _t, sk = _setup_env(client, auth_headers, system_base, slug_suffix='prot',
                                 path_tpl='/protected', method='GET',
-                                keys=[{'token': 'bad-key'}, {'token': 'good-key'}])
+                                credential={'token': 'bad-key'})
         r = _gw(client, 'a-prot', sk)
-        assert r.status_code == 200
-        assert r.json()['secret'] == 'data'
-        items = client.get('/api/apihub/admin/systems', headers=auth_headers).json()['data']
-        uid = next(u['id'] for u in items if u['slug'] == 'u-prot')
-        keys = client.get(f'/api/apihub/admin/systems/{uid}/keys',
-                          headers=auth_headers).json()['data']
-        bad = next(k for k in keys if k['credential']['token'].startswith('bad'))
-        assert bad['status'] == 2 and '401' in (bad['disabled_reason'] or '')
-        assert _gw(client, 'a-prot', sk).status_code == 200   # 再调直接用好 key
+        assert r.status_code == 503 and r.json()['error'] == 'upstream_error'
+        assert 'auth_401' in r.json()['message']
 
     def test_timeout_504(self, client, auth_headers, system_base):
         _a, _t, sk = _setup_env(client, auth_headers, system_base, slug_suffix='slow',
@@ -311,13 +340,12 @@ class TestGateway:
         # 系统 timeout 3000ms 太长——单独建一个短超时系统
         r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
             'name': 'u-fast', 'slug': 'u-fast', 'base_url': system_base,
-            'timeout_ms': 300, 'max_retry': 0, 'auth_config': BEARER_AUTH})
+            'timeout_ms': 300, 'max_retry': 0})
         uid = r.json()['data']['id']
-        client.post(f'/api/apihub/admin/systems/{uid}/keys', headers=auth_headers,
-                    json={'credential': {'token': 'k'}})
         r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
             'name': 'slow2', 'slug': 'a-slow2', 'system_id': uid,
-            'method': 'GET', 'path_tpl': '/slow'})
+            'method': 'GET', 'path_tpl': '/slow',
+            'auth_config': {**BEARER_AUTH, 'credential': {'token': 'k'}}})
         api_id = r.json()['data']['id']
         r = client.post('/api/apihub/admin/tokens', headers=auth_headers, json={'name': 'ts'})
         sk2 = r.json()['data']['key']

@@ -1,11 +1,11 @@
-"""API Hub 核心单元测试：加密/令牌/模板/鉴权适配/限流器/key选择/探活状态机。"""
+"""API Hub 核心单元测试：加密(仅迁移用)/令牌/模板/鉴权适配/限流器/探活状态机。"""
 
 import pytest
 
-from app.apihub.core import (CryptoBox, FixedWindow, HealthMonitor, Injection, KeyCfg,
-                             KeySelector, LevelSpec, RateLimiter, TemplateError, TokenBucket,
-                             apply_providers, generate_token, hash_token, mask_secret, render,
-                             render_obj, strictest, token_hint, validate_auth_config)
+from app.apihub.core import (CryptoBox, FixedWindow, HealthMonitor, Injection, LevelSpec,
+                             RateLimiter, TemplateError, TokenBucket, apply_providers,
+                             generate_token, hash_token, render, render_obj, strictest,
+                             token_hint, validate_auth_config)
 
 
 class TestCrypto:
@@ -23,10 +23,6 @@ class TestCrypto:
         enc[-1] ^= 0xFF
         with pytest.raises(Exception):
             CryptoBox('k1').decrypt(bytes(enc))
-
-    def test_mask(self):
-        assert mask_secret('abcdefgh') == 'abc***gh'
-        assert mask_secret('') == ''
 
 
 class TestToken:
@@ -120,33 +116,6 @@ class TestRateLimiter:
             {'algorithm': 'fixed_window', 'window_s': 60, 'max_count': 100},   # ≈1.67/s 更严
         ])
         assert best['algorithm'] == 'fixed_window'
-
-
-class TestSelector:
-    def test_round_robin_and_weight(self):
-        sel = KeySelector()
-        k1, k2 = KeyCfg(1, {}, 1, 1), KeyCfg(2, {}, 1, 1)
-        picks = [sel.next_key(1, [k1, k2]).id for _ in range(4)]
-        assert picks == [1, 2, 1, 2]
-
-    def test_failure_cooldown_threshold(self):
-        sel = KeySelector()
-        assert not sel.note_failure(9)
-        assert not sel.note_failure(9)
-        assert sel.note_failure(9)          # 第 3 次才冷却
-        assert not sel.note_failure(8)      # 成功前另一 key 的失败独立计数
-
-    def test_success_resets(self):
-        sel = KeySelector()
-        sel.note_failure(1)
-        sel.note_failure(1)
-        sel.note_success(1)
-        assert not sel.note_failure(1)      # 清零后重新累计
-
-    def test_skips_disabled(self):
-        sel = KeySelector()
-        k = KeyCfg(1, {}, 1, 2)   # status=2 禁用
-        assert sel.next_key(1, [k]) is None
 
 
 class TestHealthMonitor:

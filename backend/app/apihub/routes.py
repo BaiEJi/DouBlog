@@ -1,15 +1,17 @@
 """API Hub 路由：管理端（Basic Auth）+ 网关（平台令牌 sk-，不走 Basic Auth）。
 
 分类只有 system → api 两个维度：系统手动创建（类比 confcenter 的 namespace），
-API 归属系统且路径模板映射到系统的 base_url 上。
+API 归属系统且路径模板映射到系统的 base_url 上；鉴权（providers + 凭证值）
+明文内联在 API 的 auth_config（2026-10-17 起无密钥池，见 __init__.py 迁移）。
 
 网关调用入口（外部调用方使用）：
 - POST /api/apihub/gw/apis/<slug>               统一信封 {path, query, header, body}
-- ANY  /api/apihub/gw/systems/<slug>/<path>     透明代理（原路径/query/body 透传）
+- ANY  /api/apihub/gw/systems/<slug>/<path>     透明代理（原路径/query/body 透传，
+  鉴权取该系统第一个 API 的 auth_config）
 鉴权：Authorization: Bearer sk-...（平台令牌，SHA-256 落库）
 
 管道：令牌鉴权 → 授权(有效期/scope/IP/健康) → 多级限流(内存) → 配额预占 →
-选 key(加权轮询) → 请求构建(模板+凭证注入+剥离入站凭证) → 系统转发(超时/换key重试) →
+请求构建(模板+凭证注入+剥离入站凭证) → 系统转发(超时重试) →
 响应(透传/信封 + 错误归一化双通道) → 异步日志(writer 线程)。
 
 请求执行模型：同步管道（含阻塞的上游 http.client 调用）经 _run_gw 提交到模块 SDK 池
@@ -28,15 +30,15 @@ import time
 from datetime import timedelta
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy import case, func, select
 
 from app.apihub.core import (DEFAULT_PROBE, Injection, LevelSpec, TemplateError,
                              apply_providers, generate_token, hash_token, level_key,
-                             mask_secret, merge_probe, render, token_hint,
+                             merge_probe, render, token_hint,
                              validate_auth_config)
-from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog, ApihubKey,
+from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog,
                                ApihubRule, ApihubToken, ApihubSystem)
 from app.apihub.pool import UpstreamConnectError, UpstreamProtocolError, UpstreamTimeout
 from app.apihub.proxy import load_proxy_config, save_proxy_config
@@ -81,8 +83,7 @@ async def _run_gw(fn):
     """网关同步管道执行器：模块 SDK 池（apihub-gw），不经 run_db 的共享 DB 池。
 
     网关常规路径（鉴权/限流/配额/转发/日志入队）全程不触数据库，走 DB 池会白付
-    每请求 scoped_session 创建+回滚+回收的固定开销，且与其余模块抢 16 个共享 worker；
-    仅 401/403 禁用 key 分支触库（该分支内就地清理会话）。"""
+    每请求 scoped_session 创建+回滚+回收的固定开销，且与其余模块抢 16 个共享 worker。"""
     fut = get_pool('apihub-gw', workers=32).submit(fn)
     return await asyncio.wrap_future(fut)
 
@@ -131,23 +132,6 @@ def _client_ip(request: Request):
     return request.client.host if request.client else ''
 
 
-def _disable_denied_key(state, key_id: int, status: int):
-    """系统回 401/403：该 key 判定失效，落库禁用并刷新快照。
-
-    运行在 apihub-gw 池（非 run_db 环境），触库分支就地清理线程会话。"""
-    try:
-        k = db.session.get(ApihubKey, key_id)
-        if k is not None and k.status == 1:
-            k.status = 2
-            k.disabled_reason = f'upstream {status} (credential denied)'
-        db.session.commit()
-    except Exception:
-        db.session.rollback()
-    finally:
-        db.session.remove()
-    state.reload()
-
-
 def _json_path(obj, path):
     node = obj
     for part in path.lstrip('$.').split('.'):
@@ -184,17 +168,26 @@ def _eval_response(response_cfg, status, body_bytes, charset):
     return True, '0', 'ok'
 
 
-def _url_for(system, key, path_tpl, path_vars):
-    base = render(system['base_url'], {'cred': key.cred}) if '{' in system['base_url'] else system['base_url']
-    path = render(path_tpl, {'cred': key.cred, 'path': path_vars}) if '{' in path_tpl else path_tpl
+def _url_for(system, cred, path_tpl, path_vars):
+    base = render(system['base_url'], {'cred': cred}) if '{' in system['base_url'] else system['base_url']
+    path = render(path_tpl, {'cred': cred, 'path': path_vars}) if '{' in path_tpl else path_tpl
     return base.rstrip('/') + '/' + path.lstrip('/')
 
 
-def _auth_injection(state, system, key):
-    """鉴权注入：qq_bot 等动态令牌 provider 绑定 state.token_exchange（走共享池/出站代理）。"""
+def _auth_injection(state, api):
+    """鉴权注入：取 API 内联 auth_config（providers + credential）；
+    qq_bot 等动态令牌 provider 绑定 state.token_exchange（走共享池/出站代理）。"""
+    auth_cfg = api['auth_config'] or {}
     def _fetch(provider, cred):
         return state.token_exchange.get(state.pool, provider, cred)
-    return apply_providers(system['providers'], key.cred, token_fetch=_fetch)
+    return apply_providers(auth_cfg.get('providers') or [], auth_cfg.get('credential') or {},
+                           token_fetch=_fetch)
+
+
+def _system_default_auth(state, system_id) -> dict:
+    """透明代理没有 API 上下文：取该系统第一个 API 的 auth_config（无 API 则空鉴权）。"""
+    apis = state.store.apis_of_system(system_id)
+    return apis[0]['auth_config'] if apis else {}
 
 
 def _build_headers(inbound, inj: Injection):
@@ -253,7 +246,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     if system is None or system['status'] != 1:
         return _gw_err(503, 'system_disabled', '系统已禁用')
     if state.monitor.state_of(api['id'], api['health_status'])['status'] == 'down':
-        _log(state, token, api, system, None, 'invoke', api['method'], slug, None, t0, False, 'unhealthy')
+        _log(state, token, api, system, 'invoke', api['method'], slug, None, t0, False, 'unhealthy')
         return _gw_err(503, 'unhealthy', f"API '{slug}' 健康状态为 down")
 
     if token['allowed_api_ids'] is not None and api['id'] not in token['allowed_api_ids']:
@@ -265,7 +258,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
 
     cr = state.limiter.check(state.store.build_levels(api['id'], token['id']))
     if not cr.allowed:
-        _log(state, token, api, system, None, 'invoke', api['method'], slug, 429, t0, False,
+        _log(state, token, api, system, 'invoke', api['method'], slug, 429, t0, False,
              'rate_limited', rl_scope=cr.scope)
         return _gw_err(429, 'rate_limited', f"限流触发（层级 {cr.scope}）", headers={
             'Retry-After': str(max(1, math.ceil(cr.retry_after))),
@@ -286,18 +279,14 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
         api, raw.get('path') or {}, raw.get('query') or {},
         raw.get('header') or {}, raw.get('body'))
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
+    cred = (api['auth_config'] or {}).get('credential') or {}
 
     attempts = max(1, system['max_retry'] + 1)
     last_error = 'no_attempt'
     for _attempt in range(attempts):
-        key = state.selector.next_key(system['id'], state.store.keys.get(system['id'], []))
-        if key is None:
-            last_error = (f'no_available_key(prev:{last_error})'
-                          if last_error != 'no_attempt' else 'no_available_key')
-            break
         try:
-            url = _url_for(system, key, api['path_tpl'], env_path)
-            inj = _auth_injection(state, system, key)
+            url = _url_for(system, cred, api['path_tpl'], env_path)
+            inj = _auth_injection(state, api)
             headers = _build_headers(env_header, inj)
             params = {**env_query, **inj.query}
 
@@ -337,22 +326,18 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
             last_error = str(e)[:60]
             continue
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
-            # 连接错误仅在有多把 key 时计失败（唯一 key 不自我熔断）
-            if len(state.store.keys.get(system['id'], [])) > 1:
-                state.selector.note_failure(key.id, cooldown_s=10)
             last_error = f'conn_error:{type(e).__name__}'
             continue
 
         if r.status in (401, 403):
-            _disable_denied_key(state, key.id, r.status)
+            # 同一凭证重试无意义（无密钥池可换），直接失败
             last_error = f'auth_{r.status}'
-            continue
+            break
 
-        state.selector.note_success(key.id)
         latency = int((time.monotonic() - t0) * 1000)
         charset = (api['response_cfg'] or {}).get('charset')
         ok, err_code, err_msg = _eval_response(api['response_cfg'], r.status, r.content, charset)
-        _log(state, token, api, system, key.id, 'invoke', api['method'], slug, r.status, t0, ok,
+        _log(state, token, api, system, 'invoke', api['method'], slug, r.status, t0, ok,
              None if ok else f'upstream_code:{err_code}')
         quota_remaining = (token['quota_total'] - state.store.quota_used.get(token['id'], 0)) \
             if token['quota_total'] is not None else None
@@ -360,7 +345,7 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
 
     if quota_reserved:
         state.store.quota_used[token['id']] -= 1
-    _log(state, token, api, system, None, 'invoke', api['method'], slug, None, t0, False, last_error)
+    _log(state, token, api, system, 'invoke', api['method'], slug, None, t0, False, last_error)
     if last_error == 'timeout':
         return _gw_err(504, 'upstream_timeout', '系统转发超时')
     return _gw_err(503, 'upstream_error', f'所有尝试失败: {last_error}')
@@ -418,7 +403,7 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
               if lv.scope in ('token', 'global')]
     cr = state.limiter.check(levels)
     if not cr.allowed:
-        _log(state, token, None, system, None, 'passthrough', request.method,
+        _log(state, token, None, system, 'passthrough', request.method,
              f'{slug}/{system_path}'[:250], 429, t0, False, 'rate_limited', rl_scope=cr.scope)
         return _gw_err(429, 'rate_limited', f"限流触发（层级 {cr.scope}）", headers={
             'Retry-After': str(max(1, math.ceil(cr.retry_after))),
@@ -436,17 +421,16 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
     inbound = {k: v for k, v in request.headers.items() if k.lower() not in STRIP_HEADERS}
     query = dict(request.query_params)
 
+    # 透明代理无 API 上下文：鉴权取该系统第一个 API 的内联配置
+    auth_cfg = _system_default_auth(state, system['id'])
+    cred = auth_cfg.get('credential') or {}
+
     attempts = max(1, system['max_retry'] + 1)
     last_error = 'no_attempt'
     for _attempt in range(attempts):
-        key = state.selector.next_key(system['id'], state.store.keys.get(system['id'], []))
-        if key is None:
-            last_error = (f'no_available_key(prev:{last_error})'
-                          if last_error != 'no_attempt' else 'no_available_key')
-            break
         try:
-            url = _url_for(system, key, '/' + system_path, {})
-            inj = apply_providers(system['providers'], key.cred)
+            url = _url_for(system, cred, '/' + system_path, {})
+            inj = _auth_injection(state, {'auth_config': auth_cfg})
             headers = _build_headers(inbound, inj)
             params = {**query, **inj.query}
             if inj.cookies:
@@ -465,19 +449,16 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
             last_error = str(e)[:60]
             continue
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
-            if len(state.store.keys.get(system['id'], [])) > 1:
-                state.selector.note_failure(key.id, cooldown_s=10)
             last_error = f'conn_error:{type(e).__name__}'
             continue
 
         if r.status in (401, 403):
-            _disable_denied_key(state, key.id, r.status)
+            # 同一凭证重试无意义（无密钥池可换），直接失败
             last_error = f'auth_{r.status}'
-            continue
+            break
 
-        state.selector.note_success(key.id)
         latency = int((time.monotonic() - t0) * 1000)
-        _log(state, token, None, system, key.id, 'passthrough', request.method,
+        _log(state, token, None, system, 'passthrough', request.method,
              f'{slug}/{system_path}'[:250], r.status, t0, r.status < 400,
              None if r.status < 400 else f'http_{r.status}')
         resp = Response(r.content, status_code=r.status, media_type='text/html')
@@ -488,20 +469,20 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
 
     if quota_reserved:
         state.store.quota_used[token['id']] -= 1
-    _log(state, token, None, system, None, 'passthrough', request.method,
+    _log(state, token, None, system, 'passthrough', request.method,
          f'{slug}/{system_path}'[:250], None, t0, False, last_error)
     if last_error == 'timeout':
         return _gw_err(504, 'upstream_timeout', '系统转发超时')
     return _gw_err(503, 'upstream_error', f'所有尝试失败: {last_error}')
 
 
-def _log(state, token, api, system, key_id, mode, method, path_digest, status_code, t0, ok,
+def _log(state, token, api, system, mode, method, path_digest, status_code, t0, ok,
          error_type=None, rl_scope=None):
     state.writer.log(
         token_id=token['id'] if token else None,
         api_id=api['id'] if api else None,
         system_id=system['id'] if system else None,
-        key_id=key_id, mode=mode, method=method,
+        mode=mode, method=method,
         path_digest=str(path_digest)[:250], status_code=status_code,
         latency_ms=int((time.monotonic() - t0) * 1000), ok=ok,
         error_type=error_type, rl_scope=rl_scope,
@@ -524,20 +505,15 @@ def probe_api(app, api_id, source='manual'):
     if not (api['probe'] or {}).get('path'):
         probe['path'] = api['path_tpl']   # 默认探真实端点，避免误判 down 阻断流量
 
-    keys = state.store.keys.get(system['id'], [])
-    key = state.selector.next_key(system['id'], keys)
-    cred = key.cred if key else {}
+    cred = (api['auth_config'] or {}).get('credential') or {}
     started = time.monotonic()
     outcome = {'api_id': api_id, 'slug': api['slug'], 'name': api['name'],
                'ok': False, 'status_code': None, 'latency_ms': None,
                'detail': {}, 'new_status': 'unknown'}
     try:
-        if key is None:
-            # 无 key：空凭证渲染 base_url（模板需 {cred.x} 时抛错 → 探活失败，符合预期）
-            url = render(system['base_url'], {'cred': {}}).rstrip('/') + '/' + probe['path'].lstrip('/')
-        else:
-            url = _url_for(system, key, probe['path'], {})
-        inj = _auth_injection(state, system, key) if key is not None else apply_providers(system['providers'], cred)
+        # 无凭证时以空 cred 渲染（模板需 {cred.x} 会抛错 → 探活失败，符合预期）
+        url = _url_for(system, cred, probe['path'], {})
+        inj = _auth_injection(state, api)
         headers = {str(k): str(v) for k, v in (probe.get('headers') or {}).items()}
         headers.update(inj.headers)
         payload = b''
@@ -611,23 +587,12 @@ async def probes_run(request: Request):
     return api_response(results)
 
 
-# ─── 管理端：系统 + 密钥池 ──────────────────────────────────────────
+# ─── 管理端：系统 ────────────────────────────────────────────────────
 
 def _system_dict(app, s):
     state = get_state(app)
-    # 优先用快照里的解密原文（reload 时已解密），避免列表页逐行重复 AES 解密
-    snap = state.store.systems.get(s.id)
-    if snap is not None:
-        auth_cfg = snap.get('auth_config')
-    else:
-        try:
-            auth_cfg = state.store.crypto.decrypt(bytes(s.auth_config_enc))
-        except Exception:
-            auth_cfg = {'_broken': True}
-    d = s.to_dict(auth_config=auth_cfg)
-    keys = state.store.keys.get(s.id, [])
-    d['key_count'] = len(keys)
-    d['key_enabled_count'] = sum(1 for k in keys if k.status == 1)
+    d = s.to_dict()
+    d['api_count'] = len(state.store.apis_of_system(s.id))
     return d
 
 
@@ -647,9 +612,6 @@ async def create_system(request: Request):
     app = request.app
 
     def _run():
-        errors = validate_auth_config(body.get('auth_config') or {})
-        if errors:
-            return api_response(None, 400, 'auth_config 无效: ' + '; '.join(errors))
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', str(body.get('slug') or '')):
             return api_response(None, 400, 'slug 非法（字母数字_-，≤64）')
         if db.session.execute(select(ApihubSystem).where(ApihubSystem.slug == body['slug'])).scalar():
@@ -658,7 +620,7 @@ async def create_system(request: Request):
             name=body.get('name') or body['slug'], slug=body['slug'],
             base_url=body.get('base_url') or '', timeout_ms=int(body.get('timeout_ms') or 30000),
             max_retry=int(body.get('max_retry') or 2),
-            auth_config_enc=get_state(app).store.crypto.encrypt(body['auth_config']),
+            transport=body.get('transport') or {},
             status=int(body.get('status') or 1))
         db.session.add(s)
         db.session.commit()
@@ -678,9 +640,6 @@ async def update_system(sid: int, request: Request):
             return api_response(None, 404, '系统不存在')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', str(body.get('slug') or '')):
             return api_response(None, 400, 'slug 非法（字母数字_-，≤64）')
-        errors = validate_auth_config(body.get('auth_config') or {})
-        if errors:
-            return api_response(None, 400, 'auth_config 无效: ' + '; '.join(errors))
         dup = db.session.execute(select(ApihubSystem).where(
             ApihubSystem.slug == body.get('slug'), ApihubSystem.id != sid)).scalar()
         if dup:
@@ -691,8 +650,8 @@ async def update_system(sid: int, request: Request):
         s.timeout_ms = int(body.get('timeout_ms') or s.timeout_ms)
         s.max_retry = int(body.get('max_retry') if body.get('max_retry') is not None else s.max_retry)
         s.status = int(body.get('status') or 1)
-        if body.get('auth_config'):
-            s.auth_config_enc = get_state(app).store.crypto.encrypt(body['auth_config'])
+        if body.get('transport') is not None:
+            s.transport = body['transport']
         db.session.commit()
         get_state(app).reload()
         return api_response(_system_dict(app, s))
@@ -711,87 +670,7 @@ async def delete_system(sid: int, request: Request):
                                     .where(ApihubApi.system_id == sid)).scalar() or 0
         if n_apis:
             return api_response(None, 400, f'仍有 {n_apis} 个 API 引用该系统，请先删除')
-        ApihubKey.query.filter_by(system_id=sid).delete()
         db.session.delete(s)
-        db.session.commit()
-        get_state(app).reload()
-        return api_response({'ok': True})
-    return await run_db(_run)
-
-
-@router.get('/admin/systems/{sid}/keys', dependencies=_ADMIN_AUTH)
-async def list_keys(sid: int, request: Request):
-    app = request.app
-
-    def _run():
-        state = get_state(app)
-        rows = db.session.execute(select(ApihubKey).where(ApihubKey.system_id == sid)
-                                  .order_by(ApihubKey.id)).scalars().all()
-        items = []
-        for k in rows:
-            try:
-                cred = state.store.crypto.decrypt(bytes(k.credential_enc))
-                masked = {f: mask_secret(str(v)) for f, v in cred.items()}
-            except Exception:
-                masked = {'_broken': True}
-            items.append({'id': k.id, 'weight': k.weight, 'status': k.status,
-                          'disabled_reason': k.disabled_reason, 'credential': masked,
-                          'last_used_at': _iso(k.last_used_at),
-                          'last_ok_at': _iso(k.last_ok_at)})
-        return api_response(items)
-    return await run_db(_run)
-
-
-@router.post('/admin/systems/{sid}/keys', dependencies=_ADMIN_AUTH)
-async def create_key(sid: int, request: Request):
-    body = await _silent_json(request) or {}
-    app = request.app
-
-    def _run():
-        if db.session.get(ApihubSystem, sid) is None:
-            return api_response(None, 404, '系统不存在')
-        cred = body.get('credential')
-        if not isinstance(cred, dict) or not cred:
-            return api_response(None, 400, 'credential 必须是非空对象')
-        k = ApihubKey(system_id=sid, weight=max(1, int(body.get('weight') or 1)),
-                      credential_enc=get_state(app).store.crypto.encrypt(cred))
-        db.session.add(k)
-        db.session.commit()
-        get_state(app).reload()
-        return api_response({'id': k.id, 'ok': True})
-    return await run_db(_run)
-
-
-@router.put('/admin/systems/keys/{kid}', dependencies=_ADMIN_AUTH)
-async def update_key(kid: int, request: Request):
-    body = await _silent_json(request) or {}
-    app = request.app
-
-    def _run():
-        k = db.session.get(ApihubKey, kid)
-        if k is None:
-            return api_response(None, 404, '密钥不存在')
-        if body.get('weight') is not None:
-            k.weight = max(1, int(body['weight']))
-        if body.get('status') is not None:
-            k.status = int(body['status'])
-            if k.status == 1:
-                k.disabled_reason = None
-        db.session.commit()
-        get_state(app).reload()
-        return api_response({'ok': True})
-    return await run_db(_run)
-
-
-@router.delete('/admin/systems/keys/{kid}', dependencies=_ADMIN_AUTH)
-async def delete_key(kid: int, request: Request):
-    app = request.app
-
-    def _run():
-        k = db.session.get(ApihubKey, kid)
-        if k is None:
-            return api_response(None, 404, '密钥不存在')
-        db.session.delete(k)
         db.session.commit()
         get_state(app).reload()
         return api_response({'ok': True})
@@ -846,6 +725,7 @@ def _api_dict(app, a):
     return {
         'id': a.id, 'system_id': a.system_id, 'name': a.name, 'slug': a.slug,
         'description': a.description or '', 'method': a.method, 'path_tpl': a.path_tpl,
+        'auth_config': a.auth_config,
         'request_cfg': a.request_cfg, 'response_cfg': a.response_cfg, 'timeout_ms': a.timeout_ms,
         'probe': a.probe, 'enabled': a.enabled,
         'health': {'status': st['status'], 'fails': st['fails'], 'succs': st['succs']},
@@ -858,8 +738,8 @@ def _api_dict(app, a):
 class _SnapRow:
     """快照 dict 的属性行视图（_api_dict 兼容 ORM 行/快照两种来源）。"""
     __slots__ = ('id', 'system_id', 'name', 'slug', 'description', 'method', 'path_tpl',
-                 'request_cfg', 'response_cfg', 'timeout_ms', 'probe', 'enabled',
-                 'health_status', 'last_probe_at', 'last_latency_ms')
+                 'auth_config', 'request_cfg', 'response_cfg', 'timeout_ms', 'probe',
+                 'enabled', 'health_status', 'last_probe_at', 'last_latency_ms')
 
     def __init__(self, cfg: dict):
         for k in self.__slots__:
@@ -867,12 +747,15 @@ class _SnapRow:
 
 
 @router.get('/admin/apis', dependencies=_ADMIN_AUTH)
-async def list_apis(request: Request):
-    """列表直读内存快照（管理端任何改动都 reload，探活回写同步快照）——免每请求全表查询。"""
+async def list_apis(request: Request, system_id: int | None = Query(None)):
+    """列表直读内存快照（管理端任何改动都 reload，探活回写同步快照）——免每请求全表查询。
+    system_id 可选：系统详情页只取该系统的 API。"""
     state = get_state(request.app)
+    cfgs = state.store.apis_by_id.values()
+    if system_id is not None:
+        cfgs = [c for c in cfgs if c['system_id'] == system_id]
     return api_response([_api_dict(request.app, _SnapRow(cfg))
-                         for cfg in sorted(state.store.apis_by_id.values(),
-                                           key=lambda c: c['id'])])
+                         for cfg in sorted(cfgs, key=lambda c: c['id'])])
 
 
 @router.post('/admin/apis', dependencies=_ADMIN_AUTH)
@@ -896,6 +779,11 @@ def _upsert_api(app, aid, body):
         return api_response(None, 400, 'slug 已存在')
     if db.session.get(ApihubSystem, body.get('system_id')) is None:
         return api_response(None, 400, 'system_id 不存在')
+    auth_cfg = body.get('auth_config')
+    if auth_cfg is not None:
+        errors = validate_auth_config(auth_cfg)
+        if errors:
+            return api_response(None, 400, 'auth_config 无效: ' + '; '.join(errors))
     if aid:
         a = db.session.get(ApihubApi, aid)
         if a is None:
@@ -909,6 +797,8 @@ def _upsert_api(app, aid, body):
     a.description = body.get('description') or ''
     a.method = str(body.get('method') or 'GET').upper()
     a.path_tpl = body.get('path_tpl') or '/'
+    if auth_cfg is not None:
+        a.auth_config = auth_cfg
     a.request_cfg = body.get('request_cfg')
     a.response_cfg = body.get('response_cfg')
     a.timeout_ms = body.get('timeout_ms')
@@ -961,18 +851,14 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
         api, raw.get('path') or {}, raw.get('query') or {},
         raw.get('header') or {}, raw.get('body'))
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
+    cred = (api['auth_config'] or {}).get('credential') or {}
 
     attempts = max(1, system['max_retry'] + 1)
     last_error = 'no_attempt'
     for _attempt in range(attempts):
-        key = state.selector.next_key(system['id'], state.store.keys.get(system['id'], []))
-        if key is None:
-            last_error = 'no_available_key' if last_error == 'no_attempt' \
-                else f'no_available_key(prev:{last_error})'
-            break
         try:
-            url = _url_for(system, key, api['path_tpl'], env_path)
-            inj = _auth_injection(state, system, key)
+            url = _url_for(system, cred, api['path_tpl'], env_path)
+            inj = _auth_injection(state, api)
             headers = _build_headers(env_header, inj)
             params = {**env_query, **inj.query}
 
@@ -1009,21 +895,18 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
             last_error = str(e)[:60]
             continue
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
-            if len(state.store.keys.get(system['id'], [])) > 1:
-                state.selector.note_failure(key.id, cooldown_s=10)
             last_error = f'conn_error:{type(e).__name__}'
             continue
 
         if r.status in (401, 403):
-            _disable_denied_key(state, key.id, r.status)
+            # 同一凭证重试无意义（无密钥池可换），直接失败
             last_error = f'auth_{r.status}'
-            continue
+            break
 
-        state.selector.note_success(key.id)
         latency = int((time.monotonic() - t0) * 1000)
         charset = (api['response_cfg'] or {}).get('charset')
         ok, err_code, err_msg = _eval_response(api['response_cfg'], r.status, r.content, charset)
-        _log(state, None, api, system, key.id, 'test', api['method'], api['slug'],
+        _log(state, None, api, system, 'test', api['method'], api['slug'],
              r.status, t0, ok, None if ok else f'upstream_code:{err_code}')
         try:
             parsed = orjson.loads(r.content) if r.content else None
@@ -1034,7 +917,7 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
         return api_response({'status_code': r.status, 'latency_ms': latency, 'ok': ok,
                              'body': parsed})
 
-    _log(state, None, api, system, None, 'test', api['method'], api['slug'],
+    _log(state, None, api, system, 'test', api['method'], api['slug'],
          None, t0, False, last_error)
     if last_error == 'timeout':
         return _gw_err(504, 'upstream_timeout', '系统转发超时')
@@ -1380,7 +1263,7 @@ async def list_logs(request: Request):
         rows = db.session.execute(q).scalars().all()
         return api_response([{
             'id': r.id, 'token_id': r.token_id, 'api_id': r.api_id, 'system_id': r.system_id,
-            'key_id': r.key_id, 'mode': r.mode, 'method': r.method, 'path_digest': r.path_digest,
+            'mode': r.mode, 'method': r.method, 'path_digest': r.path_digest,
             'status_code': r.status_code, 'latency_ms': r.latency_ms, 'ok': r.ok,
             'error_type': r.error_type, 'rl_scope': r.rl_scope,
             'created_at': _iso(r.created_at),

@@ -1,15 +1,15 @@
-"""API Hub 模块模型：系统/密钥池/API/平台令牌/限流规则/调用日志/探活日志。
+"""API Hub 模块模型：系统/API/平台令牌/限流规则/调用日志/探活日志。
 
 分类只有 system → api 两个维度：系统（手动创建，类比 confcenter 的 namespace）
 下挂多个 API，API 的路径模板映射到系统的 base_url 上。
-系统凭证与密钥一律 AES-256-GCM 密文落库（LargeBinary），
-明文结构 {providers, credential_fields, transport} / {字段: 值}，见 core.CryptoBox。
+鉴权（providers + 凭证值）全部内联在 API 的 auth_config 明文 JSON 里——
+单用户自用场景不做密钥池/加密/脱敏，2026-10-17 重构迁移见 __init__.py。
 """
 
 from datetime import datetime
 
 from sqlalchemy import (JSON, BigInteger, Boolean, DateTime, Float, ForeignKey,
-                        Integer, LargeBinary, String, Text, func)
+                        Integer, String, Text, func)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -17,10 +17,11 @@ from app.shared.timestamps import _iso, _utcnow
 
 
 class ApihubSystem(Base):
-    """系统：一组同源 API 的公共配置 + 默认鉴权（auth_config_enc 密文）。
+    """系统：一组同源 API 的公共连接配置（base_url/超时/重试/传输）。
 
     2026-10-17 重构前名为 ApihubUpstream（上游），表 apihub_upstreams 由
-    db.LEGACY_TABLE_MAP 启动幂等改名。"""
+    db.LEGACY_TABLE_MAP 启动幂等改名；auth_config_enc（系统级鉴权+密钥池）已
+    迁移为 API 级 auth_config，本表只留连接参数。"""
     __tablename__ = 'apihub_systems'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -29,42 +30,29 @@ class ApihubSystem(Base):
     base_url: Mapped[str] = mapped_column(String(512), nullable=False)
     timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=30000, server_default='30000')
     max_retry: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default='2')
-    auth_config_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    transport: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # 传输参数（verify 等）
     status: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')  # 1启用 2手动禁用 3自动禁用
     disabled_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    def to_dict(self, auth_config=None):
+    def to_dict(self):
         return {
             'id': self.id, 'name': self.name, 'slug': self.slug, 'base_url': self.base_url,
             'timeout_ms': self.timeout_ms, 'max_retry': self.max_retry, 'status': self.status,
-            'disabled_reason': self.disabled_reason,
-            'auth_config': auth_config,
+            'disabled_reason': self.disabled_reason, 'transport': self.transport or {},
             'created_at': _iso(self.created_at),
         }
-
-
-class ApihubKey(Base):
-    """密钥池：一个系统可挂多把 key，加权轮询；系统回 401/403 自动禁用单 key"""
-    __tablename__ = 'apihub_keys'
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    system_id: Mapped[int] = mapped_column(Integer, ForeignKey('apihub_systems.id', ondelete='CASCADE'),
-                                           nullable=False, index=True)
-    credential_enc: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
-    status: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')  # 1启用 2禁用
-    disabled_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ApihubApi(Base):
     """API：平台对外一个可调用单元（invoke 统一信封 / 透明代理）。
 
-    system_id 归属系统，path_tpl 相对系统 base_url（支持 {path.x}/{cred.x} 模板）。"""
+    system_id 归属系统，path_tpl 相对系统 base_url（支持 {path.x}/{cred.x} 模板）；
+    auth_config 明文 JSON 内联鉴权：{providers, credential_fields, credential, transport}——
+    {cred.x} 模板引用 credential 里的值（如 {"providers":[{"type":"bearer",
+    "value":"{cred.token}"}], "credential":{"token":"xxx"}}）。"""
+
     __tablename__ = 'apihub_apis'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -75,6 +63,7 @@ class ApihubApi(Base):
     description: Mapped[str] = mapped_column(String(256), nullable=False, default='')
     method: Mapped[str] = mapped_column(String(8), nullable=False, default='GET', server_default='GET')
     path_tpl: Mapped[str] = mapped_column(String(512), nullable=False, default='/')
+    auth_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # providers/credential_fields/credential/transport（明文）
     request_cfg: Mapped[dict | None] = mapped_column(JSON, nullable=True)    # body 类型 json/form/raw、header 模板
     response_cfg: Mapped[dict | None] = mapped_column(JSON, nullable=True)   # envelope/charset/error_mapping 双通道
     timeout_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -147,7 +136,6 @@ class ApihubCallLog(Base):
     token_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     api_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     system_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    key_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default='invoke')
     method: Mapped[str] = mapped_column(String(8), nullable=False, default='')
     path_digest: Mapped[str] = mapped_column(String(256), nullable=False, default='')

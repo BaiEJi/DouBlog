@@ -82,11 +82,14 @@ def qq_system(qq_state):
     server.shutdown()
 
 
-def _qq_auth(system_base):
-    # token_url 显式指向 mock（生产注册时省略 token_url 即用真实 bots.qq.com）
+def _qq_auth(system_base, cred=None):
+    # token_url 显式指向 mock（生产注册时省略 token_url 即用真实 bots.qq.com）；
+    # credential 凭证值内联（2026-10-17 起无密钥池）
     return {'providers': [{'type': 'qq_bot',
                            'token_url': system_base + '/app/getAppAccessToken'}],
-            'credential_fields': ['app_id', 'app_secret'], 'transport': {}}
+            'credential_fields': ['app_id', 'app_secret'],
+            'credential': cred or {'app_id': QQ_APP_ID, 'app_secret': QQ_SECRET},
+            'transport': {}}
 QQ_REQUEST_CFG = {
     'param_defaults': {'openid': QQ_OPENID},
     'body': {'type': 'json', 'defaults': {'msg_type': 0}},
@@ -95,18 +98,16 @@ QQ_REQUEST_CFG = {
 
 def _setup_qq_env(client, auth_headers, system_base, *, slug='qqenv',
                   request_cfg=None, cred=None):
-    """建 qq 系统+key+API+令牌，返回 sk 明文。"""
+    """建 qq 系统+API（鉴权内联）+令牌，返回 sk 明文。"""
     r = client.post('/api/apihub/admin/systems', headers=auth_headers, json={
         'name': f'u-{slug}', 'slug': f'u-{slug}', 'base_url': system_base,
-        'timeout_ms': 3000, 'max_retry': 0, 'auth_config': _qq_auth(system_base)})
+        'timeout_ms': 3000, 'max_retry': 0})
     assert r.status_code == 200, r.json()
     uid = r.json()['data']['id']
-    rr = client.post(f'/api/apihub/admin/systems/{uid}/keys', headers=auth_headers,
-                     json={'credential': cred or {'app_id': QQ_APP_ID, 'app_secret': QQ_SECRET}})
-    assert rr.status_code == 200
     r = client.post('/api/apihub/admin/apis', headers=auth_headers, json={
         'name': f'a-{slug}', 'slug': f'a-{slug}', 'system_id': uid,
         'method': 'POST', 'path_tpl': '/v2/users/{path.openid}/messages',
+        'auth_config': _qq_auth(system_base, cred),
         'request_cfg': request_cfg if request_cfg is not None else QQ_REQUEST_CFG})
     assert r.status_code == 200, r.json()
     r = client.post('/api/apihub/admin/tokens', headers=auth_headers,

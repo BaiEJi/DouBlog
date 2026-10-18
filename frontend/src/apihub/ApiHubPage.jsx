@@ -1,31 +1,41 @@
 /**
  * API Hub 页 /apihub：统一 API 调用平台（system → api 两维 / 平台令牌 sk- / 多级限流 / 一键探活）。
  *
- * 分类只有 系统-API 两个维度：系统手动创建（类比 confcenter 的 namespace），API 归属系统、
- * 路径模板映射到系统 base_url。六个内部 Tab：总览（健康+统计+一键探活）、系统（含密钥池）、
- * API（按系统分组）、平台令牌（明文一次性）、限流规则（实时余量）、调用日志。
- * 配置类字段（鉴权/请求/响应/探活）用 JSON 编辑，失焦校验。
+ * 分类只有 系统-API 两个维度，参考配置中心（confcenter）的 namespace 模式组织页面：
+ * API 不占侧栏一级入口，而是「点击进入系统」后管理该系统自己的 API——不同系统展示
+ * 不同的 API 内容。选中系统经 URL ?system=<slug> 深链（对齐 confcenter 的 ?namespace=），
+ * 刷新/分享不丢；slug 失效（过期书签/改名）自动回落列表。
+ * 五个内部 Tab：总览（健康+统计+一键探活）、系统（列表 → 系统详情：系统信息 + 编辑 +
+ * 该系统 API 的 CRUD/调用/文档/探活）、平台令牌（明文一次性）、限流规则（实时余量）、调用日志。
+ * 鉴权（providers + 凭证值）明文内联在每个 API 的 auth_config 里，随请求/响应/探活配置
+ * 一起在 API 表单编辑——无密钥池（2026-10-17 简化，见 backend __init__.py 迁移）。
+ * 配置类字段（auth/请求/响应/探活）用 JSON 编辑，失焦校验。
  * 接口全部走 ./api（admin，Basic Auth）；网关调用（sk-）是给外部调用方的，不在本页。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
 import md from '../shared/md'
 import {
-  apihubAddKey, apihubApiDoc, apihubApis, apihubCreateToken, apihubDeleteApi,
-  apihubDeleteKey, apihubDeleteRule, apihubDeleteToken, apihubDeleteSystem,
-  apihubInvokeApi, apihubKeys, apihubLogs, apihubOverview, apihubProbeAll,
+  apihubApiDoc, apihubApis, apihubCreateToken, apihubDeleteApi,
+  apihubDeleteRule, apihubDeleteToken, apihubDeleteSystem,
+  apihubInvokeApi, apihubLogs, apihubOverview, apihubProbeAll,
   apihubRules, apihubSaveApi, apihubSaveRule, apihubSaveSystem, apihubSystems,
-  apihubToggleApi, apihubTokens, apihubUpdateKey, apihubUpdateToken,
+  apihubToggleApi, apihubTokens, apihubUpdateToken,
 } from './api'
 
 const inputCls = 'px-3 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
-// 下拉框 = inputCls + 显式 color-scheme：展开的原生选项列表（含滚动条）明暗跟随主题，不留白底刺眼
-const selectCls = inputCls + ' [color-scheme:light] dark:[color-scheme:dark]'
 const btn = 'px-4 py-2 text-sm font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50'
 const btnPri = 'px-4 py-2 text-sm font-medium rounded-lg bg-amber-500 hover:bg-amber-600 text-white transition-colors disabled:opacity-50'
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
 // 弹窗卡：暗色用实底深色（叠在遮罩上保持对比），与 subs/diary kit 的 Modal 一致
 const modalCard = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-[#1c1b1a]'
+// 表格行操作按钮：小号实底钮（默认 stone / 主操作 amber / 文档 violet / 危险 red）
+const rowBtn = 'inline-flex items-center h-7 px-2 rounded-md text-xs font-medium transition-colors whitespace-nowrap'
+const rowBtnDef = `${rowBtn} bg-black/[0.06] dark:bg-white/[0.08] text-stone-600 dark:text-stone-300 hover:bg-black/[0.10] dark:hover:bg-white/[0.14]`
+const rowBtnPri = `${rowBtn} bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20`
+const rowBtnViolet = `${rowBtn} bg-violet-500/10 text-violet-600 dark:text-violet-400 hover:bg-violet-500/20`
+const rowBtnDanger = `${rowBtn} bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20`
 
 const HEALTH_STYLE = {
   healthy: 'text-emerald-600 dark:text-emerald-400',
@@ -34,8 +44,9 @@ const HEALTH_STYLE = {
   unknown: 'text-stone-400',
 }
 const HEALTH_TEXT = { healthy: '健康', suspect: '疑似故障', down: '故障', unknown: '未知' }
+// 侧栏一级入口只有五个：API 收敛进「系统」页（点系统进入看该系统的 API），参照配置中心
 const TABS = [
-  ['overview', '总览'], ['systems', '系统'], ['apis', 'API'],
+  ['overview', '总览'], ['systems', '系统'],
   ['tokens', '平台令牌'], ['rules', '限流规则'], ['logs', '调用日志'],
 ]
 
@@ -70,7 +81,7 @@ function JsonArea({ value, onChange, rows = 6, placeholder }) {
   )
 }
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, onClose, children, wide, xwide }) {
   useEffect(() => {
     const esc = e => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', esc)
@@ -79,8 +90,9 @@ function Modal({ title, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 overflow-auto"
          onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className={`w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} my-auto ${modalCard} p-5 shadow-2xl`}
-           onMouseDown={e => e.stopPropagation()}>
+      {/* 面板不拦 mousedown 冒泡：遮罩仅 e.target===e.currentTarget 才关，点面板内不会误关；
+          拦住会顺带掐断 Select 的「点外面收起」文档监听 */}
+      <div className={`w-full ${xwide ? 'max-w-4xl' : wide ? 'max-w-2xl' : 'max-w-lg'} my-auto ${modalCard} p-5 shadow-2xl`}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-stone-800 dark:text-stone-100">{title}</h3>
           <button onClick={onClose} className={`${btn} shrink-0 whitespace-nowrap`}>关闭</button>
@@ -97,9 +109,52 @@ function Err({ e }) {
     border border-red-500/20 bg-red-500/10">{e.message || String(e)}</div>
 }
 
+/** 统一下拉框：按钮 + 绝对定位菜单。
+ *  原生 <select> 展开的选项列表在暗色下泛白刺眼（color-scheme 各浏览器支持不一），
+ *  全模块改用它保持明暗一致；options: [{value, label}]。 */
+function Select({ value, onChange, options, placeholder = '选择…', disabled }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!open) return
+    const close = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+  const cur = options.find(o => String(o.value) === String(value))
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
+        className={`${inputCls} w-full flex items-center justify-between gap-2 text-left disabled:opacity-50`}>
+        <span className="truncate">{cur ? cur.label : placeholder}</span>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+             className={`w-3.5 h-3.5 shrink-0 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M5 8l5 5 5-5" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] py-1 shadow-xl">
+          {options.map(o => (
+            <button key={String(o.value)} type="button"
+              onClick={() => { onChange(o.value); setOpen(false) }}
+              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
+                String(o.value) === String(value)
+                  ? 'text-amber-600 dark:text-amber-400 font-medium bg-amber-500/[0.08]'
+                  : 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'}`}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 主题切换图标（与 todo/practice 页同款按钮规格） */
 export default function ApiHubPage() {
-  const [tab, setTab] = useState('overview')
+  // 带 ?system= 深链（分享/刷新/书签）直接落在系统 Tab——否则系统详情够不着
+  const [tab, setTab] = useState(() =>
+    (new URLSearchParams(window.location.search).has('system') ? 'systems' : 'overview'))
   const [err, setErr] = useState(null)
   return (
     <div className="min-h-0 font-mono bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
@@ -112,7 +167,6 @@ export default function ApiHubPage() {
         <Err e={err} />
         {tab === 'overview' && <Overview setErr={setErr} />}
         {tab === 'systems' && <Systems setErr={setErr} />}
-        {tab === 'apis' && <Apis setErr={setErr} />}
         {tab === 'tokens' && <Tokens setErr={setErr} />}
         {tab === 'rules' && <Rules setErr={setErr} />}
         {tab === 'logs' && <Logs setErr={setErr} />}
@@ -136,7 +190,7 @@ function Overview({ setErr }) {
     try {
       const results = await apihubProbeAll()
       const ok = results.filter(x => x.ok).length
-      setErr(new Error(`探活完成：${ok}/${results.length} 个健康（详情见 API 列表健康列）`))
+      setErr(new Error(`探活完成：${ok}/${results.length} 个健康（详情见系统内 API 列表健康列）`))
       await load()
     } catch (e) { setErr(e) } finally { setProbing(false) }
   }
@@ -167,7 +221,7 @@ function Overview({ setErr }) {
             {probing ? '探活中…' : '⚡ 一键探活'}
           </button>
         </div>
-        <ApiTable rows={stats.per_api} empty="暂无调用数据：在系统/API 页配置后用平台令牌调用" />
+        <ApiTable rows={stats.per_api} empty="暂无调用数据：进入系统配置 API 后用平台令牌调用" />
       </div>
     </div>
   )
@@ -203,63 +257,88 @@ function ApiTable({ rows, empty }) {
   )
 }
 
-// ─── 系统 ───────────────────────────────────────────────────────────
-
-const DEFAULT_AUTH = {
-  providers: [{ type: 'bearer', value: '{cred.token}' }],
-  credential_fields: ['token'],
-  transport: {},
-}
+// ─── 系统（列表 → 点击进入系统详情）─────────────────────────────────
 
 function Systems({ setErr }) {
+  const [params, setParams] = useSearchParams()
   const [rows, setRows] = useState(null)
   const [editing, setEditing] = useState(null)   // {} 新建 | {...row} 编辑
-  const [keysOf, setKeysOf] = useState(null)
   const load = useCallback(async () => {
     try { setRows(await apihubSystems()) } catch (e) { setErr(e) }
   }, [setErr])
   useEffect(() => { load() }, [load])
+
+  // 选中系统走 URL ?system=<slug>（参照 confcenter ?namespace=）：可深链、刷新不丢。
+  // slug 失效（过期书签/系统已删）→ 回落列表；深链首屏先出加载态，不闪列表。
+  const slug = params.get('system') || ''
+  const current = (rows || []).find(s => s.slug === slug) || null
+  const select = s => setParams(p => {
+    const next = new URLSearchParams(p)
+    if (s) next.set('system', s)
+    else next.delete('system')
+    return next
+  })
+  // 保存后即时补丁（改名时 URL 与 rows 同一批更新，详情页不闪）；无补丁数据才整表重载
+  const onSystemSaved = updated => {
+    if (updated?.id != null) {
+      setRows(prev => (prev || []).map(s => (s.id === updated.id ? { ...s, ...updated } : s)))
+    } else load()
+  }
+
+  if (slug && !rows) return <div className="text-xs text-stone-400 py-16 text-center">加载中…</div>
+  if (slug && current) {
+    return (
+      <SystemDetail system={current} setErr={setErr} onBack={() => { select(''); load() }}
+                    onSelect={select} onSystemSaved={onSystemSaved} onApisChanged={load} />
+    )
+  }
   return (
     <div className="space-y-3">
       <div className="flex justify-end">
         <button className={btnPri} onClick={() => setEditing({})}>＋ 新建系统</button>
       </div>
       <div className={`${card} overflow-x-auto`}>
-        <table className="w-full text-sm">
+        {/* 平铺：colgroup 百分比 + table-fixed，各列按占比撑满整宽，不留栏间空白 */}
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col className="w-[24%]" /><col className="w-[38%]" /><col className="w-[8%]" />
+            <col className="w-[10%]" /><col className="w-[20%]" />
+          </colgroup>
           <thead>
             <tr className="text-left text-xs text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
               <th className="pl-4 pr-2 py-2 font-normal">名称 / Slug</th>
               <th className="px-2 py-2 font-normal">Base URL</th>
-              <th className="px-2 py-2 font-normal">鉴权</th>
-              <th className="px-2 py-2 font-normal">密钥池</th>
+              <th className="px-2 py-2 font-normal">API</th>
               <th className="px-2 py-2 font-normal">状态</th>
-              <th className="pl-2 pr-4 py-2 font-normal">操作</th>
+              <th className="pl-2 pr-4 py-2 font-normal text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             {(rows || []).map(s => (
               <tr key={s.id} className="border-b last:border-0 border-black/[0.06] dark:border-white/[0.06]">
                 <td className="pl-4 pr-2 py-2.5">
-                  <div className="text-stone-700 dark:text-stone-200">{s.name}</div>
+                  {/* 点名称进入该系统：管理它自己的 API（不同系统内容不同） */}
+                  <button className="font-medium text-left text-stone-700 dark:text-stone-200 hover:text-amber-600 dark:hover:text-amber-400 hover:underline"
+                          title="点击进入该系统，管理其 API" onClick={() => select(s.slug)}>
+                    {s.name}
+                  </button>
                   <div className="text-xs text-stone-400 font-mono">{s.slug}</div>
                 </td>
-                <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 max-w-52 truncate">{s.base_url}</td>
-                <td className="px-2 py-2.5"><span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-mono text-[11px]">
-                  {(s.auth_config?.providers || []).map(p => p.type).join('+') || '-'}</span></td>
+                <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 truncate" title={s.base_url}>{s.base_url}</td>
                 <td className="px-2 py-2.5">
-                  <button className="text-stone-600 dark:text-stone-300 hover:underline"
-                          onClick={() => setKeysOf(s.id)}>
-                    {s.key_enabled_count}/{s.key_count} 可用
+                  <button className="tabular-nums text-stone-600 dark:text-stone-300 hover:text-amber-600 dark:hover:text-amber-400 hover:underline"
+                          title="点击进入该系统，管理其 API" onClick={() => select(s.slug)}>
+                    {s.api_count ?? 0}
                   </button>
                 </td>
                 <td className={`px-2 py-2.5 font-medium whitespace-nowrap ${s.status === 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                   {s.status === 1 ? '启用' : s.status === 2 ? '手动禁用' : '自动禁用'}
                 </td>
-                <td className="pl-2 pr-4 py-2.5">
-                  <div className="flex items-center gap-2 whitespace-nowrap">
-                    <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => setEditing(s)}>编辑</button>
-                    <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => setKeysOf(s.id)}>密钥</button>
-                    <button className="text-red-600 dark:text-red-400 hover:underline" onClick={async () => {
+                <td className="pl-2 pr-4 py-2.5 text-right">
+                  <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                    <button className={rowBtnPri} onClick={() => select(s.slug)}>进入</button>
+                    <button className={rowBtnDef} onClick={() => setEditing(s)}>编辑</button>
+                    <button className={rowBtnDanger} onClick={async () => {
                       if (!confirm(`删除系统 ${s.slug}？（其下 API 需先删除）`)) return
                       try { await apihubDeleteSystem(s.id); load() } catch (e) { setErr(e) }
                     }}>删除</button>
@@ -267,7 +346,7 @@ function Systems({ setErr }) {
                 </td>
               </tr>
             ))}
-            {rows && !rows.length && <tr><td colSpan={6} className="py-10 text-center text-stone-400">暂无系统</td></tr>}
+            {rows && !rows.length && <tr><td colSpan={5} className="py-10 text-center text-stone-400">暂无系统</td></tr>}
           </tbody>
         </table>
       </div>
@@ -275,8 +354,202 @@ function Systems({ setErr }) {
         <SystemForm row={editing} onClose={() => setEditing(null)}
           onSaved={async () => { setEditing(null); await load() }} setErr={setErr} />
       )}
-      {keysOf !== null && (
-        <KeyPanel sid={keysOf} onClose={() => { setKeysOf(null); load() }} setErr={setErr} />
+    </div>
+  )
+}
+
+/** 系统详情：系统信息 + 编辑 + 「该系统自己的」API 管理（点击系统列表进入）。
+ *  API 的增删改探活调用都锚定在本系统内——不同系统展示不同的 API 内容。 */
+function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisChanged }) {
+  const [rows, setRows] = useState(null)
+  const [editing, setEditing] = useState(null)        // API 编辑（系统固定为当前系统）
+  const [sysEditing, setSysEditing] = useState(false)
+  const [invoking, setInvoking] = useState(null)      // 调用弹窗的目标行
+  const [docOf, setDocOf] = useState(null)            // 文档弹窗的目标行
+  const [probeTip, setProbeTip] = useState(null)
+  const [q, setQ] = useState('')                      // 搜索：按 slug / 名称 / method / 路径过滤
+
+  const load = useCallback(async () => {
+    try { setRows(await apihubApis(`?system_id=${system.id}`)) } catch (e) { setErr(e) }
+  }, [system.id, setErr])
+  useEffect(() => { load() }, [load])
+
+  const probeOne = async (row) => {
+    try {
+      const [res] = await apihubProbeAll([row.id])
+      setProbeTip(res)
+      await load()
+    } catch (e) { setErr(e) }
+  }
+  /** 行内一键启停：关闭后网关调用立即 503「已关闭，不可用」 */
+  const toggle = async (row) => {
+    try {
+      await apihubToggleApi(row.id, !row.enabled)
+      await load()
+    } catch (e) { setErr(e) }
+  }
+
+  const kw = q.trim().toLowerCase()
+  const apis = useMemo(() => (rows || []).filter(a => !kw ||
+    [a.slug, a.name, a.method, a.path_tpl].some(s => (s || '').toLowerCase().includes(kw))), [rows, kw])
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <button className={btn} onClick={onBack}>← 返回系统列表</button>
+        <div className="flex-1" />
+        <button className={btn} onClick={() => setSysEditing(true)}>编辑系统</button>
+      </div>
+
+      {/* 系统信息卡：名称/slug/状态 + 网关入口 + 运行参数 */}
+      <div className={`${card} p-4`}>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100">{system.name}</h2>
+          <span className="font-mono text-sm text-stone-400">{system.slug}</span>
+          <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${
+            system.status === 1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+              : 'bg-red-500/10 text-red-600 dark:text-red-400'}`}>
+            {system.status === 1 ? '启用' : system.status === 2 ? '手动禁用' : '自动禁用'}
+          </span>
+          <span className="ml-auto font-mono text-[11.5px] text-violet-600 dark:text-violet-400"
+                title="透明代理入口前缀（路径映射到该系统 base_url）">
+            /gw/systems/{system.slug}/&#123;path&#125;
+          </span>
+        </div>
+        <dl className="mt-3 grid grid-cols-3 gap-3 text-[13px]">
+          <div className="min-w-0">
+            <dt className="text-stone-400 dark:text-stone-500">Base URL</dt>
+            <dd className="font-mono text-stone-600 dark:text-stone-300 break-all">{system.base_url}</dd>
+          </div>
+          <div>
+            <dt className="text-stone-400 dark:text-stone-500">超时 / 重试</dt>
+            <dd className="text-stone-600 dark:text-stone-300 tabular-nums">{system.timeout_ms} ms / {system.max_retry}</dd>
+          </div>
+          <div>
+            <dt className="text-stone-400 dark:text-stone-500">API</dt>
+            <dd className="text-stone-600 dark:text-stone-300 tabular-nums">{rows == null ? '…' : rows.length} 个</dd>
+          </div>
+        </dl>
+      </div>
+
+      {/* 该系统 API 列表 */}
+      <div className={`${card} overflow-hidden`}>
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-black/[0.06] dark:border-white/[0.06]">
+          <span className="text-base font-semibold text-stone-700 dark:text-stone-200">API</span>
+          <span className="px-1.5 py-0.5 rounded-md bg-black/[0.06] dark:bg-white/[0.08] text-[11px] tabular-nums text-stone-500 dark:text-stone-400">
+            {rows == null ? '…' : apis.length}
+          </span>
+          <div className="flex-1" />
+          <input className={`${inputCls} w-64`} placeholder="搜索：slug / 名称 / method / 路径"
+                 value={q} onChange={e => setQ(e.target.value)} />
+          <button className={btnPri} onClick={() => setEditing({})}>＋ 新建 API</button>
+        </div>
+        {!rows && <div className="text-xs text-stone-400 py-16 text-center">加载中…</div>}
+        {rows && !apis.length && (
+          <div className="py-10 text-center text-sm text-stone-400">
+            {kw ? '无匹配 API' : <span>该系统还没有 API<br />
+              <button className="mt-2 text-amber-600 dark:text-amber-400 hover:underline" onClick={() => setEditing({})}>添加第一条 API</button>
+            </span>}
+          </div>
+        )}
+        {rows && !!apis.length && (
+          /* 平铺：colgroup 百分比 + table-fixed，各列按占比撑满整宽，不留栏间空白 */
+          <table className="w-full text-sm table-fixed">
+            <colgroup>
+              <col className="w-[11%]" /><col className="w-[33%]" /><col className="w-[15%]" />
+              <col className="w-[14%]" /><col className="w-[27%]" />
+            </colgroup>
+            <thead>
+              <tr className="text-left text-xs text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
+                <th className="pl-4 pr-2 py-2 font-normal">健康</th>
+                <th className="px-2 py-2 font-normal">API</th>
+                <th className="px-2 py-2 font-normal whitespace-nowrap">最近探活延迟</th>
+                <th className="px-2 py-2 font-normal">状态</th>
+                <th className="pl-2 pr-4 py-2 font-normal text-right">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {apis.map(a => (
+                <tr key={a.id} className={`border-b last:border-0 border-black/[0.06] dark:border-white/[0.06] ${a.enabled ? '' : 'opacity-55'}`}>
+                  <td className={`pl-4 pr-2 py-2.5 font-medium whitespace-nowrap ${HEALTH_STYLE[a.health?.status] || ''}`}>
+                    ● {HEALTH_TEXT[a.health?.status] || a.health?.status}
+                  </td>
+                  <td className="px-2 py-2.5">
+                    <div className="text-stone-700 dark:text-stone-200">
+                      {a.name} <span className="font-mono text-xs text-stone-400">{a.slug}</span>
+                    </div>
+                    <div className="text-xs text-stone-400 font-mono break-all">
+                      {a.method} {a.path_tpl}
+                      {(a.auth_config?.providers || []).length > 0 && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 align-middle">
+                          {(a.auth_config.providers || []).map(p => p.type).join('+')}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 whitespace-nowrap">
+                    {a.last_latency_ms == null ? '-' : `${a.last_latency_ms} ms`}
+                    <div className="text-[11.5px] text-stone-400">{fmtTime(a.last_probe_at)}</div>
+                  </td>
+                  <td className="px-2 py-2.5 whitespace-nowrap">
+                    <button onClick={() => toggle(a)} title={a.enabled ? '点击关闭（调用立即 503 已关闭，不可用）' : '点击开启'}
+                      className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors ${
+                        a.enabled
+                          ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
+                          : 'bg-black/[0.04] dark:bg-white/[0.06] border-black/10 dark:border-white/10 text-stone-500 dark:text-stone-400 hover:bg-black/[0.08] dark:hover:bg-white/[0.1]'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${a.enabled ? 'bg-emerald-500' : 'bg-stone-400'}`} />
+                      {a.enabled ? '已开启' : '已关闭'}
+                    </button>
+                  </td>
+                  <td className="pl-2 pr-4 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                      <button className={rowBtnPri} onClick={() => setInvoking(a)}>调用</button>
+                      <button className={rowBtnViolet} onClick={() => setDocOf(a)}>文档</button>
+                      <button className={rowBtnDef} onClick={() => probeOne(a)}>探活</button>
+                      <button className={rowBtnDef} onClick={() => setEditing(a)}>编辑</button>
+                      <button className={rowBtnDanger} onClick={async () => {
+                        if (!confirm(`删除 API ${a.slug}？`)) return
+                        try { await apihubDeleteApi(a.id); await load(); onApisChanged() } catch (e) { setErr(e) }
+                      }}>删除</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {sysEditing && (
+        <SystemForm row={system} onClose={() => setSysEditing(false)}
+          onSaved={async updated => {
+            setSysEditing(false)
+            // 改名后 URL 里的 slug 同步到新值（保持深链有效），再重载列表数据
+            if (updated?.slug && updated.slug !== system.slug) onSelect(updated.slug)
+            await onSystemSaved()
+          }} setErr={setErr} />
+      )}
+      {editing !== null && (
+        <ApiForm row={editing} system={system} onClose={() => setEditing(null)}
+                 onSaved={async () => { setEditing(null); await load(); onApisChanged() }} setErr={setErr} />
+      )}
+      {invoking !== null && (
+        <InvokeModal row={invoking} onClose={() => setInvoking(null)} />
+      )}
+      {docOf !== null && (
+        <DocModal row={docOf} onClose={() => setDocOf(null)} />
+      )}
+      {probeTip && (
+        <Modal title={`探活结果：${probeTip.slug}`} onClose={() => setProbeTip(null)}>
+          <div className="text-sm space-y-1.5 text-stone-700 dark:text-stone-200">
+            <div>结果：<b className={probeTip.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>{probeTip.ok ? '成功' : '失败'}</b></div>
+            <div>状态码：{probeTip.status_code ?? '-'} · 延迟：{probeTip.latency_ms ?? '-'} ms</div>
+            <div>新状态：{HEALTH_TEXT[probeTip.new_status] || probeTip.new_status}</div>
+            <pre className="mt-2 p-2.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] font-mono text-xs overflow-auto">
+              {JSON.stringify(probeTip.detail, null, 2)}
+            </pre>
+          </div>
+        </Modal>
       )}
     </div>
   )
@@ -287,13 +560,14 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
     name: row.name || '', slug: row.slug || '', base_url: row.base_url || 'https://',
     timeout_ms: row.timeout_ms ?? 30000, max_retry: row.max_retry ?? 2,
     status: row.status ?? 1,
-    auth_config: row.auth_config || DEFAULT_AUTH,
+    skip_verify: row.transport?.verify === false,
   }))
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const save = async () => {
     try {
-      await apihubSaveSystem({ ...form, id: row.id, timeout_ms: +form.timeout_ms, max_retry: +form.max_retry, status: +form.status })
-      onSaved()
+      const updated = await apihubSaveSystem({ ...form, id: row.id, timeout_ms: +form.timeout_ms,
+        max_retry: +form.max_retry, status: +form.status, transport: { verify: !form.skip_verify } })
+      onSaved(updated)
     } catch (e) { setErr(e) }
   }
   return (
@@ -326,19 +600,18 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
           </label>
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">状态</span>
-            <select className={`${selectCls} w-full mt-1`} value={form.status} onChange={e => set('status', e.target.value)}>
-              <option value={1}>启用</option><option value={2}>手动禁用</option>
-            </select>
+            <div className="mt-1">
+              <Select value={form.status} onChange={v => set('status', v)} options={[
+                { value: 1, label: '启用' }, { value: 2, label: '手动禁用' },
+              ]} />
+            </div>
           </label>
         </div>
-        <div>
-          <span className="text-xs text-stone-500 dark:text-stone-400">鉴权配置（JSON）</span>
-          <div className="text-[11.5px] text-stone-400 dark:text-stone-500 mt-0.5 mb-1">
-            七种静态类型：bearer / api_key_header / query_key / basic / static_cookie / path_token / template；
-            凭证模板 {'{cred.字段}'} 可用于 header/query/cookie 与 URL/路径
-          </div>
-          <JsonArea rows={10} value={form.auth_config} onChange={v => set('auth_config', v)} />
-        </div>
+        <label className="flex items-center gap-2 text-sm text-stone-600 dark:text-stone-300">
+          <input type="checkbox" className="[color-scheme:light] dark:[color-scheme:dark]" checked={form.skip_verify}
+                 onChange={e => set('skip_verify', e.target.checked)} />
+          跳过 TLS 证书校验（自签名证书/抓包代理场景）
+        </label>
         <div className="flex justify-end gap-2 pt-1">
           <button className={btn} onClick={onClose}>取消</button>
           <button className={btnPri} onClick={save}>保存</button>
@@ -348,102 +621,19 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
   )
 }
 
-function KeyPanel({ sid, onClose, setErr }) {
-  const [rows, setRows] = useState([])
-  const [fields, setFields] = useState(['token'])
-  const [adding, setAdding] = useState(false)
-  const [draft, setDraft] = useState({})
-  const load = useCallback(async () => {
-    try {
-      setRows(await apihubKeys(sid))
-      const systems = await apihubSystems()
-      const s = systems.find(x => x.id === sid)
-      const f = s?.auth_config?.credential_fields
-      if (f?.length) setFields(f)
-    } catch (e) { setErr(e) }
-  }, [sid, setErr])
-  useEffect(() => { load() }, [load])
-  const add = async () => {
-    const credential = {}
-    for (const f of fields) {
-      const v = (draft[f] || '').trim()
-      if (v.includes('=')) { const [k, ...r] = v.split('='); credential[k] = r.join('=') }
-      else if (v) credential[f] = v
-    }
-    if (!Object.keys(credential).length) { setErr(new Error('请按字段填写凭证值')); return }
-    try { await apihubAddKey(sid, credential); setAdding(false); setDraft({}); load() } catch (e) { setErr(e) }
-  }
-  return (
-    <Modal wide title={`密钥池（系统 #${sid}）`} onClose={onClose}>
-      <div className="flex justify-end mb-2">
-        <button className={btn} onClick={() => setAdding(!adding)}>＋ 添加密钥</button>
-      </div>
-      {adding && (
-        <div className="mb-3 p-3 rounded-xl border border-black/[0.07] dark:border-white/[0.07] space-y-2">
-          <div className="text-xs text-stone-500 dark:text-stone-400">
-            按 credential_fields 填写：{fields.join(' / ')}
-          </div>
-          {fields.map(f => (
-            <input key={f} className={`${inputCls} w-full font-mono`} placeholder={`${f} = 值`}
-                   value={draft[f] || ''} onChange={e => setDraft({ ...draft, [f]: e.target.value })} />
-          ))}
-          <button className={btnPri} onClick={add}>提交</button>
-        </div>
-      )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
-            {['凭证（脱敏）', '状态', '最近使用', '操作'].map(h => <th key={h} className="py-2 font-normal">{h}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(k => (
-            <tr key={k.id} className="border-b last:border-0 border-black/[0.06] dark:border-white/[0.06]">
-              <td className="py-2.5 font-mono text-xs text-stone-600 dark:text-stone-300">
-                {Object.entries(k.credential || {}).map(([f, v]) => `${f}=${v}`).join('  ')}
-                {k.disabled_reason && <span className="ml-2 text-red-600 dark:text-red-400">{k.disabled_reason.slice(0, 30)}</span>}
-              </td>
-              <td className={`py-2.5 font-medium ${k.status === 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
-                {k.status === 1 ? '可用' : '禁用'}
-              </td>
-              <td className="py-2.5 text-stone-500 dark:text-stone-400">{fmtTime(k.last_used_at)}</td>
-              <td className="py-2.5">
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={async () => {
-                    try { await apihubUpdateKey(k.id, { status: k.status === 1 ? 2 : 1 }); load() } catch (e) { setErr(e) }
-                  }}>{k.status === 1 ? '禁用' : '启用'}</button>
-                  <button className="text-red-600 dark:text-red-400 hover:underline" onClick={async () => {
-                    if (!confirm('删除该密钥？')) return
-                    try { await apihubDeleteKey(k.id); load() } catch (e) { setErr(e) }
-                  }}>删除</button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {!rows.length && <tr><td colSpan={4} className="py-8 text-center text-stone-400">暂无密钥</td></tr>}
-        </tbody>
-      </table>
-    </Modal>
-  )
-}
+// ─── API（系统详情页内管理，系统固定，鉴权内联）──────────────────────
 
-// ─── API ────────────────────────────────────────────────────────────
+// 新 API 默认鉴权：bearer + token 字段；凭证值直接写在同 JSON 的 credential 里
+const DEFAULT_AUTH = {
+  providers: [{ type: 'bearer', value: '{cred.token}' }],
+  credential_fields: ['token'],
+  credential: { token: '' },
+}
 
 const DEFAULT_PROBE = {
   type: 'http', method: 'GET', path: '', timeout_ms: 5000,
   expect_status: [200, 201, 204, 301, 302], expect_body_regex: '',
   interval_s: 0, failure_threshold: 3, success_threshold: 2,
-}
-
-// ── 按系统折叠：默认 ≥8 条的系统收起（大系统全展开首屏过长、全折叠又缺概览，
-//    折中：大组收起保持一屏可扫，小组展开开箱即见）；手动展开/收起写入 localStorage，
-//    下次进入保持。搜索时强制展开有命中的组（保证结果可见），批量折叠按钮随之禁用。
-const FOLD_KEY = 'doublog_apihub_system_fold'
-const FOLD_THRESHOLD = 8
-const UNKNOWN_SYSTEM_KEY = '(未知系统)'   // 占位：API 引用的系统不存在（正常不会出现，删除被引用的系统会被阻止）
-
-const loadFolds = () => {
-  try { return JSON.parse(localStorage.getItem(FOLD_KEY)) || {} } catch { return {} }
 }
 
 /** KV 输入组：按默认值键名生成输入框（预填默认值，清空=不传走后端默认），支持追加自定义键。 */
@@ -496,7 +686,7 @@ function KeyValueFields({ entries, setEntries, placeholder }) {
 /** 调用弹窗：页面直发一次系统请求（管理端调试通道，不走平台令牌/限流/配额，日志 mode=test）。
  *  参数齐全：路径变量 / query / header / body 四桶全部提供输入——已配置默认值的参数
  *  自动生成输入框并预填，清空即回落后端默认值；也可追加任意自定义参数。 */
-function InvokeModal({ row, onClose, setErr }) {
+function InvokeModal({ row, onClose }) {
   const reqCfg = row.request_cfg || {}
   const paramDefaults = reqCfg.param_defaults || {}
   const queryDefaults = reqCfg.query_defaults || {}
@@ -616,215 +806,15 @@ function DocModal({ row, onClose }) {
   )
 }
 
-function Apis({ setErr }) {
-  const [rows, setRows] = useState(null)
-  const [systems, setSystems] = useState([])
-  const [editing, setEditing] = useState(null)
-  const [probeTip, setProbeTip] = useState(null)
-  const [invoking, setInvoking] = useState(null)   // 调用弹窗的目标行
-  const [docOf, setDocOf] = useState(null)         // 文档弹窗的目标行
-  const [q, setQ] = useState('')                   // 搜索：按 slug / 名称 / method / 路径过滤
-  const [folds, setFolds] = useState(loadFolds)    // 系统折叠覆盖表 {系统slug: 是否折叠}
-
-  const load = useCallback(async () => {
-    try {
-      setRows(await apihubApis())
-      setSystems(await apihubSystems())
-    } catch (e) { setErr(e) }
-  }, [setErr])
-  useEffect(() => { load() }, [load])
-
-  const probeOne = async (row) => {
-    try {
-      const [res] = await apihubProbeAll([row.id])
-      setProbeTip(res)
-      await load()
-    } catch (e) { setErr(e) }
-  }
-  /** 行内一键启停：关闭后网关调用立即 503「已关闭，不可用」 */
-  const toggle = async (row) => {
-    try {
-      await apihubToggleApi(row.id, !row.enabled)
-      await load()
-    } catch (e) { setErr(e) }
-  }
-  const sysOf = id => systems.find(s => s.id === id)
-
-  // 折叠操作：写 state + localStorage（写失败如隐私模式忽略即可）
-  const setFold = (key, folded) => {
-    const next = { ...folds, [key]: folded }
-    setFolds(next)
-    try { localStorage.setItem(FOLD_KEY, JSON.stringify(next)) } catch { /* ignore */ }
-  }
-  const setAllFolds = folded => {
-    const next = { ...folds }
-    for (const g of groups) next[g.key] = folded
-    setFolds(next)
-    try { localStorage.setItem(FOLD_KEY, JSON.stringify(next)) } catch { /* ignore */ }
-  }
-
-  // 按所属系统聚合（system → api 两维分类）；搜索时按 slug/名称/method/路径过滤组内 API；
-  // 关键词命中系统 slug/名称则保留整组（搜「qq」能直接看到 qq 系统组），无命中的组整个隐藏。
-  const kw = q.trim().toLowerCase()
-  const groups = useMemo(() => {
-    const hit = a => !kw || [a.slug, a.name, a.method, a.path_tpl]
-      .some(s => (s || '').toLowerCase().includes(kw))
-    const map = new Map()
-    for (const a of rows || []) {
-      const sys = sysOf(a.system_id)
-      const key = sys ? sys.slug : UNKNOWN_SYSTEM_KEY
-      if (!map.has(key)) map.set(key, { key, sys, apis: [] })
-      map.get(key).apis.push(a)
-    }
-    return [...map.values()]
-      .sort((x, y) => (x.sys ? 0 : 1) - (y.sys ? 0 : 1)
-        || (x.key).localeCompare(y.key))
-      .map(g => ({
-        ...g,
-        apis: kw && (g.key.toLowerCase().includes(kw)
-          || (g.sys?.name || '').toLowerCase().includes(kw)) ? g.apis : g.apis.filter(hit),
-      }))
-      .filter(g => g.apis.length)
-  }, [rows, systems, kw])
-
-  // 折叠判定：搜索中强制展开（命中必须可见）；否则取手动覆盖，无覆盖按默认规则（大组折叠）
-  const isFolded = g => !kw && (folds[g.key] ?? g.apis.length >= FOLD_THRESHOLD)
-  const matchCount = groups.reduce((n, g) => n + g.apis.length, 0)
-
-  return (
-    <div className="space-y-3">
-      {/* 工具条：搜索 + 批量折叠 + 新建（搜索中折叠无意义，批量按钮禁用） */}
-      <div className="flex flex-wrap items-center gap-2">
-        <input className={`${inputCls} w-72`} placeholder="搜索：slug / 名称 / method / 路径 / 系统"
-               value={q} onChange={e => setQ(e.target.value)} />
-        {kw && <span className="text-xs text-stone-500 dark:text-stone-400 tabular-nums">命中 {matchCount} 条</span>}
-        <div className="flex-1" />
-        <button className={btn} disabled={!!kw} onClick={() => setAllFolds(false)}>全部展开</button>
-        <button className={btn} disabled={!!kw} onClick={() => setAllFolds(true)}>全部收起</button>
-        <button className={btnPri} onClick={() => setEditing({})}>＋ 新建 API</button>
-      </div>
-      {rows && !groups.length && (
-        <div className={`${card} py-10 text-center text-sm text-stone-400`}>{kw ? '无匹配 API' : '暂无 API'}</div>
-      )}
-      {!rows && <div className="text-xs text-stone-400 py-16 text-center">加载中…</div>}
-      {groups.map(g => {
-        const folded = isFolded(g)
-        return (
-          <div key={g.key} className={`${card} overflow-hidden`}>
-            {/* 组头：折叠箭头 + 系统名/slug + API 数量 + 透明代理前缀提示 */}
-            <div className="flex items-center gap-2 pl-3 pr-4 py-2 border-b border-black/[0.06] dark:border-white/[0.06]">
-              <button className="flex flex-1 items-center gap-2 min-w-0 text-left" onClick={() => setFold(g.key, !folded)}
-                      title={folded ? '展开该系统' : '收起该系统'}>
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-                     className={`w-4 h-4 shrink-0 text-stone-400 transition-transform ${folded ? '' : 'rotate-90'}`}>
-                  <path d="M7 5l6 5-6 5" />
-                </svg>
-                <span className="font-mono text-[13px] font-medium text-stone-700 dark:text-stone-200 truncate">
-                  {g.sys ? g.sys.name : UNKNOWN_SYSTEM_KEY}
-                  {g.sys && <span className="ml-1.5 font-normal text-stone-400">{g.sys.slug}</span>}
-                </span>
-                <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-black/[0.06] dark:bg-white/[0.08] text-[11px] tabular-nums text-stone-500 dark:text-stone-400">
-                  {g.apis.length}
-                </span>
-              </button>
-              {g.sys && (
-                <span className="shrink-0 font-mono text-[11.5px] text-violet-600 dark:text-violet-400"
-                      title="透明代理入口前缀（路径映射到该系统 base_url）">
-                  /gw/systems/{g.sys.slug}/&#123;path&#125;
-                </span>
-              )}
-            </div>
-            {!folded && (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
-                    <th className="pl-4 pr-2 py-2 font-normal">健康</th>
-                    <th className="px-2 py-2 font-normal">API</th>
-                    <th className="px-2 py-2 font-normal">所属系统</th>
-                    <th className="px-2 py-2 font-normal">最近探活延迟</th>
-                    <th className="px-2 py-2 font-normal">状态</th>
-                    <th className="pl-2 pr-4 py-2 font-normal">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {g.apis.map(a => (
-                    <tr key={a.id} className={`border-b last:border-0 border-black/[0.06] dark:border-white/[0.06] ${a.enabled ? '' : 'opacity-55'}`}>
-                      <td className={`pl-4 pr-2 py-2.5 font-medium whitespace-nowrap ${HEALTH_STYLE[a.health?.status] || ''}`}>
-                        ● {HEALTH_TEXT[a.health?.status] || a.health?.status}
-                      </td>
-                      <td className="px-2 py-2.5">
-                        <div className="text-stone-700 dark:text-stone-200">
-                          {a.name} <span className="font-mono text-xs text-stone-400">{a.slug}</span>
-                        </div>
-                        <div className="text-xs text-stone-400 font-mono">{a.method} {a.path_tpl}</div>
-                      </td>
-                      <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 font-mono text-xs">
-                        {sysOf(a.system_id)?.slug || a.system_id}
-                      </td>
-                      <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 whitespace-nowrap">
-                        {a.last_latency_ms == null ? '-' : `${a.last_latency_ms} ms`}
-                        <div className="text-[11.5px] text-stone-400">{fmtTime(a.last_probe_at)}</div>
-                      </td>
-                      <td className="px-2 py-2.5 whitespace-nowrap">
-                        <button onClick={() => toggle(a)} title={a.enabled ? '点击关闭（调用立即 503 已关闭，不可用）' : '点击开启'}
-                          className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full text-xs font-medium border whitespace-nowrap transition-colors ${
-                            a.enabled
-                              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20'
-                              : 'bg-black/[0.04] dark:bg-white/[0.06] border-black/10 dark:border-white/10 text-stone-500 dark:text-stone-400 hover:bg-black/[0.08] dark:hover:bg-white/[0.1]'}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${a.enabled ? 'bg-emerald-500' : 'bg-stone-400'}`} />
-                          {a.enabled ? '已开启' : '已关闭'}
-                        </button>
-                      </td>
-                      <td className="pl-2 pr-4 py-2.5">
-                        <div className="flex items-center gap-2 whitespace-nowrap">
-                          <button className="text-amber-600 dark:text-amber-400 hover:underline" onClick={() => setInvoking(a)}>调用</button>
-                          <button className="text-violet-600 dark:text-violet-400 hover:underline" onClick={() => setDocOf(a)}>文档</button>
-                          <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => probeOne(a)}>探活</button>
-                          <button className="text-stone-600 dark:text-stone-300 hover:underline" onClick={() => setEditing(a)}>编辑</button>
-                          <button className="text-red-600 dark:text-red-400 hover:underline" onClick={async () => {
-                            if (!confirm(`删除 API ${a.slug}？`)) return
-                            try { await apihubDeleteApi(a.id); load() } catch (e) { setErr(e) }
-                          }}>删除</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )
-      })}
-      {editing !== null && (
-        <ApiForm row={editing} systems={systems} onClose={() => setEditing(null)}
-                 onSaved={async () => { setEditing(null); await load() }} setErr={setErr} />
-      )}
-      {invoking !== null && (
-        <InvokeModal row={invoking} onClose={() => setInvoking(null)} setErr={setErr} />
-      )}
-      {docOf !== null && (
-        <DocModal row={docOf} onClose={() => setDocOf(null)} />
-      )}
-      {probeTip && (
-        <Modal title={`探活结果：${probeTip.slug}`} onClose={() => setProbeTip(null)}>
-          <div className="text-sm space-y-1.5 text-stone-700 dark:text-stone-200">
-            <div>结果：<b className={probeTip.ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>{probeTip.ok ? '成功' : '失败'}</b></div>
-            <div>状态码：{probeTip.status_code ?? '-'}　延迟：{probeTip.latency_ms ?? '-'} ms</div>
-            <div>新状态：{HEALTH_TEXT[probeTip.new_status] || probeTip.new_status}</div>
-            <pre className="mt-2 p-2.5 rounded-lg bg-black/[0.04] dark:bg-white/[0.06] font-mono text-xs overflow-auto">
-              {JSON.stringify(probeTip.detail, null, 2)}
-            </pre>
-          </div>
-        </Modal>
-      )}
-    </div>
-  )
-}
-
-function ApiForm({ row, systems, onClose, onSaved, setErr }) {
+/** API 表单：系统详情页内使用，所属系统固定（要换系统请删后重建）。
+ *  全控件化配置页——鉴权/请求/响应/探活都是表单字段，用户不接触 JSON；
+ *  多 provider / template 等复杂配置与"高级"逃生通道收在底部折叠的 JSON 编辑器里。 */
+function ApiForm({ row, system, onClose, onSaved, setErr }) {
   const [form, setForm] = useState(() => ({
-    name: row.name || '', slug: row.slug || '', system_id: row.system_id || systems[0]?.id,
-    method: row.method || 'GET', path_tpl: row.path_tpl || '/', description: row.description || '',
+    name: row.name || '', slug: row.slug || '', system_id: row.system_id || system.id,
+    method: row.method || 'GET', path_tpl: row.path_tpl || '/',
+    description: row.description || '',
+    auth_config: row.auth_config || DEFAULT_AUTH,
     request_cfg: row.request_cfg || { body: { type: 'json' } },
     response_cfg: row.response_cfg || { envelope: 'passthrough' },
     probe: row.probe || DEFAULT_PROBE, enabled: row.enabled ?? true,
@@ -839,61 +829,403 @@ function ApiForm({ row, systems, onClose, onSaved, setErr }) {
     } catch (e) { setErr(e) }
   }
   return (
-    <Modal wide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-3 gap-3">
-          <label className="block">
-            <span className="text-xs text-stone-500 dark:text-stone-400">名称</span>
-            <input className={`${inputCls} w-full mt-1`} value={form.name} onChange={e => set('name', e.target.value)} />
+    <Modal xwide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
+      <div className="space-y-6">
+        {/* 基本信息 */}
+        <section>
+          <SectionTitle title="基本信息" />
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="名称">
+              <input className={inputCls + ' w-full'} value={form.name} onChange={e => set('name', e.target.value)} />
+            </Field>
+            <Field label="Slug">
+              <input className={inputCls + ' w-full font-mono'} value={form.slug} onChange={e => set('slug', e.target.value)} />
+            </Field>
+            <Field label="所属系统">
+              <input readOnly className={inputCls + ' w-full text-stone-500 dark:text-stone-400'}
+                     value={`${system.name}（${system.slug}）`} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <Field label="Method">
+              <Select value={form.method} onChange={v => set('method', v)} options={
+                ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => ({ value: m, label: m }))
+              } />
+            </Field>
+            <Field label="路径模板" hint="相对系统 Base URL；{path.x} 路径变量与 {cred.x} 凭证变量" span={2}>
+              <input className={inputCls + ' w-full font-mono'} placeholder="/v1/orders/{path.id}"
+                     value={form.path_tpl} onChange={e => set('path_tpl', e.target.value)} />
+            </Field>
+          </div>
+        </section>
+
+        {/* 鉴权 */}
+        <section>
+          <SectionTitle title="鉴权" hint="网关按此配置向上游系统注入身份；凭证值明文保存在本 API 上" />
+          <AuthSection auth={form.auth_config} onChange={v => set('auth_config', v)} />
+        </section>
+
+        {/* 请求 */}
+        <section>
+          <SectionTitle title="请求" hint="调用方未传的参数按默认值补齐，显式传值优先" />
+          <RequestSection req={form.request_cfg} onChange={v => set('request_cfg', v)} />
+        </section>
+
+        {/* 响应 */}
+        <section>
+          <SectionTitle title="响应" />
+          <ResponseSection res={form.response_cfg} onChange={v => set('response_cfg', v)} />
+        </section>
+
+        {/* 探活 */}
+        <section>
+          <SectionTitle title="探活" hint="path 留空 = 探 API 自身路径；interval_s>0 才定时探" />
+          <ProbeSection probe={form.probe} onChange={v => set('probe', v)} />
+        </section>
+
+        <div className="flex items-center justify-between pt-1">
+          <label className="flex items-center gap-2 text-sm text-stone-600 dark:text-stone-300">
+            <input type="checkbox" className="[color-scheme:light] dark:[color-scheme:dark]" checked={form.enabled} onChange={e => set('enabled', e.target.checked)} /> 启用
           </label>
-          <label className="block">
-            <span className="text-xs text-stone-500 dark:text-stone-400">Slug</span>
-            <input className={`${inputCls} w-full mt-1 font-mono`} value={form.slug} onChange={e => set('slug', e.target.value)} />
-          </label>
-          <label className="block">
-            <span className="text-xs text-stone-500 dark:text-stone-400">所属系统</span>
-            <select className={`${selectCls} w-full mt-1`} value={form.system_id} onChange={e => set('system_id', e.target.value)}>
-              {systems.map(s => <option key={s.id} value={s.id}>{s.name}（{s.slug}）</option>)}
-            </select>
-          </label>
+          <div className="flex gap-2">
+            <button className={btn} onClick={onClose}>取消</button>
+            <button className={btnPri} onClick={save}>保存</button>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <label className="block">
-            <span className="text-xs text-stone-500 dark:text-stone-400">Method</span>
-            <select className={`${selectCls} w-full mt-1`} value={form.method} onChange={e => set('method', e.target.value)}>
-              {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => <option key={m}>{m}</option>)}
-            </select>
-          </label>
-          <label className="block col-span-2">
-            <span className="text-xs text-stone-500 dark:text-stone-400">
-              路径模板（相对系统 Base URL；{'{path.x}'} 与 {'{cred.x}'} 变量）
-            </span>
-            <input className={`${inputCls} w-full mt-1 font-mono`} placeholder="/v1/orders/{path.id}"
-                   value={form.path_tpl} onChange={e => set('path_tpl', e.target.value)} />
-          </label>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <JsonBlock label="请求配置（四桶默认值：param_defaults 路径变量 / query_defaults / header_defaults / body.defaults JSON 顶层——调用方不传则补齐，显式传值优先；body.type 支持 json/form/raw）" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
-          <JsonBlock label="响应配置（envelope/charset/error_mapping 双通道）" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
-          <JsonBlock label="探活配置（path 默认=API 自身路径；interval_s>0 定时探）" value={form.probe} onChange={v => set('probe', v)} />
-        </div>
-        <label className="flex items-center gap-2 text-sm text-stone-600 dark:text-stone-300">
-          <input type="checkbox" className="[color-scheme:light] dark:[color-scheme:dark]" checked={form.enabled} onChange={e => set('enabled', e.target.checked)} /> 启用
-        </label>
-        <div className="flex justify-end gap-2">
-          <button className={btn} onClick={onClose}>取消</button>
-          <button className={btnPri} onClick={save}>保存</button>
-        </div>
+
+        {/* 高级：复杂配置（多 provider / template / 嵌套 JSON）的逃生通道，默认折叠 */}
+        <details className="group">
+          <summary className="cursor-pointer select-none text-xs text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300">
+            高级（JSON 原始配置，一般无需改动）
+          </summary>
+          <div className="mt-3 space-y-3">
+            <JsonBlock label="鉴权配置" value={form.auth_config} onChange={v => set('auth_config', v)} />
+            <JsonBlock label="请求配置" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
+            <JsonBlock label="响应配置" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
+            <JsonBlock label="探活配置" value={form.probe} onChange={v => set('probe', v)} />
+          </div>
+        </details>
       </div>
     </Modal>
   )
 }
 
+/** 分区标题：细线分隔 + 可选提示 */
+function SectionTitle({ title, hint }) {
+  return (
+    <div className="flex items-baseline gap-2 border-b border-black/[0.06] dark:border-white/[0.06] pb-2 mb-3">
+      <span className="text-[13px] font-semibold text-stone-700 dark:text-stone-200">{title}</span>
+      {hint && <span className="text-[11px] text-stone-400 dark:text-stone-500">{hint}</span>}
+    </div>
+  )
+}
+
+/** 表单字段：标签（+提示）包裹，mt-1 对齐控件 */
+function Field({ label, hint, span = 1, children }) {
+  return (
+    <label className={`block ${span === 2 ? 'col-span-2' : ''}`}>
+      <span className="text-xs text-stone-500 dark:text-stone-400">{label}</span>
+      {hint && <span className="ml-1.5 text-[11px] text-stone-400 dark:text-stone-500">{hint}</span>}
+      <div className="mt-1">{children}</div>
+    </label>
+  )
+}
+
+// ─── 鉴权分区 ───────────────────────────────────────────────────────
+
+const AUTH_TYPES = [
+  { value: 'bearer', label: 'Bearer Token' },
+  { value: 'api_key_header', label: 'API Key（请求头）' },
+  { value: 'query_key', label: 'API Key（Query 参数）' },
+  { value: 'basic', label: 'Basic Auth（用户名/密码）' },
+  { value: 'static_cookie', label: '静态 Cookie' },
+  { value: 'path_token', label: '路径令牌（凭证用于 URL/路径）' },
+  { value: 'qq_bot', label: 'QQ 机器人（动态令牌）' },
+  { value: 'custom', label: '自定义（多 provider / template）' },
+]
+// 各鉴权方式的默认凭证字段与 provider 参数
+const AUTH_DEFAULTS = {
+  bearer: { fields: ['token'], provider: { type: 'bearer', value: '{cred.token}' } },
+  api_key_header: { fields: ['token'], provider: { type: 'api_key_header', header: 'X-API-Key', value: '{cred.token}' } },
+  query_key: { fields: ['key'], provider: { type: 'query_key', param: 'key', value: '{cred.key}' } },
+  basic: { fields: ['user', 'password'], provider: { type: 'basic', user: '{cred.user}', password: '{cred.password}' } },
+  static_cookie: { fields: ['session'], provider: { type: 'static_cookie', cookie: 'SESSION', value: '{cred.session}' } },
+  path_token: { fields: ['token'], provider: { type: 'path_token' } },
+  qq_bot: { fields: ['app_id', 'app_secret'], provider: { type: 'qq_bot' } },
+}
+// provider 参数控件定义：key → [标签]
+const AUTH_PROVIDER_FIELDS = {
+  bearer: [['value', '值模板']],
+  api_key_header: [['header', 'Header 名'], ['value', '值模板']],
+  query_key: [['param', '参数名'], ['value', '值模板']],
+  basic: [['user', '用户名模板'], ['password', '密码模板']],
+  static_cookie: [['cookie', 'Cookie 名'], ['value', '值模板']],
+  qq_bot: [['token_url', '令牌端点（留空=官方默认）']],
+}
+
+function AuthSection({ auth, onChange }) {
+  const providers = auth.providers || []
+  const type = providers.length === 1 && AUTH_DEFAULTS[providers[0].type] ? providers[0].type : 'custom'
+  const provider = providers[0] || {}
+  const fields = auth.credential_fields || []
+  const cred = auth.credential || {}
+
+  const setType = t => {
+    if (t === 'custom') return   // 自定义 = 保持原样，走底部 JSON
+    const d = AUTH_DEFAULTS[t]
+    const keep = {}
+    for (const f of d.fields) if (cred[f] != null) keep[f] = cred[f]
+    onChange({ ...auth, providers: [{ ...d.provider }], credential_fields: [...d.fields], credential: keep })
+  }
+  const setProvider = (k, v) => onChange({ ...auth, providers: [{ ...provider, [k]: v }] })
+  const setCred = (k, v) => onChange({ ...auth, credential: { ...cred, [k]: v } })
+
+  return (
+    <div className="space-y-3">
+      <Field label="鉴权方式">
+        <Select value={type} onChange={setType} options={AUTH_TYPES} />
+      </Field>
+      {type !== 'custom' && (
+        <>
+          {(AUTH_PROVIDER_FIELDS[type] || []).length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              {AUTH_PROVIDER_FIELDS[type].map(([k, label]) => (
+                <Field key={k} label={label}>
+                  <input className={inputCls + ' w-full font-mono text-xs'} placeholder={AUTH_DEFAULTS[type].provider[k] || ''}
+                         value={provider[k] ?? ''} onChange={e => setProvider(k, e.target.value)} />
+                </Field>
+              ))}
+            </div>
+          )}
+          <div>
+            <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">
+              凭证字段与值（provider 里的 <span className="font-mono">{'{cred.字段}'}</span> 引用的就是这里）
+            </div>
+            <div className="space-y-2">
+              {fields.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input className={inputCls + ' w-40 font-mono text-xs !py-1.5'} value={f}
+                         onChange={e => {
+                           const nv = e.target.value
+                           if (!nv || nv === f) return
+                           const list = [...fields]
+                           list[i] = nv
+                           const nc = { ...cred }
+                           nc[nv] = cred[f]
+                           delete nc[f]
+                           onChange({ ...auth, credential_fields: list, credential: nc })
+                         }} />
+                  <input className={inputCls + ' flex-1 font-mono text-xs !py-1.5'} placeholder={`${f} 的值`}
+                         value={cred[f] == null ? '' : String(cred[f])} onChange={e => setCred(f, e.target.value)} />
+                  <button type="button" className="text-stone-400 hover:text-red-500 text-xs px-1"
+                          onClick={() => {
+                            const nc = { ...cred }; delete nc[f]
+                            onChange({ ...auth, credential_fields: fields.filter((_, j) => j !== i), credential: nc })
+                          }}>✕</button>
+                </div>
+              ))}
+              <FieldRowAdder placeholder="字段名，如 token"
+                onAdd={name => { if (!name || fields.includes(name)) return; onChange({ ...auth, credential_fields: [...fields, name] }) }} />
+            </div>
+          </div>
+        </>
+      )}
+      {type === 'custom' && (
+        <p className="text-[11px] text-stone-400 dark:text-stone-500">
+          当前为多 provider / template 等复杂配置，请在底部「高级（JSON）」中编辑。
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** KV 对象编辑器：{k: v} ↔ 输入行（值按字符串编辑，原样写回） */
+function KVFields({ obj, onChange, keyPlaceholder = '参数名', valPlaceholder = '值', empty = '未配置——调用方不传时网关不补齐该参数' }) {
+  const entries = obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : {}
+  const keys = Object.keys(entries)
+  const set = (k, v) => onChange({ ...entries, [k]: v })
+  const del = k => { const n = { ...entries }; delete n[k]; onChange(n) }
+  return (
+    <div className="space-y-2">
+      {keys.map(k => (
+        <div key={k} className="flex items-center gap-2">
+          <input readOnly className={inputCls + ' w-40 font-mono text-xs !py-1.5'} value={k} title={k} />
+          <input className={inputCls + ' flex-1 font-mono text-xs !py-1.5'} value={entries[k] == null ? '' : String(entries[k])}
+                 onChange={e => set(k, e.target.value)} />
+          <button type="button" className="text-stone-400 hover:text-red-500 text-xs px-1" onClick={() => del(k)}>✕</button>
+        </div>
+      ))}
+      <FieldRowAdder placeholder={keyPlaceholder} valPlaceholder={valPlaceholder} onAdd={(k, v) => {
+        if (!k || k in entries) return
+        onChange({ ...entries, [k]: v })
+      }} />
+      {!keys.length && <p className="text-[11px] text-stone-400 dark:text-stone-500">{empty}</p>}
+    </div>
+  )
+}
+
+/** 键值添加行：仅键（credential_fields）或键+值（四桶默认值） */
+function FieldRowAdder({ placeholder, valPlaceholder, onAdd }) {
+  const [k, setK] = useState('')
+  const [v, setV] = useState('')
+  const add = () => { onAdd(k.trim(), v); setK(''); setV('') }
+  return (
+    <div className="flex items-center gap-2">
+      <input className={inputCls + ' w-40 font-mono text-xs !py-1.5'} placeholder={placeholder} value={k}
+             onChange={e => setK(e.target.value)}
+             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }} />
+      {valPlaceholder !== undefined ? (
+        <input className={inputCls + ' flex-1 font-mono text-xs !py-1.5'} placeholder={valPlaceholder} value={v}
+               onChange={e => setV(e.target.value)}
+               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add() } }} />
+      ) : <div className="flex-1" />}
+      <button type="button" className={btn + ' !px-3 !py-1.5 text-xs shrink-0'} onClick={add}>添加</button>
+    </div>
+  )
+}
+
+// ─── 请求分区 ───────────────────────────────────────────────────────
+
+function RequestSection({ req, onChange }) {
+  const body = req.body || {}
+  const bodyType = body.type || 'json'
+  const setBody = (k, v) => onChange({ ...req, body: { ...body, [k]: v } })
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Body 类型">
+          <Select value={bodyType} onChange={v => setBody('type', v)} options={[
+            { value: 'json', label: 'JSON' }, { value: 'form', label: '表单 urlencoded' }, { value: 'raw', label: '原始文本' },
+          ]} />
+        </Field>
+        {bodyType === 'raw' && (
+          <Field label="Content-Type" span={2}>
+            <input className={inputCls + ' w-full font-mono text-xs'} placeholder="application/octet-stream"
+                   value={body.content_type || ''} onChange={e => setBody('content_type', e.target.value)} />
+          </Field>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4">
+        <KVBlock label="路径变量默认值" hint="param_defaults：补进 {path.x} 模板" obj={req.param_defaults}
+                 onChange={v => onChange({ ...req, param_defaults: v })} />
+        <KVBlock label="Query 默认值" hint="query_defaults" obj={req.query_defaults}
+                 onChange={v => onChange({ ...req, query_defaults: v })} />
+        <KVBlock label="请求头默认值" hint="header_defaults" obj={req.header_defaults}
+                 onChange={v => onChange({ ...req, header_defaults: v })} />
+        {bodyType === 'json' ? (
+          <KVBlock label="Body 默认值" hint="body.defaults：JSON 顶层字段" obj={body.defaults}
+                   onChange={v => setBody('defaults', v)} />
+        ) : (
+          <div>
+            <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">Body 默认值</div>
+            <p className="text-[11px] text-stone-400 dark:text-stone-500">仅 JSON 类型支持默认值补齐</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function KVBlock({ label, hint, obj, onChange }) {
+  return (
+    <div>
+      <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">
+        {label}{hint && <span className="ml-1.5 text-[11px] text-stone-400 dark:text-stone-500">{hint}</span>}
+      </div>
+      <KVFields obj={obj} onChange={onChange} />
+    </div>
+  )
+}
+
+// ─── 响应分区 ───────────────────────────────────────────────────────
+
+function ResponseSection({ res, onChange }) {
+  const em = res.error_mapping || {}
+  const setEm = (k, v) => onChange({ ...res, error_mapping: { ...em, [k]: v } })
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <Field label="信封模式">
+        <Select value={res.envelope || 'passthrough'} onChange={v => onChange({ ...res, envelope: v })} options={[
+          { value: 'passthrough', label: '透传（系统侧原文）' }, { value: 'wrap', label: '统一信封 {code,message,data}' },
+        ]} />
+      </Field>
+      <Field label="字符集" hint="留空=utf-8">
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder="utf-8"
+               value={res.charset || ''} onChange={e => onChange({ ...res, charset: e.target.value })} />
+      </Field>
+      <Field label="业务码路径" hint="如 $.code">
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder="如 $.code（留空=只看 HTTP 状态）"
+               value={em.body_code_path || ''} onChange={e => setEm('body_code_path', e.target.value)} />
+      </Field>
+      <Field label="成功业务码" hint="逗号分隔">
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder="0, 200, OK"
+               value={(em.success_codes || []).join(', ')}
+               onChange={e => setEm('success_codes', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
+      </Field>
+      <Field label="错误消息路径" hint="如 $.msg">
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder="如 $.msg"
+               value={em.body_message_path || ''} onChange={e => setEm('body_message_path', e.target.value)} />
+      </Field>
+    </div>
+  )
+}
+
+// ─── 探活分区 ───────────────────────────────────────────────────────
+
+function ProbeSection({ probe, onChange }) {
+  const p = { ...DEFAULT_PROBE, ...(probe || {}) }
+  const set = (k, v) => onChange({ ...p, [k]: v })
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      <Field label="Method">
+        <Select value={p.method} onChange={v => set('method', v)} options={
+          ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map(m => ({ value: m, label: m }))
+        } />
+      </Field>
+      <Field label="探活路径" hint="留空=API 自身路径" span={3}>
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder="/health"
+               value={p.path || ''} onChange={e => set('path', e.target.value)} />
+      </Field>
+      <Field label="期望状态码" hint="逗号分隔">
+        <input className={inputCls + ' w-full font-mono text-xs'}
+               value={(p.expect_status || []).join(', ')}
+               onChange={e => set('expect_status', e.target.value.split(',').map(s => s.trim()).filter(Boolean).map(Number))} />
+      </Field>
+      <Field label="Body 正则" hint="可选">
+        <input className={inputCls + ' w-full font-mono text-xs'} placeholder='如 "status":"ok"'
+               value={p.expect_body_regex || ''} onChange={e => set('expect_body_regex', e.target.value)} />
+      </Field>
+      <Field label="超时(ms)">
+        <input type="number" className={inputCls + ' w-full'} value={p.timeout_ms}
+               onChange={e => set('timeout_ms', +e.target.value || 0)} />
+      </Field>
+      <Field label="定时间隔(s)" hint="0=仅手动">
+        <input type="number" className={inputCls + ' w-full'} value={p.interval_s}
+               onChange={e => set('interval_s', +e.target.value || 0)} />
+      </Field>
+      <Field label="失败阈值" hint="连续 N 次判故障">
+        <input type="number" className={inputCls + ' w-full'} value={p.failure_threshold}
+               onChange={e => set('failure_threshold', +e.target.value || 1)} />
+      </Field>
+      <Field label="恢复阈值" hint="连续 N 次判恢复">
+        <input type="number" className={inputCls + ' w-full'} value={p.success_threshold}
+               onChange={e => set('success_threshold', +e.target.value || 1)} />
+      </Field>
+      <Field label="探活请求头" hint="可选">
+        <input readOnly className={inputCls + ' w-full text-stone-400 text-xs'}
+               value={(p.headers && Object.keys(p.headers).length) ? `${Object.keys(p.headers).length} 个（高级可改）` : '无'} />
+      </Field>
+      <div />
+    </div>
+  )
+}
+
+/** JSON 配置块（高级区用）：标签 + 编辑器 */
 function JsonBlock({ label, value, onChange }) {
   return (
     <div>
-      <span className="text-xs text-stone-500 dark:text-stone-400">{label}</span>
-      <div className="mt-1"><JsonArea rows={7} value={value} onChange={onChange} /></div>
+      <span className="text-xs font-medium text-stone-600 dark:text-stone-300">{label}</span>
+      <div className="mt-1"><JsonArea rows={8} value={value} onChange={onChange} /></div>
     </div>
   )
 }
@@ -1152,37 +1484,43 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">层级</span>
-            <select className={`${selectCls} w-full mt-1`} value={f.scope} onChange={e => set('scope', e.target.value)}>
-              <option value="token_api">令牌×API（单 API 分令牌）</option>
-              <option value="api">API 总量（保护系统）</option>
-              <option value="token">令牌全局</option>
-              <option value="global">全局</option>
-            </select>
+            <div className="mt-1">
+              <Select value={f.scope} onChange={v => set('scope', v)} options={[
+                { value: 'token_api', label: '令牌×API（单 API 分令牌）' },
+                { value: 'api', label: 'API 总量（保护系统）' },
+                { value: 'token', label: '令牌全局' },
+                { value: 'global', label: '全局' },
+              ]} />
+            </div>
           </label>
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">算法</span>
-            <select className={`${selectCls} w-full mt-1`} value={f.algorithm} onChange={e => set('algorithm', e.target.value)}>
-              <option value="token_bucket">令牌桶（速率，允许突发）</option>
-              <option value="fixed_window">固定窗口（长周期配额）</option>
-            </select>
+            <div className="mt-1">
+              <Select value={f.algorithm} onChange={v => set('algorithm', v)} options={[
+                { value: 'token_bucket', label: '令牌桶（速率，允许突发）' },
+                { value: 'fixed_window', label: '固定窗口（长周期配额）' },
+              ]} />
+            </div>
           </label>
         </div>
         {['token_api', 'api'].includes(f.scope) && (
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">API</span>
-            <select className={`${selectCls} w-full mt-1`} value={f.api_id || ''} onChange={e => set('api_id', e.target.value)}>
-              <option value="">选择 API…</option>
-              {apis.map(a => <option key={a.id} value={a.id}>{a.name}（{a.slug}）</option>)}
-            </select>
+            <div className="mt-1">
+              <Select value={f.api_id || ''} onChange={v => set('api_id', v)} placeholder="选择 API…" options={
+                apis.map(a => ({ value: a.id, label: `${a.name}（${a.slug}）` }))
+              } />
+            </div>
           </label>
         )}
         {['token_api', 'token'].includes(f.scope) && (
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">平台令牌</span>
-            <select className={`${selectCls} w-full mt-1`} value={f.token_id || ''} onChange={e => set('token_id', e.target.value)}>
-              <option value="">选择令牌…</option>
-              {tokens.map(t => <option key={t.id} value={t.id}>{t.name}（{t.key_hint}）</option>)}
-            </select>
+            <div className="mt-1">
+              <Select value={f.token_id || ''} onChange={v => set('token_id', v)} placeholder="选择令牌…" options={
+                tokens.map(t => ({ value: t.id, label: `${t.name}（${t.key_hint}）` }))
+              } />
+            </div>
           </label>
         )}
         {f.algorithm === 'token_bucket' ? (
@@ -1233,10 +1571,12 @@ function Logs({ setErr }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        <select className={selectCls} value={apiId} onChange={e => setApiId(e.target.value)}>
-          <option value="">全部 API</option>
-          {apis.map(a => <option key={a.id} value={a.id}>{a.slug}</option>)}
-        </select>
+        <div className="w-56">
+          <Select value={apiId} onChange={setApiId} options={[
+            { value: '', label: '全部 API' },
+            ...apis.map(a => ({ value: a.id, label: a.slug })),
+          ]} />
+        </div>
         <button className={btn} onClick={load}>刷新</button>
         <span className="text-[11.5px] text-stone-400">最近 200 条（异步批量落库，约 2s 延迟）</span>
       </div>

@@ -1,37 +1,33 @@
 """API Hub 应用级状态：每个 app 一份（挂 app.state.apihub，持真实 app 对象）。
 
-含：加密盒（master key 自动生成 data/apihub.key）、配置内存快照（版本化）、
-内存限流器、key 选择器、探活状态机、上游连接池、日志批量写线程、探活调度线程。
+含：配置内存快照（版本化，鉴权内联在 API 的 auth_config 明文 JSON）、
+内存限流器、探活状态机、上游连接池、日志批量写线程、探活调度线程。
 """
 
-import os
 import queue
 import threading
 import time
 
 from sqlalchemy import select
 
-from app.apihub.core import CryptoBox, HealthMonitor, KeyCfg, KeySelector, \
-    LevelSpec, RateLimiter, TokenExchanger, level_key, merge_probe, strictest
-from app.apihub.models import ApihubApi, ApihubCallLog, ApihubKey, ApihubRule, ApihubToken, \
+from app.apihub.core import HealthMonitor, LevelSpec, RateLimiter, TokenExchanger, \
+    level_key, merge_probe, strictest
+from app.apihub.models import ApihubApi, ApihubCallLog, ApihubRule, ApihubToken, \
     ApihubSystem
 from app.apihub.pool import UpstreamPool
-from app.config import settings
 from app.shared.timestamps import _utcnow
 
 
 class Store:
     """配置内存快照：管理端改动后 reload() 全量生效（与运行态限流桶/健康状态分离）。"""
 
-    def __init__(self, crypto: CryptoBox):
-        self.crypto = crypto
+    def __init__(self):
         self.version = 0
         self.lock = threading.RLock()
         self.apis: dict = {}            # slug -> dict
         self.apis_by_id: dict = {}
         self.systems: dict = {}         # id -> dict
         self.systems_by_slug: dict = {}
-        self.keys: dict = {}            # system_id -> [KeyCfg]
         self.tokens: dict = {}          # key_hash -> dict
         self.rules: list = []
         self.quota_used: dict = {}      # token_id -> 内存计数（writer 线程落库）
@@ -41,38 +37,16 @@ class Store:
         from app.db import db
         with self.lock:
             systems = db.session.execute(select(ApihubSystem)).scalars().all()
-            keys = db.session.execute(select(ApihubKey)).scalars().all()
             apis = db.session.execute(select(ApihubApi)).scalars().all()
             toks = db.session.execute(select(ApihubToken)).scalars().all()
             rules = db.session.execute(select(ApihubRule)).scalars().all()
 
-            self.systems = {}
-            for s in systems:
-                try:
-                    cfg = self.crypto.decrypt(bytes(s.auth_config_enc))
-                except Exception:
-                    cfg = {'_broken': True, 'providers': [], 'credential_fields': [],
-                           'transport': {}}
-                self.systems[s.id] = {
-                    'id': s.id, 'slug': s.slug, 'name': s.name, 'base_url': s.base_url,
-                    'timeout_ms': s.timeout_ms, 'max_retry': s.max_retry,
-                    'providers': cfg.get('providers', []),
-                    'credential_fields': cfg.get('credential_fields', []),
-                    'transport': cfg.get('transport', {}) or {}, 'status': s.status,
-                    'auth_config': cfg,   # 解密原文（管理端回读用，免每请求重复解密）
-                }
+            self.systems = {s.id: {
+                'id': s.id, 'slug': s.slug, 'name': s.name, 'base_url': s.base_url,
+                'timeout_ms': s.timeout_ms, 'max_retry': s.max_retry,
+                'transport': s.transport or {}, 'status': s.status,
+            } for s in systems}
             self.systems_by_slug = {c['slug']: c for c in self.systems.values()}
-
-            self.keys = {}
-            for k in keys:
-                try:
-                    cred = self.crypto.decrypt(bytes(k.credential_enc))
-                except Exception:
-                    continue
-                self.keys.setdefault(k.system_id, []).append(
-                    KeyCfg(id=k.id, cred=cred, weight=max(1, k.weight), status=k.status))
-            for lst in self.keys.values():
-                lst.sort(key=lambda x: x.id)
 
             self.apis = {}
             self.apis_by_id = {}
@@ -81,6 +55,8 @@ class Store:
                     'id': a.id, 'slug': a.slug, 'name': a.name,
                     'system_id': a.system_id,
                     'method': a.method, 'path_tpl': a.path_tpl,
+                    # 鉴权内联（明文）：providers/credential_fields/credential/transport
+                    'auth_config': a.auth_config or {},
                     # 存原始值（可为 None）：管理端回读与库内 JSON 完全一致；
                     # 网关/探活消费方各自 `or {}` 兜底
                     'request_cfg': a.request_cfg, 'response_cfg': a.response_cfg,
@@ -110,6 +86,12 @@ class Store:
             } for r in rules if r.enabled]
             self.version += 1
             self._levels_cache = {}
+
+    def apis_of_system(self, system_id) -> list:
+        """某系统下的全部 API 快照（按 id 升序）——管理端系统详情页用。"""
+        with self.lock:
+            return sorted((c for c in self.apis_by_id.values()
+                           if c['system_id'] == system_id), key=lambda c: c['id'])
 
     # ── 限流层级构建（同层多条取最严格，顺序 token_api → api → token → global） ──
     def build_levels(self, api_id, token_id) -> list:
@@ -223,18 +205,8 @@ class ApiHubState:
     """每 app 一份的运行态聚合。"""
 
     def __init__(self, app):
-        key_path = os.path.join(settings.data_dir, 'apihub.key')
-        os.makedirs(settings.data_dir, exist_ok=True)
-        if os.path.isfile(key_path):
-            with open(key_path, encoding='utf-8') as f:
-                master = f.read().strip()
-        else:
-            master = os.urandom(32).hex()
-            with open(key_path, 'w', encoding='utf-8') as f:
-                f.write(master)
-        self.store = Store(CryptoBox(master))
+        self.store = Store()
         self.limiter = RateLimiter()
-        self.selector = KeySelector()
         self.monitor = HealthMonitor()
         self.pool = UpstreamPool()
         self.token_exchange = TokenExchanger()   # qq_bot 等动态令牌缓存（区别于 store.tokens 平台令牌）

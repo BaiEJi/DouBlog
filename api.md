@@ -827,7 +827,7 @@ GET /api/subs/members?keyword=netflix
 
 ## 14. API Hub API（统一 API 调用平台）
 
-> 聚合异构系统 API，统一以平台令牌调用；四级限流 / 计次配额 / 密钥池 / 一键与定时探活。
+> 聚合异构系统 API，统一以平台令牌调用；四级限流 / 计次配额 / 一键与定时探活；鉴权内联在 API 的 auth_config（2026-10-17 起无密钥池）。
 > **分类只有 system → api 两个维度**（2026-10-17 重构）：系统手动创建（类比配置中心
 > confcenter 的 namespace），API 归属系统、路径模板映射到系统 base_url 上。系统内部
 > API 的自注册与 OpenAPI 发布入口（/openapi/**、group1/group2 分组、X-Apihub-Token
@@ -865,7 +865,6 @@ POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
 
 ```
 系统      GET/POST /api/apihub/admin/systems   PUT/DELETE /api/apihub/admin/systems/{id}
-密钥池    GET/POST /api/apihub/admin/systems/{id}/keys   PUT/DELETE /api/apihub/admin/systems/keys/{kid}
 API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/apis/{id}
 一键启停  PUT /api/apihub/admin/apis/{id}/enabled   {"enabled": bool}（关闭后 gw 调用立即 503「已关闭，不可用」）
 平台令牌  GET/POST /api/apihub/admin/tokens      PUT/DELETE /api/apihub/admin/tokens/{id}
@@ -880,16 +879,19 @@ API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/ap
 ```
 
 要点：
-- **系统（system，手动创建）**：`{name, slug, base_url, timeout_ms, max_retry, status, auth_config}`；
+- **系统（system，手动创建）**：`{name, slug, base_url, timeout_ms, max_retry, status, transport}`；
   slug 唯一（字母数字_-，≤64）；API 的 `path_tpl` 拼接在 base_url 之后（`{path.x}`/`{cred.x}`
-  模板变量）；删除前须先删其下 API；`system_disabled`（503）= 系统被禁用
-- **系统 auth_config**（JSON）：`{providers: [...], credential_fields: [...], transport: {...}}`；
-  providers 类型 = 七种静态 `bearer / api_key_header / query_key / basic / static_cookie / path_token / template`
-  + **动态令牌 `qq_bot`**（2026-10-17，QQ 开放平台专用：appId+secret 换 access_token 约 7200s，
+  模板变量）；删除前须先删其下 API；`system_disabled`（503）= 系统被禁用；系统只存连接参数
+  （`transport.verify=false` = 跳过 TLS 校验）
+- **API auth_config**（JSON，2026-10-17 起内联在 API 上，明文存取）：`{providers: [...],
+  credential_fields: [...], credential: {字段: 值}}`；providers 类型 = 七种静态
+  `bearer / api_key_header / query_key / basic / static_cookie / path_token / template`
+  + **动态令牌 `qq_bot`**（QQ 开放平台专用：appId+secret 换 access_token 约 7200s，
   进程内缓存、过期前 5 分钟自动刷新，注入 `Authorization: QQBot <token>`；凭证字段
   `app_id`/`app_secret`；provider 可选 `token_url` 覆盖端点，默认
   `https://bots.qq.com/app/getAppAccessToken`）；
-  凭证模板 `{cred.字段}` 可用于 header/query/cookie 与 base_url/路径模板；多 provider 组合支持（数组）
+  凭证模板 `{cred.字段}` 可用于 header/query/cookie 与 base_url/路径模板；多 provider 组合支持（数组）；
+  上游回 401/403 同一凭证不重试，直接 503 upstream_error
 - **出站代理**（全局可选，`data/apihub_proxy.json`，/config 页读写）：仅 https 目标且非 localhost
   走正向代理 CONNECT 隧道（本机 Clash 等）；http 目标与本机回环始终直连；保存即生效
   （旧空闲连接自然淘汰）
@@ -899,7 +901,6 @@ API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/ap
   调用与调用文档共用同一合并语义。QQ 场景示例：
   `{"param_defaults": {"openid": "B93C…"}, "body": {"type": "json", "defaults": {"msg_type": 0}}}`
   → 调用方只需 `{"content": "告警内容"}`
-- **密钥池**：credential 按 credential_fields 填字典；列表只回脱敏指纹（`abc***23`），明文不落日志
 - **平台令牌**：`sk-` 前缀 SHA-256 落库，**明文仅创建响应返回一次**；属性：expires_at / allowed_api_ids / allowed_ips / quota_total（计次，预占-退还语义）
 - **限流规则**：scope = token_api|api|token|global（同层多条取最严格）；algorithm = token_bucket(rate_per_sec+burst) | fixed_window(window_s+max_count)；列表附当前用量 usage
 - **探活 probe**（JSON）：path（默认=API 自身路径）/expect_status/expect_body_regex/interval_s（>0 定时探，down 态间隔×5）/failure_threshold/success_threshold
@@ -907,7 +908,7 @@ API       GET/POST /api/apihub/admin/apis        PUT/DELETE /api/apihub/admin/ap
 **QQ 机器人接入实测**（2026-10-17，系统 `qq` + `qq_bot` provider + 出站代理）：
 
 ```
-# 管理端一次性注册（auth_config.providers=[{"type":"qq_bot"}]、凭证 {app_id, app_secret}；
+# 管理端一次性注册（API 的 auth_config.providers=[{"type":"qq_bot"}]、credential={app_id, app_secret}；
 # request_cfg={"param_defaults":{"openid":"B93C…"},"body":{"type":"json","defaults":{"msg_type":0}}}）
 
 POST /api/apihub/gw/apis/qq-send-c2c       (Authorization: Bearer sk-…)
@@ -926,6 +927,14 @@ POST /api/apihub/gw/apis/qq-send-c2c       (Authorization: Bearer sk-…)
   调用日志 / api 级限流规则，以及令牌 `doublog-self` 与其 token 级规则（仅老库首次迁移执行一次）
 - DROP `apihub_apis` 的 OpenAPI 发布四列 `group1/group2/pub_name/doc_md`
   （旧 SQLite <3.35 不支持 DROP COLUMN 时仅告警，残留列不影响功能）
+
+**密钥池 → API 内联鉴权迁移**（2026-10-17，判定条件 = `apihub_systems.auth_config_enc` 列仍在）：
+
+- 补 `apihub_systems.transport` / `apihub_apis.auth_config` 列；
+- 解密每个系统的旧 auth_config 与第一把**启用** key 的 credential，合并为明文
+  `{providers, credential_fields, credential}` 写入该系统每个 API；旧 transport 回种系统级列；
+- `DROP TABLE apihub_keys` + DROP 系统 `auth_config_enc` / 日志 `key_id` 列；
+- 迁移后无加密/脱敏/轮换/401 自动禁用——`CryptoBox` 仅留作再次迁移的解密工具。
 
 ## 15. Todo API（四象限待办，MyTodo 迁入）
 

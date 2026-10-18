@@ -1,6 +1,7 @@
 // API Hub 能力包 API 层：统一走 shared/client.js 的 apiFetch（Basic Auth 唯一持有处）。
 // 网关调用（平台令牌 sk-）不走 apiFetch——那是给外部调用方的，管理页只需要 admin 接口。
-// 分类维度：system → api（系统手动创建，API 路径映射到系统 base_url）。
+// 分类维度：system → api（系统手动创建，API 路径映射到系统 base_url，鉴权内联在
+// API 的 auth_config 明文 JSON——2026-10-17 起无密钥池）。
 
 import { apiFetch } from '../shared/client'
 
@@ -12,7 +13,8 @@ async function json(path, options = {}) {
 }
 
 export const apihubOverview = () => json('/api/apihub/stats/overview')
-export const apihubApis = () => json('/api/apihub/admin/apis')
+// params 形如 '?system_id=3'：系统详情页只取该系统的 API（省略=全部）
+export const apihubApis = (params = '') => json(`/api/apihub/admin/apis${params}`)
 export const apihubSystems = () => json('/api/apihub/admin/systems')
 export const apihubTokens = () => json('/api/apihub/admin/tokens')
 export const apihubRules = () => json('/api/apihub/admin/rules')
@@ -22,12 +24,6 @@ export const apihubSaveSystem = (s) => s.id
   ? json(`/api/apihub/admin/systems/${s.id}`, { method: 'PUT', body: JSON.stringify(s) })
   : json('/api/apihub/admin/systems', { method: 'POST', body: JSON.stringify(s) })
 export const apihubDeleteSystem = (id) => json(`/api/apihub/admin/systems/${id}`, { method: 'DELETE' })
-export const apihubKeys = (sid) => json(`/api/apihub/admin/systems/${sid}/keys`)
-export const apihubAddKey = (sid, credential) =>
-  json(`/api/apihub/admin/systems/${sid}/keys`, { method: 'POST', body: JSON.stringify({ credential }) })
-export const apihubUpdateKey = (kid, payload) =>
-  json(`/api/apihub/admin/systems/keys/${kid}`, { method: 'PUT', body: JSON.stringify(payload) })
-export const apihubDeleteKey = (kid) => json(`/api/apihub/admin/systems/keys/${kid}`, { method: 'DELETE' })
 
 export const apihubSaveApi = (a) => a.id
   ? json(`/api/apihub/admin/apis/${a.id}`, { method: 'PUT', body: JSON.stringify(a) })

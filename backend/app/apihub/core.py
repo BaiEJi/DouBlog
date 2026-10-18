@@ -1,6 +1,8 @@
-"""API Hub 框架无关核心：加密/模板/鉴权适配/内存限流/key 选择/探活状态机。
+"""API Hub 框架无关核心：模板/鉴权适配/内存限流/探活状态机。
 
 全部为纯同步实现（Flask 线程模型），线程安全由 threading.Lock 保证。
+CryptoBox 仅为 2026-10-17「密钥池 → API 内联鉴权」迁移的回填读取而保留，
+新代码不再加密任何东西（凭证明文内联在 API 的 auth_config）。
 """
 
 import base64
@@ -13,13 +15,16 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-# ─── AES-256-GCM 凭证加密 ───────────────────────────────────────────
+# ─── AES-256-GCM（仅迁移回填读取旧密文用） ─────────────────────────
 
 _AAD = b'doublog.apihub/v1'
 
 
 class CryptoBox:
-    """上游凭证/密钥加密：master_key 派生密钥，nonce(12B)+ciphertext 落库。"""
+    """上游凭证/密钥加密：master_key 派生密钥，nonce(12B)+ciphertext 落库。
+
+    2026-10-17 起运行时不再使用（auth_config 改明文 JSON 内联在 API 上），
+    仅 __init__.ensure_migrations 回填旧库时解密读取。"""
 
     def __init__(self, master_key: str):
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -34,12 +39,19 @@ class CryptoBox:
         return json.loads(self._aes.decrypt(bytes(data[:12]), bytes(data[12:]), _AAD))
 
 
-def mask_secret(value: str) -> str:
-    if not value:
-        return ''
-    if len(value) <= 6:
-        return value[:1] + '***'
-    return f"{value[:3]}***{value[-2:]}"
+def load_crypto() -> CryptoBox:
+    """读 data/apihub.key 构建 CryptoBox（缺失则生成）——仅迁移回填用。"""
+    from app.config import settings
+    key_path = os.path.join(settings.data_dir, 'apihub.key')
+    os.makedirs(settings.data_dir, exist_ok=True)
+    if os.path.isfile(key_path):
+        with open(key_path, encoding='utf-8') as f:
+            master = f.read().strip()
+    else:
+        master = os.urandom(32).hex()
+        with open(key_path, 'w', encoding='utf-8') as f:
+            f.write(master)
+    return CryptoBox(master)
 
 
 # ─── 平台令牌 ───────────────────────────────────────────────────────
@@ -415,70 +427,6 @@ class RateLimiter:
 
 
 # ─── key 池选择器 ───────────────────────────────────────────────────
-
-@dataclass
-class KeyCfg:
-    id: int
-    cred: dict
-    weight: int
-    status: int
-
-
-class KeySelector:
-    """加权轮询 + 冷却（连续失败才冷却；唯一 key 不自我熔断由调用方保证）。"""
-
-    def __init__(self):
-        self._cooldowns: dict = {}
-        self._cursors: dict = {}
-        self._expanded: dict = {}
-        self._fails: dict = {}
-        self._recent: dict = {}      # upstream_id -> (keys 列表对象, expanded) 身份快路径
-        self._lock = threading.Lock()
-
-    def next_key(self, upstream_id: int, keys: list) -> KeyCfg | None:
-        with self._lock:
-            now = time.monotonic()
-            # 热路径：Store 快照的 keys 列表对象在两次 reload 之间不变，身份命中免建 sig
-            ent = self._recent.get(upstream_id)
-            if ent is not None and ent[0] is keys:
-                expanded = ent[1]
-            else:
-                sig = (upstream_id, tuple((k.id, k.weight, k.status) for k in keys))
-                expanded = self._expanded.get(sig)
-                if expanded is None:
-                    expanded = [k for k in keys if k.status == 1 for _ in range(k.weight)]
-                    if len(self._expanded) > 256:
-                        self._expanded.clear()
-                    self._expanded[sig] = expanded
-                self._recent[upstream_id] = (keys, expanded)
-            n = len(expanded)
-            if n == 0:
-                return None
-            i = self._cursors.get(upstream_id, 0)
-            for _ in range(n):
-                k = expanded[i % n]
-                i += 1
-                if self._cooldowns.get(k.id, 0.0) <= now:
-                    self._cursors[upstream_id] = i
-                    return k
-            self._cursors[upstream_id] = i
-            return None
-
-    def note_failure(self, key_id: int, cooldown_s: float = 10.0, threshold: int = 3) -> bool:
-        """瞬时错误不打单：连续 threshold 次失败才进入冷却。"""
-        with self._lock:
-            n = self._fails.get(key_id, 0) + 1
-            self._fails[key_id] = n
-            if n >= threshold:
-                self._cooldowns[key_id] = time.monotonic() + cooldown_s
-                self._fails[key_id] = 0
-                return True
-            return False
-
-    def note_success(self, key_id: int):
-        with self._lock:
-            self._fails.pop(key_id, None)
-
 
 # ─── 探活状态机 ─────────────────────────────────────────────────────
 
