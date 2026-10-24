@@ -6,8 +6,12 @@ API 归属系统且路径模板映射到系统的 base_url 上；鉴权（provid
 
 网关调用入口（外部调用方使用）：
 - POST /api/apihub/gw/apis/<slug>               统一信封 {path, query, header, body}
+- GET  /api/apihub/openapi/<system>/<api>       统一 OpenAPI 入口（默认对外格式；
+  api=公开别名（slug 去系统前缀、- 转 _），路径模板变量经同名 query 参数传入；
+  写方法/非 GET 型 API 403；内置 DouBlog（本机）目录即
+  /api/apihub/openapi/doublog/confcenter_namespaces 与 confcenter_get_key）
 - ANY  /api/apihub/gw/systems/<slug>/<path>     透明代理（原路径/query/body 透传，
-  鉴权取该系统第一个 API 的 auth_config）
+  鉴权取该系统第一个 API 的 auth_config；内置本机系统一律 403 指向 OpenAPI 入口）
 鉴权：Authorization: Bearer sk-...（平台令牌，SHA-256 落库）
 
 管道：令牌鉴权 → 授权(有效期/scope/IP/健康) → 多级限流(内存) → 配额预占 →
@@ -38,6 +42,13 @@ from app.apihub.core import (DEFAULT_PROBE, Injection, LevelSpec, TemplateError,
                              apply_providers, generate_token, hash_token, level_key,
                              merge_probe, render, token_hint,
                              validate_auth_config)
+from app.apihub.local_catalog import (BUILTIN_MARKER, BUILTIN_SYSTEM_SLUG,
+                                      BUILTIN_VERSION, GET_KEY_API_SLUG,
+                                      NAMESPACE_API_SLUG, PUBLIC_ALIASES,
+                                      RESERVED_API_SLUGS, RESERVED_SYSTEM_SLUGS,
+                                      api_public_alias, build_path_vars_from_query,
+                                      is_builtin_transport, match_api_by_alias,
+                                      validate_local_path_vars)
 from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog,
                                ApihubRule, ApihubToken, ApihubSystem)
 from app.apihub.pool import UpstreamConnectError, UpstreamProtocolError, UpstreamTimeout
@@ -289,6 +300,14 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     env_path, env_query, env_header, env_body, body_type, body_cfg = _merge_request_defaults(
         api, raw.get('path') or {}, raw.get('query') or {},
         raw.get('header') or {}, raw.get('body'))
+    # 内置本机目录 API：白名单变量校验（缺变量/非法字符/错误类型 → 400，无内部转发）
+    if is_builtin_transport(system['transport']):
+        try:
+            validate_local_path_vars(api['slug'], env_path)
+        except TemplateError as e:
+            if quota_reserved:
+                state.store.refund(quota_reserved)
+            return _gw_err(400, 'template_error', str(e))
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
     cred = (api['auth_config'] or {}).get('credential') or {}
 
@@ -392,6 +411,45 @@ def _gw_response(response_cfg, r, latency_ms, quota_remaining, ok, err_code, err
     })
 
 
+# ─── 网关：统一 OpenAPI 入口（默认对外格式）────────────────────────
+
+@router.api_route('/openapi/{slug}/{api_name}',
+                  methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
+async def gw_openapi(slug: str, api_name: str, request: Request):
+    """对外统一 OpenAPI 入口：GET /api/apihub/openapi/{system}/{api}。
+
+    api 段匹配该系统 API 的公开别名（slug 去系统前缀、- 转 _，如
+    doublog/confcenter_namespaces）；路径模板变量经同名 query 参数传入
+    （confcenter_get_key?namespace=…&key=…）。解析到 API 后复用同步 invoke
+    管道（api 级授权/四级限流/配额/日志各一次，mode=invoke）；写方法 403。
+    """
+    return await _run_gw(lambda: _gw_openapi_sync(request, slug, api_name))
+
+
+def _gw_openapi_sync(request: Request, slug: str, api_name: str):
+    state = get_state(request.app)
+    config = state.store.snapshot()
+    token = _authenticate(request)
+    if token is None:
+        return _gw_err(401, 'unauthorized', '缺少/无效平台令牌（Authorization: Bearer sk-...）')
+    if request.method != 'GET':
+        return _gw_err(403, 'forbidden', 'OpenAPI 入口仅开放只读 GET 调用')
+    system = config.systems_by_slug.get(slug)
+    if system is None:
+        return _gw_err(404, 'not_found', f"系统 '{slug}' 不存在")
+    api = match_api_by_alias(slug, state.store.apis_of_system(system['id']), api_name)
+    if api is None:
+        return _gw_err(404, 'not_found', f"系统 '{slug}' 下不存在 API '{api_name}'")
+    if api['method'] != 'GET':
+        return _gw_err(403, 'forbidden', 'OpenAPI 入口仅开放 GET 型 API（其他方法请用统一信封 invoke）')
+    path_vars = build_path_vars_from_query(api, dict(request.query_params))
+    # 未用作路径模板变量的 query 参数照常转发（普通系统 alias 调用 ?a=b 场景）
+    rest_query = {k: v for k, v in dict(request.query_params).items() if k not in path_vars}
+    # 已处于 apihub-gw SDK worker 内，直接调用同步 invoke 管道（内部自做 API 解析/
+    # 授权/限流/配额/转发/日志；缺模板变量在管道内统一 400 template_error）
+    return _gw_invoke_sync(request, api['slug'], {'path': path_vars, 'query': rest_query})
+
+
 # ─── 网关：透明代理（路径映射到系统 base_url） ──────────────────────
 
 @router.api_route('/gw/systems/{slug}/{system_path:path}',
@@ -411,6 +469,13 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
     system = config.systems_by_slug.get(slug)
     if system is None:
         return _gw_err(404, 'not_found', f"系统 '{slug}' 不存在")
+
+    # 内置本机系统不经透明代理：对外统一走只读 OpenAPI 入口（围栏，禁止宽泛转发）
+    if is_builtin_transport(system.get('transport')):
+        return _gw_err(403, 'forbidden',
+                       '本机系统请使用统一 OpenAPI 入口 /api/apihub/openapi/'
+                       f'{BUILTIN_SYSTEM_SLUG}/{{api}}（仅开放登记的只读查询）')
+
     if system['status'] != 1:
         return _gw_err(503, 'system_disabled', '系统已禁用')
 
@@ -611,6 +676,7 @@ def _system_dict(app, s):
     state = get_state(app)
     d = s.to_dict()
     d['api_count'] = len(state.store.apis_of_system(s.id))
+    d['builtin'] = is_builtin_transport(s.transport)
     return d
 
 
@@ -632,6 +698,8 @@ async def create_system(request: Request):
     def _run():
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', str(body.get('slug') or '')):
             return api_response(None, 400, 'slug 非法（字母数字_-，≤64）')
+        if body['slug'] in RESERVED_SYSTEM_SLUGS:
+            return api_response(None, 400, f"slug '{body['slug']}' 为内置本机系统保留")
         if db.session.execute(select(ApihubSystem).where(ApihubSystem.slug == body['slug'])).scalar():
             return api_response(None, 400, f"slug '{body['slug']}' 已存在")
         s = ApihubSystem(
@@ -656,8 +724,18 @@ async def update_system(sid: int, request: Request):
         s = db.session.get(ApihubSystem, sid)
         if s is None:
             return api_response(None, 404, '系统不存在')
+        builtin = is_builtin_transport(s.transport)
+        if builtin:
+            # 内置本机系统：slug/base_url 固定，名称/启停/超时/重试可编辑；
+            # transport 合并保留 builtin marker（管理端不能伪造/移除）
+            if body.get('slug') and body['slug'] != s.slug:
+                return api_response(None, 400, '内置系统 slug 固定，不可修改')
+            if body.get('base_url') and body['base_url'] != s.base_url:
+                return api_response(None, 400, '内置系统 base_url 固定（随本进程回环地址自动维护）')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', str(body.get('slug') or '')):
             return api_response(None, 400, 'slug 非法（字母数字_-，≤64）')
+        if body.get('slug') in RESERVED_SYSTEM_SLUGS and not builtin:
+            return api_response(None, 400, f"slug '{body.get('slug')}' 为内置本机系统保留")
         dup = db.session.execute(select(ApihubSystem).where(
             ApihubSystem.slug == body.get('slug'), ApihubSystem.id != sid)).scalar()
         if dup:
@@ -669,7 +747,12 @@ async def update_system(sid: int, request: Request):
         s.max_retry = int(body.get('max_retry') if body.get('max_retry') is not None else s.max_retry)
         s.status = int(body.get('status') or 1)
         if body.get('transport') is not None:
-            s.transport = body['transport']
+            merged = dict(s.transport or {})
+            merged.update(body['transport'])
+            if builtin:
+                merged['builtin'] = BUILTIN_MARKER
+                merged['builtin_version'] = (s.transport or {}).get('builtin_version', BUILTIN_VERSION)
+            s.transport = merged
         db.session.commit()
         get_state(app).reload()
         return api_response(_system_dict(app, s))
@@ -684,6 +767,8 @@ async def delete_system(sid: int, request: Request):
         s = db.session.get(ApihubSystem, sid)
         if s is None:
             return api_response(None, 404, '系统不存在')
+        if is_builtin_transport(s.transport):
+            return api_response(None, 400, '内置本机系统不可删除（可停用：status=手动禁用）')
         n_apis = db.session.execute(select(func.count()).select_from(ApihubApi)
                                     .where(ApihubApi.system_id == sid)).scalar() or 0
         if n_apis:
@@ -740,12 +825,14 @@ def _api_dict(app, a):
     """a 可为 ORM 行或 Store 快照 dict（键名一致）——列表/详情统一装配。"""
     state = get_state(app)
     st = state.monitor.state_of(a.id, a.health_status)
+    system = state.store.systems.get(a.system_id)
     return {
         'id': a.id, 'system_id': a.system_id, 'name': a.name, 'slug': a.slug,
         'description': a.description or '', 'method': a.method, 'path_tpl': a.path_tpl,
         'auth_config': a.auth_config,
         'request_cfg': a.request_cfg, 'response_cfg': a.response_cfg, 'timeout_ms': a.timeout_ms,
         'probe': a.probe, 'enabled': a.enabled,
+        'builtin': bool(system and is_builtin_transport(system.get('transport'))),
         'health': {'status': st['status'], 'fails': st['fails'], 'succs': st['succs']},
         'health_status': a.health_status,
         'last_probe_at': _iso(a.last_probe_at),
@@ -795,19 +882,42 @@ def _upsert_api(app, aid, body):
         ApihubApi.slug == body['slug'], ApihubApi.id != (aid or -1))).scalar()
     if dup:
         return api_response(None, 400, 'slug 已存在')
-    if db.session.get(ApihubSystem, body.get('system_id')) is None:
+    target_system = db.session.get(ApihubSystem, body.get('system_id'))
+    if target_system is None:
         return api_response(None, 400, 'system_id 不存在')
+    target_builtin = is_builtin_transport(target_system.transport)
+    if aid:
+        a = db.session.get(ApihubApi, aid)
+        if a is None:
+            return api_response(None, 404, 'API 不存在')
+        owner = db.session.get(ApihubSystem, a.system_id)
+        api_builtin = owner is not None and is_builtin_transport(owner.transport)
+    else:
+        a = ApihubApi(slug=body['slug'])
+        api_builtin = False
+    # ── 内置目录结构保护 ──
+    # 新建：内置本机系统下不能新增未登记 API；保留 slug 普通资源不得占用
+    if not aid and target_builtin:
+        return api_response(None, 400, '内置本机系统的 API 目录固定，不能新增 API')
+    if body['slug'] in RESERVED_API_SLUGS and not (api_builtin and aid and a.slug == body['slug']):
+        return api_response(None, 400, f"slug '{body['slug']}' 为内置目录保留")
+    # 更新：内置 API 的 slug/所属系统/method/path_tpl 固定，其余（名称/描述/鉴权凭据/
+    # 请求响应默认值/超时/探活/启停）可编辑
+    if aid and api_builtin:
+        if body['slug'] != a.slug:
+            return api_response(None, 400, '内置 API slug 固定，不可修改')
+        if int(body.get('system_id')) != a.system_id:
+            return api_response(None, 400, '内置 API 所属系统固定，不可迁移')
+        if str(body.get('method') or a.method).upper() != a.method:
+            return api_response(None, 400, '内置 API method 固定，不可修改')
+        if body.get('path_tpl') and body['path_tpl'] != a.path_tpl:
+            return api_response(None, 400, '内置 API 路径模板固定，不可修改')
     auth_cfg = body.get('auth_config')
     if auth_cfg is not None:
         errors = validate_auth_config(auth_cfg)
         if errors:
             return api_response(None, 400, 'auth_config 无效: ' + '; '.join(errors))
-    if aid:
-        a = db.session.get(ApihubApi, aid)
-        if a is None:
-            return api_response(None, 404, 'API 不存在')
-    else:
-        a = ApihubApi(slug=body['slug'])
+    if not aid:
         db.session.add(a)
     a.system_id = body['system_id']
     a.name = body.get('name') or body['slug']
@@ -835,6 +945,9 @@ async def delete_api(aid: int, request: Request):
         a = db.session.get(ApihubApi, aid)
         if a is None:
             return api_response(None, 404, 'API 不存在')
+        owner = db.session.get(ApihubSystem, a.system_id)
+        if owner is not None and is_builtin_transport(owner.transport):
+            return api_response(None, 400, '内置本机系统的 API 不可删除（可停用：enabled=false）')
         db.session.delete(a)
         db.session.commit()
         get_state(app).reload()
@@ -869,6 +982,12 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
     env_path, env_query, env_header, env_body, body_type, body_cfg = _merge_request_defaults(
         api, raw.get('path') or {}, raw.get('query') or {},
         raw.get('header') or {}, raw.get('body'))
+    # 内置本机目录 API：与 gw invoke 共用白名单变量校验（400，无内部转发）
+    if is_builtin_transport(system['transport']):
+        try:
+            validate_local_path_vars(api['slug'], env_path)
+        except TemplateError as e:
+            return _gw_err(400, 'template_error', str(e))
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
     cred = (api['auth_config'] or {}).get('credential') or {}
 
@@ -980,6 +1099,11 @@ async def api_doc(aid: int, request: Request):
 
     # 调用示例的参数集 = 默认值（调用方不传时网关自动填充）
     ex_path = {**param_defaults}
+    # 内置本机目录 API 无生产默认值：示例用测试样例（apihub_demo/example）占位，
+    # 保证「照抄即可调用」；样例非默认值，调用方须换成自己的 namespace/key
+    builtin_doc = bool(system and is_builtin_transport(system.get('transport')))
+    if builtin_doc and api['slug'] == GET_KEY_API_SLUG:
+        ex_path = {'namespace': 'apihub_demo', 'key': 'example'}
     ex_query = dict(query_defaults)
     ex_header = dict(header_defaults)
     ex_body = dict(body_defaults) if (body_defaults and api['method'] not in ('GET', 'HEAD')) else None
@@ -995,7 +1119,10 @@ async def api_doc(aid: int, request: Request):
         f"| 方法 | `{api['method']}` |",
         f"| 系统路径模板 | `{api['path_tpl']}` |",
         f"| 统一信封调用 | `POST {base}/api/apihub/gw/apis/{api['slug']}` |",
-        f"| 透明代理 | `ANY {base}/api/apihub/gw/systems/{system['slug'] if system else '<system>'}/<原路径>` |",
+        (f"| 统一 OpenAPI 入口 | `GET {base}/api/apihub/openapi/{system['slug']}/"
+         f"{PUBLIC_ALIASES.get(api['slug'], api_public_alias(system['slug'], api['slug']))}` |"
+         if system and is_builtin_transport(system.get('transport'))
+         else f"| 透明代理 | `ANY {base}/api/apihub/gw/systems/{system['slug'] if system else '<system>'}/<原路径>` |"),
         '',
         '## 认证',
         '',
@@ -1061,11 +1188,11 @@ async def api_doc(aid: int, request: Request):
         '```',
         '',
     ]
-    # 透明代理示例：路径变量代入默认值
+    # 透明代理示例：路径变量代入默认值（内置本机系统不经透明代理，跳过）
     pt_path = api['path_tpl']
     for v in path_vars:
         pt_path = pt_path.replace('{path.' + v + '}', str(param_defaults.get(v, '<' + v + '>')))
-    if system:
+    if system and not builtin_doc:
         q = ('?' + urlencode(ex_query)) if ex_query else ''
         lines += [
             '## 调用示例（透明代理）',
@@ -1075,6 +1202,34 @@ async def api_doc(aid: int, request: Request):
             f"{pt_path}{q}' \\",
             "  -H 'Authorization: Bearer sk-...'",
             '```',
+            '',
+        ]
+    # 内置本机系统：统一 OpenAPI 入口（默认对外格式）+ 变量约束 + 默认用户维护说明（不含凭据）
+    if builtin_doc:
+        alias = PUBLIC_ALIASES.get(api['slug'], api_public_alias(system['slug'], api['slug']))
+        native = f'{base}/api/apihub/openapi/{system["slug"]}/{alias}'
+        if api['slug'] == GET_KEY_API_SLUG:
+            native += '?namespace=…&key=…'
+        lines += [
+            '## 统一 OpenAPI 入口（推荐）',
+            '',
+            '```bash',
+            f"curl -H 'Authorization: Bearer sk-...' '{native}'",
+            '```',
+            '',
+        ]
+        if api['slug'] == GET_KEY_API_SLUG:
+            lines += [
+                '路径变量必填，经同名 query 参数传入：`namespace`（≤100）与 `key`（≤200），'
+                '仅字母数字与 `_ . : -`，不接受独立 `.` / `..` 段、斜杠/编码斜杠/百分号/'
+                '问号/换行；非法值返回 400 template_error。',
+                '',
+            ]
+        lines += [
+            '入口格式 `GET /api/apihub/openapi/{system}/{api}`（api=公开别名，`-` 等价 `_`）；'
+            '内层访问本实例配置中心使用默认用户（Basic），由网关注入；'
+            '账号变更后请管理员在本 API 表单同步维护内联鉴权凭据。'
+            '完整对外契约见 `docs/openapi/apihub-doublog.yaml`。',
             '',
         ]
     if api.get('probe'):

@@ -7,6 +7,8 @@
  * 刷新/分享不丢；slug 失效（过期书签/改名）自动回落列表。
  * 五个内部 Tab：总览（健康+统计+一键探活）、系统（列表 → 系统详情：系统信息 + 编辑 +
  * 该系统 API 的 CRUD/调用/文档/探活）、平台令牌（明文一次性）、限流规则（实时余量）、调用日志。
+ * 内置本机系统（builtin 徽标，如 doublog 配置中心只读目录）结构固定：slug/Base URL/API
+ * 目录只读（表单禁用/入口隐藏，后端兜底 400），可改名/停用/调超时/维护 API 内联凭据。
  * 鉴权（providers + 凭证值）明文内联在每个 API 的 auth_config 里，随请求/响应/探活配置
  * 一起在 API 表单编辑——无密钥池（2026-10-17 简化，见 backend __init__.py 迁移）。
  * 配置类字段（auth/请求/响应/探活）用 JSON 编辑，失焦校验。
@@ -329,6 +331,10 @@ function Systems({ setErr }) {
                           title="点击进入该系统，管理其 API" onClick={() => select(s.slug)}>
                     {s.name}
                   </button>
+                  {s.builtin && (
+                    <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] align-middle"
+                          title="内置本机系统：自动登记，结构固定，可停用">内置</span>
+                  )}
                   <div className="text-xs text-stone-400 font-mono">{s.slug}</div>
                 </td>
                 <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300 truncate" title={s.base_url}>{s.base_url}</td>
@@ -345,10 +351,12 @@ function Systems({ setErr }) {
                   <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                     <button className={rowBtnPri} onClick={() => select(s.slug)}>进入</button>
                     <button className={rowBtnDef} onClick={() => setEditing(s)}>编辑</button>
-                    <button className={rowBtnDanger} onClick={async () => {
-                      if (!confirm(`删除系统 ${s.slug}？（其下 API 需先删除）`)) return
-                      try { await apihubDeleteSystem(s.id); load() } catch (e) { setErr(e) }
-                    }}>删除</button>
+                    {!s.builtin && (
+                      <button className={rowBtnDanger} onClick={async () => {
+                        if (!confirm(`删除系统 ${s.slug}？（其下 API 需先删除）`)) return
+                        try { await apihubDeleteSystem(s.id); load() } catch (e) { setErr(e) }
+                      }}>删除</button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -413,6 +421,10 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
         <div className="flex flex-wrap items-center gap-2.5">
           <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100">{system.name}</h2>
           <span className="font-mono text-sm text-stone-400">{system.slug}</span>
+          {system.builtin && (
+            <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[11px] font-medium"
+                  title="自动登记的本机目录系统：结构固定，可改名/停用/调超时">内置系统</span>
+          )}
           <span className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${
             system.status === 1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
               : 'bg-red-500/10 text-red-600 dark:text-red-400'}`}>
@@ -437,6 +449,15 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
             <dd className="text-stone-600 dark:text-stone-300 tabular-nums">{rows == null ? '…' : rows.length} 个</dd>
           </div>
         </dl>
+        {system.builtin && (
+          <div className="mt-3 rounded-lg px-3 py-2 text-[12px] leading-relaxed border border-amber-500/20 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300">
+            内置本机目录：系统 slug / Base URL 与 API 目录固定（可改名、停用、调超时，凭据在各 API 表单维护）。
+            对外统一 OpenAPI 入口（默认格式）
+            <span className="font-mono"> GET /api/apihub/openapi/doublog/confcenter_namespaces</span> 与
+            <span className="font-mono"> GET /api/apihub/openapi/doublog/confcenter_get_key?namespace=…&#38;key=…</span>
+            （外部以 Bearer sk- 调用，路径变量经同名 query 参数传入，契约见各 API「文档」）。
+          </div>
+        )}
       </div>
 
       {/* 该系统 API 列表 */}
@@ -449,7 +470,7 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
           <div className="flex-1" />
           <input className={`${inputCls} w-64`} placeholder="搜索：slug / 名称 / method / 路径"
                  value={q} onChange={e => setQ(e.target.value)} />
-          <button className={btnPri} onClick={() => setEditing({})}>＋ 新建 API</button>
+          {!system.builtin && <button className={btnPri} onClick={() => setEditing({})}>＋ 新建 API</button>}
         </div>
         {!rows && <div className="text-xs text-stone-400 py-16 text-center">加载中…</div>}
         {rows && !apis.length && (
@@ -488,7 +509,7 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
                     <div className="text-xs text-stone-400 font-mono break-all">
                       {a.method} {a.path_tpl}
                       {(a.auth_config?.providers || []).length > 0 && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 align-middle">
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 align-middle whitespace-nowrap">
                           {(a.auth_config.providers || []).map(p => p.type).join('+')}
                         </span>
                       )}
@@ -514,10 +535,12 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
                       <button className={rowBtnViolet} onClick={() => setDocOf(a)}>文档</button>
                       <button className={rowBtnDef} onClick={() => probeOne(a)}>探活</button>
                       <button className={rowBtnDef} onClick={() => setEditing(a)}>编辑</button>
-                      <button className={rowBtnDanger} onClick={async () => {
-                        if (!confirm(`删除 API ${a.slug}？`)) return
-                        try { await apihubDeleteApi(a.id); await load(); onApisChanged() } catch (e) { setErr(e) }
-                      }}>删除</button>
+                      {!a.builtin && (
+                        <button className={rowBtnDanger} onClick={async () => {
+                          if (!confirm(`删除 API ${a.slug}？`)) return
+                          try { await apihubDeleteApi(a.id); await load(); onApisChanged() } catch (e) { setErr(e) }
+                        }}>删除</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -563,6 +586,7 @@ function SystemDetail({ system, setErr, onBack, onSelect, onSystemSaved, onApisC
 }
 
 function SystemForm({ row, onClose, onSaved, setErr }) {
+  const builtin = !!row.builtin
   const [form, setForm] = useState(() => ({
     name: row.name || '', slug: row.slug || '', base_url: row.base_url || 'https://',
     timeout_ms: row.timeout_ms ?? 30000, max_retry: row.max_retry ?? 2,
@@ -580,6 +604,11 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
   return (
     <Modal wide title={row.id ? `编辑系统：${row.name}` : '新建系统'} onClose={onClose}>
       <div className="space-y-3">
+        {builtin && (
+          <div className="rounded-lg px-3 py-2 text-[12px] border border-amber-500/20 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300">
+            内置本机系统：Slug 与 Base URL 固定（回环地址随本进程自动维护，不可删除），可编辑名称 / 超时 / 重试 / 状态。
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">名称</span>
@@ -587,14 +616,16 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
           </label>
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">Slug（调用路径用）</span>
-            <input className={`${inputCls} w-full mt-1 font-mono`} value={form.slug} onChange={e => set('slug', e.target.value)} />
+            <input className={`${inputCls} w-full mt-1 font-mono ${builtin ? 'opacity-60' : ''}`}
+                   readOnly={builtin} value={form.slug} onChange={e => set('slug', e.target.value)} />
           </label>
         </div>
         <label className="block">
           <span className="text-xs text-stone-500 dark:text-stone-400">
             Base URL（支持 {'{cred.字段}'} 模板，如 https://{'{shop}'}.myshopify.com）
           </span>
-          <input className={`${inputCls} w-full mt-1 font-mono`} value={form.base_url} onChange={e => set('base_url', e.target.value)} />
+          <input className={`${inputCls} w-full mt-1 font-mono ${builtin ? 'opacity-60' : ''}`}
+                 readOnly={builtin} value={form.base_url} onChange={e => set('base_url', e.target.value)} />
         </label>
         <div className="grid grid-cols-3 gap-3">
           <label className="block">
@@ -818,6 +849,7 @@ function DocModal({ row, onClose }) {
  *  多 provider / template 等复杂配置与"高级"逃生通道收在底部折叠的 JSON 编辑器里。 */
 function ApiForm({ row, system, onClose, onSaved, setErr }) {
   const invalidFields = useRef(new Set())
+  const builtin = !!row.builtin
   const [form, setForm] = useState(() => ({
     name: row.name || '', slug: row.slug || '', system_id: row.system_id || system.id,
     method: row.method || 'GET', path_tpl: row.path_tpl || '/',
@@ -840,6 +872,11 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
   return (
     <JsonValidity.Provider value={invalidFields}><Modal xwide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
       <div className="space-y-6">
+        {builtin && (
+          <div className="rounded-lg px-3 py-2 text-[12px] border border-amber-500/20 bg-amber-500/[0.07] text-amber-700 dark:text-amber-300">
+            内置目录 API：Slug / 方法 / 路径模板固定（不可删除）；可编辑名称 / 描述 / 内联鉴权凭据 / 默认值 / 探活与启停。
+          </div>
+        )}
         {/* 基本信息 */}
         <section>
           <SectionTitle title="基本信息" />
@@ -848,7 +885,8 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
               <input className={inputCls + ' w-full'} value={form.name} onChange={e => set('name', e.target.value)} />
             </Field>
             <Field label="Slug">
-              <input className={inputCls + ' w-full font-mono'} value={form.slug} onChange={e => set('slug', e.target.value)} />
+              <input className={inputCls + ' w-full font-mono' + (builtin ? ' opacity-60' : '')}
+                     readOnly={builtin} value={form.slug} onChange={e => set('slug', e.target.value)} />
             </Field>
             <Field label="所属系统">
               <input readOnly className={inputCls + ' w-full text-stone-500 dark:text-stone-400'}
@@ -857,12 +895,13 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
           </div>
           <div className="grid grid-cols-3 gap-3 mt-3">
             <Field label="Method">
-              <Select value={form.method} onChange={v => set('method', v)} options={
+              <Select value={form.method} disabled={builtin} onChange={v => set('method', v)} options={
                 ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => ({ value: m, label: m }))
               } />
             </Field>
             <Field label="路径模板" hint="相对系统 Base URL；{path.x} 路径变量与 {cred.x} 凭证变量" span={2}>
-              <input className={inputCls + ' w-full font-mono'} placeholder="/v1/orders/{path.id}"
+              <input className={inputCls + ' w-full font-mono' + (builtin ? ' opacity-60' : '')}
+                     readOnly={builtin} placeholder="/v1/orders/{path.id}"
                      value={form.path_tpl} onChange={e => set('path_tpl', e.target.value)} />
             </Field>
           </div>

@@ -867,14 +867,18 @@ GET /api/subs/members?keyword=netflix
 POST   /api/apihub/gw/apis/{slug}
        body: {"path": {...}, "query": {...}, "header": {...}, "body": {...}}
 
-# 透明代理：原路径/query/body 透传（存量客户端只换 base_url 与鉴权头）
+# 统一 OpenAPI 入口（默认对外格式，全系统通用；api=公开别名，- 等价 _，
+# 路径模板变量经同名 query 参数传入）
+GET    /api/apihub/openapi/{system_slug}/{api}
+
+# 透明代理（仅普通外部系统；内置本机系统一律 403 指向 OpenAPI 入口）
 ANY    /api/apihub/gw/systems/{system_slug}/{path}
 ```
 
 - 响应默认透传（含系统侧状态码与 `X-Hub-Latency-Ms`）；API 配置 `response_cfg.envelope=wrap` 时返回统一信封 `{code,message,data,meta}`
 - 错误归一化双通道：HTTP 状态 + `response_cfg.error_mapping`（`body_code_path/success_codes/body_message_path`，适配"HTTP 200 + body code 表错"的国内 API）
-- 429 响应头：`Retry-After` / `X-RateLimit-Scope`（token_api|api|token|global）/ `X-RateLimit-Limit` / `X-RateLimit-Remaining`
-- 系统侧 401/403 → 自动禁用该把 key 并换 key 重试；连接错误仅在有备选 key 时计失败（连续 3 次冷却 10s）；超时 → 504；全部失败 → 503
+- 429 响应头：`Retry-After` / `X-RateLimit-Scope`（token_api|api|token|global） / `X-RateLimit-Limit` / `X-RateLimit-Remaining`
+- 系统侧 401/403 同一凭证不重试，直接 503 `upstream_error`（无密钥池可换）；连接错误仅 GET/HEAD/OPTIONS 在总期限内按 max_retry 有限重试；超时 → 504；全部失败 → 503
 - API 健康状态 down 时拒绝调用（503 unhealthy）；探活恢复后自动放行
 
 **实测示例**（系统指向本服务 /health，api_key_header 鉴权注入）：
@@ -886,6 +890,51 @@ POST /api/apihub/gw/apis/healthz   (Authorization: Bearer sk-…)
 第 3 次调用（API 总量规则 2 次/60s）→ 429
   Retry-After: 22, X-RateLimit-Scope: api, X-RateLimit-Limit: 2, X-RateLimit-Remaining: 0
 ```
+
+### 14.1b 内置 DouBlog（本机）系统：配置中心只读对外 OpenAPI（2026-10-24）
+
+内置系统 `DouBlog（本机）`（slug=`doublog`，`transport.builtin` 标记，仅后端播种可写）
+在启动时幂等登记两个只读 API，把本实例配置中心作为外部 OpenAPI 提供（标准契约见
+`docs/openapi/apihub-doublog.yaml`，OpenAPI 3.1）。对外统一走
+**`GET /api/apihub/openapi/{system}/{api}`**（全系统默认格式；api=公开别名，即 slug 去
+系统前缀、连字符转下划线，`-` 与 `_` 等价；路径模板变量经同名 query 参数传入）：
+
+```
+GET /api/apihub/openapi/doublog/confcenter_namespaces                # 全部 namespace（含空空间）
+GET /api/apihub/openapi/doublog/confcenter_get_key?namespace=apihub_demo&key=example
+
+# 等效统一信封（兼容）：
+POST /api/apihub/gw/apis/doublog-confcenter-namespaces   {}（空 JSON body）
+POST /api/apihub/gw/apis/doublog-confcenter-get-key      {"path":{"namespace":"apihub_demo","key":"example"}}
+```
+
+实测（隔离实例 `http://127.0.0.1:20061`，占位 token）：
+
+```json
+GET /api/apihub/openapi/doublog/confcenter_namespaces   (Authorization: Bearer <SK_TOKEN>)
+→ {"success":true,"code":200,"message":"操作成功","data":[{"namespace":"apihub_demo","count":1},{"namespace":"empty_demo","count":0}]}
+
+GET /api/apihub/openapi/doublog/confcenter_get_key?namespace=apihub_demo&key=example
+→ {"success":true,"code":200,"message":"操作成功","data":{"namespace":"apihub_demo","key":"example","type":"json","data":{"enabled":true},"updated_at":"2026-10-24T20:31:05"}}
+```
+
+- **两层认证**：外层平台令牌 `Bearer sk-…`（Cookie / 内部 Basic 不能替代）；内层由网关
+  经 Basic provider 注入默认用户访问本实例 `require_basic` 接口（凭据内联在 API 的
+  auth_config，初次播种取默认账号，账号变更后管理员在 API 表单同步维护）
+- **变量约束**：`namespace` ≤100、`key` ≤200，仅 `[A-Za-z0-9_.:-]`，独立 `.` / `..` 段、
+  斜杠/编码斜杠/百分号/问号/换行/非字符串拒绝；参数缺失或非法 → 400 template_error
+  （无内部转发、配额退还）；非 GET 方法 → 403；别名/系统不存在 → 404；
+  内置系统经 `/gw/systems/doublog/**` 透明代理一律 403（指向 OpenAPI 入口，无兼容旧路径）
+- **一次计费**：OpenAPI 入口解析到目录 API 后复用 invoke 管道（api 级授权 / 四级限流 /
+  配额各一次，日志 mode=invoke 绑定实际 api_id）；内部项不存在透传内部 404 信封
+  （`success:false` 结构），内部 namespace 限流触发透传其 429 信封（RATE_LIMITED）
+- **入口通用性**：`/api/apihub/openapi/{system}/{api}` 对普通系统同样生效（仅 GET 型
+  API；如 `plain-echo` 可用 `openapi/plain-sys/echo` 调用），有路径模板变量时同样经
+  同名 query 参数传入——该格式是以后全部对外 OpenAPI 的默认格式
+- **管理字段**：系统/API 字典带派生 `builtin: boolean`；内置资源支持名称/启停/超时/重试/
+  API 内联凭据编辑，slug/Base URL/marker/method/path_tpl 固定，删除内置条目、在内置
+  系统新增未登记 API、普通资源占用保留 slug（`doublog` / 两个 API slug）均 400；
+  保留 slug 被普通数据占用时启动播种报资源冲突并回滚（不覆盖、不猜测归属）
 
 ### 14.2 管理端（Basic Auth，统一 {success,code,message,data} 包装）
 

@@ -2,10 +2,15 @@
 
 三契约：
 - router：/api/apihub/**（管理端 + gw 网关）
-- start_background：探活调度 daemon（TESTING 空转）
+- start_background：先幂等播种 DouBlog（本机）内置目录（local_catalog），
+  再启动探活调度 daemon（TESTING 空转但同样播种）
 - ensure_migrations：幂等迁移——2026-10-17 上游(upstream)→系统(system) 改名 +
   清理自注册残留与 OpenAPI 发布列；2026-10-17 密钥池→API 内联鉴权（auth_config
   明文 JSON 回填到每个 API，删 apihub_keys 表与系统 auth_config_enc 列）。
+
+播种顺序约束：所有 ensure_migrations 完成（init_db 内）→ start_background 内
+当前 app 的 database_context 中登记目录（见 local_catalog.seed_local_catalog）；
+历史迁移的老库清理（删除旧 doublog 自注册系统）先于播种执行，二者不互相覆盖。
 """
 
 from fastapi import APIRouter
@@ -13,7 +18,7 @@ from fastapi import APIRouter
 from app.apihub.routes import probe_api
 from app.apihub.routes import drain_background, stop_background
 from app.apihub.routes import router as _apihub_router
-from app.apihub.routes import start_apihub_loop as start_background
+from app.apihub.routes import start_apihub_loop
 
 router = APIRouter()
 router.include_router(_apihub_router)
@@ -24,6 +29,23 @@ __all__ = ['router', 'start_background', 'probe_api', 'start_apihub_loop']
 # 仅在旧列 group1 仍存在（= 老库首次迁移）时清理一次
 _SELFREG_SYSTEM_SLUG = 'doublog'
 _SELFREG_TOKEN_NAME = 'doublog-self'
+
+
+def start_background(app):
+    """apihub start hook：先幂等播种内置本机目录，再启动原探活调度线程。
+
+    - 调用方（main.start_background）已在 database_context(app) 中；播种使用当前
+      app 捕获的 db_runtime（多 app/切库互不串数据），冲突抛 LocalCatalogConflict
+      停止本实例初始化；
+    - 登记/补齐完成后如 app 已有 Store 则 reload；首次惰建快照自然看到目录；
+    - TESTING 模式同样播种（原调度器保持空转）；重复 start/lifespan 幂等。
+    """
+    from app.apihub.local_catalog import seed_local_catalog
+    seed_local_catalog(app.state.db_runtime)
+    state = getattr(app.state, 'apihub', None)
+    if state is not None:
+        state.reload()
+    return start_apihub_loop(app)
 
 
 def ensure_migrations(engine):

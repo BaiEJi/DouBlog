@@ -362,21 +362,35 @@ upstream（上游）整体改名 system（系统，手动创建，表 apihub_ups
 启动改名）；自注册系统内部 API（tools/apihub_register_self.py 及 doublog 上游/doublog-self
 令牌遗留数据）与 OpenAPI 发布（/openapi/** 路由、apihub_apis 的 group1/group2/pub_name/
 doc_md 列、X-Apihub-Token 内部令牌旁路）整体移除，存量库由 ensure_migrations 幂等清理，
-见 tests/test_apihub_migration.py）：models.py（apihub_* 七表，凭证 AES-256-GCM 密文落库，
-主密钥 `data/apihub.key` 自动生成）+ core.py（框架无关核心：加密/模板渲染/鉴权适配
-七式/内存限流器（令牌桶+固定窗口，多级 AND 短路）/key 选择器（加权轮询+连续失败
-冷却）/探活状态机）+ pool.py（标准库 http.client keepalive 连接池：每目标空闲池
-4.5s 过期、并发封顶 128、空闲连接被服务端关闭时换新连接重试一次、超时不重试）+
-state.py（每 app 一份运行态挂 `app.state.apihub`（持真实 app 引用；FastAPI 无代理
-概念）：配置内存快照（版本化，管理端改动 reload 全量生效）、限流桶、探活调度
-daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，配额计数随批落库，
+见 tests/test_apihub_migration.py）：models.py（apihub_* **六表**；鉴权 2026-10-17 起
+**明文内联在 API 的 auth_config JSON**——无密钥池/无运行时加密，CryptoBox 仅迁移回填旧库）
++ core.py（框架无关核心：模板渲染/鉴权适配八式（含 qq_bot 动态令牌）/内存限流器
+（令牌桶+固定窗口，多级 AND 短路）/探活状态机）+ pool.py（标准库 http.client keepalive
+连接池：每目标空闲池 4.5s 过期、并发封顶 128、空闲连接被服务端关闭时换新连接重试一次、
+超时不重试）+ state.py（每 app 一份运行态挂 `app.state.apihub`（持真实 app 引用；
+FastAPI 无代理概念）：配置内存快照（版本化，管理端改动 reload 全量生效）、限流桶、探活
+调度 daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，配额计数随批落库，
 写完显式 `db.session.remove()` 复刻请求级会话回收））+ routes.py（APIRouter
 `/api/apihub`：网关双入口（invoke `POST /gw/apis/{slug}` + 透明代理
 `ANY /gw/systems/{slug}/{path}`）+ 管理 CRUD + 探活/日志/统计；探活并发执行走 lizysdk
-池 `get_pool('apihub-probe', workers=10)`）。
+池 `get_pool('apihub-probe', workers=10)`）+ **local_catalog.py（2026-10-24：DouBlog（本机）
+内置目录——幂等播种 doublog 系统与两个 confcenter 只读 API，把内部接口作为对外 OpenAPI
+提供，契约见 api.md 14.1b 与 docs/openapi/apihub-doublog.yaml）**。
 
+- **播种与 hook 顺序**：init_db 内全部 `ensure_migrations` 完成 → `start_background(app)`
+  （main 在 `database_context(app)` 中调用）内**当前 app 捕获的 db_runtime** 上登记目录
+  （一事务建系统+两 API；marker 存系统 transport JSON，仅后端播种可写；重复 start 幂等，
+  只更新回环 base_url 与补缺失条目，不覆盖用户调整；TESTING 同样播种但调度器空转）；
+  多 app / 切库各自用捕获的 runtime，不串"最新全局 engine"；保留 slug（doublog 与两个
+  API slug）被普通资源占用 → LocalCatalogConflict 回滚并停止该实例初始化
+- **统一 OpenAPI 入口（默认对外格式）**：`GET /api/apihub/openapi/{system}/{api}`（api=
+  公开别名：slug 去系统前缀、`-` 等价 `_`；路径模板变量经同名 query 参数传入）按系统+
+  别名解析 API 后**复用同步 invoke 管道**（api 级授权/四级限流/配额/日志各一次，
+  mode=invoke），写方法与非 GET 型 API 403、别名/系统不存在 404；入口对普通系统同样
+  生效。内置本机系统经 `/gw/systems/doublog/**` 透明代理一律 403 指向 OpenAPI 入口
+  （旧原生 GET 路径已废除，无兼容）；普通系统的透明代理行为不变
 - **网关管道**：令牌鉴权（sk- SHA-256 查内存快照）→ 授权（有效期/scope/IP/健康）→
-  多级限流 → 配额预占-退还 → 选 key → 请求构建（模板渲染+凭证注入+剥离入站凭证）→
+  多级限流 → 配额预占-退还 → 请求构建（模板渲染+凭证注入+剥离入站凭证）→
   上游转发 → 响应（透传/信封 + 错误归一化双通道）→ 异步日志
 - **线程安全**：限流/选择器/健康状态机自带锁；连接池每目标锁+信号量；配置快照
   读为只读 dict（reload 整体替换）

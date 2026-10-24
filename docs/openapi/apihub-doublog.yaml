@@ -1,0 +1,251 @@
+openapi: 3.1.0
+info:
+  title: DouBlog 配置中心只读查询 OpenAPI（经 API Hub 统一入口）
+  summary: 将本实例配置中心的「全部 namespace 查询」与「namespace+key 单条查询」作为对外只读 API 提供。
+  description: |
+    两个只读端点由 API Hub 内置系统 `DouBlog（本机）`（slug=`doublog`）提供，走统一
+    OpenAPI 入口 `GET /api/apihub/openapi/{system}/{api}`（全系统默认对外格式）。
+    外层认证使用 API Hub 平台令牌（`Authorization: Bearer sk-...`，由管理员在
+    /apihub 页签发），内层访问本实例配置中心由网关注入默认用户身份，调用方
+    无需（也不应）携带任何内部凭据。
+
+    - 入口格式：api 段为公开别名（slug 去系统前缀、`-` 等价 `_`），
+      即 confcenter_namespaces 与 confcenter_get_key；
+    - 路径模板变量经同名 query 参数传入（confcenter_get_key 的 namespace/key）；
+      namespace/key 由字母数字与 `_ . : -` 组成（≤100/≤200），不接受独立
+      `.` / `..` 段、斜杠、编码斜杠、百分号、问号、片段符或换行，非法值返回
+      400 template_error；非 GET 方法 403；
+    - 成功响应透传内部统一信封 `{success, code, message, data}`，并附加
+      `X-Hub-Latency-Ms` 响应头；
+    - 网关侧错误体为 `{code, error, message}`（本文件 Responses 所列 error 标识）；
+      内部条目不存在时透传内部 404 信封（`success:false, code:404`，结构不同，
+      以 `success` 字段区分）；
+    - 两个端点同样兼容统一信封调用 `POST /api/apihub/gw/apis/{slug}`
+      （body {"path":{...}}），鉴权与限流/配额语义与 OpenAPI 入口完全一致；
+    - 限流/配额由网关四级规则与令牌属性控制，超限返回 429 及
+      `Retry-After` / `X-RateLimit-*` 响应头；配置中心 namespace 级限流触发时
+      透传其 429 信封（`data.error_code=RATE_LIMITED`）。
+  version: 1.1.0
+servers:
+  - url: /
+    description: 相对根（对外部署时以实际网关 origin 为准；开发实例为 http://127.0.0.1:20061）
+security:
+  - bearerAuth: []
+tags:
+  - name: confcenter-readonly
+    description: 配置中心只读查询（API Hub 内置 DouBlog 本机系统，统一 OpenAPI 入口）
+paths:
+  /api/apihub/openapi/doublog/confcenter_namespaces:
+    get:
+      tags: [confcenter-readonly]
+      operationId: listConfcenterNamespaces
+      summary: 查询全部 namespace（含空空间）
+      description: |-
+        返回本实例配置中心全部 namespace 及各空间条目数（空空间 count=0；无任何
+        空间时 data 为空数组）。等效统一信封调用
+        POST /api/apihub/gw/apis/doublog-confcenter-namespaces（空 JSON body）。
+      responses:
+        '200':
+          description: 成功；透传内部统一信封，data 为 namespace 数组
+          headers:
+            X-Hub-Latency-Ms:
+              schema: {type: string}
+              description: 网关侧总延迟（毫秒）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NamespacesEnvelope'
+              example:
+                success: true
+                code: 200
+                message: 操作成功
+                data:
+                  - {namespace: apihub_demo, count: 1}
+                  - {namespace: empty_demo, count: 0}
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+  /api/apihub/openapi/doublog/confcenter_get_key:
+    get:
+      tags: [confcenter-readonly]
+      operationId: getConfcenterKey
+      summary: 查询特定 key（namespace + key 唯一定位）
+      description: |-
+        读取单条配置；type=str 的 data 原样字符串（含空串与类似 JSON 的文本），
+        type=json 的 data 保留对象/数组/数字/布尔/null 形态，updated_at 为内部更新
+        时间。不隐式创建空间或键。等效统一信封调用
+        POST /api/apihub/gw/apis/doublog-confcenter-get-key，body 为
+        {"path":{"namespace":"...","key":"..."}}。
+      parameters:
+        - $ref: '#/components/parameters/Namespace'
+        - $ref: '#/components/parameters/Key'
+      responses:
+        '200':
+          description: 成功；透传内部统一信封，data 为单条配置
+          headers:
+            X-Hub-Latency-Ms:
+              schema: {type: string}
+              description: 网关侧总延迟（毫秒）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryEnvelope'
+              example:
+                success: true
+                code: 200
+                message: 操作成功
+                data:
+                  namespace: apihub_demo
+                  key: example
+                  type: json
+                  data: {enabled: true}
+                  updated_at: '2026-10-24T12:32:17.122543'
+        '400':
+          description: template_error——query 参数缺失/为空/超长/非法字符（不发起内部请求）
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GwError' }
+              example: {code: 400, error: template_error, message: 'namespace 含非法字符（仅允许字母数字 _ . : -）'}
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404':
+          description: API 别名/系统不存在（网关 404），或内部条目不存在——透传内部 404
+            信封（与网关 404 结构不同，以 success 字段区分）
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/GwError'
+                  - $ref: '#/components/schemas/InternalEnvelope'
+              examples:
+                gw404:
+                  value: {code: 404, error: not_found, message: "系统 'doublog' 下不存在 API 'nope'"}
+                internal404:
+                  value: {success: false, code: 404, message: 配置项不存在, data: null}
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '504': { $ref: '#/components/responses/Timeout' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: 'sk-...'
+      description: API Hub 平台令牌（管理员在 /apihub 页「平台令牌」签发，明文仅签发时
+        返回一次）；支持有效期 / API 白名单 / IP 白名单 / 计次配额。
+  parameters:
+    Namespace:
+      name: namespace
+      in: query
+      required: true
+      description: 配置空间名；1–100 个字符，仅 `[A-Za-z0-9_.:-]`，独立 `.` / `..` 段拒绝
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_.:-]+$'
+        minLength: 1
+        maxLength: 100
+      examples:
+        demo: {value: apihub_demo}
+    Key:
+      name: key
+      in: query
+      required: true
+      description: 配置键名；1–200 个字符，仅 `[A-Za-z0-9_.:-]`，独立 `.` / `..` 段拒绝
+      schema:
+        type: string
+        pattern: '^[A-Za-z0-9_.:-]+$'
+        minLength: 1
+        maxLength: 200
+      examples:
+        demo: {value: example}
+  responses:
+    Unauthorized:
+      description: 缺少/无效/过期/停用的平台令牌（Cookie 或内部 Basic 不能替代）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GwError' }
+    Forbidden:
+      description: 令牌无该 API 权限或客户端 IP 不在白名单；或非 GET 方法（OpenAPI 入口仅只读）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GwError' }
+    NotFound:
+      description: 系统 slug 或 API 公开别名不存在
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GwError' }
+    RateLimited:
+      description: 网关限流/配额超限（含 Retry-After 与 X-RateLimit-* 响应头）；或内部
+        namespace 限流触发的 429 信封透传（data.error_code=RATE_LIMITED）
+      headers:
+        Retry-After:
+          schema: {type: string}
+          description: 建议重试等待秒数（网关限流时返回）
+        X-RateLimit-Scope:
+          schema: {type: string}
+          description: 触发限流的层级（token_api|api|token|global）
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/GwError'
+              - $ref: '#/components/schemas/InternalEnvelope'
+    Unavailable:
+      description: API 停用 / 系统禁用 / 健康状态 down / 内层认证失败或连接失败（upstream_error）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GwError' }
+    Timeout:
+      description: 内部请求总期限超时（upstream_timeout）
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GwError' }
+  schemas:
+    GwError:
+      type: object
+      description: 网关自身错误体（非透传）
+      required: [code, error, message]
+      properties:
+        code: {type: integer}
+        error: {type: string}
+        message: {type: string}
+    InternalEnvelope:
+      type: object
+      description: 内部统一信封（成功与内部 404/429 均为该结构）
+      required: [success, code, message, data]
+      properties:
+        success: {type: boolean}
+        code: {type: integer}
+        message: {type: string}
+        data: {}
+    NamespacesEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/InternalEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                type: object
+                required: [namespace, count]
+                properties:
+                  namespace: {type: string}
+                  count: {type: integer}
+    EntryEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/InternalEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              required: [namespace, key, type, data, updated_at]
+              properties:
+                namespace: {type: string}
+                key: {type: string}
+                type: {type: string, enum: [str, json]}
+                data:
+                  description: str 原样字符串；json 保留对象/数组/数字/布尔/null
+                updated_at: {type: string}

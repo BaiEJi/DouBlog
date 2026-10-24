@@ -219,20 +219,26 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 
 ### ApiHubPage.jsx（apihub/，统一 API 调用平台 UI）
 
-单页 `/apihub`（门户卡片入口），六个内部 Tab：总览（24h 统计卡+健康徽标+一键探活）、
-系统（CRUD+密钥池弹窗，credential 脱敏展示；2026-10-17 重构前名「上游」）、API（**按
-所属系统分区块展示**：每个系统一个可折叠卡——组头=折叠箭头+系统名/slug+API 数徽章+
-`/gw/systems/{slug}/{path}` 透明代理前缀提示；≥8 条的系统默认折叠、手动状态存
-localStorage `doublog_apihub_system_fold`，工具条搜索框按 slug/名称/method/路径/系统
-过滤（命中系统保留整组，无命中组隐藏，搜索中强制展开）、全部展开/收起批量按钮；行操作
-调用/文档/探活/编辑/删除+行内启停开关——**调用弹窗参数齐全**：路径变量/query/header/body
+单页 `/apihub`（门户卡片入口），五个内部 Tab：总览（24h 统计卡+健康徽标+一键探活）、
+系统（列表 → **点击进入系统详情**；2026-10-17 重构分类收敛为 system → api 两维，API 不占
+侧栏一级入口；系统表格（名称/Slug、Base URL、API 数、状态、操作）+ CRUD；选中系统经 URL
+`?system=<slug>` 深链（对齐 confcenter ?namespace=），slug 失效自动回落列表）、平台令牌
+（签发弹窗明文仅显示一次+复制）、限流规则（四级 scope 彩色徽章+算法动态表单+实时余量
+进度条，<20% 变红）、调用日志（按 API 筛选，限流触发标紫并注明层级）。**系统详情页** =
+系统信息卡（名称/slug/状态/Base URL/超时重试/API 数 + `/gw/systems/{slug}/{path}` 透明
+代理前缀提示）+ 编辑系统 + 该系统自己的 API 表格（搜索 + CRUD + 单条探活/行内启停）。
+**内置本机系统**（`builtin` 徽标，如 doublog 配置中心只读目录，2026-10-24）：系统列表/
+详情显示徽标与「可停用」提示（外部原生 GET 入口见信息卡），slug/Base URL 输入框只读、
+隐藏删除按钮与「新建 API」入口，API 的 slug/method/路径模板只读、隐藏删除——结构保护
+由后端兜底 400，前端仅收敛入口；名称/启停/超时/重试与 API 内联鉴权凭据仍可编辑。
+API 行操作 调用/文档/探活/编辑——**调用弹窗参数齐全**：路径变量/query/header/body
 四桶输入框按 request_cfg 默认值自动预填（KeyValueFields 组件：可追加自定义键、清空即回落
 后端默认值），**文档弹窗**经 `GET /admin/apis/{id}/doc` 取 Markdown 用 shared/md.js 渲染
-（prose-content 样式，示例参数默认值全代入可直接复制））、平台令牌（签发弹窗明文仅显示一次+复制）、
-限流规则（四级+算法动态表单+实时余量进度条）、调用日志（按 API 筛选，限流触发标紫并
-注明层级）。配置类字段（auth_config/request_cfg/response_cfg/probe）用 JsonArea 组件
-（失焦校验标红不改值）。全页 select 用 selectCls（inputCls + `[color-scheme:light]
-dark:[color-scheme:dark]`，展开的原生选项列表跟随明暗）；弹窗暗色用实底深色卡
+（prose-content 样式，示例参数默认值全代入可直接复制；内置目录 API 文档另含外部原生
+GET 入口与变量必填说明）。API 表单（xwide 弹窗）为全控件化配置页（鉴权/请求/响应/探活
+分区 + 高级 JSON 逃生通道），鉴权配置即 providers + credential 凭证值内联的明文 JSON
+（无密钥池）。配置类字段（auth_config/request_cfg/response_cfg/probe）用 JsonArea 组件
+（失焦校验标红不改值，非法草稿阻止整个表单保存）。弹窗暗色用实底深色卡
 （dark:bg-[#1c1b1a]，与 subs/diary kit 一致）。
 api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-）是外部调用方的事，不在页面内。
 

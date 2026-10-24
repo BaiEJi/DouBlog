@@ -1,8 +1,8 @@
 # API Hub 模块文档（统一 API 网关，app/apihub/）
 
-> **生成日期：2026-10-17（system→api 两维重构 + 密钥池废除版）**。来源：`backend/app/apihub/**`、
+> **生成日期：2026-10-17（system→api 两维重构 + 密钥池废除版）；2026-10-24 增补内置本机目录**。来源：`backend/app/apihub/**`、
 > `backend/tests/test_apihub_*.py`、`frontend/src/apihub/**`（以当前代码为准）。
-> 接口契约的对外版本见 `api.md` 第 14 章；架构总览见 `backend.md` 10.51 节。
+> 接口契约的对外版本见 `api.md` 第 14 章（14.1b 内置目录对外契约）；架构总览见 `backend.md` 10.51 节。
 
 ## 1. 功能概述
 
@@ -114,6 +114,44 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 | 统计 | `GET /stats/overview`（24h 窗口：总调用/成功率 + per_api 明细（调用量/错误率/均延迟/健康）+ 三类资源计数 apis/systems/tokens） |
 
 所有写操作落库后 `get_state(app).reload()` 全量刷新内存快照，下一次网关调用即生效。
+
+### 3.3 DouBlog（本机）内置目录（2026-10-24，local_catalog.py）
+
+把本实例配置中心的两个只读查询作为**对外 OpenAPI** 提供（标准契约
+`docs/openapi/apihub-doublog.yaml`，OpenAPI 3.1；对外行为详见 api.md 14.1b）：
+
+| 项 | 值 |
+|---|---|
+| 系统 | `DouBlog（本机）`，slug=`doublog`，base_url=`http://127.0.0.1:{本进程 settings.port}`（回环，随端口维护），timeout 5000ms，max_retry=0 |
+| marker | 系统 `transport` JSON 的 `builtin: "doublog"` + `builtin_version: 1`（仅后端播种可写，管理端无法伪造/移除） |
+| API 1 | 查询所有 namespace，slug=`doublog-confcenter-namespaces`，GET `/api/confcenter/namespaces`，公开别名 `confcenter_namespaces` |
+| API 2 | 查询特定 key，slug=`doublog-confcenter-get-key`，GET `/api/confcenter/{path.namespace}/{path.key}`，公开别名 `confcenter_get_key` |
+| 统一 OpenAPI 入口 | `GET /api/apihub/openapi/{system}/{api}`（默认对外格式，全系统通用；api=公开别名，`-` 等价 `_`；路径模板变量经同名 query 参数传入） |
+| 内层鉴权 | Basic provider + 默认用户（初次播种取 `settings.auth_username/auth_password`，之后管理员在 API 表单维护内联凭据；账号变更需同步两条 credential） |
+| 其他配置 | `request_cfg=None`（两变量必填、无虚构生产默认值；文档示例用测试样例 apihub_demo/example）；`response_cfg={'envelope':'passthrough'}`；`probe={'path':'/health','interval_s':0}`（不定时，避免无路径参数自动探活误判） |
+
+- **初始化**：`start_background(app)` 先在当前 app 捕获的 db_runtime 上幂等登记（一事务
+  创建系统+两 API），再启动原探活调度；顺序为全部 `ensure_migrations` 完成 → 目录事务 →
+  原 hook；TESTING 同样播种（调度器空转）。重复 start/create_app/lifespan 幂等；已有内置
+  系统只更新回环 base_url 与补缺失条目，不覆盖用户调整的 status/enabled/名称/超时/重试/
+  auth_config/合法请求默认值。
+- **冲突**：保留 slug（`doublog` 与两个 API slug）被普通资源占用 → `LocalCatalogConflict`
+  回滚整事务（无部分目录）并停止本实例初始化；历史 `ensure_migrations` 的老库 doublog
+  自注册清理与播种互不覆盖（迁移先行）。
+- **统一 OpenAPI 入口**（routes `_gw_openapi_sync`，`/api/apihub/openapi/{system}/{api}`）：
+  按系统 slug + 公开别名（`match_api_by_alias`：slug 原文/归一化/去系统前缀/尾缀等价，
+  `-` 与 `_` 等价）解析 API，路径模板变量经同名 query 参数注入
+  （`build_path_vars_from_query`），随后**直接复用同步 invoke 管道**（api 级授权/四级限流/
+  配额/日志各一次，mode=invoke 绑定实际 api_id）。仅开放 GET 型 API（写方法 403、非 GET
+  API 403）；系统/别名不存在 404；入口对普通系统同样生效。**旧 `/gw/systems/doublog/**`
+  原生 GET 路径已废除（无兼容）**：内置系统经透明代理一律 403 指向 OpenAPI 入口。变量
+  白名单与 invoke/admin invoke 共用 `validate_local_path_vars`（namespace ≤100 / key ≤200，
+  `[A-Za-z0-9_.:-]`，拒绝独立 `.`/`..` 段、斜杠/编码斜杠/百分号/问号/换行/非字符串）。
+- **管理端**：系统/API 字典带派生 `builtin: boolean`；内置资源支持名称/启停/超时/重试/
+  API 鉴权凭据编辑，slug/base_url/marker/method/path_tpl 固定（改固定结构/删内置/新增
+  未登记 API/普通资源占用保留 slug 均 400）；transport 更新按合并保留 marker；无新表/列。
+- **回退**：管理员可直接停用两条 API 或整个内置系统（立即生效）；无 schema 迁移，普通
+  数据无需回写；清理内置目录必须显式匹配 marker 执行。
 
 ## 4. 后端要点
 
@@ -240,6 +278,20 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
   API/密钥/规则/日志）清理、正常数据原样保留、**auth_config 回填（providers + 第一把启用
   key 凭证解密合并）+ keys 表/ auth_config_enc/key_id 列删除**、幂等、新库零动作、
   X-Apihub-Token 旁路失效（伪造头 401）、/openapi 路由 404。
+- **test_apihub_local_catalog.py（D01–D04，2026-10-24）**：内置目录——空库播种与字段断言、
+  重复 start 幂等、重启保留用户调整且 origin 随端口更新、旧迁移后播种（老 doublog 清理→
+  新目录接管、普通数据保留）、保留 slug 冲突回滚（SQLite 与本机 pgserver 临时库）、
+  管理端结构保护全矩阵（伪造/清 marker/改固定结构/删内置/新增未登记 API 400 且库未变）、
+  多 app 数据目录隔离与快照不串用。
+- **test_apihub_local_openapi.py（A01–A09，2026-10-24）**：对外契约端到端——回环适配器
+  把内置系统指回真实 app 的 confcenter，外部 GET 穿完整「网关→HTTP→require_basic→
+  confcenter」链路。覆盖：namespaces 与内部直读逐字段一致/零空间空数组、十种 key 类型
+  保真与双空间同 key 隔离、未知项 404 内部信封透传、缺/空/超长/非法字符/编码绕过 400
+  （绝不 500）、未登记路径与写方法 403、入站凭据剥离、无/坏/过期/停用 sk 与 Cookie/Basic
+  401、API 白名单与 IP 白名单 403、默认用户 Basic 注入证明与错误内层密码 503 不泄漏、
+  API/系统停用 503、四级限流 429 头、配额一次计数与 400 退款、内部 namespace 限流 429
+  信封透传、连接失败 503/超时 504、日志 api_id 正确无双计数、管理调试调用与 Markdown
+  文档（原生 GET/必填/样例/无凭据）、OpenAPI YAML 与真实路由/参数/安全方案一致。
 
 ## 7. upstream → system 迁移（2026-10-17，`__init__.ensure_migrations` + `db.LEGACY_TABLE_MAP`）
 
