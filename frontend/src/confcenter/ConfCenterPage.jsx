@@ -1,14 +1,17 @@
 /**
- * 配置中心页 /confcenter：namespace → key → value 的 KV 存储 + 可选 Redis 缓存层
- * + namespace 维度限流（优先 Redis/lizysdk 滑动窗口，无 Redis 降级本地）。
+ * 配置中心页 /confcenter：公共侧栏两个同级视图（PageHeader tabs 注册）——
+ * · 配置管理（entries）：namespace → KV + Redis 缓存状态/配置；表头四数据列
+ *   key/类型/值预览/更新时间支持升降排序（SQL 端完整结果集排序，跨页稳定）
+ * · 限流配置（ratelimit）：独立主页面（RateLimitPage），不再用限流 Modal
  *
  * - 先创建独立 namespace；左侧选择空间，右侧只管理当前空间的 KV
- * - 新建/编辑 Modal：type 切换 str|json——str=多行文本原样；json=JSON 编辑器
- *   （CodeMirror 着色 + Worker 格式化/压缩 + 校验非法标红禁止保存）；值预览弹窗 json 同款着色
+ * - 新建/编辑 Modal：type 切换 str|json 共用同一个带行号的值编辑器
+ *   （CodeMirror；str 原样文本，json 着色 + Worker 格式化/压缩 + 校验非法禁存）；
+ *   值工具栏提供字号调整（默认 15px、12–24 整数、localStorage 持久化）；
+ *   反馈区固定占位（48px），格式化/校验状态变化不改变弹窗几何布局
  * - 删除两步确认（第一步入列就位，3.5s 自动撤销）；搜索框 q（防抖）；分页
  * - 顶部 Redis 缓存状态条（cache/status）+ 缓存配置 Modal（测试连接/保存/清空缓存）
- * - 限流状态条（ratelimit/status：Redis 滑动窗口/本地降级/未启用 + 放行/拒绝计数，
- *   可重置当前空间计数）+ 限流配置 Modal（默认额度 + 按 namespace 覆盖行，0=豁免）
+ * - URL：?view=entries|ratelimit&namespace=… 可深链/刷新；缺省/非法 view 回 entries
  * 接口全部走 ./api（apiFetch + unwrap）；个性色 cyan——只用于徽章、主按钮、选中态；其余中性 stone。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -16,10 +19,12 @@ import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
 import JsonEditor, { JsonHighlightedView } from './JsonEditor'
 import useJsonValue from './useJsonValue'
+import RateLimitPage from './RateLimitPage'
+import Select from './Select'
+import { FONT_DEFAULT, FONT_MIN, FONT_MAX, loadFontSize, saveFontSize, clampFontSize } from './editorPreferences'
 import {
   confNamespaces, confCreateNamespace, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
   confRenameEntry, confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
-  confRatelimitStatus, confRatelimitConfig, confRatelimitSave, confRatelimitReset,
 } from './api'
 
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
@@ -268,7 +273,7 @@ function CacheModal({ status, onClose, onSaved, say }) {
       </p>
 
       <label className="flex items-center gap-2 mt-4 text-base cursor-pointer select-none">
-        <input type="checkbox" className="accent-cyan-600 w-4 h-4" checked={cfg.enabled}
+        <input type="checkbox" className="accent-cyan-600 [color-scheme:light] dark:[color-scheme:dark] w-4 h-4" checked={cfg.enabled}
           onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
         <span className="text-stone-700 dark:text-stone-200">启用缓存</span>
       </label>
@@ -325,192 +330,7 @@ function CacheModal({ status, onClose, onSaved, say }) {
   )
 }
 
-// ─── 限流状态条 + 配置 ──────────────────────────────────────
-
-/**
- * namespace 维度限流条：mode 三态——绿=Redis 滑动窗口（lizysdk）/ 琥珀=本地限流
- * （Redis 不可用降级）/ 灰=未启用；附当前规则与放行/拒绝计数；启用时可重置
- * 当前选中空间的窗口计数。
- */
-function RateLimitBar({ rl: status, currentNs, onOpen, onReset, resetBusy }) {
-  let dot = 'bg-stone-400 dark:bg-stone-500'
-  let label = '未启用'
-  let note = ''
-  if (status?.mode === 'redis') { dot = 'bg-emerald-500'; label = '限流 · Redis 滑动窗口' }
-  else if (status?.mode === 'local') { dot = 'bg-amber-500'; label = '限流 · 本地窗口'; note = '（Redis 不可用，已降级）' }
-  else if (status == null) label = '限流状态加载中…'
-  return (
-    <div className={`${card} flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-2.5 text-sm`}>
-      <span className="flex items-center gap-2 shrink-0">
-        <span className={`w-2 h-2 rounded-full shrink-0 ${dot}`} />
-        <span className="font-medium text-stone-700 dark:text-stone-200">{label}<span className="font-normal text-stone-400 dark:text-stone-500">{note}</span></span>
-      </span>
-      {status?.enabled && (
-        <span className="text-stone-500 dark:text-stone-400 tabular-nums whitespace-nowrap">
-          {status.limit} 次 / {status.window_seconds}s
-          {Object.keys(status.overrides || {}).length > 0 && ` · ${Object.keys(status.overrides).length} 个覆盖`}
-        </span>
-      )}
-      {status?.enabled && (
-        <span className="text-stone-500 dark:text-stone-400 tabular-nums whitespace-nowrap">
-          放行 {status.allowed ?? 0} / 拒绝 {status.rejected ?? 0}
-        </span>
-      )}
-      {status?.enabled && currentNs && (
-        <button type="button" onClick={onReset} disabled={resetBusy}
-          className="px-3 h-7 rounded-lg text-sm font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">
-          {resetBusy ? '清零中…' : `重置 ${currentNs} 计数`}
-        </button>
-      )}
-      <button onClick={onOpen}
-        className="ml-auto px-3 h-7 rounded-lg text-sm font-medium shrink-0 text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
-        {status?.enabled ? '限流配置' : '去配置'}
-      </button>
-    </div>
-  )
-}
-
-/** 限流配置 Modal：默认额度 + 按 namespace 覆盖行（limit=0 表示豁免该空间） */
-function RateLimitModal({ namespaces, onClose, onSaved, say }) {
-  const [cfg, setCfg] = useState({ enabled: false, limit: 100, window_seconds: 60 })
-  const [rows, setRows] = useState([])      // 覆盖行编辑态 [{ns, limit, window}]
-  const [loaded, setLoaded] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState(null)
-
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      try {
-        const d = await confRatelimitConfig()
-        if (!alive || !d) return
-        setCfg({ enabled: !!d.enabled, limit: d.limit ?? 100, window_seconds: d.window_seconds ?? 60 })
-        setRows(Object.entries(d.overrides || {}).map(([ns, r]) =>
-          ({ ns, limit: r.limit, window: r.window_seconds })))
-      } catch {
-        // 回显失败不阻断表单，按默认值编辑
-      } finally {
-        if (alive) setLoaded(true)
-      }
-    })()
-    return () => { alive = false }
-  }, [])
-
-  const nsOk = ns => ns.length > 0 && ns.length <= 100 && NAME_RE.test(ns)
-  const numOk = (v, lo) => Number.isInteger(+v) && +v >= lo
-  const rowsValid = rows.every(r => nsOk(r.ns.trim()) && numOk(r.limit, 0) && numOk(r.window, 1)
-    && rows.filter(x => x.ns.trim() === r.ns.trim()).length === 1)
-  const canSave = !busy && loaded && numOk(cfg.limit, 1) && numOk(cfg.window_seconds, 1) && rowsValid
-
-  async function onSave() {
-    if (!canSave) return
-    setBusy(true); setMsg(null)
-    try {
-      const overrides = {}
-      for (const r of rows) overrides[r.ns.trim()] = { limit: +r.limit, window_seconds: +r.window }
-      await confRatelimitSave({
-        enabled: !!cfg.enabled, limit: +cfg.limit,
-        window_seconds: +cfg.window_seconds, overrides,
-      })
-      say('限流配置已保存')
-      onSaved()
-      onClose()
-    } catch (e) {
-      setMsg({ tone: 'err', text: e.message })
-    } finally { setBusy(false) }
-  }
-
-  const setRow = (i, patch) => setRows(rs => rs.map((r, j) => j === i ? { ...r, ...patch } : r))
-  const numField = 'w-24 h-8 px-2 rounded-lg text-sm tabular-nums bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 text-stone-800 dark:text-stone-100 outline-none focus:border-black/30 dark:focus:border-white/30'
-
-  return (
-    <Mask onClose={onClose}>
-      <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">namespace 限流配置</h3>
-      <p className="mt-0.5 text-sm text-stone-500 dark:text-stone-400">
-        按 namespace 计数限流单条 KV 读写（GET/PUT/DELETE）；优先 Redis 滑动窗口（lizysdk），
-        Redis 不可用时自动降级为本地窗口
-      </p>
-
-      <label className="flex items-center gap-2 mt-4 text-base cursor-pointer select-none">
-        <input type="checkbox" className="accent-cyan-600 w-4 h-4" checked={cfg.enabled}
-          onChange={e => setCfg({ ...cfg, enabled: e.target.checked })} />
-        <span className="text-stone-700 dark:text-stone-200">启用限流</span>
-      </label>
-
-      <div className="grid grid-cols-2 gap-3 mt-4">
-        <div>
-          <label className={`${LBL} block mb-1.5`}>默认额度（次/窗口）</label>
-          <input className={`${inputCls} w-full tabular-nums`} type="number" min="1" value={cfg.limit}
-            aria-invalid={!numOk(cfg.limit, 1)}
-            onChange={e => setCfg({ ...cfg, limit: +e.target.value })} />
-        </div>
-        <div>
-          <label className={`${LBL} block mb-1.5`}>窗口（秒）</label>
-          <input className={`${inputCls} w-full tabular-nums`} type="number" min="1" value={cfg.window_seconds}
-            aria-invalid={!numOk(cfg.window_seconds, 1)}
-            onChange={e => setCfg({ ...cfg, window_seconds: +e.target.value })} />
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <div className="flex items-center justify-between mb-1.5">
-          <label className={LBL}>按空间覆盖（limit=0 表示豁免不限流）</label>
-          <button type="button"
-            className="px-2 h-7 rounded-md text-[13px] font-medium text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/10 transition-colors"
-            onClick={() => setRows(rs => [...rs, { ns: '', limit: 10, window: 60 }])}>＋ 添加覆盖</button>
-        </div>
-        {rows.length === 0 && (
-          <p className="text-sm text-stone-400 dark:text-stone-500">没有覆盖行——所有空间使用默认额度。</p>
-        )}
-        {rows.length > 0 && (
-          <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.08] divide-y divide-black/[0.05] dark:divide-white/[0.06]">
-            {rows.map((r, i) => {
-              const dup = rows.filter(x => x.ns.trim() === r.ns.trim()).length > 1
-              const bad = loaded && (!nsOk(r.ns.trim()) || !numOk(r.limit, 0) || !numOk(r.window, 1) || dup)
-              return (
-                <div key={i} className="flex items-center gap-2 px-2.5 py-2">
-                  <input list="conf-rl-namespaces" value={r.ns} aria-invalid={bad}
-                    onChange={e => setRow(i, { ns: e.target.value })}
-                    placeholder="namespace"
-                    className={'flex-1 min-w-0 h-8 px-2 rounded-lg font-mono text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 ' +
-                      (bad ? '!border-red-400 dark:!border-red-500' : '')} />
-                  <input type="number" min="0" value={r.limit} aria-label="覆盖额度" className={numField}
-                    onChange={e => setRow(i, { limit: +e.target.value })} />
-                  <span className="text-sm text-stone-400 dark:text-stone-500 shrink-0">次 /</span>
-                  <input type="number" min="1" value={r.window} aria-label="覆盖窗口秒数" className={numField}
-                    onChange={e => setRow(i, { window: +e.target.value })} />
-                  <span className="text-sm text-stone-400 dark:text-stone-500 shrink-0">s</span>
-                  <button type="button" aria-label={`删除覆盖 ${r.ns || '(未命名)'}`}
-                    onClick={() => setRows(rs => rs.filter((_, j) => j !== i))}
-                    className="w-7 h-7 shrink-0 rounded-md text-stone-400 dark:text-stone-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors">×</button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-        <datalist id="conf-rl-namespaces">
-          {(namespaces || []).map(n => <option key={n.namespace} value={n.namespace} />)}
-        </datalist>
-      </div>
-
-      {msg && (
-        <div className={'mt-4 rounded-lg px-3 py-2 text-[15px] break-all ' +
-          (msg.tone === 'ok'
-            ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
-            : 'bg-red-500/10 text-red-600 dark:text-red-400')}>
-          {msg.text}
-        </div>
-      )}
-
-      <div className="flex justify-end gap-2.5 mt-5">
-        <button className={btn} onClick={onClose}>取消</button>
-        <button className={btnPri} disabled={!canSave} onClick={onSave}>
-          {busy ? '保存中…' : '保存'}
-        </button>
-      </div>
-    </Mask>
-  )
-}
+// ─── 限流：独立主视图 RateLimitPage.jsx（原状态条 + 配置 Modal 迁移）──
 
 function NamespaceModal({ onClose, onCreated }) {
   const [name, setName] = useState('')
@@ -553,7 +373,36 @@ function NamespaceModal({ onClose, onCreated }) {
 
 // ─── 新建 / 编辑 Modal ─────────────────────────────────────
 
-/** 新建/编辑 Modal：type 段选——str=多行原样；json=失焦校验非法标红禁存 */
+/** 字号工具：标签“字号”+ A−/A+ + 统一下拉（12–24）+ 恢复默认；边界禁用，键盘可访问 */
+function FontSizeControl({ fontSize, onChange }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span aria-hidden="true" className="text-[13px] text-stone-400 dark:text-stone-500">字号</span>
+      <button type="button" aria-label="减小字号" disabled={fontSize <= FONT_MIN}
+        onClick={() => onChange(fontSize - 1)}
+        className="w-6 h-6 rounded-md text-[13px] font-medium text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40">A−</button>
+      <Select size="sm" className="w-14 tabular-nums" value={fontSize}
+        ariaLabel="编辑器字号"
+        options={Array.from({ length: FONT_MAX - FONT_MIN + 1 }, (_, i) => FONT_MIN + i).map(px => ({ value: px, label: String(px) }))}
+        onChange={onChange} />
+      <button type="button" aria-label="增大字号" disabled={fontSize >= FONT_MAX}
+        onClick={() => onChange(fontSize + 1)}
+        className="w-6 h-6 rounded-md text-[13px] font-medium text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40">A+</button>
+      {fontSize !== FONT_DEFAULT && (
+        <button type="button" onClick={() => onChange(FONT_DEFAULT)}
+          className="px-1.5 h-6 rounded-md text-[13px] text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/10 transition-colors">恢复默认</button>
+      )}
+    </span>
+  )
+}
+
+/**
+ * 新建/编辑 Modal：type 段选切换 str|json——同一个带行号的值编辑器实例
+ * （CodeMirror，language=text|json），不以 type/字号重建（撤销栈/滚动保留）。
+ * str 原样存取不解析；json 校验非法标红禁存，Worker 格式化/压缩带会话防护：
+ * 类型切换/关闭/原稿变化后迟到结果不落地（abort + 代次双重校验）。
+ * 反馈区固定 48px 占位：忙碌/错误文案增删不改变居中弹窗几何布局。
+ */
 function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   const isEdit = init.mode === 'edit'
   const ns = isEdit ? init.entry.namespace : defaultNs
@@ -566,6 +415,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   const [revision, setRevision] = useState(init.entry?.updated_at)
   const [jsonErr, setJsonErr] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [fontSize, setFontSize] = useState(() => loadFontSize())
   // 编辑必须取得值与版本，读取失败不能变成一次无条件覆盖。
   const needsFetch = isEdit && (init.entry.data === undefined || !init.entry.updated_at)
   const [fetching, setFetching] = useState(needsFetch)
@@ -573,6 +423,16 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   const validation = useJsonValue(data, type === 'json')
   const latestData = useRef(data)
   useEffect(() => { latestData.current = data }, [data])
+  // 格式化代次 + 中止：类型切换/弹窗关闭后，在途 Worker 结果不得应用
+  const formatSession = useRef(0)
+  const formatAbort = useRef(null)
+  useEffect(() => () => { formatSession.current++; formatAbort.current?.abort() }, [])
+
+  function changeFontSize(next) {
+    const value = clampFontSize(next)
+    setFontSize(value)
+    saveFontSize(value)   // 存储被禁用时静默失败，本次会话仍生效
+  }
 
   useEffect(() => {
     if (!needsFetch) return
@@ -596,17 +456,40 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
     setJsonErr(validation.error)
   }
 
-  /** 格式化 / 压缩（devtoolbox JsonFormatTool 同款语义；非法时提示不改动） */
+  /** 切换类型：json→str 时作废在途格式化（迟到结果不能写进 str 文本） */
+  function switchType(t) {
+    if (t === type) return
+    if (type === 'json' && t === 'str') {
+      formatSession.current++
+      formatAbort.current?.abort()
+      setFormatting(false)
+    }
+    setType(t)
+    setJsonErr(null)
+  }
+
+  /** 格式化 / 压缩（devtoolbox JsonFormatTool 同款语义；非法时提示不改动）。
+   *  完成/失败仅在「代次 + 原稿 + 类型」都未变时应用——编辑器视口由
+   *  CodeEditor 的 keepViewportOnExternalChange 在整文替换前后保持。 */
   async function reformat(minify) {
     if (type !== 'json' || formatting) return
     const source = data
+    const session = ++formatSession.current
+    const controller = new AbortController()
+    formatAbort.current?.abort()
+    formatAbort.current = controller
     setFormatting(true)
     try {
-      const formatted = await validation.format(source, minify)
-      if (latestData.current === source) { setData(formatted); setJsonErr(null) }
+      const formatted = await validation.format(source, minify, controller.signal)
+      if (formatSession.current !== session || latestData.current !== source) return
+      setData(formatted)
+      setJsonErr(null)
     } catch (error) {
-      if (latestData.current === source) setJsonErr(error.message)
-    } finally { setFormatting(false) }
+      if (formatSession.current !== session || latestData.current !== source) return
+      if (!controller.signal.aborted) setJsonErr(error.message)
+    } finally {
+      if (formatSession.current === session) setFormatting(false)
+    }
   }
 
   const nsOk = ns.length <= 100 && NAME_RE.test(ns)
@@ -668,7 +551,7 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
         <div className="flex gap-1 p-1 rounded-xl w-fit bg-black/[0.05] dark:bg-white/[0.06]">
           {['str', 'json'].map(t => (
             <button key={t} type="button"
-              onClick={() => { setType(t); setJsonErr(null) }}
+              onClick={() => switchType(t)}
               className={'px-5 h-8 rounded-lg text-base font-mono font-medium transition-colors ' +
                 (type === t
                   ? 'bg-cyan-600 text-white'
@@ -683,34 +566,39 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
       </div>
 
       <div className="mt-4">
-        {/* h-6 固定标签行高：json 的格式化/压缩按钮出现/消失不引起弹窗高度跳变 */}
+        {/* h-6 固定标签行高：格式化/压缩按钮与字号工具的增删不引起弹窗高度跳变 */}
         <div className="flex h-6 items-center justify-between gap-3 mb-1.5">
           <label htmlFor="conf-entry-value" className={LBL}>值</label>
-          {type === 'json' && (
-            <span className="flex items-center gap-1.5">
-              <button type="button" disabled={formatting} onClick={() => reformat(false)}
-                className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">格式化</button>
-              <button type="button" disabled={formatting} onClick={() => reformat(true)}
-                className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">压缩</button>
-            </span>
-          )}
+          <span className="flex items-center gap-2.5">
+            {type === 'json' && (
+              <span className="flex items-center gap-1.5">
+                <button type="button" disabled={formatting} onClick={() => reformat(false)}
+                  className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-50">格式化</button>
+                <button type="button" disabled={formatting} onClick={() => reformat(true)}
+                  className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-50">压缩</button>
+              </span>
+            )}
+            <FontSizeControl fontSize={fontSize} onChange={changeFontSize} />
+          </span>
         </div>
-        {/* str 与 json 编辑器同高（16 行 × leading-6 + p-3，与 JsonEditor 度量一致），切换类型弹窗尺寸不变 */}
-        {type === 'json' ? (
-          <JsonEditor id="conf-entry-value" value={data} onChange={value => { setData(value); setJsonErr(null) }} onBlur={checkJson} onSave={onSave}
-            rows={16} invalid={!!visibleJsonErr} />
-        ) : (
-          <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} rows={16}
-            spellCheck={false}
-            className={'block w-full font-mono text-[15px] leading-6 p-3 resize-y rounded-lg border border-black/10 dark:border-white/10 ' +
-              'bg-white dark:bg-white/[0.04] text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none ' +
-              'focus:border-black/30 dark:focus:border-white/30 transition-colors ' +
-              (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
-        )}
-        {visibleJsonErr && (
-          <div className="mt-1 text-sm text-red-600 dark:text-red-400">{visibleJsonErr}——修正后再保存</div>
-        )}
-        {(validation.pending || formatting) && <div className="mt-1 text-sm text-stone-500">{formatting ? '正在格式化…' : '正在校验 JSON…'}</div>}
+        {/* str 与 json 共用同一个带行号的编辑器实例（408px 固定外框）；
+            切换类型只切 language，不重建编辑器（撤销栈/滚动保留），
+            弹窗尺寸与字号变化无关 */}
+        <JsonEditor id="conf-entry-value" value={data}
+          onChange={value => { setData(value); setJsonErr(null) }}
+          onBlur={checkJson} onSave={onSave}
+          language={type === 'json' ? 'json' : 'text'}
+          ariaLabel={type === 'json' ? 'JSON 值编辑器' : 'str 值编辑器'}
+          rows={16} fontSize={fontSize} invalid={!!visibleJsonErr} />
+        {/* 固定 48px 反馈区（aria-live）：忙碌/错误文案出现或消失不改变布局；
+            长错误内部滚动且可被辅助技术读到 */}
+        <div aria-live="polite" className="mt-1 h-12 overflow-y-auto text-sm">
+          {visibleJsonErr
+            ? <span role="alert" className="text-red-600 dark:text-red-400">{visibleJsonErr}——修正后再保存</span>
+            : (validation.pending || formatting)
+              ? <span className="text-stone-500 dark:text-stone-400">{formatting ? '正在格式化…' : '正在校验 JSON…'}</span>
+              : null}
+        </div>
       </div>
 
       <div className="flex justify-end gap-2.5 mt-5">
@@ -725,18 +613,54 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
 
 // ─── 页面 ──────────────────────────────────────────────────
 
+/** 可排序表头：button 触发（Enter/Space 原生可用）；活动列显示方向并置 th aria-sort；
+ *  非活动列显示极淡双向箭头暗示可排序。aria-label 提示**实际下一动作**：
+ *  非活动列点按从升序开始；活动列 asc→降序、desc→升序 */
+function SortHeader({ label, field, sortBy, sortOrder, onSort, thCls }) {
+  const active = sortBy === field
+  const nextAction = active ? (sortOrder === 'asc' ? '降序' : '升序') : '升序'
+  return (
+    <th scope="col" className={thCls}
+      aria-sort={active ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" onClick={() => onSort(field)}
+        aria-label={`${label}，按${label}${nextAction}排列`}
+        className={'inline-flex items-center gap-1 hover:text-stone-800 dark:hover:text-stone-100 transition-colors ' +
+          (active ? 'text-stone-800 dark:text-stone-100 font-medium' : '')}>
+        {label}
+        {active ? (
+          <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+            {sortOrder === 'asc'
+              ? <path d="M6 9V3m0 0L3 6m3-3 3 3" strokeLinecap="round" strokeLinejoin="round" />
+              : <path d="M6 3v6m0 0 3-3m-3 3L3 6" strokeLinecap="round" strokeLinejoin="round" />}
+          </svg>
+        ) : (
+          <svg className="w-3 h-3 opacity-25" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+            <path d="M6 2v8M3.5 4.5 6 2l2.5 2.5M3.5 7.5 6 10l2.5-2.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
+    </th>
+  )
+}
+
+const VIEW_TABS = [
+  { key: 'entries', label: '配置管理' },
+  { key: 'ratelimit', label: '限流配置' },
+]
+
 export default function ConfCenterPage() {
   const [params, setParams] = useSearchParams()
+  // 缺省/非法 view 回 entries；entries 为默认视图（URL 不带 view）
+  const view = params.get('view') === 'ratelimit' ? 'ratelimit' : 'entries'
   const requestedNs = params.get('namespace') || ''
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
+  const [sortBy, setSortBy] = useState('key')        // key|type|data|updated_at
+  const [sortOrder, setSortOrder] = useState('asc')  // asc|desc；namespace 切换保留排序
   const [namespaces, setNamespaces] = useState(null)
   const [nsError, setNsError] = useState('')
   const [cache, setCache] = useState(null)
-  const [rl, setRl] = useState(null)
-  const [rlResetBusy, setRlResetBusy] = useState(false)
-  const [rlOpen, setRlOpen] = useState(false)
   const [list, setList] = useState(null)
   const [listVersion, setListVersion] = useState(0)
   const [editing, setEditing] = useState(null)
@@ -749,7 +673,9 @@ export default function ConfCenterPage() {
   const namespaceRequest = useRef(0)
   const ns = namespaces?.some(n => n.namespace === requestedNs) ? requestedNs : (namespaces?.[0]?.namespace || '')
   const currentNamespace = namespaces?.find(n => n.namespace === ns)
-  const visibleList = list?.namespace === ns && list?.query === q && list?.requestedPage === page && list?.version === listVersion ? list : null
+  // 请求身份 = namespace + q + page + 排序 + listVersion：过时成功/错误都不覆盖新状态
+  const visibleList = list?.namespace === ns && list?.query === q && list?.requestedPage === page
+    && list?.version === listVersion && list?.sortBy === sortBy && list?.sortOrder === sortOrder ? list : null
 
   const say = useCallback((msg, kind) => {
     setToast({ msg, kind })
@@ -768,10 +694,6 @@ export default function ConfCenterPage() {
     try { setCache(await confCacheStatus()) }
     catch (e) { say(`缓存状态加载失败：${e.message}`, 'error') }
   }, [say])
-  const loadRl = useCallback(async () => {
-    try { setRl(await confRatelimitStatus()) }
-    catch { /* 限流状态加载失败不阻断页面，条内显示加载中 */ }
-  }, [])
   useEffect(() => {
     let alive = true
     const requestId = ++namespaceRequest.current
@@ -779,25 +701,35 @@ export default function ConfCenterPage() {
       .catch(e => { if (alive && requestId === namespaceRequest.current) setNsError(e.message) })
     confCacheStatus().then(status => { if (alive) setCache(status) })
       .catch(e => { if (alive) say(`缓存状态加载失败：${e.message}`, 'error') })
-    confRatelimitStatus().then(status => { if (alive) setRl(status) }).catch(() => {})
     return () => { alive = false }
   }, [say])
 
   useEffect(() => {
     if (!ns) return
     let alive = true
-    confEntries({ namespace: ns, q, page }).then(raw => {
+    confEntries({ namespace: ns, q, page, sortBy, sortOrder }).then(raw => {
       if (!alive) return
       const d = normEntries(raw)
       const pages = Math.max(1, Math.ceil(d.total / Math.max(1, d.page_size)))
       if (page > pages) { setPage(pages); return }
-      setList({ ...d, namespace: ns, query: q, requestedPage: page, version: listVersion, pages })
+      setList({ ...d, namespace: ns, query: q, requestedPage: page, version: listVersion, sortBy, sortOrder, pages })
     }).catch(e => {
-      if (alive) setList({ rows: [], total: 0, page, pages: 1, namespace: ns, query: q, requestedPage: page, version: listVersion, error: e.message })
+      if (alive) setList({ rows: [], total: 0, page, pages: 1, namespace: ns, query: q, requestedPage: page, version: listVersion, sortBy, sortOrder, error: e.message })
     })
     return () => { alive = false }
-  }, [ns, q, page, listVersion])
+  }, [ns, q, page, sortBy, sortOrder, listVersion])
   function refreshEntries() { setListVersion(v => v + 1) }
+  /** 点当前列切升/降；点其他列从升序开始；变更排序回第 1 页 */
+  function onSort(field) {
+    if (field === sortBy) {
+      if (sortOrder === 'asc') setSortOrder('desc')
+      else setSortOrder('asc')
+    } else {
+      setSortBy(field)
+      setSortOrder('asc')
+    }
+    setPage(1)
+  }
   useEffect(() => {
     const timer = setTimeout(() => { setQ(qInput.trim()); setPage(1) }, 300)
     return () => clearTimeout(timer)
@@ -811,6 +743,14 @@ export default function ConfCenterPage() {
   function selectNamespace(namespace) {
     setParams(p => { const next = new URLSearchParams(p); next.set('namespace', namespace); return next })
     setQInput(''); setQ(''); setPage(1); setEditing(null); disarmDel()
+  }
+  function switchView(key) {
+    setParams(p => {
+      const next = new URLSearchParams(p)
+      if (key === 'entries') next.delete('view')
+      else next.set('view', key)
+      return next
+    })
   }
   function onNamespaceCreated(created) {
     setNamespaces(prev => [...(prev || []).filter(n => n.namespace !== created.namespace), created].sort((a, b) => a.namespace.localeCompare(b.namespace)))
@@ -841,115 +781,115 @@ export default function ConfCenterPage() {
     } catch (e) { say(`删除失败：${e.message}`, 'error') }
   }
 
-  async function onRlReset() {
-    if (!ns || rlResetBusy) return
-    setRlResetBusy(true)
-    try {
-      await confRatelimitReset(ns)
-      say(`已清零 ${ns} 的限流计数`)
-      loadRl()
-    } catch (e) { say(`清零失败：${e.message}`, 'error') }
-    finally { setRlResetBusy(false) }
-  }
+  const thBase = 'py-2 font-normal'
 
   return (
     <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors [&_h1]:text-lg">
-      <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存 · 限流" />
-      <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
-      <div className="mt-2"><RateLimitBar rl={rl} currentNs={ns} onOpen={() => setRlOpen(true)}
-        onReset={onRlReset} resetBusy={rlResetBusy} /></div>
-      <div className="mt-4 flex items-start gap-4">
-        <aside aria-label="Namespaces" className={`${card} w-52 shrink-0 p-2 sticky top-8`}>
-          <div className="px-2 py-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400">Namespaces</h2>
-            <span className="text-[13px] tabular-nums text-stone-400 dark:text-stone-500">{namespaces?.length ?? '…'}</span>
-          </div>
-          <button type="button" className={`${btn} w-full mb-2`} onClick={() => setNamespaceOpen(true)}>＋ 新建 namespace</button>
-          <nav aria-label="namespace 列表" className="space-y-0.5 max-h-[calc(100vh-300px)] overflow-y-auto">
-            {namespaces == null && !nsError && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">加载中…</p>}
-            {nsError && <div className="px-2 py-3 text-sm text-red-600 dark:text-red-400"><p>空间加载失败</p><button type="button" onClick={loadNamespaces} className="mt-2 underline">重试</button></div>}
-            {namespaces?.length === 0 && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">还没有 namespace</p>}
-            {(namespaces || []).map(n => (
-              <button key={n.namespace} type="button" onClick={() => selectNamespace(n.namespace)} aria-pressed={ns === n.namespace}
-                className={'w-full flex items-center justify-between gap-2 px-2.5 h-9 rounded-lg text-base transition-colors ' +
-                  (ns === n.namespace ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-medium' : 'text-stone-600 dark:text-stone-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]')}>
-                <span className="min-w-0 truncate font-mono text-[15px]" title={n.namespace}>{n.namespace}</span>
-                <span className="text-sm text-stone-400 dark:text-stone-500 tabular-nums shrink-0">{n.count}</span>
-              </button>
-            ))}
-          </nav>
-        </aside>
-        <section aria-label={ns ? `空间 ${ns}` : '空间概览'} className="flex-1 min-w-0">
-          {!ns ? (
-            <div className={`${card} min-h-[360px] flex flex-col items-center justify-center gap-3 p-8 text-center`}>
-              <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" strokeLinejoin="round" /></svg>
-              </div>
-              <h2 className="text-lg font-semibold">{nsError ? '暂时无法加载空间' : namespaces == null ? '正在加载 namespace…' : '先创建一个 namespace'}</h2>
-              <p className="text-base text-stone-500 dark:text-stone-400">按应用或环境组织空间，在选中的空间内管理 KV。</p>
-              {namespaces != null && !nsError && <button type="button" className={btnPri} onClick={() => setNamespaceOpen(true)}>创建 namespace</button>}
+      <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存 · 限流"
+        tabs={VIEW_TABS} activeTab={view} onTabChange={switchView} />
+      {/* 两个视图都保持挂载：切换侧栏菜单保留未保存的限流草稿与列表状态 */}
+      <div hidden={view !== 'entries'}>
+        <CacheBar cache={cache} onOpen={() => setCacheOpen(true)} />
+        <div className="mt-4 flex items-start gap-4">
+          <aside aria-label="Namespaces" className={`${card} w-52 shrink-0 p-2 sticky top-8`}>
+            <div className="px-2 py-2 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400">Namespaces</h2>
+              <span className="text-[13px] tabular-nums text-stone-400 dark:text-stone-500">{namespaces?.length ?? '…'}</span>
             </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-3 mb-4 min-w-0">
-                <h2 className="font-mono text-xl font-semibold break-all">{ns}</h2>
-                <span className="shrink-0 text-sm text-stone-400 dark:text-stone-500">{currentNamespace?.count ?? 0} 条配置</span>
-              </div>
-              <div className="flex items-center gap-2 mb-3">
-                <input value={qInput} onChange={e => setQInput(e.target.value)} aria-label="搜索 key" placeholder="搜索当前空间的 key…" className={`${inputCls} w-60`} />
-                <button type="button" className={`${btnPri} ml-auto shrink-0`} onClick={() => setEditing({ mode: 'new' })}>＋ 新建 KV</button>
-              </div>
-              <div className={`${card} overflow-x-auto`}>
-                <table className="w-full min-w-[740px] table-fixed text-base">
-                  <colgroup>
-                    <col className="w-[20%]" /><col className="w-[76px]" /><col /><col className="w-[176px]" /><col className="w-[160px]" />
-                  </colgroup>
-                  <thead><tr className="text-left text-sm text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
-                    <th className="pl-4 pr-2 py-2 font-normal">key</th><th className="px-2 py-2 font-normal">类型</th><th className="px-2 py-2 font-normal">值预览</th><th className="px-2 py-2 font-normal">更新时间</th><th className="pl-2 pr-4 py-2 font-normal text-right">操作</th>
-                  </tr></thead>
-                  <tbody>
-                    {visibleList == null && <tr><td colSpan={5} className="py-12 text-center text-sm text-stone-400 dark:text-stone-500">加载中…</td></tr>}
-                    {visibleList?.error && <tr><td colSpan={5} className="py-12 text-center text-sm text-red-600 dark:text-red-400">加载失败：{visibleList.error}<button type="button" onClick={() => refreshEntries()} className="ml-3 underline">重试</button></td></tr>}
-                    {visibleList && !visibleList.error && !visibleList.rows.length && <tr><td colSpan={5} className="py-14 text-center">
-                      <p className="text-base text-stone-500 dark:text-stone-400">{q ? `没有匹配“${q}”的 key` : '这个空间还没有 KV'}</p>
-                      {!q && <button type="button" onClick={() => setEditing({ mode: 'new' })} className="mt-3 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:underline">添加第一条 KV</button>}
-                    </td></tr>}
-                    {visibleList?.rows.map(e => {
-                      const id = `${e.namespace}\u0000${e.key}`
-                      return <tr key={id} className="border-b border-black/[0.04] dark:border-white/[0.04] last:border-0 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] transition-colors">
-                        <td className="pl-4 pr-2 py-2.5 font-mono text-[15px] text-stone-800 dark:text-stone-100"><span className="block truncate" title={e.key}>{e.key}</span></td>
-                        <td className="px-2 py-2.5 whitespace-nowrap"><TypeBadge type={e.type} /></td>
-                        <td className="px-2 py-2.5"><ValuePreview entry={e} onEdit={() => setEditing({ mode: 'edit', entry: e })} /></td>
-                        <td className="px-2 py-2.5 whitespace-nowrap text-sm text-stone-500 dark:text-stone-400">{fmtTime(e.updated_at)}</td>
-                        <td className="pl-2 pr-4 py-2.5 text-right whitespace-nowrap">
-                          {delTarget === id ? <span className="inline-flex items-center gap-1.5">
-                            <button type="button" onClick={() => onDel(e.namespace, e.key, e.updated_at)} className="px-2 h-7 rounded-md text-sm bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认删除</button>
-                            <button type="button" onClick={disarmDel} className="px-2 h-7 rounded-md text-sm text-stone-400 dark:text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">取消</button>
-                          </span> : <span className="inline-flex items-center gap-1.5">
-                            <button type="button" onClick={() => setEditing({ mode: 'edit', entry: e })} className="px-2.5 h-7 rounded-md text-sm text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">编辑</button>
-                            <button type="button" onClick={() => armDel(id)} className="px-2.5 h-7 rounded-md text-sm text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors">删除</button>
-                          </span>}
-                        </td>
-                      </tr>
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              {visibleList && visibleList.pages > 1 && <div className="flex items-center justify-between mt-3 text-sm text-stone-500 dark:text-stone-400">
-                <span>共 {visibleList.total} 条</span><div className="flex items-center gap-2">
-                  <button type="button" disabled={visibleList.page <= 1} onClick={() => setPage(visibleList.page - 1)} className={btn}>‹ 上一页</button>
-                  <span className="tabular-nums">{visibleList.page} / {visibleList.pages}</span>
-                  <button type="button" disabled={visibleList.page >= visibleList.pages} onClick={() => setPage(visibleList.page + 1)} className={btn}>下一页 ›</button>
+            <button type="button" className={`${btn} w-full mb-2`} onClick={() => setNamespaceOpen(true)}>＋ 新建 namespace</button>
+            <nav aria-label="namespace 列表" className="space-y-0.5 max-h-[calc(100vh-300px)] overflow-y-auto">
+              {namespaces == null && !nsError && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">加载中…</p>}
+              {nsError && <div className="px-2 py-3 text-sm text-red-600 dark:text-red-400"><p>空间加载失败</p><button type="button" onClick={loadNamespaces} className="mt-2 underline">重试</button></div>}
+              {namespaces?.length === 0 && <p className="px-2 py-3 text-sm text-stone-400 dark:text-stone-500">还没有 namespace</p>}
+              {(namespaces || []).map(n => (
+                <button key={n.namespace} type="button" onClick={() => selectNamespace(n.namespace)} aria-pressed={ns === n.namespace}
+                  className={'w-full flex items-center justify-between gap-2 px-2.5 h-9 rounded-lg text-base transition-colors ' +
+                    (ns === n.namespace ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-medium' : 'text-stone-600 dark:text-stone-300 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]')}>
+                  <span className="min-w-0 truncate font-mono text-[15px]" title={n.namespace}>{n.namespace}</span>
+                  <span className="text-sm text-stone-400 dark:text-stone-500 tabular-nums shrink-0">{n.count}</span>
+                </button>
+              ))}
+            </nav>
+          </aside>
+          <section aria-label={ns ? `空间 ${ns}` : '空间概览'} className="flex-1 min-w-0">
+            {!ns ? (
+              <div className={`${card} min-h-[360px] flex flex-col items-center justify-center gap-3 p-8 text-center`}>
+                <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 flex items-center justify-center">
+                  <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3Z" strokeLinejoin="round" /></svg>
                 </div>
-              </div>}
-            </>
-          )}
-        </section>
+                <h2 className="text-lg font-semibold">{nsError ? '暂时无法加载空间' : namespaces == null ? '正在加载 namespace…' : '先创建一个 namespace'}</h2>
+                <p className="text-base text-stone-500 dark:text-stone-400">按应用或环境组织空间，在选中的空间内管理 KV。</p>
+                {namespaces != null && !nsError && <button type="button" className={btnPri} onClick={() => setNamespaceOpen(true)}>创建 namespace</button>}
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4 min-w-0">
+                  <h2 className="font-mono text-xl font-semibold break-all">{ns}</h2>
+                  <span className="shrink-0 text-sm text-stone-400 dark:text-stone-500">{currentNamespace?.count ?? 0} 条配置</span>
+                </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <input value={qInput} onChange={e => setQInput(e.target.value)} aria-label="搜索 key" placeholder="搜索当前空间的 key…" className={`${inputCls} w-60`} />
+                  <button type="button" className={`${btnPri} ml-auto shrink-0`} onClick={() => setEditing({ mode: 'new' })}>＋ 新建 KV</button>
+                </div>
+                <div className={`${card} overflow-x-auto`}>
+                  <table className="w-full min-w-[740px] table-fixed text-base">
+                    <colgroup>
+                      <col className="w-[20%]" /><col className="w-[76px]" /><col /><col className="w-[176px]" /><col className="w-[160px]" />
+                    </colgroup>
+                    <thead><tr className="text-left text-sm text-stone-500 dark:text-stone-400 border-b border-black/[0.06] dark:border-white/[0.06]">
+                      <SortHeader label="key" field="key" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} thCls={`${thBase} pl-4 pr-2`} />
+                      <SortHeader label="类型" field="type" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} thCls={`${thBase} px-2`} />
+                      <SortHeader label="值预览" field="data" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} thCls={`${thBase} px-2`} />
+                      <SortHeader label="更新时间" field="updated_at" sortBy={sortBy} sortOrder={sortOrder} onSort={onSort} thCls={`${thBase} px-2`} />
+                      {/* 操作列没有业务数据，不参与排序 */}
+                      <th scope="col" className={`${thBase} pl-2 pr-4 text-right`}>操作</th>
+                    </tr></thead>
+                    <tbody>
+                      {visibleList == null && <tr><td colSpan={5} className="py-12 text-center text-sm text-stone-400 dark:text-stone-500">加载中…</td></tr>}
+                      {visibleList?.error && <tr><td colSpan={5} className="py-12 text-center text-sm text-red-600 dark:text-red-400">加载失败：{visibleList.error}<button type="button" onClick={() => refreshEntries()} className="ml-3 underline">重试</button></td></tr>}
+                      {visibleList && !visibleList.error && !visibleList.rows.length && <tr><td colSpan={5} className="py-14 text-center">
+                        <p className="text-base text-stone-500 dark:text-stone-400">{q ? `没有匹配“${q}”的 key` : '这个空间还没有 KV'}</p>
+                        {!q && <button type="button" onClick={() => setEditing({ mode: 'new' })} className="mt-3 text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:underline">添加第一条 KV</button>}
+                      </td></tr>}
+                      {visibleList?.rows.map(e => {
+                        const id = `${e.namespace}\u0000${e.key}`
+                        return <tr key={id} className="border-b border-black/[0.04] dark:border-white/[0.04] last:border-0 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] transition-colors">
+                          <td className="pl-4 pr-2 py-2.5 font-mono text-[15px] text-stone-800 dark:text-stone-100"><span className="block truncate" title={e.key}>{e.key}</span></td>
+                          <td className="px-2 py-2.5 whitespace-nowrap"><TypeBadge type={e.type} /></td>
+                          <td className="px-2 py-2.5"><ValuePreview entry={e} onEdit={() => setEditing({ mode: 'edit', entry: e })} /></td>
+                          <td className="px-2 py-2.5 whitespace-nowrap text-sm text-stone-500 dark:text-stone-400">{fmtTime(e.updated_at)}</td>
+                          <td className="pl-2 pr-4 py-2.5 text-right whitespace-nowrap">
+                            {delTarget === id ? <span className="inline-flex items-center gap-1.5">
+                              <button type="button" onClick={() => onDel(e.namespace, e.key, e.updated_at)} className="px-2 h-7 rounded-md text-sm bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认删除</button>
+                              <button type="button" onClick={disarmDel} className="px-2 h-7 rounded-md text-sm text-stone-400 dark:text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">取消</button>
+                            </span> : <span className="inline-flex items-center gap-1.5">
+                              <button type="button" onClick={() => setEditing({ mode: 'edit', entry: e })} className="px-2.5 h-7 rounded-md text-sm text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">编辑</button>
+                              <button type="button" onClick={() => armDel(id)} className="px-2.5 h-7 rounded-md text-sm text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors">删除</button>
+                            </span>}
+                          </td>
+                        </tr>
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {visibleList && visibleList.pages > 1 && <div className="flex items-center justify-between mt-3 text-sm text-stone-500 dark:text-stone-400">
+                  <span>共 {visibleList.total} 条</span><div className="flex items-center gap-2">
+                    <button type="button" disabled={visibleList.page <= 1} onClick={() => setPage(visibleList.page - 1)} className={btn}>‹ 上一页</button>
+                    <span className="tabular-nums">{visibleList.page} / {visibleList.pages}</span>
+                    <button type="button" disabled={visibleList.page >= visibleList.pages} onClick={() => setPage(visibleList.page + 1)} className={btn}>下一页 ›</button>
+                  </div>
+                </div>}
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+      <div hidden={view !== 'ratelimit'}>
+        <RateLimitPage namespaces={namespaces} say={say} />
       </div>
       {namespaceOpen && <NamespaceModal onClose={() => setNamespaceOpen(false)} onCreated={onNamespaceCreated} />}
       {editing && ns && <EntryModal init={editing} defaultNs={ns} onClose={() => setEditing(null)} onSaved={onEntrySaved} say={say} />}
       {cacheOpen && <CacheModal status={cache} onClose={() => setCacheOpen(false)} onSaved={loadCache} say={say} />}
-      {rlOpen && <RateLimitModal namespaces={namespaces} onClose={() => setRlOpen(false)} onSaved={loadRl} say={say} />}
       <Toast t={toast} />
     </div>
   )

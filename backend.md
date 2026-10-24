@@ -127,6 +127,7 @@ backend/
 - 知识库幂等迁移（`app/blog/services/migrations.py::ensure_migrations`）：blog_posts 缺 `workspace_id`/`last_viewed_at` 列补列建索引；无知识库时建"默认知识库"并拷贝虚拟根 `children_order`；NULL 归属全部回填默认库
 
 - 配置中心幂等回填（`app/confcenter/migrations.py::ensure_migrations`）：`create_all` 建立 `confcenter_namespaces` 后，从已有 `confcenter_entries` 登记所有缺失 namespace；不改动原 KV，独立空空间在重启后仍保留。
+- 配置中心 entries 白名单排序（2026-10-24，`app/confcenter/routes.py`）：`sort_by`（key/type/data/updated_at 固定映射 SQLAlchemy 列对象，不拼 SQL）+ `sort_order`（asc/desc）可选参数；未传保留旧 `namespace ASC, key ASC` 顺序与响应结构；排序在 SQL 端 offset/limit 之前（覆盖过滤后完整结果集），同值以 namespace ASC/key ASC 稳定兜底，updated_at 双向 NULLS LAST（SQLAlchemy `nulls_last`），PG 文本列显式 `COLLATE "C"`、SQLite BINARY；无 schema 迁移/新索引。专项测试 `tests/confcenter/test_sorting.py`（SQLite 12 例）与 `test_sorting_pg.py`（pgserver 真实临时 PostgreSQL 1 例——证明排序 SQL 不依赖 SQLite 方言）。
 
 ### 3.4 初始化与双后端（`db.py`）
 

@@ -22,5 +22,7 @@ export default function useJsonValue(value, enabled) {
   const pending = large && state.source !== value
   const error = large ? pending ? null : state.error : smallError
   return { valid: !enabled || (!pending && !error), error, pending,
-    format: (text, minify) => tasks.run('format', { text, minify }, { timeoutMs: 5000 }) }
+    // 可选 signal：调用方在类型切换/关闭弹窗时中止在途格式化，迟到结果不落地
+    format: (text, minify, signal) =>
+      tasks.run('format', { text, minify }, { signal, timeoutMs: 5000 }) }
 }

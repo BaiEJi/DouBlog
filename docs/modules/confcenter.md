@@ -1,6 +1,6 @@
 # 配置中心模块（confcenter）
 
-> 表：confcenter_namespaces / confcenter_entries　前缀：/api/confcenter　前端：/confcenter（门户卡，cyan）　更新：2026-10-17
+> 表：confcenter_namespaces / confcenter_entries　前缀：/api/confcenter　前端：/confcenter（门户卡，cyan）　更新：2026-10-24
 > 规范：docs/confcenter-spec.md
 
 ## 1. 功能概述
@@ -22,7 +22,7 @@
 
 ## 4. API（全部 require_basic，信封）
 
-`GET /namespaces`（含空空间，计数为 0）；`POST /namespaces`（JSON `{namespace}`：201 创建，409 重名，400 非法名称）；`GET /entries?namespace=&q=&page=&page_size=`；`GET|PUT|DELETE /{namespace}/{key}`（**三条单条路由受 namespace 限流约束，超限 429**）；`PUT /rename`（{namespace, old_key, new_key}：同空间重命名，单事务拷贝行（保留 type/data/updated_at）后删旧行，缓存双失效，计入限流；旧 404/新 409）；缓存管理：`GET /cache/status`、`GET|PUT /cache/config`（data/redis_config.json，密码留空沿用）、`POST /cache/test`（可带候选配置试连）、`POST /cache/flush`（`confcenter:*` 前缀 SCAN+DEL）；限流管理：`GET /ratelimit/status`、`GET|PUT /ratelimit/config`（data/ratelimit_config.json）、`POST /ratelimit/reset`（清零某空间窗口计数）。
+`GET /namespaces`（含空空间，计数为 0）；`POST /namespaces`（JSON `{namespace}`：201 创建，409 重名，400 非法名称）；`GET /entries?namespace=&q=&page=&page_size=&sort_by=&sort_order=`——**四数据列排序（2026-10-24）**：sort_by=key（默认）/type/data/updated_at（白名单映射固定 SQLAlchemy 列），sort_order=asc（默认）/desc；未传参数保留旧 `namespace ASC, key ASC` 顺序与响应结构；排序在 SQL 端 offset/limit 之前（覆盖过滤后完整结果集）；同值以 namespace ASC、key ASC 稳定兜底；updated_at 双向 NULLS LAST；文本按存储文本字典序（SQLite BINARY / PG COLLATE "C"）；非法/空值 400；浏览排序不计限流。`GET|PUT|DELETE /{namespace}/{key}`（**三条单条路由受 namespace 限流约束，超限 429**）；`PUT /rename`（{namespace, old_key, new_key}：同空间重命名，单事务拷贝行（保留 type/data/updated_at）后删旧行，缓存双失效，计入限流；旧 404/新 409）；缓存管理：`GET /cache/status`、`GET|PUT /cache/config`（data/redis_config.json，密码留空沿用）、`POST /cache/test`（可带候选配置试连）、`POST /cache/flush`（`confcenter:*` 前缀 SCAN+DEL）；限流管理：`GET /ratelimit/status`、`GET|PUT /ratelimit/config`（data/ratelimit_config.json）、`POST /ratelimit/reset`（清零某空间窗口计数）。
 **路由陷阱**：字面量路由（/namespaces /entries /cache/* /ratelimit/*）必须先于 `/{namespace}/{key}` 注册。
 
 ## 5. Redis 缓存层（cache.py）
@@ -44,13 +44,17 @@
 
 ## 7. 前端（frontend/src/confcenter/）
 
-先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧只展示该空间的 KV 表（类型徽章/等高单行值预览；长值省略，换行以 ↵ 标识，空字符串显式标注，**整格可点击**（after 伪元素热区撑满单元格），点击弹窗查看完整值及格式化 JSON，并可进入编辑；JSON 字符串标量在预览和编辑时保留引号）；新建/编辑 Modal（**编辑时 key 可改**——保存时单请求原子重命名并更新值，携带 if_updated_at 防旧编辑覆盖；**加宽档 max-w-4xl**（Mask xwide，比值预览的 max-w-2xl 再宽一档），str 与 json 编辑器同高（16 行 × leading-6 + p-3 同度量，切换类型弹窗尺寸不变），namespace 固定为当前空间，只填写 key/value；type 段选；str 多行原样；**json=JSON 编辑器**——`JsonEditor.jsx` 复用公共 CodeMirror 6 适配器（虚拟文档视图、明暗主题与撤销），Tab 两空格缩进、格式化/压缩按钮、失焦校验非法标红禁存且错误带行列定位（`jsonTools.js`，devtoolbox 同款 V8 position 约定））；值预览弹窗 json 类型同款着色（`JsonHighlightedView`，折行只读）；删除两步确认；搜索仅在当前空间内防抖查询，切换空间重置搜索和分页，过期请求不覆盖新空间；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）；**限流状态条**（绿=Redis 滑动窗口/琥珀=本地降级/灰=未启用 + 当前规则与放行/拒绝计数 + 重置当前空间计数）+ 限流配置 Modal（默认额度/窗口 + 按空间覆盖行编辑，limit=0 豁免，namespace 输入带已有空间 datalist）。
+公共侧栏两个同级视图（PageHeader tabs 注册，2026-10-24）：**配置管理**（默认）+ **限流配置**（`?view=ratelimit&namespace=…` 深链/刷新，缺省/非法回 entries）；两视图保持挂载（hidden 切换），限流草稿与列表状态跨菜单保留。
 
-配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值预览保持单行。表格类型、时间和操作列同步加宽；删除确认展示“确认删除 / 取消”两步按钮。
+配置管理视图：先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧 KV 表的四个数据列（key/类型/值预览/更新时间）表头可排序（button + aria-sort + 方向箭头；点当前列切升/降、其他列从升序、变更回第 1 页；服务端全量排序后分页；namespace 切换保留排序，保存/删除刷新保留排序）；值预览单行省略（↵ 标识换行、空字符串标注、整格点击查看完整值并可进入编辑）；新建/编辑 Modal（编辑时 key 可改 → 单请求原子重命名+更新值，if_updated_at 防旧覆盖；max-w-4xl）：**str/json 共用同一个带行号的 CodeMirror 值编辑器实例**（`JsonEditor.jsx` 适配公共 CodeEditor：行号 gutter、虚拟长文档、明暗主题、撤销；切换 type/字号不重建实例）；str 原样存取不解析；json 着色 + Worker 格式化/压缩（>64KiB 防抖进 Worker、迟到结果代次校验不落地）+ 失焦校验非法标红禁存（行列定位）；值工具栏**字号调整**：默认 15px、整数 12–24、A−/A+/统一下拉/恢复默认，正文与行号同步，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（缺失/越界/损坏/存储禁用回退 15，仅本次会话）；状态/错误反馈区固定 48px 占位（aria-live）——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）；模块统一下拉 `Select.jsx`（apihub 同款 button+菜单，选中 cyan 高亮，明暗一致）替代原生 select（字号/重置目标）。删除两步确认；搜索当前空间防抖（切换空间重置搜索分页，请求身份含排序+版本，旧结果不覆盖）；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）。
 
-## 8. 测试（tests/confcenter/，原 76 例 + 可靠性 8 例）
+限流配置视图（`RateLimitPage.jsx`，自原状态条+Modal 迁移）：状态卡（三态 mode + 规则/放行/拒绝/tracked 计数 + 主动刷新；status GET 失败显示错误+重试）；配置表单（启用开关 + 覆盖行编辑（**namespace 用统一下拉选择已有空间**（2026-10-24 用户指令，替代文本输入）；**默认额度/窗口不在页面编辑**（2026-10-24 用户指令）——保存 payload 省略两字段、后端部分缺省沿用已存默认值，状态卡只读展示当前默认规则；limit=0 豁免、重复/未选禁存）；**配置 GET 失败禁存+重试**（不放开默认值提交）；保存提交→回读完成期间禁用表单防草稿被回读覆盖，PUT 失败与"已保存但回读失败"区分提示且草稿均保留，手动回读带编辑代次围栏（在途编辑只更新已保存快照不动草稿），"恢复已保存值"）。**重置计数卡已按用户要求移除（2026-10-24）**——`POST /ratelimit/reset` API 保留（api.js 的 confRatelimitReset 可供需要时复用）。覆盖行构造走 `overrides.js` 纯函数：`__proto__`/`constructor` 等合法 namespace 经 `Object.defineProperty` 成为自有可枚举键（普通赋值会触发原型 setter 静默丢失覆盖），JSON 往返与后端回读一致。
 
-namespace 创建/重名/校验/重启保留/最后 KV 删除/空间隔离/历史迁移幂等（7）+ CRUD/type 变更/非法校验/浏览/鉴权 + 重命名 7 例（迁移保值保时间戳/404/409 冲突不动原值/同名 no-op/参数校验/缓存双失效/计入限流）（30）+ 缓存五路径（命中/回填/写失效/未启用/连接异常降级）与管理端点（16）+ **限流 23**：默认不限流、三路由均受限、本地 429 信封/空间隔离/窗口到期（_monotonic 接缝）/覆盖行更严与豁免、Redis 滑动窗口（confcenter_rl 前缀、被拒占名额、status tracked）、缓存 flush 不误伤限流键、EVAL 抛错即时降级本地、配置回显/部分缺省/非法 400、reset 双路径、鉴权。FakeRedis 扩展 EVAL/ZRANGE/ZCARD（按脚本内容识别 lizysdk 两段 Lua 以内存 ZSET 语义等价执行，TTL 忽略）。
+配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值编辑器用户偏好字号默认 15px（12–24，浏览器持久化，2026-10-24）。值预览保持单行。表格类型、时间和操作列同步加宽；删除确认展示“确认删除 / 取消”两步按钮。
+
+## 8. 测试（tests/confcenter/，原 76 例 + 可靠性 8 例 + 排序 13 例，2026-10-24）
+
+namespace 创建/重名/校验/重启保留/最后 KV 删除/空间隔离/历史迁移幂等（7）+ CRUD/type 变更/非法校验/浏览/鉴权 + 重命名 7 例（迁移保值保时间戳/404/409 冲突不动原值/同名 no-op/参数校验/缓存双失效/计入限流）（30）+ 缓存五路径（命中/回填/写失效/未启用/连接异常降级）与管理端点（16）+ **限流 23**：默认不限流、三路由均受限、本地 429 信封/空间隔离/窗口到期（_monotonic 接缝）/覆盖行更严与豁免、Redis 滑动窗口（confcenter_rl 前缀、被拒占名额、status tracked）、缓存 flush 不误伤限流键、EVAL 抛错即时降级本地、配置回显/部分缺省/非法 400、reset 双路径、鉴权。FakeRedis 扩展 EVAL/ZRANGE/ZCARD（按脚本内容识别 lizysdk 两段 Lua 以内存 ZSET 语义等价执行，TTL 忽略）。**排序（2026-10-24）**：`test_sorting.py` 12 例（四列×双向/未传兼容/单参缺省/非法与注入 400/401/105 项跨页兜底/同 key 双空间/q 转义/文本形态字典序/NULL 最后）+ `test_sorting_pg.py` 1 例真实临时 PostgreSQL（pgserver，四列双向/COLLATE "C"/NULLS LAST/分页无重漏）。前端：`tests/confcenter-json-worker.test.js`（既有）+ `tests/confcenter-editor-preferences.test.js`（字号偏好默认/越界/垃圾值/读写异常/存储禁用/clamp）+ `tests/confcenter-sort-request.test.js`（排序参数序列化/请求身份/400 信封）+ `tests/confcenter-overrides.test.js`（`__proto__`/`constructor` 覆盖自有键往返/原型不污染/空串跳过）——`node --test` 运行（45 例）。浏览器验收：ZCode 内置 browser-use（独立 context、写前断言 SQLite 隔离），14 张截图经 image 子代理审查并落盘报告（明暗两态列表排序/str 行号+字号/json 格式化与非法/限流页默认/覆盖/加载失败/**降级态明暗两态**——生产 chunk 404 真实注入）。
 
 ## 公共 UI 外壳（2026-10-13）
 

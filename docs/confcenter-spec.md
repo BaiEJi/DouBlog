@@ -38,7 +38,7 @@ class ConfEntry(Base):
 ```
 GET    /api/confcenter/namespaces                 # 含空空间的 namespace 列表 + 每个 ns 的条目数
 POST   /api/confcenter/namespaces                 # JSON {namespace}；201 新建 / 409 重名 / 400 非法名称
-GET    /api/confcenter/entries?namespace=&q=&page=&page_size=   # 浏览（q 模糊匹配 key；省略 namespace=全部）
+GET    /api/confcenter/entries?namespace=&q=&page=&page_size=&sort_by=&sort_order=   # 浏览（q 模糊匹配 key；省略 namespace=全部；可选排序见下）
 GET    /api/confcenter/{namespace}/{key}          # 读单条：data 按解析后返回（str→字符串，json→结构）
 PUT    /api/confcenter/{namespace}/{key}          # upsert {type:'str'|'json', data}（201 新建 / 200 覆盖；json 非法 400）
 DELETE /api/confcenter/{namespace}/{key}          # 200；不存在 404
@@ -58,6 +58,8 @@ POST   /api/confcenter/ratelimit/reset             # {namespace} → 清零该�
 ```
 
 key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT body 校验：type 只能 str/json；type=json 时 data 必须可 json.loads。
+
+**entries 排序**（2026-10-24 新增，向后兼容）：可选 `sort_by`（`key`（默认）|`type`|`data`|`updated_at`，值预览列映射存储文本 data）+ `sort_order`（`asc`（默认）|`desc`）。未传两个参数保留旧 `namespace ASC, key ASC` 顺序与响应结构；只传 sort_order 时 sort_by=key，只传 sort_by 时 asc。排序在 SQL 端、offset/limit 之前应用（覆盖过滤后完整结果集，不是当前页）；相同主排序值以 `namespace ASC, key ASC` 稳定兜底（分页间无重漏）；updated_at 双方向 NULLS LAST；文本按存储文本字典序区分大小写（SQLite BINARY / PostgreSQL COLLATE "C"），JSON 按库中 data 原文比较。白名单外的字段/方向、显式空值 → 400（参数映射固定 SQLAlchemy 列对象，永不拼 SQL）。浏览排序不计入 namespace 限流。
 
 ## 4. Redis 缓存层（核心设计：可选、可降级）
 
@@ -79,19 +81,22 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 
 ## 5. 前端（frontend/src/confcenter/）
 
-- `ConfCenterPage.jsx`：先创建 namespace（独立弹窗，名称校验与重名提示），左侧列表选择空间（含计数，无“全部”项，`?namespace=` 保持刷新后的选择）+ 右侧当前空间 KV 表格（key / 类型徽章 str|json / 值预览（统一单行，点击查看完整值）/ 更新时间 / 操作）；新建/编辑 Modal（namespace 只读绑定当前空间，输入 key/value；type 段选 str|json：str=多行文本原样；json=**JSON 编辑器**（JsonEditor.jsx：textarea 透明覆层+highlight.js 着色，GitHub 亮暗主题沿用 index.css，零新依赖；Tab 两空格缩进、格式化/压缩、失焦校验非法标红禁存、错误带行列定位）；删除两步确认（第一步入列，3.5s 自动撤销）；搜索框 q（300ms 防抖）+ 分页；切换空间会清空搜索并回到第一页，异步旧结果不覆盖新空间
+公共侧栏两个同级视图（PageHeader tabs 注册，2026-10-24）：**配置管理**（entries，默认）与**限流配置**（`?view=ratelimit&namespace=…` 可深链/刷新，缺省/非法 view 回 entries）；两视图保持挂载切换（隐藏另一侧），限流未保存草稿与列表状态不丢。
+
+- `ConfCenterPage.jsx`（配置管理视图）：先创建 namespace（独立弹窗，名称校验与重名提示），左侧列表选择空间（含计数，无“全部”项，`?namespace=` 保持刷新后的选择）+ 右侧当前空间 KV 表格（key / 类型徽章 str|json / 值预览（统一单行，点击查看完整值）/ 更新时间 / 操作）；四个数据列表头可排序（button 触发，活动列 aria-sort + 方向箭头，非活动列淡双向箭头暗示；点当前列切升/降、点其他列从升序开始、变更回第 1 页；排序覆盖全部匹配项后分页——服务端排序，非当前页重排；namespace 切换保留排序，搜索/保存/删除刷新保留排序）；新建/编辑 Modal（namespace 只读绑定当前空间，输入 key/value；type 段选 str|json **共用同一个带行号的值编辑器实例**——CodeMirror 6（`JsonEditor.jsx` 适配公共 `shared/CodeEditor.jsx`：行号 gutter、虚拟长文档、明暗主题、撤销；str=language text 原样文本不解析，json=着色 + Worker 格式化/压缩（>64KiB 防抖 180ms 进 Worker，5s 预算，迟到结果不落地）+ 失焦校验非法标红禁存、错误带行列定位）；编辑器不因 type/字号切换重建（撤销栈/滚动保留）；格式化/校验状态区固定 48px 占位（aria-live），忙碌/错误文案增删不改变居中弹窗几何布局——修复点击格式化的屏幕抖动）；值工具栏含**字号调整**（默认 15px、整数 12–24、A−/A+/统一下拉（模块 `Select.jsx`）/恢复默认；正文与行号同步；localStorage `doublog.confcenter.editor.fontSize.v1` 持久化，缺失/越界/损坏回退 15，存储禁用仅本次会话；新建/编辑、str/json 共用）；删除两步确认（第一步入列，3.5s 自动撤销）；搜索框 q（300ms 防抖）+ 分页；切换空间会清空搜索并回到第一页，异步旧结果不覆盖新空间（请求身份含排序+版本）
 - 顶部 Redis 状态条三态（调 cache/status）：绿=已启用（探活可达）/ 琥珀=已配置但连接异常（降级直连）/ 灰=未启用，附 url_masked 与命中计数；未配置时按钮文案「去配置」
 - 缓存配置 Modal（GET /cache/config 回显，密码不回显、留空=沿用已存）：enabled/host/port/db/password/ttl + 测试连接 + 保存 + 清空缓存
-- 限流状态条（ratelimit/status）：绿=Redis 滑动窗口 / 琥珀=本地窗口（Redis 不可用降级）/ 灰=未启用；附默认规则、覆盖行数、放行/拒绝计数；启用且选中空间时可「重置 {ns} 计数」（POST /ratelimit/reset）
-- 限流配置 Modal：启用开关 + 默认额度/窗口 + 按空间覆盖行编辑（添加/删除，namespace 输入带已有空间 datalist 建议；limit=0 豁免）→ PUT /ratelimit/config
-- `api.js` 走 apiFetch + unwrap（模块内全部端点均有包装，组件不裸调 fetch）；个性色 **cyan**；遵循 docs/ui-baseline.md
-- 字号：主要控件/正文 16px；状态、表头及辅助说明 14px；namespace/key 和完整值 15px；类型徽章 13px；弹窗标题 18px。类型、时间和操作列配合加宽，删除确认使用“确认删除 / 取消”两步按钮。
-- 值预览：中性浅底的等高单行预览，长值省略，多行字符串以 ↵ 标识换行，空字符串明确标注；点击打开只读弹窗查看完整原文或格式化 JSON（json 类型 highlight.js 着色），可直接进入编辑。JSON 字符串标量保留引号。表格固定列宽，长 key 省略并支持悬停查看。
+- `RateLimitPage.jsx`（限流配置视图，2026-10-24 自状态条+Modal 迁移为独立页）：状态卡（mode 三态 + 默认规则/放行/拒绝计数 + tracked 窗口计数 + 主动刷新；status GET 失败显示错误/重试，不永久“加载中”）；配置表单（启用开关、按空间覆盖行（添加/删除，**namespace 用统一下拉选择已有空间**（2026-10-24 用户指令）；limit=0 豁免；未选/重复禁存）；**默认额度/窗口不在页面编辑**（2026-10-24 用户指令）——保存 payload 省略字段、后端沿用已存默认值；**配置 GET 失败禁存 + 重试**——不放开默认值提交；保存提交→回读完成期间禁用表单（防回读覆盖在途新草稿），PUT 失败与“已保存但回读失败”区分提示且草稿保留，手动回读带编辑代次围栏，PUT 成功刷新配置/状态并重建“已保存快照”，可“恢复已保存值”）；**重置计数卡已按用户要求移除（2026-10-24），reset API 保留**；覆盖行构造走 `overrides.js` 纯函数（`__proto__`/`constructor` 等合法名以 Object.defineProperty 成为自有键，不经原型 setter）
+- `api.js` 走 apiFetch + unwrap（模块内全部端点均有包装，组件不裸调 fetch；confEntries 含 sortBy/sortOrder）；个性色 **cyan**；遵循 docs/ui-baseline.md
+- 字号：主要控件/正文 16px；状态、表头及辅助说明 14px；namespace/key 和完整值 15px；类型徽章 13px；弹窗标题 18px；**值编辑器用户偏好字号默认 15px（12–24，localStorage 持久化）**。类型、时间和操作列配合加宽，删除确认使用“确认删除 / 取消”两步按钮。
+- 值预览：中性浅底的等高单行预览，长值省略，多行字符串以 ↵ 标识换行，空字符串明确标注；点击打开只读弹窗查看完整原文或格式化 JSON（json 类型 CodeMirror 着色），可直接进入编辑。JSON 字符串标量保留引号。表格固定列宽，长 key 省略并支持悬停查看。
 
-## 6. 测试（tests/confcenter/，76 例，FakeRedis 内存假客户端——不连真实 Redis）
+## 6. 测试（tests/confcenter/，76 例 + 可靠性 8 例 + 排序 12 例 SQLite + 1 例真实 PG，FakeRedis 内存假客户端——不连真实 Redis）
 
 - CRUD：upsert 新建 201/覆盖 200/读回（str 保字符串形状、json 解析回对象）/**type 变更**（json→str 后读回字符串）/删除/404
 - 校验：非法 type 400；json 非法 400（"[1,2" 拒绝）；key/namespace 非法字符与超长 400；含 `/` 的段结构性 404
+- **排序（test_sorting.py，2026-10-24）**：四列×双向；未传参数兼容旧顺序；只传其一的缺省组合；空/非法字段与方向 400（含注入样例）；未授权 401；105 项跨三页稳定兜底无重漏；两空间同 key；过滤与 q 转义；空文本/多行/中文/JSON 的 data 存储文本序；updated_at 双向 NULL 最后
+- **排序 PG（test_sorting_pg.py）**：pgserver 临时本机 PostgreSQL 复核四列双向/同值兜底/NULL 最后/COLLATE "C"/分页无重漏——证明排序 SQL 不依赖 SQLite 方言
 - **缓存五路径**：命中（不查库、hits+1）/未命中回填（SETEX 键/TTL/载荷）/写删后失效（DEL 被调用）/未启用直连 DB（零交互零计数）/连接抛错静默降级（进程内只 warn 一次，test 探活自愈）；另覆盖 损坏载荷视同未命中、redis 库缺失降级
 - 缓存管理端点：配置落盘与回显、非法配置 400、test（候选配置试连）、flush 前缀 SCAN+DEL（不误伤同 db 其他业务键）、status 密码掩码
 - namespace：独立创建、重名 409、字符/长度/鉴权校验、重启与最后 KV 删除后仍保留、旧 PUT 兼容、相同 key 跨空间隔离、历史回填幂等
@@ -102,4 +107,4 @@ key 命名约束：`[A-Za-z0-9_.:-]`（防注入）；namespace 同样。PUT bod
 
 ## 7. 验收
 
-`pytest tests/confcenter/ -q` 全绿；全量回归不退；真实 Redis 未运行时一切照常（降级路径）；前端 build 零报错；image 审查（含 Redis 配置 Modal）。
+`pytest tests/confcenter/ -q` 全绿；全量回归不退；真实 Redis 未运行时一切照常（降级路径）；前端 build 零报错；`node --test tests/confcenter-*.test.js`（含 Worker 校验/格式化保真、编辑器字号偏好读写异常/越界回退、排序参数与请求身份行为测试）通过；浏览器走查（ZCode 内置 browser-use，独立 context + 网络白名单仅 20130/20131 + 写前断言数据库隔离；截图经 image 子代理审查——覆盖明暗两态的列表排序、str 行号+字号、json 格式化/非法、独立限流页（默认/覆盖/加载失败））。

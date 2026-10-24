@@ -219,10 +219,63 @@ async def create_namespace(request: Request):
     return api_response({'namespace': namespace, 'count': 0}, 201, '空间创建成功')
 
 
+#: entries 排序白名单（参数名 → 列）。值预览列映射存储文本 data；
+#: 固定映射 SQLAlchemy 列对象，参数永不拼进 SQL / text() / 动态列名。
+_SORT_FIELDS = {'key': _TBL.c.key, 'type': _TBL.c.type,
+                'data': _TBL.c.data, 'updated_at': _TBL.c.updated_at}
+_SORT_ORDERS = ('asc', 'desc')
+
+
+def _parse_sort(params):
+    """解析 sort_by/sort_order；未提供返回 (None, None)（保留旧查询顺序）。
+
+    显式空值或白名单外的值 → ParamError(400)；只给 sort_order 时 sort_by=key，
+    只给 sort_by 时 asc。与后端校验消息一致地列出合法值。
+    """
+    raw_by = params.get('sort_by')
+    raw_order = params.get('sort_order')
+    if raw_by is not None and raw_by not in _SORT_FIELDS:
+        raise ParamError(
+            message=f'sort_by 仅允许 {" / ".join(_SORT_FIELDS)}，当前值：{raw_by!r}')
+    if raw_order is not None and raw_order not in _SORT_ORDERS:
+        raise ParamError(
+            message=f'sort_order 仅允许 asc / desc，当前值：{raw_order!r}')
+    if raw_by is None and raw_order is None:
+        return None, None
+    return (raw_by or 'key'), (raw_order or 'asc')
+
+
+def _sort_order_clause(sort_by: str, sort_order: str):
+    """显式排序的 order_by 元组：主列 ± 方向 + namespace/key ASC 稳定兜底。
+
+    - 文本按存储文本字典序、区分大小写：SQLite 走默认 BINARY collation，
+      PostgreSQL 显式 COLLATE "C"，保证中英数文本相对顺序可重复；
+      兜底键 namespace/key 用同一约定。
+    - updated_at 双方向 NULLS LAST（SQLAlchemy nulls_last：PG/新版 SQLite
+      原生 NULLS LAST）。
+    - 主列即 key 时省略冗余的 key 兜底。
+    """
+    pg = db.engine.dialect.name == 'postgresql'
+    text_expr = (lambda column: column.collate('C')) if pg else (lambda column: column)
+    primary = text_expr(_SORT_FIELDS[sort_by]) if sort_by != 'updated_at' \
+        else _SORT_FIELDS[sort_by]
+    ordered = primary.desc() if sort_order == 'desc' else primary.asc()
+    if sort_by == 'updated_at':
+        ordered = ordered.nulls_last()
+    clause = [text_expr(_TBL.c.namespace).asc()]
+    if sort_by != 'key':
+        clause.append(text_expr(_TBL.c.key).asc())
+    return [ordered, *clause]
+
+
 @router.get('/entries')
 async def list_entries(request: Request):
-    """条目浏览：?namespace= 精确过滤（省略=全部）、?q= 模糊匹配 key、分页。
+    """条目浏览：?namespace= 精确过滤（省略=全部）、?q= 模糊匹配 key、分页；
+    可选 sort_by（key/type/data/updated_at，白名单）+ sort_order（asc/desc）。
 
+    排序在 SQL 端、offset/limit 之前应用，覆盖过滤后的完整结果集；相同主排序
+    值按 namespace ASC、key ASC 稳定兜底（分页间无重漏）。未传排序参数时保留
+    旧 `namespace ASC, key ASC` 顺序与响应结构，不强制客户端升级。
     count 直发 `SELECT count(*) ... WHERE`（旧 ORM Query.count 会把整条
     SELECT 包成子查询再数）；取数只查响应需要的 5 列，不装配 ORM 实体。
     """
@@ -232,6 +285,7 @@ async def list_entries(request: Request):
     page = max(1, _arg_int(params, 'page', 1) or 1)
     page_size = min(max(1, _arg_int(params, 'page_size', settings.default_page_size)
                         or settings.default_page_size), settings.max_page_size)
+    sort_by, sort_order = _parse_sort(params)
 
     def _q():
         conds = []
@@ -239,12 +293,15 @@ async def list_entries(request: Request):
             conds.append(_TBL.c.namespace == namespace)
         if q:
             conds.append(_TBL.c.key.contains(q, autoescape=True))
+        order_clause = (_sort_order_clause(sort_by, sort_order)
+                        if sort_by is not None
+                        else [_TBL.c.namespace, _TBL.c.key])
         with db.engine.connect() as conn:
             total = conn.execute(
                 select(func.count()).select_from(_TBL).where(*conds)).scalar() or 0
             rows = conn.execute(
                 select(*_ENTRY_COLS).where(*conds)
-                .order_by(_TBL.c.namespace, _TBL.c.key)
+                .order_by(*order_clause)
                 .offset((page - 1) * page_size).limit(page_size)
             ).all()
         items = [{'namespace': r[0], 'key': r[1], 'type': r[2],

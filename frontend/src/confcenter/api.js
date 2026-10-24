@@ -1,7 +1,7 @@
 // 配置中心能力包 API 层：统一走 shared/client.js 的 apiFetch（会话 Cookie 认证）。
 // 端点契约见 docs/confcenter-spec.md 第 3 节：namespace 聚合 / KV 浏览与 CRUD / Redis 缓存管理。
 
-import { apiFetch } from '../shared/client'
+import { apiFetch } from '../shared/client.js'
 
 async function json(path, options = {}) {
   const r = await apiFetch(path, options)
@@ -21,13 +21,18 @@ export const confNamespaces = () => json('/api/confcenter/namespaces')
 export const confCreateNamespace = namespace =>
   json('/api/confcenter/namespaces', { method: 'POST', body: JSON.stringify({ namespace }) })
 
-/** 浏览（q 模糊匹配 key；省略 namespace = 全部；分页） */
-export const confEntries = ({ namespace = '', q = '', page = 1, pageSize = 50 } = {}) => {
+/** 浏览（q 模糊匹配 key；省略 namespace = 全部；分页；可选排序）。
+ *  sortBy：key|type|data|updated_at（白名单，后端 400 校验）；sortOrder：asc|desc。
+ *  未传排序参数时后端保留旧 namespace+key 顺序。 */
+export const confEntries = ({ namespace = '', q = '', page = 1, pageSize = 50,
+  sortBy = '', sortOrder = '' } = {}) => {
   const params = new URLSearchParams()
   if (namespace) params.set('namespace', namespace)
   if (q) params.set('q', q)
   params.set('page', page)
   params.set('page_size', pageSize)
+  if (sortBy) params.set('sort_by', sortBy)
+  if (sortOrder) params.set('sort_order', sortOrder)
   return json(`/api/confcenter/entries?${params}`)
 }
 

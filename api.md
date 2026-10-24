@@ -1145,7 +1145,7 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 ```
 GET    /api/confcenter/namespaces              # namespace + 条目数（包括空空间）
 POST   /api/confcenter/namespaces              # {namespace} → 201；重名 409；非法名称 400
-GET    /api/confcenter/entries                 # ?namespace= &q= &page= &page_size=
+GET    /api/confcenter/entries                 # ?namespace= &q= &page= &page_size= &sort_by= &sort_order=
 GET    /api/confcenter/{ns}/{key}              # 读：str→字符串，json→解析后结构
 PUT    /api/confcenter/{ns}/{key}              # upsert {type, data}（201 新建/200 覆盖；json 非法 400）
 DELETE /api/confcenter/{ns}/{key}              # 200 / 404；以上三条单条 KV 路由受 namespace 限流约束
@@ -1157,6 +1157,29 @@ PUT    /api/confcenter/rename                  # {namespace, old_key, new_key} �
 GET    /api/confcenter/ratelimit/status        # {enabled, mode: off|local|redis, limit, window_seconds, overrides, allowed, rejected, tracked, redis}
 GET/PUT /api/confcenter/ratelimit/config       # 限流配置 {enabled, limit, window_seconds, overrides}（部分缺省沿用；overrides 整体替换）
 POST   /api/confcenter/ratelimit/reset         # {namespace} → 清零该空间的限流窗口计数（本地 + Redis）
+```
+
+**entries 排序**（2026-10-24 新增，向后兼容）：`sort_by` = `key`（默认）| `type` | `data`（值预览列）| `updated_at`；`sort_order` = `asc`（默认）| `desc`。两个参数都可省略——省略时保留旧 `namespace ASC, key ASC` 顺序与响应结构，已有客户端无需升级；只传 `sort_order` 时按 key 排，只传 `sort_by` 时升序。排序在 SQL 端、分页（offset/limit）之前应用，覆盖当前 namespace 与搜索条件下的**全部匹配项**（不是只排当前页）；相同主排序值以 `namespace ASC, key ASC` 稳定兜底，翻页无重漏；`updated_at` 升序/降序均为 NULL 最后；文本列按存储文本字典序、区分大小写（SQLite BINARY / PostgreSQL C collation），JSON 按库中 data 原文比较。字段与方向为固定白名单（映射 SQLAlchemy 列对象，不拼 SQL）；白名单外的值或显式空串返回 400。浏览排序不计入 namespace 限流。
+
+排序请求与响应示例（模块隔离实例实测，2026-10-24）：
+
+```
+GET /api/confcenter/entries?namespace=app&sort_by=data&sort_order=desc&page=1&page_size=2
+```
+
+```json
+{"success":true,"code":200,"message":"操作成功",
+ "data":{"items":[
+   {"namespace":"app","key":"u1-str-sample","type":"str","data":"第一行\nsecond line\n\tTab中文\n尾行","updated_at":"2026-10-24T05:44:41.942179"},
+   {"namespace":"app","key":"apple","type":"str","data":"中文值","updated_at":"2026-10-24T05:38:09.821628"}],
+  "total":13,"page":1,"page_size":2,"pages":7}}
+```
+
+非法排序参数（实测 400，信封沿用 PARAM 错误结构）：
+
+```json
+{"success":false,"code":400,"message":"sort_by 仅允许 key / type / data / updated_at，当前值：'namespace'",
+ "data":{"error_code":"PARAM_INVALID","details":null}}
 ```
 
 

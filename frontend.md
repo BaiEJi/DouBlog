@@ -85,6 +85,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
 │   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
+│   ├── CodeEditor.jsx              # 公共 CodeMirror 6 编辑器（行号/虚拟长文档/明暗主题/撤销；挂载实例跨 value/主题变化保留 selection 与 undo）。可选参数（2026-10-24，默认行为不变）：`fontSize`（默认 13，compartment 重配置——不重建实例、不清撤销栈）、`keepViewportOnExternalChange`（默认 false；true 时外部 value 整文替换前后保持滚动位置，供格式化场景）、`fallbackWrap`（默认 'soft'，降级 textarea 折行策略；'off'=横向滚动，供带行号栏的降级对齐）、`onLoadFailure`（真实动态加载失败通知，适配层据此切换降级 UI）；降级 textarea 应用同一 fontSize/行高 1.5 且 `resize:none`；aria-label 变化时经 contentDOM 属性动态同步（不重建实例）。使用方：blog 编辑器、devtoolbox、confcenter（传 15/12–24 用户偏好字号）
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
 ├── portal/                         # /        统一入口（13 卡；dnd 自定义分组布局——**布局与卡片标题/描述覆盖全量持久化服务端**（/api/home/layout，system_home_* 表，2026-10-17）：localStorage doublog_portal_layout_v2 仅首屏缓存、服务端为唯一事实源，旧 doublog_portal_layout/doublog_portal_order 在服务端为空时一次性迁移上存；卡片 hover 铅笔按钮 → CardEditModal 编辑标题描述（空 = systems.jsx 内置默认文案，"恢复默认文案"清覆盖）；systems.jsx 卡片定义单源（key/to/默认文案/配色/图标）、api.js 布局 API；新模块自动追加末组 + 未知卡/跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
 ├── blog/                           # /blog /post/:id /create + 模块 tab：/assets /diary /bookmarks（assets·diary·bookmarks 子目录）
@@ -103,7 +104,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
 ├── practice/                      # /practice（刷题）：PracticePage（公共 ModuleShell 侧栏）+ PracticeView + components/
 ├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
-├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（创建/切换 namespace、空间内 KV、Redis 状态与配置）
+├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（配置管理视图：创建/切换 namespace、空间内 KV 四列排序、带行号值编辑器+字号偏好、Redis 状态与配置）+ RateLimitPage.jsx（限流配置视图）+ Select.jsx（统一下拉）+ editorPreferences.js（字号 localStorage）
 ├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒封装
@@ -265,9 +266,9 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
 - `config/api.js` 走 apiFetch；数据库与日志上报统一从 `/config` 操作
 
-### ConfCenterPage.jsx（confcenter/，namespace 与 KV）
+### ConfCenterPage.jsx（confcenter/，配置管理 / 限流配置双视图）
 
-首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，点击进入后只查看和搜索该空间的 KV。新建 KV 绑定当前空间，namespace 只读；空空间持久保存，选中项由 `?namespace=` 保持。切换空间重置搜索/分页，并丢弃旧请求的异步结果。表格使用固定列宽和等高单行值预览，长 key/value 省略；点击预览弹窗查看完整原文或格式化 JSON，空字符串明确标注，JSON 字符串标量保留引号，可从预览进入编辑。配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值预览保持单行。Redis 配置入口保留；模型、接口及迁移详见 `docs/modules/confcenter.md`。
+公共侧栏两个同级视图（PageHeader tabs 注册）：配置管理（默认）与限流配置（`?view=ratelimit` 深链/刷新，缺省回 entries）；两视图保持挂载（hidden 切换），限流未保存草稿跨菜单保留。配置管理视图：首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，新建 KV 绑定当前空间（namespace 只读），选中项由 `?namespace=` 保持。切换空间重置搜索/分页并丢弃旧请求结果（请求身份含排序+列表版本）。KV 表四个数据列（key/类型/值预览/更新时间）表头可排序——button + aria-sort + 方向箭头（非活动列淡双向箭头暗示）；点当前列切升/降、点其他列从升序开始、变更回第 1 页；服务端全量排序后分页（sort_by/sort_order 走 api.js）。新建/编辑 Modal 中 str/json **共用同一个带行号的 CodeMirror 值编辑器实例**（切换类型/字号不重建，撤销栈保留；str 原样文本、json 着色 + Worker 格式化/压缩）；值工具栏字号调整：默认 15px、12–24 整数、A−/A+/统一下拉/恢复默认，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（损坏/越界/禁用回退 15）；状态/错误反馈区固定 48px 占位——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）。限流配置视图（RateLimitPage.jsx）：状态卡（三态 + 计数 + 刷新；失败显示错误+重试）、配置表单（GET 失败禁存+重试；保存成功重建已保存快照，可恢复）、重置区（统一下拉选目标，未选禁用）。模块统一下拉 `Select.jsx`（apihub 同款 button+菜单，选中 cyan 高亮，明暗一致）替代原生 select。配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值编辑器用户偏好字号默认 15px。模型、接口及迁移详见 `docs/modules/confcenter.md`。
 
 ### TodoPage.jsx（todo/，今日 / 特定日期四象限）
 
