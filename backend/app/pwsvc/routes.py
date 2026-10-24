@@ -384,22 +384,42 @@ async def create_project(request: Request):
     return await run_db(_impl)
 
 
+def _build_project_list_query():
+    projects = PwsvcProject.__table__
+    types = PwsvcType.__table__
+    users = PwsvcUser.__table__
+    # 两张明细表分别聚合后再连接，避免类型数 × 用户数的计数乘积。
+    type_counts = select(
+        types.c.project_id, func.count(types.c.id).label('total')
+    ).group_by(types.c.project_id).subquery('project_type_counts')
+    user_counts = select(
+        users.c.project_id, func.count(users.c.id).label('total')
+    ).group_by(users.c.project_id).subquery('project_user_counts')
+    return (select(projects.c.id, projects.c.name, projects.c.description,
+                   projects.c.api_key_prefix, projects.c.rate_limit, projects.c.created_at,
+                   func.coalesce(type_counts.c.total, 0).label('type_count'),
+                   func.coalesce(user_counts.c.total, 0).label('user_count'))
+            .select_from(projects
+                         .outerjoin(type_counts, type_counts.c.project_id == projects.c.id)
+                         .outerjoin(user_counts, user_counts.c.project_id == projects.c.id))
+            .order_by(projects.c.id))
+
+
+# 只复用不可变表达式树及固定常量，不绑定 Engine/Session、请求数据或查询结果。
+_PROJECT_LIST_QUERY = _build_project_list_query()
+
+
 @admin_router.get('/projects')
 async def list_projects():
     def _impl():
-        projects = db.session.query(PwsvcProject).order_by(PwsvcProject.id).all()
-        # 计数一次 GROUP BY 拿全（原实现每项目 2 条 COUNT，N+1）
-        type_counts = dict(db.session.query(
-            PwsvcType.project_id, func.count(PwsvcType.id)).group_by(PwsvcType.project_id).all())
-        user_counts = dict(db.session.query(
-            PwsvcUser.project_id, func.count(PwsvcUser.id)).group_by(PwsvcUser.project_id).all())
-        out = []
-        for p in projects:
-            d = p.to_dict()
-            d['type_count'] = type_counts.get(p.id, 0)
-            d['user_count'] = user_counts.get(p.id, 0)
-            out.append(d)
-        return api_response(out)
+        rows = db.session.execute(_PROJECT_LIST_QUERY).all()
+        return api_response([
+            {'id': r.id, 'name': r.name, 'description': r.description or '',
+             'api_key_prefix': r.api_key_prefix, 'rate_limit': r.rate_limit,
+             'created_at': _iso(r.created_at), 'type_count': r.type_count,
+             'user_count': r.user_count}
+            for r in rows
+        ])
     return await run_db(_impl)
 
 

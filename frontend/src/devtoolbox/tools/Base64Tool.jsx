@@ -1,7 +1,9 @@
 /** Base64 编解码：文本（UTF-8 安全）与文件 → data URL；URL-safe 变体可选 */
 import { useRef, useState } from 'react'
-import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine, LBL, btn, areaCls } from '../kit'
-import { b64Encode, b64Decode, toB64Url, fromB64Url, formatBytes } from '../lib/misc'
+import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine, LBL, btn } from '../kit'
+import { formatBytes } from '../lib/misc'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
 
 export default function Base64Tool({ toast }) {
   const [mode, setMode] = useState('encode')
@@ -10,23 +12,8 @@ export default function Base64Tool({ toast }) {
   const [fileInfo, setFileInfo] = useState(null)
   const fileRef = useRef(null)
 
-  const { output, error } = (() => {
-    if (mode !== 'encode') {
-      if (!text.trim()) return { output: '', error: null }
-      try {
-        return { output: b64Decode(fromB64Url(text.trim())), error: null }
-      } catch {
-        return { output: '', error: '不是有效的 Base64（检查是否含非法字符或缺 padding）' }
-      }
-    }
-    if (!text) return { output: '', error: null }
-    try {
-      const b64 = b64Encode(text)
-      return { output: urlSafe ? toB64Url(b64) : b64, error: null }
-    } catch {
-      return { output: '', error: '无法编码（含非法字符）' }
-    }
-  })()
+  const computation = useComputation('base64', { text, mode, urlSafe })
+  const output = computation.result?.output || '', error = computation.error
 
   const onFile = f => {
     if (!f) return
@@ -55,8 +42,8 @@ export default function Base64Tool({ toast }) {
       <TwoPane
         leftTitle={mode === 'encode' ? '原文' : 'Base64'}
         rightTitle={mode === 'encode' ? 'Base64' : '原文'}
-        left={<textarea className={areaCls} rows={12} value={text} spellCheck={false} onChange={e => setText(e.target.value)} />}
-        right={<textarea className={'font-mono text-[13px] leading-relaxed p-3 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-stone-700 dark:text-stone-200 whitespace-pre-wrap break-all'} rows={12} readOnly value={output} />}
+        left={<CodeEditor value={text} onChange={setText} height={320} ariaLabel="Base64 输入" />}
+        right={<CodeEditor readOnly value={output} height={320} ariaLabel="Base64 结果" />}
         rightActions={<CopyBtn text={output} disabled={!output} />} />
       <div className="mt-2"><StatusLine ok={!error && output !== ''} err={error} okText="完成" /></div>
       {fileInfo && (

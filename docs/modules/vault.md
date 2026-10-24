@@ -1,6 +1,6 @@
 # Vault 模块文档（零知识密码库）
 
-> 生成日期：**2026-10-10**，依据当前代码（`backend/app/vault/`、`backend/tests/vault/`、`frontend/src/vault/`）与 `docs/vault-design.md` 整理。
+> 更新日期：**2026-10-21**，依据当前代码（`backend/app/vault/`、`backend/tests/vault/`、`frontend/src/vault/`）与 `docs/vault-design.md` 整理。
 > 威胁模型与算法规范详见 `docs/vault-design.md`；本文件是"代码现状"的模块级快照。
 
 ---
@@ -16,14 +16,14 @@
 - **统一样式下拉框**（`components/ui.jsx` 的 `Select`）：替代全部原生 `<select>`（编辑器类型/分类/身份/密钥、设置页自动锁定与剪贴板、密码服务用户类型）——触发器与菜单均走应用 stone 配色 + 暗色适配，支持点击外部/Esc 关闭、选中态高亮；禁用了原生下拉在暗色下的白底弹层。
 - **概览 Dashboard**：大数字统计 + 库健康度进度条 + 密码到期提醒横条 + 六卡安全风险网格 + 收藏/身份/最近修改双栏。
 - **TOTP 验证码**（`components/totp.js`，RFC 6238）：2FA Secret 支持 Base32 或 `otpauth://` URI（编辑器粘贴自动解析，签发方回填服务名）；详情页实时生成 6-8 位码 + 30s 环形倒计时 + 一键复制；HMAC-SHA1 走 WebCrypto，密钥不出设备。
-- **HIBP 泄露检查**（`components/hibp.js`）：k-anonymity——仅上传密码 SHA-1 前 5 位；结果缓存 localStorage（键为完整 SHA-1，单向不可逆）；网络不可达返回 -1（未知 ≠ 安全）。
+- **HIBP 泄露检查**（`components/hibp.js`）：k-anonymity——仅上传密码 SHA-1 前 5 位，`Add-Padding:true`，不带站点凭据、不用 HTTP 缓存；结果只留解锁会话内存，**不持久化完整哈希**。加载时和锁定时删除旧 `doublog.hibp.v1` 缓存；锁定取消当前请求并防止旧结果回填。网络不可达或 8 秒超时返回 -1（未知 ≠ 安全）。
 - **健康总评分**（安全中心）：0-100 环 = 100 − 泄露×15 − 弱×8 − 复用组×10 − 到期×4 − 过旧×3 − 无2FA×2 − 重复组×2 − 缺恢复×1，点击下钻到对应分组。
 - **安全中心**八组清单：已泄露/弱（熵<60）/复用/过旧（>180 天）/到期提醒/未开 2FA（含 Passkey 视为已开）/重复账号（同服务+用户名）/缺恢复方式——全部客户端分析。
 - **安全附件**（`vault_attachments` 表）：前端 VEK 加密 `{filename, mime, data}` 后整包上传，服务端只见密文 + 客户端上报的明文 size；明文 ≤5MB、密文 base64 ≤8MB 双端校验；下载时解密还原文件名；软删条目附件冻结保留（恢复语义），purge 级联删除。
 - **密码历史**：编辑器改密自动归档（`core.js applyPasswordChange`，旧密码 + createdAt/replacedAt/reason 进密文内 history），详情页时间线展示。
 - **生成器**：随机密码（8-128 位、四字符集、默认排除易混淆 I/l/O/0/1）+ 口令短语（3-10 词、1004 词 EFF 风格词表）+ 熵/强度评估；无偏随机（拒绝采样 + Fisher-Yates）。
 - **密码到期提醒**：条目密文内 `expiry_days`（0-3650，null=不提醒）；判定纯客户端（`core.js expiryInfo()`），概览横条 + 详情徽标 + 安全中心分组；**服务端完全不感知到期与否**。
-- **自动锁定**：5/15/30/60 分钟闲置或"关闭浏览器"（密钥仅内存，刷新即锁）；锁定清除 VEK、条目缓存并回锁屏。
+- **自动锁定**：5/15/30/60 分钟闲置或"关闭浏览器"（密钥仅内存，刷新即锁）；锁定递增会话 generation，清除 VEK、条目、详情 / 编辑器 / 弹层与 HIBP 缓存，终止 KDF，旧异步结果不能重新填入页面。剪贴板仅在仍包含本模块复制内容时清除。
 - **Recovery Key**：256-bit（64 hex，4 位一组展示）仅初始化/轮换时显示一次；可轮换（旧钥立即作废）。
 - **加密备份**：`GET /export` 自有格式（kdf 参数 + 双通道包裹 VEK + 全部条目密文）落盘 JSON；`POST /import` 替换式恢复（含回收站状态）；CSV 明文导出需再次验证主密码（本地）+ 双重警告。
 - **审计日志**：仅记 action + item_id + 时间，永不包含密码/密钥/剪贴板内容。
@@ -99,32 +99,32 @@
 - **零知识红线**（AGENTS.md 第 13 条）：服务端只存取密文（blob/包裹 VEK），不解析、不搜索内容；**API 层不存在任何明文敏感参数**（无 password/secret 字段），禁止新增"服务端搜索/密码分析"类接口；搜索/强度/泄露/到期判定全部在客户端解密后进行。
 - **`_valid_box()` 结构校验**：只接受 `{n: str(16-64 字符 base64), ct: str(8-200000 字符)}` 形态；附件走同结构但 ct 无 200000 上限（大密文先给 413 而非 400）。任何非该结构的 payload 直接 400——这是"契约层面不接受明文"的落地（测试 `test_item_rejects_plaintext_shape`）。
 - **软删/恢复/purge 级联**：DELETE=软删（deleted_at）；restore 置空；purge 物理删除条目并 `DELETE ... WHERE item_id=` 清附件（响应带 `attachments_purged:true`）。回收站条目的附件列表/上传返回 400，单取仍 200（恢复语义）。
-- DB 访问统一经 `run_db`（scoped session）；审计 `_audit(action, item_id)` 只落行为行。**条目列表/导出走性能路径**：核心查询取元组（免 ORM 实例化），blob 列原文（落库时均经 `json.dumps`，恒为合法 JSON 文本）直接拼进响应，免"每行 json.loads + 整包再 dumps"双重序列化（500 行列表请求 CPU 约减半，实测 27.9→47.8 rps，见 `tools/bench/vault/`）；单条端点仍走 `Model.query` + `to_dict`。
+- DB 访问统一经 `run_db`（scoped session）；审计 `_audit(action, item_id)` 只落行为行。**条目列表/导出均用列投影取元组**（免 ORM 实例化）。列表将 blob 原文直接放入响应，免逐条解析密文 JSON 再整包序列化；信封、逗号与条目片段一次 `join` 后编码，省去先合并条目再包裹信封的完整字符串拷贝。字段顺序、`_blob_json` 回退和 `_jts` 时间语义保持不变。导出仍解析 blob 为对象后走统一响应；单条端点仍走 `Model.query` + `to_dict`。这些装配变化不改变密文格式或加密参数，实际吞吐收益需以对应源码的性能结果为准。
 - **写锁重试**：全部端点的 `_impl` 经 `_retry_locked` 包装——偶发 `OperationalError(database is locked)`（高并发写下 ~0.1%）回滚后 20/40/60ms 退避重试至多 3 次；非锁类异常原样抛出。
 - 模块包契约：`app/vault/__init__.py` 导出 `router` + `ensure_migrations(engine)`（幂等 `CREATE INDEX IF NOT EXISTS` 补建两个性能索引：`ix_vault_items_trash_order(deleted_at, updated_at)` 支撑列表过滤+排序、`ix_vault_audit_logs_created_at(created_at)` 支撑审计分页；新建库由 create_all 直接带上，无表改名需求）；无 start_background；由 `main.py` 的 `MODULES` 注册表按序挂载。
 - 已知代码怪癖：`POST /import` 的格式串校验同时接受 `'doublog-vault-backup'` 与历史笔误 `'doublog-vault-backdown'`（导出只写前者；见"已知边界"）。
 
 ## 5. 前端（`frontend/src/vault/`）
 
-- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）→ unlocked（三面板）`。进入时 `GET /account` 探测（200=已初始化→locked，404→setup）；`unlock()` 调 `unlockVault` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**），随后拉取 live 列表逐条解密；`lockNow()` 清 VEK/条目/选择态回 locked。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。其余职责：设置弹层（自动锁定/剪贴板/改主密码/轮换 Recovery Key/备份导入导出/活动记录）、⌘K Command Palette、永久删除确认。**删除即永久删除**（回收站 UI 已移除）：详情页删除按钮 → 确认弹窗 → `DELETE /purge` 物理销毁（后端软删/恢复端点仍保留但前端不再调用）。
+- **`VaultPage.jsx`（状态机壳）**：`loading → setup（初始化向导）/ locked（锁屏）/ error（读取失败）→ unlocked（三面板）`。进入时只有 `GET /account` 的 404 才进入 setup，网络 / 503 进入明确错误与重试状态。`unlock()` 解包 VEK 存 `vekRef`（useRef，**不进 state/localStorage**）；列表读取 / 解密期间即可锁定。`components/session.js` 按最多 100 条一批、8 路并发解密，批间让出事件循环，发布前后均检查 generation；损坏条目跳过并显示数量。长列表由共享 `VirtualList` 只挂载可视行，明文仍仅在当前解锁内存。自动锁定：pointerdown/keydown 刷 lastActivity，15s 轮询比对阈值。设置弹层、⌘K、永久删除确认保持原功能；详情删除仍走 `DELETE /purge`（后端软删 / 恢复端点保留）。
   - **解锁≠登录**：锁屏文案"密码库已锁定/输入主密码/解锁保险库"；错误提示"主密码不正确"——这是本地解密步骤，与站点会话登录（Cookie）无关。
-- **`components/crypto.js`（加密核心，独立可复用）**：`createVaultMaterial`（初始化）/ `unlockVault`（解锁，错误密码→GCM 校验失败抛错）/ `rewrapVaultKey`（改主密码/轮换恢复密钥，仅重包裹不重加密条目）/ `encryptBlob`/`decryptBlob`/`generateRecoveryKey`/`normalizeRecoveryKey`。Argon2id `@noble/hashes`（默认参数 t=2, m=32768, p=1，解锁以服务端账号参数为准），AEAD 原生 WebCrypto；VEK 以 `extractable:false` 的 CryptoKey 只存内存。**任何函数不 console 输出密钥/明文**。
+- **`components/crypto.js` + `kdf.worker.js`**：`createVaultMaterial` / `unlockVault` / `rewrapVaultKey` / `encryptBlob` / `decryptBlob` 保持原加密格式。浏览器 Argon2id 在专用本地 Worker 中执行，最多一个活动任务，120 秒截止、锁定终止；Node 测试 / CLI 才使用无 Worker 的实现。**默认参数仍为 t=2, m=32768 KiB, p=1，不降 KDF**，解锁以账号存储参数为准；派生字节和临时 VEK 原始字节及时清零，VEK / KEK 为不可导出 CryptoKey。Worker 不依赖远程脚本。任何函数不 console 输出密钥 / 明文。
 - **`components/core.js`（纯逻辑，无 UI/网络）**：枚举常量 + 中文映射、`emptyItem()`、生成器（`randomInt` 拒绝采样无 modulo 偏差）、熵/强度（`passwordEntropy`/`passphraseEntropy`/`strengthLabel`）、`extractIdentities`、`analyzeSecurity`（弱/复用/过旧/expired/no2fa/重复/缺恢复）、`expiryInfo`（到期判定）、`applyPasswordChange`（历史推进）、`itemMatches`/`domainOf`/`daysAgo`。
-- **`components/ui.jsx`（UI 原子）**：`makeClipboardCopier`（复制后 10/30/60s 自动覆写清理，仅清未被覆盖内容）、`CopyButton`、`SecretField`（默认 `•••` 遮蔽、Reveal 15s 自动隐藏、卸载即隐藏）、`FieldRow`、`Favicon`（DDG icons + 字母回退）、图标集 `I`。
-- **`components/ItemDetail.jsx`**：LOGIN（用户名/手机号/邮箱/实名人/账号昵称/密码/URL/登录方式，手机号与邮箱带一键复制）/TOTP/绑定身份/密钥/安全状况/附件/密码历史时间线/自定义字段/备注（Markdown 渲染）分区。
-- **`components/ItemEditor.jsx`**：全字段表单；用户名下固定三个可选联系字段——**手机号 / 邮箱 / 实名人**（均存于密文 blob，详情页展示，手机号与邮箱可复制，纳入 `itemMatches` 客户端搜索）；改密自动推进历史（可填原因）；2FA 字段支持粘贴 otpauth:// 自动解析；`expiry_days` 输入；标签/自定义字段/多 URL/多身份/多密钥。
+- **`components/ui.jsx` + `clipboard.js`**：复制后 10/30/60s 自动清除，仅当剪贴板仍等于本模块拥有的内容；切换「永不」取消旧定时器，锁定会废止尚未完成的复制。`CopyButton`、`SecretField`（默认 `•••`、Reveal 15s 自动隐藏）、`FieldRow`、图标集 `I` 保持。`Favicon` 默认字母块；设置中明确启用外部图标后才请求 DDG，并使用 `no-referrer`，域名失败回退字母。
+- **`components/ItemDetail.jsx`**：LOGIN（用户名/手机号/邮箱/实名人/账号昵称/密码/URL/登录方式，手机号与邮箱带一键复制）/TOTP/绑定身份/密钥/安全状况/附件/密码历史时间线/自定义字段/备注（Markdown 渲染）分区。附件按条目 ID 重挂，子任务 scope 关联会话 AbortSignal；读取、解密、文件读取、加密、POST、删除前后检查是否仍有效。锁定或换条目时取消请求，旧文件不能在晚到后继续上传，旧附件不填入新条目；附件解密也采用有限并发批处理。
+- **`components/ItemEditor.jsx`**：全字段表单；用户名下固定三个可选联系字段——**手机号 / 邮箱 / 实名人**（均存于密文 blob，详情页展示，手机号与邮箱可复制，纳入 `itemMatches` 客户端搜索）；改密自动推进历史（可填原因）；2FA 支持 otpauth:// 自动解析；保留标签 / URL / 身份 / 密钥等字段。保存失败在当前编辑器显示错误并保留输入；取消后该错误随编辑器清除，不冒充列表同步错误。敏感输入不接持久化草稿。
 - **`components/Generator.jsx`**：密码/口令短语双 tab + 熵条 + 复制/重生成/`onUse` 填充编辑器。
-- **`components/SecurityCenter.jsx`**：健康总评分环 + HIBP 检查（密码去重、并发 3、进度）+ 八组风险分组（点击跳条目）。
+- **`components/SecurityCenter.jsx`**：健康总评分环 + HIBP 检查（密码去重、并发 3、进度）+ 八组风险分组（点击跳条目）。每次启动后续检查和发布结果均检查子任务 scope；锁定 / 卸载 / 条目集合变化取消活动请求并停止队列，避免清空缓存后旧循环再启动新请求。
 - **`components/CategoriesView.jsx`**：类别页（玫瑰粉个性色，布局对齐配置中心）：左侧类别目录栏（内置 9 项 + 自定义 + 孤儿 key，计数 + 选中态 + 「管理类别」入口），右侧当前类别条目表（favicon/名称/用户名/类型徽章/更新时间/查看）+ 类别内搜索；行点击跳 `section='category'` 中栏列表并选中该条目；选中类别由父级 prop 控制（`active`/`onActiveChange`）。
-- **`components/categoryCatalog.js`**：类别目录单源——localStorage 持久化（`vault_custom_categories`）+ `buildCatalog` 合并（内置/自定义/孤儿）+ `useCategoryCatalog` hook（增/改名/删，删前查条目数，`replaceCustom` 供备份导入恢复）。
+- **`components/categoryCatalog.js`**：类别目录单源——localStorage 的 `vault_custom_categories:<dataIdentity>` 按账号 / 数据库隔离，不把旧无作用域目录静默归给任意新库。`buildCatalog` 合并内置 / 自定义 / 孤儿，备份导入仍通过 `replaceCustom` 恢复。
 - **`components/CategoryManager.jsx`**：类别管理弹窗——内置只读（计数 + 内置标签）、自定义行内改名/删除（拒删带原因）、底部添加行；Esc/遮罩关闭。
 - **`components/ui.jsx` 的 `Select`**：统一样式下拉框（替代原生 select），全 vault 模块共用。
 - **`components/totp.js` / `hibp.js`**：见第 1 节；均零第三方依赖。
 - **`api.js`**：vault 17 端点 + pwsvc 端点的 fetch 封装，全部经 `@/shared/client` 的 `apiFetch`（统一会话 Cookie/凭据）；文件内不出现任何明文口令参数。
-- **`components/PwsvcView.jsx`**：密码服务子视图（侧栏"密码服务"入口），项目/类型/用户/当前轮换密码/校验日志/限流管理，UI 明确标注"非零知识"；见 `docs/modules/pwsvc.md`。
+- **`components/PwsvcView.jsx`**：侧栏「密码服务」按需 lazy 加载，项目 / 类型 / 用户 / 当前轮换密码 / 日志 / 限流管理保持，UI 明确标注「非零知识」；见 `docs/modules/pwsvc.md`。
 - 枚举存储英文、展示中文；`index.css` 有 `@source "./vault"` 白名单与 `.vault-input` 类（锁屏/设置输入框复用）。
 
-## 6. 测试（`backend/tests/vault/test_vault.py`，18 用例）
+## 6. 测试（`backend/tests/vault/`，25 个参数化用例）
 
 自包含（conftest 临时 SQLite + TestClient + Basic 头，不访问外网）：
 
@@ -147,13 +147,18 @@
 17. `test_perf_indexes_created` — 两个性能索引存在（新建库与存量库同名同构）
 18. `test_retry_locked_recovers` — 写锁重试：锁类 OperationalError 重试成功、非锁类原样抛出
 
+`test_items_response_assembly.py` 另含 7 个参数化用例：空 / 单 / 多条目响应的固定 UTF-8 字节、字段顺序、转义与非 ASCII 密文、带外围空白的 JSON 回退、空 / naive / 带时区时间、非法 JSON 回退抛错，以及真实数据库的 live / trash 过滤与更新时间倒序。2026-10-21 与 Pwsvc 全域合跑共 48 项通过（隔离 SQLite，日志 `.ui-qa/optimization/vault-pwsvc-final-tests.log`）；该结果验证契约，不作为本次拼接改动的性能收益证明。
+
+前端验证见 `docs/optimization/frontend-verification.md`。25 项共享专项包含旧 Argon2id 账号 / 密文兼容、不可导出密钥、错误密码、解密期间锁定、HIBP 不落完整哈希、子任务队列停止与剪贴板归属。隔离 Chromium 使用真实 KDF Worker 与 250 个真实密文条目，验证虚拟行数、最后一行可达、锁定期间返回旧响应不发布明文，以及 400 保存保留编辑输入；另 4 项取消验证挂起 HIBP 后锁定不发后续检查、挂起文件读取后锁定 / 换条目均不会 POST。没有降低 KDF 参数来获取测试性能。
+
 ## 7. 已知边界
 
 - **忘记主密码的完整恢复流程未闭环**：crypto 层支持用 Recovery Key 解锁并 rewrap 新主密码，但设置页"修改主密码"固定要求输入**当前主密码**（不支持"用 Recovery Key 解锁后直接设新主密码"的引导路径）；Recovery Key 与主密码同时丢失 = 数据不可恢复。
 - **回收站无自动清理**：设计文档提到"保留 30 天语义"，但代码没有任何 30 天自动 purge（回收站条目永久保留直至手动 purge）。
 - **审计日志无清理策略**（AGENTS.md 已知问题 #1 同源）：vault_audit_logs 只增不减。
 - **`POST /import` 接受笔误格式串** `'doublog-vault-backdown'`（历史兼容残留，导出只写 `doublog-vault-backup`）。
-- HIBP/Favicon 依赖外部网络（api.pwnedpasswords.com / icons.duckduckgo.com）：离线时泄露检查返回 -1（显示"不可达"）、favicon 回退字母块；部署在无外网环境功能降级。
+- HIBP 依赖用户主动发起的外部范围查询；外部 Favicon 默认为关闭，明确启用会向 DDG 披露域名。离线泄露检查返回 -1（未知），图标回退字母。
+- 虚拟渲染减少 DOM，不是服务端明文分页：搜索 / 健康分析仍需当前解锁会话的完整内存条目。未引入明文磁盘缓存；锁定不能物理抹除 JavaScript 引擎已分配的不可变字符串，只能撤销引用、停止任务和阻止旧结果发布。Argon2id 120 秒超时是任务边界，不能保证所有设备在固定毫秒数内解锁。
 - 导入是替换式（无合并）；单条目附件无数量上限（仅单文件 5MB），总量受库大小约束。
 - 在线暴力破解防护复用站点认证边界（个人/内网部署假设，vault-design.md 威胁模型已声明）；Passkey/WebAuthn 解锁列为二期。
 

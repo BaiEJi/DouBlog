@@ -69,7 +69,9 @@ _LOCK = threading.Lock()
 
 
 def logs_config_path() -> str:
-    return os.path.join(settings.data_dir, 'logs_config.json')
+    from app.db import _runtime_context
+    runtime = _runtime_context.get()
+    return os.path.join(runtime.data_dir if runtime else settings.data_dir, 'logs_config.json')
 
 
 def load_logs_config() -> dict:
@@ -96,12 +98,10 @@ def load_logs_config() -> dict:
 
 def save_logs_config(cfg: dict):
     with _LOCK:
-        os.makedirs(settings.data_dir, exist_ok=True)
-        with open(logs_config_path(), 'w', encoding='utf-8') as f:
-            json.dump({'enabled': bool(cfg['enabled']),
-                       'url': str(cfg['url']).strip(),
-                       'level': cfg['level'] if cfg['level'] in ('INFO', 'WARNING') else 'WARNING'},
-                      f, ensure_ascii=False, indent=2)
+        from app.shared.files import atomic_write_json
+        atomic_write_json(logs_config_path(), {
+            'enabled': bool(cfg['enabled']), 'url': str(cfg['url']).strip(),
+            'level': cfg['level'] if cfg['level'] in ('INFO', 'WARNING') else 'WARNING'})
 
 
 class _SysNameAdapter(logging.LoggerAdapter):

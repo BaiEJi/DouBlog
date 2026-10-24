@@ -1,7 +1,7 @@
 # DouBlog Flask → FastAPI 全面迁移规范（施工蓝图）
 
 > 2026-10 生效。本文是迁移的唯一规范：骨架 API 契约、移植对照、表名映射、验收门槛。
-> 子代理按第 6 节的模块任务清单施工。**压测按用户指令暂缓（工具已备好：`backend/tools/bench/`）。**
+> 子代理按第 6 节的模块任务清单施工。迁移阶段的暂缓已结束；本轮优化使用冻结源码与统一种子A/B，见 `docs/optimization-execution.md`。
 
 ---
 
@@ -22,27 +22,27 @@ uvicorn (单进程, run.py, 端口 60100, dev 模式 --reload 监听 app/)
      │   → GZipMiddleware(≥1KB) → CORSMiddleware(/api/*)
      ├─ 异常处理器：AppError / HTTPException / RequestValidationError / Exception → 统一信封
      │   （AppError → {success:False, code:http_status, message, data:{error_code, details}}；
-     │     401 附 WWW-Authenticate；404 → "资源不存在"）
+     │     401不附Basic弹框头；404 → "资源不存在"）
      ├─ app.state.testing（DOUBLOG_TESTING=1 时后台线程空转）
      └─ 动态模块注册表：按 MODULES 顺序 importlib 导入 app/<mod>，
          取 `router` 挂载、调 `start_background(app)`（存在才调）
-         （未迁移/导入失败的模块捕获后跳过并 WARNING，中间态可启动）
+         （必需模块导入失败终止启动）
 ```
 
-请求执行模型：**DB 端点 `async def` + `return await run_db(lambda: <原同步逻辑>)`**（同步 SQLAlchemy 进 `doublog-db` SDK 线程池，结束 rollback+remove）。纯内存端点可直接 async。
+请求执行模型：**DB 端点 `async def` + `return await run_db(lambda: <原同步逻辑>)`**（同步 SQLAlchemy 进 `doublog-db` SDK 线程池，结束时在工作线程清理已存在的会话）。纯内存端点可直接 async。
 
-## 3. 骨架 API 契约（模块代码只允许依赖这些；骨架文件不许改）
+## 3. 骨架 API 契约（模块复用；整体优化由根任务同步维护）
 
 ### app/db.py
 
 | 名字 | 说明 |
 |---|---|
 | `Base` | SQLAlchemy 2.0 DeclarativeBase，**自带 `query` 描述符**（`Model.query` ≡ `db.session.query(Model)`） |
-| `db` | 兼容门面：`db.session`（scoped_session 本体）、`db.engine` |
-| `run_db(fn)` | **async**。同步 fn 进共享 SDK 线程池，结束 rollback+remove |
+| `db` | 兼容门面：`db.session`（当前 app runtime 的 scoped_session）、`db.engine` |
+| `run_db(fn,*args,_pool=None,**kwargs)` | **async**。捕获提交时 runtime，同步 fn 进 SDK 线程池；工作线程已有 Session 才 rollback+remove，纯缓存/直接连接任务不创建空 Session；取消等待方仍计数到实际工作结束 |
 | `load_db_config/save_db_config/get_database_url/SUPPORTED_BACKENDS` | 数据库切换用（system 模块） |
 | `LEGACY_TABLE_MAP` | 存量表改名映射（第 5 节） |
-| `init_db(app)` | 建表 → 存量改名 → 逐模块 `ensure_migrations(engine)` 钩子 → 播种虚拟根 → SQLite WAL/PRAGMA |
+| `init_db(app)` | 存量改名 → 建表 → 逐模块 `ensure_migrations(engine)` 钩子 → 播种虚拟根 → SQLite WAL/PRAGMA |
 
 模型写法（迁移后）：
 
@@ -56,7 +56,7 @@ class Post(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 ```
 
-### app/shared/（骨架提供，不许改）
+### app/shared/（骨架提供）
 
 - `response.api_response(data=None, code=200, message='操作成功') -> JSONResponse`（签名/信封与 Flask 时代一致，中文不转义）
 - `auth.require_basic`：**依赖**（会话 Cookie 优先，Basic 兼容；/api/auth/login JSON 载荷签发 Cookie、/logout 清除）。用法 `APIRouter(prefix=..., dependencies=[Depends(require_basic)])` 或路由级。免认证路由不挂。`verify_password(u,p)` 供复用。旧 `auth`/`@auth.login_required` **不存在了**
@@ -71,7 +71,7 @@ class Post(Base):
 # app/<mod>/__init__.py 必须导出：
 router                # APIRouter（可由多个子 router 组成）
 start_background(app) # 可选：后台线程启动（内部 app.state.testing 时直接 return）
-ensure_migrations(engine)  # 可选：列级幂等迁移钩子（init_db 在表改名后调用）
+ensure_migrations(engine)  # 可选：列/索引幂等迁移钩子（init_db 在表改名后调用）
 ```
 
 ### 运行态挂载原则
@@ -116,7 +116,7 @@ ensure_migrations(engine)  # 可选：列级幂等迁移钩子（init_db 在表�
 | vault/pwsvc/subs/apihub | 全部 | 不变（已合规） |
 
 - 模型 `__tablename__` 改新名；**所有裸 SQL 字符串**（`text(...)`、迁移函数、统计 SQL）同步改新名
-- 存量库 RENAME 由骨架 `init_db` 统一做；列级迁移放模块 `ensure_migrations(engine)`（表名用新名）
+- 存量库 RENAME 由骨架 `init_db` 统一做；列/索引迁移放模块 `ensure_migrations(engine)`（表名用新名），保持既有数据
 
 ## 6. 模块任务清单
 
@@ -125,7 +125,7 @@ ensure_migrations(engine)  # 可选：列级幂等迁移钩子（init_db 在表�
 模块特殊点：
 
 - **system**：`/api/admin/database*` 切换语义不变；`restart_required = not settings.debug`（dev 下 touch `_reload_stamp.py` 触发 uvicorn 重载，沿用延时线程）；`GET /api/admin/database` 的统计 SQL 用新表名；logging 配置三端点照搬
-- **blog**：把 `_ensure_workspace_migration` 改造成 `ensure_migrations(engine)`（列补齐用新表名 `blog_posts/blog_workspaces`）；图片上传/下载（`FileResponse` + 目录围栏）；zip 导出；树/列表**不含 content**（契约不变）
+- **blog**：把 `_ensure_workspace_migration` 改造成 `ensure_migrations(engine)`（列补齐用新表名 `blog_posts/blog_workspaces`）；链式转发书签迁移，在 `engine.begin()` 中用 SQLAlchemy `CreateIndex(if_not_exists=True)` 为存量 `bookmarks_items` 补 `ix_bmitem_deleted_created_id(deleted_at,created_at,id)`，保留既有数据与索引（create_all 不会给已存在的表补索引）；图片上传/下载（`FileResponse` + 目录围栏）；zip 导出；树/列表**不含 content**（契约不变）
 - **diary**：`_ensure_diary_migration` → `ensure_migrations`（新表名 `diary_diaries`）；share 端点免 Basic Auth
 - **pwsvc**：`_ensure_pwsvc_migration` → `ensure_migrations`；限流令牌桶是进程内实现照搬；黄金向量测试不许改断言
 - **sdklogs**：摄入端点免 Basic Auth（可选 token）；pipeline 挂 `app.state`（多 app 测试不泄漏）；写者/保留/告警三线程保留，`app.state.testing` 空转；`tests/shared/test_logging_integration.py`（已移植）依赖你的端点，最终一并跑绿
@@ -140,3 +140,10 @@ ensure_migrations(engine)  # 可选：列级幂等迁移钩子（init_db 在表�
 | 契约不变 | 移植前后同输入同状态码同信封（对照 `tools/flask-snapshot/` 原实现逐路由自检） |
 | 无框架残留 | 第 6 节 grep 零命中 |
 | 压测 | **暂缓**（用户指令）；工具在 `tools/bench/`，恢复后按第 8 节对照 |
+
+
+## 2026-10-21 当前骨架增补
+
+`db.database_context(app_or_runtime)` 为后台绑定所属库；`run_db(fn,*args,_pool=None,**kwargs)` 捕获提交时runtime，并包含排队/执行计数与取消清理。默认DbFacade只作为未绑定同步脚本的兼容入口，后台不能依赖它寻找最近创建的app。
+
+模块除router/start_background/ensure_migrations外，可导出幂等 `drain_background(app,timeout=5.0)` 与 `stop_background(app,timeout=5.0)`，False阻止切换或报告退出未完成。仅提供stop钩子的惰性资源模块也必须登记到app的活动资源集，退出/切库同样清理；无需为登记而创建后台线程。启动钩子成功后才标记活动，停止失败保留登记供重试。应用lifespan关闭自己的资源，SDK执行池由进程退出统一关闭。`shared.pools.run_blocking`用于非DB阻塞工作，`shared.files`提供原子JSON/text写入。跨app缓存使用runtime身份；读结果回填必须核对查询前捕获的写纪元。

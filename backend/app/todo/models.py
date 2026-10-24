@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
 )
@@ -119,6 +120,21 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)  # JSON 字符串
+
+
+class TaskMutation(Base):
+    __tablename__ = 'todo_mutations'
+    mutation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class TaskDayLock(Base):
+    """日容量的数据库锁锚点；不同任务竞争最后名额时仍按同一日期串行。"""
+    __tablename__ = 'todo_day_locks'
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    touch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class Plan(Base):

@@ -11,7 +11,9 @@ from .assets import ensure_migrations as _assets_migrations
 from .diary import router as diary_router
 from .diary import ensure_migrations as _diary_migrations
 from .bookmarks import router as bookmarks_router
+from .bookmarks import ensure_migrations as _bookmarks_migrations
 from .services.migrations import ensure_migrations as _kb_migrations
+from .services import links as _links  # noqa: F401 注册正文投影监听
 
 router = APIRouter()
 router.include_router(posts_router)
@@ -24,10 +26,11 @@ router.include_router(bookmarks_router)
 
 
 def ensure_migrations(engine):
-    """知识库 + 资产库 + 日记三级幂等迁移（骨架 init_db 在建表/改名后调用）。"""
+    """知识库及资产、日记、书签子域幂等迁移，均在建表/改名后调用。"""
     _kb_migrations(engine)
     _assets_migrations(engine)
     _diary_migrations(engine)
+    _bookmarks_migrations(engine)
 
 
 __all__ = ['router', 'ensure_migrations']

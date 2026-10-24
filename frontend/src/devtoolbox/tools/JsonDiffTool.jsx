@@ -1,7 +1,10 @@
 /** JSON Diff：深度对比两个 JSON，按路径列出 增/删/改；数组 LCS 对齐、可忽略数组顺序 */
 import { useMemo, useState } from 'react'
-import { ToolHead, Check, CopyBtn, LBL, btnSm, areaCls, card } from '../kit'
-import { jsonDiff, shortValue } from '../lib/diff'
+import { ToolHead, Check, CopyBtn, LBL, btnSm, card } from '../kit'
+import { shortValue } from '../lib/diff'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
+import VirtualList from '../../shared/VirtualList'
 
 const SAMPLE_A = `{
   "name": "deploy-config",
@@ -29,15 +32,8 @@ export default function JsonDiffTool() {
   const [b, setB] = useState(SAMPLE_B)
   const [ignoreArrayOrder, setIgnoreArrayOrder] = useState(false)
 
-  const { error, diff } = useMemo(() => {
-    if (!a.trim() || !b.trim()) return { error: null, diff: null }
-    try {
-      const va = JSON.parse(a), vb = JSON.parse(b)
-      return { error: null, diff: jsonDiff(va, vb, { ignoreArrayOrder }) }
-    } catch (e) {
-      return { error: 'JSON 解析失败：' + e.message, diff: null }
-    }
-  }, [a, b, ignoreArrayOrder])
+  const computation = useComputation('jsonDiff', { a, b, ignoreArrayOrder })
+  const diff = computation.result, error = computation.error
 
   const stats = diff?.stats
   const report = useMemo(() => {
@@ -55,9 +51,10 @@ export default function JsonDiffTool() {
       <ToolHead title="JSON Diff" desc="深度对比：对象按键、数组按 LCS 对齐，按路径列出差异"
         right={<Check checked={ignoreArrayOrder} onChange={setIgnoreArrayOrder} label="忽略数组顺序" />} />
       <div className="grid grid-cols-2 gap-4">
-        <textarea className={areaCls} rows={12} value={a} spellCheck={false} onChange={e => setA(e.target.value)} placeholder="JSON A（旧）" aria-label="JSON A" />
-        <textarea className={areaCls} rows={12} value={b} spellCheck={false} onChange={e => setB(e.target.value)} placeholder="JSON B（新）" aria-label="JSON B" />
+        <CodeEditor value={a} onChange={setA} language="json" height={300} ariaLabel="JSON A" />
+        <CodeEditor value={b} onChange={setB} language="json" height={300} ariaLabel="JSON B" />
       </div>
+      {computation.pending && <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">计算中…</p>}
       {error && <p className="mt-2 text-[13px] text-red-600 dark:text-red-400">✗ {error}</p>}
       {stats && (
         <div className="flex flex-wrap items-center gap-2 mt-3">
@@ -75,7 +72,7 @@ export default function JsonDiffTool() {
       )}
       {diff && !stats.same && (
         <div className={'mt-3 divide-y divide-black/[0.05] dark:divide-white/[0.06] ' + card}>
-          {diff.changes.map((c, i) => {
+          <VirtualList items={diff.changes} height={500} estimateSize={90} renderItem={(c, i) => {
             const badge = TYPE_BADGE[c.type]
             return (
               <div key={i} className="px-4 py-2.5">
@@ -94,7 +91,7 @@ export default function JsonDiffTool() {
                 )}
               </div>
             )
-          })}
+          }} />
         </div>
       )}
       {!diff && !error && <p className={'mt-3 ' + LBL}>两侧输入 JSON 后自动对比。</p>}

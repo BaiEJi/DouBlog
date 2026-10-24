@@ -4,34 +4,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 
-// ─── 剪贴板（N 秒自动覆写清理；绝不写 console）──────────
-let clipboardClearTimer = 0
-export const CLIPBOARD_OPTIONS = [
-  { key: '10s', label: '10 秒', ms: 10000 },
-  { key: '30s', label: '30 秒', ms: 30000 },
-  { key: '60s', label: '60 秒', ms: 60000 },
-  { key: 'never', label: '永不', ms: 0 },
-]
-
-export function makeClipboardCopier(clearMs) {
-  return async (text) => {
-    try {
-      await navigator.clipboard.writeText(text)
-    } catch {
-      return false
-    }
-    if (clearMs > 0) {
-      clearTimeout(clipboardClearTimer)
-      clipboardClearTimer = setTimeout(async () => {
-        try {
-          const current = await navigator.clipboard.readText().catch(() => null)
-          if (current === text) await navigator.clipboard.writeText('')  // 仅清理未被覆盖的内容
-        } catch { /* 忽略：权限/不可用 */ }
-      }, clearMs)
-    }
-    return true
-  }
-}
+export { CLIPBOARD_OPTIONS, makeClipboardCopier } from './clipboard'
 
 // ─── 复制按钮 ────────────────────────────────────────────
 export function CopyButton({ value, copier, label = '复制', done = '已复制' }) {
@@ -173,9 +146,15 @@ export function FieldRow({ label, extra, children }) {
 
 // ─── Favicon（DDG icons + 字母回退）─────────────────────
 export function Favicon({ domain, name, size = 32 }) {
-  const [failed, setFailed] = useState(false)
+  const [failedDomain, setFailedDomain] = useState(null)
+  const [allowed, setAllowed] = useState(() => { try { return localStorage.getItem('vault_external_icons') === 'true' } catch { return false } })
+  useEffect(() => {
+    const changed = () => { try { setAllowed(localStorage.getItem('vault_external_icons') === 'true') } catch { setAllowed(false) } }
+    window.addEventListener('vault-icon-preference', changed)
+    return () => window.removeEventListener('vault-icon-preference', changed)
+  }, [])
   const letter = (name || domain || '?').trim().charAt(0).toUpperCase()
-  if (!domain || failed) {
+  if (!domain || failedDomain === domain || !allowed) {
     return (
       <div
         style={{ width: size, height: size, fontSize: size * 0.42 }}
@@ -186,8 +165,9 @@ export function Favicon({ domain, name, size = 32 }) {
   return (
     <img
       src={`https://icons.duckduckgo.com/ip3/${domain}.ico`}
-      onError={() => setFailed(true)}
+      onError={() => setFailedDomain(domain)}
       alt=""
+      referrerPolicy="no-referrer" loading="lazy"
       style={{ width: size, height: size }}
       className="rounded-lg bg-stone-100 dark:bg-stone-800 object-contain shrink-0"
     />

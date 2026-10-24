@@ -37,6 +37,19 @@ def ensure_migrations(engine):
     from sqlalchemy.orm import Session
 
     from .seed import seed_if_empty
+    from sqlalchemy import text
+    from app.shared.modules import mod_logger
+
+    with engine.begin() as conn:
+        duplicates = conn.execute(text('SELECT plan_id, task_date, COUNT(*) AS n FROM todo_tasks '
+            'WHERE plan_id IS NOT NULL AND deleted_at IS NULL GROUP BY plan_id, task_date '
+            'HAVING COUNT(*) > 1')).all()
+        if duplicates:
+            mod_logger('todo').warning('计划实例唯一索引未启用；存量重复组=%s',
+                                      [(str(r[0]), str(r[1]), r[2]) for r in duplicates])
+        else:
+            conn.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_todo_plan_day_live '
+                'ON todo_tasks (plan_id, task_date) WHERE plan_id IS NOT NULL AND deleted_at IS NULL'))
 
     with Session(engine) as session:
         seed_if_empty(session)

@@ -12,7 +12,6 @@ import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { App as AntApp, ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { darkTheme, lightTheme } from './theme'
 
 // 路由级代码分割：各页面按需加载（antd/xyflow 等公共依赖自动进 vendor chunk）
@@ -23,9 +22,6 @@ const RelationConfig = lazy(() => import('./pages/RelationConfig'))
 const SearchPage = lazy(() => import('./pages/SearchPage'))
 
 // staleTime：15s 内的重复挂载/聚焦不重复请求（显式 invalidateQueries 仍立即刷新）
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15000, retry: 1 } },
-})
 
 const NAV = [
   { to: '/gamemap', label: '概览', exact: true },
@@ -49,7 +45,6 @@ export default function GamemapShell({ dark }) {
   return (
     <ConfigProvider locale={zhCN} theme={dark ? darkTheme : lightTheme}>
       <AntApp>
-        <QueryClientProvider client={queryClient}>
           <div className="gamemap-shell flex flex-col min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
             {/* ── 顶栏（统一 PageHeader + 路由 tabs）── */}
             <PageHeader title="剧情图谱" subtitle="游戏 · 人物 · 关系" backLabel="门户"
@@ -74,7 +69,6 @@ export default function GamemapShell({ dark }) {
               </Suspense>
             </main>
           </div>
-        </QueryClientProvider>
       </AntApp>
     </ConfigProvider>
   )

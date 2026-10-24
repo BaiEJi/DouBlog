@@ -9,7 +9,13 @@
  * 不发明密码学：Argon2id 用 @noble/hashes（审计维护），AEAD 用原生 Web Crypto。
  * VEK 以不可导出 CryptoKey 只存内存；本模块任何函数都不会 console 输出密钥/明文。
  */
-import { argon2id } from '@noble/hashes/argon2.js'
+import { createWorkerTask } from '../../shared/workerTask.js'
+
+const kdfTasks = createWorkerTask(() => {
+  if (kdfTasks.activeCount) throw new Error('已有密钥派生任务，请等待完成')
+  return new Worker(new URL('./kdf.worker.js', import.meta.url), { type: 'module' })
+})
+export const cancelVaultCrypto = () => kdfTasks.dispose()
 
 const te = new TextEncoder()
 const td = new TextDecoder()
@@ -35,10 +41,12 @@ export const DEFAULT_KDF = { t: 2, m: 32768, p: 1 }
 
 /** Argon2id 派生 KEK，导入为 AES-GCM CryptoKey（不可导出） */
 async function deriveKEK(password, salt, params) {
-  const dk = argon2id(te.encode(password), salt, {
-    t: params.t, m: params.m, p: params.p, dkLen: 32,
-  })
-  return crypto.subtle.importKey('raw', dk, 'AES-GCM', false, ['encrypt', 'decrypt'])
+  if (typeof Worker !== 'undefined') return kdfTasks.run('derive', { password, salt, params }, { timeoutMs: 120000 })
+  // Node-only test/CLI fallback. Browser KDF always uses a disposable Worker.
+  const { argon2id } = await import('@noble/hashes/argon2.js')
+  const dk = argon2id(te.encode(password), salt, { t: params.t, m: params.m, p: params.p, dkLen: 32 })
+  try { return await crypto.subtle.importKey('raw', dk, 'AES-GCM', false, ['encrypt', 'decrypt']) }
+  finally { dk.fill(0) }
 }
 
 // ─── AEAD ───────────────────────────────────────────────
@@ -63,6 +71,7 @@ async function aeadDecrypt(key, box) {
  */
 export async function createVaultMaterial(masterPassword) {
   const vekBytes = rand(32)
+  try {
   const kdfSalt = rand(16)
   const recoverySalt = rand(16)
   const params = { ...DEFAULT_KDF }
@@ -85,6 +94,7 @@ export async function createVaultMaterial(masterPassword) {
     },
     recoveryKey,
   }
+  } finally { vekBytes.fill(0) }
 }
 
 /**
@@ -100,7 +110,8 @@ export async function unlockVault(account, secret, isRecovery = false) {
   const kek = await deriveKEK(isRecovery ? normalizeRecoveryKey(secret) : secret, salt, params)
   const box = isRecovery ? account.recovery_wrapped_vault_key : account.wrapped_vault_key
   const vekBytes = await aeadDecrypt(kek, box)   // 错误密码 → GCM 校验失败 → 抛错
-  return crypto.subtle.importKey('raw', vekBytes, 'AES-GCM', false, ['encrypt', 'decrypt'])
+  try { return await crypto.subtle.importKey('raw', vekBytes, 'AES-GCM', false, ['encrypt', 'decrypt']) }
+  finally { vekBytes.fill(0) }
 }
 
 /**
@@ -121,11 +132,13 @@ export async function rewrapVaultKey(account, currentSecret, isRecovery, newSecr
   const oldBox = isRecovery ? account.recovery_wrapped_vault_key : account.wrapped_vault_key
   const vekBytes = await aeadDecrypt(oldKek, oldBox)
 
+  try {
   // 新口令侧重新包裹
   const newSalt = rand(16)
   const newKek = await deriveKEK(newIsRecovery ? normalizeRecoveryKey(newSecret) : newSecret, newSalt, params)
   const newBox = await aeadEncrypt(newKek, vekBytes)
   return { box: newBox, salt: toB64(newSalt), params }
+  } finally { vekBytes.fill(0) }
 }
 
 // ─── 条目加解密 ─────────────────────────────────────────

@@ -9,13 +9,15 @@
  */
 import { useCallback, useMemo, useState } from 'react'
 import { CATEGORIES, CATEGORY_LABELS } from './core'
+import { getDataIdentity } from '../../shared/dataEpoch'
 
 const LS_KEY = 'vault_custom_categories'
+const storageKey = () => `${LS_KEY}:${getDataIdentity()}`
 const MAX_LABEL = 12
 
 export function loadCustomCategories() {
   try {
-    const raw = JSON.parse(localStorage.getItem(LS_KEY) || '[]')
+    const raw = JSON.parse(localStorage.getItem(storageKey()) || '[]')
     if (!Array.isArray(raw)) return []
     return raw
       .filter(c => c && typeof c.key === 'string' && typeof c.label === 'string')
@@ -24,7 +26,7 @@ export function loadCustomCategories() {
 }
 
 export function saveCustomCategories(list) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(list)) } catch { /* 忽略：隐私模式/存储满等写入失败 */ }
+  try { localStorage.setItem(storageKey(), JSON.stringify(list)) } catch { /* 忽略：隐私模式/存储满等写入失败 */ }
 }
 
 export function newCategoryKey() {

@@ -8,7 +8,7 @@
 """
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, func
+from sqlalchemy import DateTime, Integer, String, JSON, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -59,3 +59,16 @@ class SystemHomeCard(Base):
 
     def to_dict(self):
         return {'key': self.key, 'title': self.title, 'desc': self.desc}
+
+
+class SystemHomeState(Base):
+    __tablename__ = 'system_home_state'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class SystemHomeMutation(Base):
+    __tablename__ = 'system_home_mutations'
+    mutation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response: Mapped[dict] = mapped_column(JSON, nullable=False)

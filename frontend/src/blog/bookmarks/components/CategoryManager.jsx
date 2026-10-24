@@ -5,7 +5,7 @@ import { useState } from 'react'
 
 import { createCategory, updateCategory, deleteCategory } from '../api'
 import { flattenCategories } from '../api'
-import { Icon, Modal, inputCls } from '../../../todo/kit'
+import { Icon, Modal, inputCls } from '@/shared/ui/kit'
 
 export default function CategoryManager({ open, onClose, categories, onChanged, toast }) {
   const [name, setName] = useState('')

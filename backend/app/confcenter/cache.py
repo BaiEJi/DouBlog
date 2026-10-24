@@ -19,6 +19,7 @@ import json
 import orjson
 import os
 import threading
+from urllib.parse import quote
 
 from app.config import settings
 from app.shared.modules import mod_logger
@@ -37,6 +38,7 @@ DEFAULT_TTL = 3600
 
 #: 进程级"只 warn 一次"开关（跨 app 共享是刻意的——降级不刷日志）
 _WARNED = False
+_STATE_LOCK = threading.RLock()
 
 
 # ─── 配置读写（data/redis_config.json）──────────────────
@@ -47,7 +49,8 @@ def default_config() -> dict:
 
 
 def redis_config_path() -> str:
-    return os.path.join(settings.data_dir, REDIS_CONFIG_FILE)
+    from app.db import current_runtime
+    return os.path.join(current_runtime().data_dir, REDIS_CONFIG_FILE)
 
 
 def load_redis_config() -> dict:
@@ -66,9 +69,8 @@ def load_redis_config() -> dict:
 
 
 def save_redis_config(cfg: dict) -> None:
-    os.makedirs(settings.data_dir, exist_ok=True)
-    with open(redis_config_path(), 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    from app.shared.files import atomic_write_json
+    atomic_write_json(redis_config_path(), cfg)
 
 
 def _int_field(value, name: str, lo: int, hi: int) -> int:
@@ -124,12 +126,16 @@ class CacheState:
     """每 app 一份的缓存运行态：惰性客户端 + 失败标记 + 计数器 + 配置快照。"""
 
     def __init__(self):
+        from app.db import current_runtime
+        self.identity = current_runtime().identity
         self.lock = threading.RLock()
         self.client = None       # 惰性建立的 Redis 客户端（配置变更后置空重建）
         self.failed = False      # 连接失败标记：读/写路径跳过缓存直连 DB
         self.hits = 0
         self.misses = 0
         self.config = load_redis_config()
+        self.generation = 0
+        self.dirty = False
 
     def hit(self):
         with self.lock:
@@ -142,24 +148,38 @@ class CacheState:
     def apply_config(self, cfg: dict):
         """配置变更：更新快照并作废客户端（下次用到才重建——惰性连接）。"""
         with self.lock:
+            old = self.client
             self.config = cfg
             self.client = None
             self.failed = False
+            self.generation += 1
+            self.dirty = True  # 新配置可能指向曾缓存旧数据的 Redis。
+            if old and hasattr(old, 'close'):
+                try:
+                    old.close()
+                except Exception:
+                    pass
 
 
 def get_cache_state(app) -> CacheState:
     """取/建该 app 的缓存运行态（挂 app.state.confcenter_cache；禁模块级单例）。"""
     state = getattr(app.state, 'confcenter_cache', None)
     if state is None:
-        state = CacheState()
-        app.state.confcenter_cache = state
+        with _STATE_LOCK:
+            state = getattr(app.state, 'confcenter_cache', None)
+            if state is None:
+                state = CacheState()
+                app.state.confcenter_cache = state
     return state
 
 
 # ─── 客户端（惰性连接 + 降级三态）────────────────────────
 
-def cache_key(namespace: str, key: str) -> str:
-    return f'{KEY_PREFIX}:{namespace}:{key}'
+def cache_key(namespace: str, key: str, identity=None) -> str:
+    if identity is None:
+        from app.db import current_runtime
+        identity = current_runtime().identity
+    return f'{KEY_PREFIX}:{identity}:{quote(namespace, safe="")}:{quote(key, safe="")}'
 
 
 def _build_client(cfg: dict):
@@ -176,7 +196,10 @@ def _build_client(cfg: dict):
 def _mark_failed(state: CacheState):
     """连接失败：标记降级（后续读写跳过缓存）+ 进程内只 warn 一次。"""
     global _WARNED
-    state.failed = True
+    with state.lock:
+        state.failed = True
+        state.dirty = True
+        state.generation += 1
     if not _WARNED:
         _WARNED = True
         logger.warning('Redis 缓存不可用，confcenter 降级直连数据库（本进程不再重复告警）')
@@ -190,6 +213,13 @@ def _usable_client(state: CacheState):
         if state.client is None:
             try:
                 state.client = _build_client(state.config)
+            except Exception:
+                _mark_failed(state)
+                return None
+        if state.dirty:
+            try:
+                _clear_prefix(state.client, state.identity)
+                state.dirty = False
             except Exception:
                 _mark_failed(state)
                 return None
@@ -216,7 +246,7 @@ def cache_get(state: CacheState, namespace: str, key: str) -> dict | None:
     if client is None:
         return None
     try:
-        raw = client.get(cache_key(namespace, key))
+        raw = client.get(cache_key(namespace, key, state.identity))
     except Exception:  # noqa: BLE001 - 任何连接异常都降级，不抛给调用方
         _mark_failed(state)
         return None
@@ -234,28 +264,33 @@ def cache_get(state: CacheState, namespace: str, key: str) -> dict | None:
     return payload
 
 
-def cache_put(state: CacheState, namespace: str, key: str, payload: dict) -> None:
+def cache_put(state: CacheState, namespace: str, key: str, payload: dict, generation=None) -> None:
     """回填（setex 带 TTL，防漏删的陈旧）；缓存不生效/失败时静默跳过。"""
-    client = _usable_client(state)
-    if client is None:
-        return
-    ttl = max(1, int(state.config.get('ttl_seconds') or DEFAULT_TTL))
-    try:
-        client.setex(cache_key(namespace, key), ttl,
-                     orjson.dumps(payload))
-    except Exception:  # noqa: BLE001
-        _mark_failed(state)
+    with state.lock:
+        if generation is not None and generation != state.generation:
+            return
+        client = _usable_client(state)
+        if client is None:
+            return
+        ttl = max(1, int(state.config.get('ttl_seconds') or DEFAULT_TTL))
+        try:
+            client.setex(cache_key(namespace, key, state.identity), ttl, orjson.dumps(payload))
+        except Exception:  # noqa: BLE001
+            _mark_failed(state)
 
 
 def cache_invalidate(state: CacheState, namespace: str, key: str) -> None:
     """写/删后失效：先落库再 DEL（不做双写，避免一致性窗口）。"""
-    client = _usable_client(state)
-    if client is None:
-        return
-    try:
-        client.delete(cache_key(namespace, key))
-    except Exception:  # noqa: BLE001
-        _mark_failed(state)
+    with state.lock:
+        state.generation += 1
+        client = _usable_client(state)
+        if client is None:
+            state.dirty = True
+            return
+        try:
+            client.delete(cache_key(namespace, key, state.identity))
+        except Exception:  # noqa: BLE001
+            _mark_failed(state)
 
 
 # ─── 管理端（status / test / flush）─────────────────────
@@ -275,9 +310,14 @@ def cache_status(state: CacheState) -> dict:
     reachable = False
     if configured:
         try:
-            _probe_client(state).ping()
-            reachable = True
-            state.failed = False          # 探活成功 → 故障自愈
+            with state.lock:
+                client = _probe_client(state)
+                client.ping()
+                if state.dirty:
+                    _clear_prefix(client, state.identity)
+                    state.dirty = False
+                reachable = True
+                state.failed = False
         except Exception:  # noqa: BLE001
             pass
     return {
@@ -297,10 +337,27 @@ def test_connection(cfg: dict) -> tuple[bool, str]:
     if not REDIS_AVAILABLE:
         return False, 'redis 库未安装'
     try:
-        _build_client(cfg).ping()
+        client = _build_client(cfg)
+        try:
+            client.ping()
+        finally:
+            if hasattr(client, 'close'):
+                client.close()
         return True, '连接成功'
     except Exception as e:  # noqa: BLE001
         return False, f'连接失败: {e}'
+
+
+def _clear_prefix(client, identity):
+    deleted, batch = 0, []
+    for key in client.scan_iter(match=f'{KEY_PREFIX}:{identity}:*'):
+        batch.append(key)
+        if len(batch) >= 500:
+            deleted += int(client.delete(*batch))
+            batch = []
+    if batch:
+        deleted += int(client.delete(*batch))
+    return deleted
 
 
 def cache_flush(state: CacheState) -> tuple[bool, str, int]:
@@ -308,10 +365,12 @@ def cache_flush(state: CacheState) -> tuple[bool, str, int]:
     if not REDIS_AVAILABLE:
         return False, 'redis 库未安装', 0
     try:
-        client = _probe_client(state)
-        keys = list(client.scan_iter(match=f'{KEY_PREFIX}:*'))
-        deleted = int(client.delete(*keys)) if keys else 0
-        state.failed = False              # 清理成功即连通 → 自愈
+        with state.lock:
+            state.generation += 1
+            client = _probe_client(state)
+            deleted = _clear_prefix(client, state.identity)
+            state.failed = False
+            state.dirty = False
         return True, f'已清理 {deleted} 个缓存键', deleted
     except Exception as e:  # noqa: BLE001
         _mark_failed(state)

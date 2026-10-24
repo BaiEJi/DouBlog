@@ -1,7 +1,8 @@
 /** JSON ⇄ CSV：数组对象 ↔ CSV（RFC 4180 引号规则；分隔符可选；嵌套字段点路径扁平化） */
-import { useMemo, useState } from 'react'
-import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine, selectCls, areaCls } from '../kit'
-import { jsonToCsv, csvToJson, csvStringify, csvParse } from '../lib/text'
+import { useState } from 'react'
+import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine, selectCls } from '../kit'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
 
 const SAMPLE = `[
   {"id": 1, "name": "博客", "tags": "fastapi"},
@@ -15,23 +16,9 @@ export default function JsonCsvTool() {
   const [delim, setDelim] = useState(',')
   const [flattenNested, setFlattenNested] = useState(true)
 
-  const { output, error, info } = useMemo(() => {
-    if (!input.trim()) return { output: '', error: null, info: '' }
-    try {
-      if (direction === 'json2csv') {
-        const data = JSON.parse(input)
-        if (!Array.isArray(data)) return { output: '', error: 'JSON 顶层必须是数组（对象数组 → CSV）', info: '' }
-        const table = jsonToCsv(data, { flattenNested })
-        return { output: csvStringify(table, delim), error: null, info: `${table.length - 1} 行 × ${table[0].length} 列` }
-      }
-      const rows = csvParse(input, delim)
-      if (rows.length < 1) return { output: '', error: 'CSV 为空', info: '' }
-      const objs = csvToJson(rows)
-      return { output: JSON.stringify(objs, null, 2), error: null, info: `${objs.length} 个对象 × ${rows[0].length} 列` }
-    } catch (e) {
-      return { output: '', error: e.message, info: '' }
-    }
-  }, [input, direction, delim, flattenNested])
+  const computation = useComputation('jsonCsv', { input, direction, delim, flattenNested })
+  const { output = '', info = '' } = computation.result || {}
+  const error = computation.error
 
   return (
     <div>
@@ -51,8 +38,8 @@ export default function JsonCsvTool() {
       <TwoPane
         leftTitle={direction === 'json2csv' ? 'JSON 数组' : 'CSV'}
         rightTitle={`输出${info ? ` · ${info}` : ''}`}
-        left={<textarea className={areaCls} rows={14} value={input} spellCheck={false} onChange={e => setInput(e.target.value)} />}
-        right={<textarea className={'font-mono text-[13px] leading-relaxed p-3 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-stone-700 dark:text-stone-200 whitespace-pre'} rows={14} readOnly value={output} />}
+        left={<CodeEditor value={input} onChange={setInput} language={direction === 'json2csv' ? 'json' : 'text'} height={350} ariaLabel="转换输入" />}
+        right={<CodeEditor readOnly value={output} language={direction === 'csv2json' ? 'json' : 'text'} height={350} ariaLabel="转换结果" />}
         rightActions={<CopyBtn text={output} disabled={!output} />} />
       <div className="mt-2"><StatusLine ok={!error && !!input.trim() && !!output} err={error} okText="转换完成" /></div>
     </div>

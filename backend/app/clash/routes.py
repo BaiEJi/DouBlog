@@ -17,19 +17,40 @@ Clash 代理管理 API：clashctl 全能力的 Web 迁移（全部 require_basic
 | GET/POST | /sub | clashctl sub ls / add / del / use / update |
 | GET  | /sub/log | clashctl sub log |
 
-全部为同步 def（内部 subprocess 阻塞数秒，FastAPI 自动扔线程池，不占事件循环）。
+短操作由异步入口交给 Clash 专用 SDK 池，并计入数据库切换的在途任务；SSE 独立管理。
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from functools import wraps
 from lizysdk.errors import ParamError
 from pydantic import BaseModel
 
 from app.clash import controller, service
 from app.shared.auth import require_basic
 from app.shared.response import api_response
+from app.shared.pools import get_pool
+from app.db import current_runtime, database_context, run_db
 
 router = APIRouter(prefix='/api/clash', tags=['clash'],
                    dependencies=[Depends(require_basic)])
+
+
+def _isolated(handler):
+    """Short REST/command operations use SDK workers and runtime admission.
+
+    SSE is deliberately excluded: its long connection has separate bounded slots.
+    """
+    @wraps(handler)
+    async def run(*args, **kwargs):
+        with database_context(current_runtime(), write=True):
+            return await run_db(handler, *args, _pool=get_pool('clash-api', workers=16), **kwargs)
+    return run
+
+
+@router.get('/controller/connections/events')
+async def controller_connection_events(request: Request):
+    from app.clash.events import connection_events
+    return connection_events(request)
 
 
 class _EnableBody(BaseModel):
@@ -97,6 +118,7 @@ def _tail_arg(tail: int) -> int:
 # ─── 安装检测 / 内核 ──────────────────────────────────────
 
 @router.get('/availability')
+@_isolated
 def get_availability():
     """门户卡片置灰依据：{available, base_dir, kernel}——未安装时 available=false 不报错。"""
     return api_response({
@@ -107,12 +129,14 @@ def get_availability():
 
 
 @router.get('/status')
+@_isolated
 def get_status():
     service.ensure_available()
     return api_response(service.kernel_status())
 
 
 @router.post('/on')
+@_isolated
 def start_kernel():
     service.ensure_available()
     data = service.kernel_start()
@@ -120,6 +144,7 @@ def start_kernel():
 
 
 @router.post('/off')
+@_isolated
 def stop_kernel():
     service.ensure_available()
     data = service.kernel_stop()
@@ -129,12 +154,14 @@ def stop_kernel():
 # ─── 系统代理 / Tun ───────────────────────────────────────
 
 @router.get('/proxy')
+@_isolated
 def get_proxy():
     service.ensure_available()
     return api_response(service.system_proxy_get())
 
 
 @router.post('/proxy')
+@_isolated
 def set_proxy(body: _EnableBody):
     service.ensure_available()
     data = service.system_proxy_set(body.enable)
@@ -142,12 +169,14 @@ def set_proxy(body: _EnableBody):
 
 
 @router.get('/tun')
+@_isolated
 def get_tun():
     service.ensure_available()
     return api_response(service.tun_get())
 
 
 @router.post('/tun')
+@_isolated
 def set_tun(body: _EnableBody):
     service.ensure_available()
     data = service.tun_set(body.enable)
@@ -157,18 +186,21 @@ def set_tun(body: _EnableBody):
 # ─── Web 控制台 / 密钥 / 升级 ──────────────────────────────
 
 @router.get('/ui')
+@_isolated
 def get_ui():
     service.ensure_available()
     return api_response(service.ui_addresses())
 
 
 @router.get('/secret')
+@_isolated
 def get_secret():
     service.ensure_available()
     return api_response(service.secret_get())
 
 
 @router.put('/secret')
+@_isolated
 def put_secret(body: _SecretBody):
     service.ensure_available()
     data = service.secret_set(body.secret.strip())
@@ -176,6 +208,7 @@ def put_secret(body: _SecretBody):
 
 
 @router.post('/upgrade')
+@_isolated
 def post_upgrade(body: _UpgradeBody):
     service.ensure_available()
     data = service.upgrade((body.channel or '').strip())
@@ -185,12 +218,14 @@ def post_upgrade(body: _UpgradeBody):
 # ─── 内核日志 / 配置文件 ──────────────────────────────────
 
 @router.get('/log')
+@_isolated
 def get_log(tail: int = Query(200, ge=1, le=5000)):
     service.ensure_available()
     return api_response(service.kernel_log_tail(_tail_arg(tail)))
 
 
 @router.post('/log/level')
+@_isolated
 def set_log_level(body: _LogLevelBody):
     """切换内核日志级别（写 mixin 的 log-level + 合并重启，等价 clashmixin -e）。
 
@@ -202,12 +237,14 @@ def set_log_level(body: _LogLevelBody):
 
 
 @router.get('/config')
+@_isolated
 def get_config(file: str = Query('mixin')):
     service.ensure_available()
     return api_response(service.config_read(file))
 
 
 @router.put('/config')
+@_isolated
 def put_config(body: _ConfigBody):
     """仅 mixin 可写：保存后与 clashmixin -e 一致（合并配置并重启内核）。"""
     service.ensure_available()
@@ -218,12 +255,14 @@ def put_config(body: _ConfigBody):
 # ─── 订阅管理 ─────────────────────────────────────────────
 
 @router.get('/sub')
+@_isolated
 def get_sub():
     service.ensure_available()
     return api_response(service.sub_list())
 
 
 @router.post('/sub')
+@_isolated
 def post_sub(body: _SubBody):
     service.ensure_available()
     if body.action == 'add':
@@ -240,6 +279,7 @@ def post_sub(body: _SubBody):
 
 
 @router.get('/sub/log')
+@_isolated
 def get_sub_log(tail: int = Query(200, ge=1, le=5000)):
     service.ensure_available()
     return api_response(service.sub_log_tail(_tail_arg(tail)))
@@ -248,18 +288,21 @@ def get_sub_log(tail: int = Query(200, ge=1, le=5000)):
 # ─── mihomo 控制器（代理组/延迟/连接/规则/运行时配置——zashboard 同源）──
 
 @router.get('/controller/version')
+@_isolated
 def controller_version():
     service.ensure_available()
     return api_response(controller.version())
 
 
 @router.get('/controller/configs')
+@_isolated
 def controller_configs():
     service.ensure_available()
     return api_response(controller.configs_get())
 
 
 @router.patch('/controller/configs')
+@_isolated
 def controller_configs_patch(body: _ConfigsBody):
     """运行时热切换（PATCH，不重启内核——与 Web 控制台一致）：mode / allow-lan / log-level。"""
     service.ensure_available()
@@ -275,6 +318,7 @@ def controller_configs_patch(body: _ConfigsBody):
 
 
 @router.get('/controller/proxies')
+@_isolated
 def controller_proxies():
     """策略组 + 节点明细（名称/类型/存活/最近延迟）——切换节点的前端数据源。"""
     service.ensure_available()
@@ -282,6 +326,7 @@ def controller_proxies():
 
 
 @router.put('/controller/proxies')
+@_isolated
 def controller_proxy_select(body: _ProxySelectBody):
     service.ensure_available()
     data = controller.proxy_select(body.group.strip(), body.name.strip())
@@ -289,6 +334,7 @@ def controller_proxy_select(body: _ProxySelectBody):
 
 
 @router.get('/controller/proxies/delay')
+@_isolated
 def controller_proxy_delay(name: str = Query(...), url: str = Query(''),
                            timeout: int = Query(5000, ge=500, le=30000)):
     """单节点延迟测试（默认 gstatic 204，可换 url）。"""
@@ -297,6 +343,7 @@ def controller_proxy_delay(name: str = Query(...), url: str = Query(''),
 
 
 @router.get('/controller/group/delay')
+@_isolated
 def controller_group_delay(group: str = Query(...), url: str = Query(''),
                            timeout: int = Query(5000, ge=500, le=30000)):
     """整组并发延迟测试 → {节点名: 延迟ms}。"""
@@ -305,12 +352,14 @@ def controller_group_delay(group: str = Query(...), url: str = Query(''),
 
 
 @router.get('/controller/connections')
+@_isolated
 def controller_connections():
     service.ensure_available()
     return api_response(controller.connections_get())
 
 
 @router.delete('/controller/connections')
+@_isolated
 def controller_connections_close_all():
     service.ensure_available()
     data = controller.connections_close_all()
@@ -318,6 +367,7 @@ def controller_connections_close_all():
 
 
 @router.delete('/controller/connections/{conn_id}')
+@_isolated
 def controller_connection_close(conn_id: str):
     service.ensure_available()
     data = controller.connection_close(conn_id)
@@ -325,18 +375,21 @@ def controller_connection_close(conn_id: str):
 
 
 @router.get('/controller/rules')
+@_isolated
 def controller_rules():
     service.ensure_available()
     return api_response(controller.rules_get())
 
 
 @router.get('/controller/providers')
+@_isolated
 def controller_providers():
     service.ensure_available()
     return api_response(controller.providers_get())
 
 
 @router.put('/controller/providers')
+@_isolated
 def controller_provider_update(body: _NameBody):
     """Provider 热更新（HTTP 订阅即时拉新节点，不重启内核）。"""
     service.ensure_available()

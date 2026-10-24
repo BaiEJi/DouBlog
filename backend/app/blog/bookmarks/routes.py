@@ -14,13 +14,12 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile
-from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
-from app.shared.pools import get_pool
+from app.shared.pools import get_pool, run_blocking
 from app.shared.response import api_response
 
 from . import fetcher, services, transfer
@@ -75,7 +74,7 @@ async def fetch_meta(url: str = Query(..., min_length=1)):
             return api_response(fetcher.fetch_meta(url))
         except fetcher.FetchError as e:
             return api_response(None, 502, str(e))
-    return await run_in_threadpool(_impl)
+    return await run_blocking('bookmarks-network', _impl, workers=8)
 
 
 # ---------- 分类 ----------
@@ -269,7 +268,7 @@ async def create_snapshot(iid: str):
     try:
         target = await run_db(_guard(_pick))
         if not isinstance(target, Response):   # _guard 命中错误时返回错误信封 Response
-            snap = await run_in_threadpool(fetcher.fetch_snapshot, target["url"])
+            snap = await run_blocking('bookmarks-network', fetcher.fetch_snapshot, target["url"], workers=8)
             return await run_db(_guard(_save(snap)))
         return target
     except fetcher.FetchError as e:
@@ -312,7 +311,7 @@ async def check_links(b: CheckIn):
 
     # pool.map 本身是阻塞调用——包进 run_in_threadpool，不冻住事件循环
     pool = get_pool('bookmarks', workers=8)
-    results_raw = await run_in_threadpool(lambda: list(pool.map(_check_one, urls)))
+    results_raw = await run_blocking('bookmarks-check-dispatch', lambda: list(pool.map(_check_one, urls)), workers=1)
     results = [{"id": t["id"], **r} for t, r in zip(targets, results_raw)]
     return await run_db(_guard(_save(results)))
 
@@ -327,14 +326,22 @@ async def stats_overview():
 # ---------- 导入导出 ----------
 
 @router.post("/import")
-async def import_bookmarks(file: UploadFile):
+async def import_bookmarks(file: UploadFile, dry_run: bool = False):
     try:
-        raw = await file.read()
+        chunks, total = [], 0
+        while chunk := await file.read(64 * 1024):
+            total += len(chunk)
+            if total > transfer.IMPORT_MAX_BYTES:
+                return api_response(None, 400, '书签文件不能超过 16MB')
+            chunks.append(chunk)
+        raw = b''.join(chunks)
         content = raw.decode("utf-8-sig", errors="replace")
     finally:
         await file.close()
 
     def _impl():
+        if dry_run:
+            return api_response(transfer.preflight_import(db.session, content))
         out = transfer.import_bookmarks(db.session, content)
         db.session.commit()
         return api_response(out, 200,

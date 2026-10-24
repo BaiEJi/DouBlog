@@ -18,6 +18,8 @@ from ..models import (
 )
 from ..schemas import GameCreate, GameOut, GameUpdate
 from ._base import _dump, _guard, envelope_body
+from ..deletion import delete_game_rows
+from app.shared.mutations import run_locked
 
 router = APIRouter(prefix="/api/gamemap/games", tags=["gamemap-games"],
                    dependencies=[Depends(require_basic)])
@@ -96,11 +98,11 @@ async def delete_game(game_id: int):
         game = session.get(Game, game_id)
         if not game:
             raise HTTPException(404, "游戏不存在")
-        session.delete(game)  # 有章节/人物时 ORM 置空 NOT NULL 外键 → 500（源行为锁定，见测试）
+        delete_game_rows(session, game_id)
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard(lambda: run_locked(('gamemap-board', game_id), _impl)))
 
 
 # ---- 统计面板 ----

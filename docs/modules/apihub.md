@@ -39,7 +39,7 @@ API Hub 是 DouBlog 的能力包之一（`app/apihub/`，导出 `router` + `star
   query_key / basic / static_cookie / path_token / template / qq_bot`（动态令牌），
   可数组组合；凭证值经 `{cred.字段}` 模板注入到 header/query/cookie 或 URL/路径里。
   上游回 401/403 时**同一凭证不重试**，直接以 503 `upstream_error` 归一返回（无密钥池可换）；
-  连接/超时类错误按系统 max_retry 重试。入站请求的 `Authorization/Cookie` 等敏感头在
+  仅 GET/HEAD/OPTIONS 的连接类错误在总期限内按 max_retry 重试；超时和有副作用方法均不自动重试。入站请求的 `Authorization/Cookie` 等敏感头在
   转发前剥离（STRIP_HEADERS）。
 - **探活状态机**：`healthy / suspect / down / unknown`，失败阈值进 suspect、连续
   failure_threshold 次进 down，恢复需连续 success_threshold 次；down 态探活间隔×5；
@@ -52,11 +52,11 @@ API Hub 是 DouBlog 的能力包之一（`app/apihub/`，导出 `router` + `star
   国内 API 风格；透传模式与信封模式共用同一判定。
 - **异步调用日志**：进入限流/转发阶段的每次网关调用（含限流 429、unhealthy 与全部失败的
   503/504 拒绝路径；401/403/404 与配额 429 不落日志）入内存队列，由单写者 daemon 线程
-  批量落库（2s / 100 条 flush），配额计数随批写回 `apihub_tokens`。
+  批量落库（2s / 100 条 flush），配额 delta 独立于日志队列落库；日志丢弃不丢待写配额。
 
 **网关管道**（`routes.py`）：令牌鉴权（哈希查内存快照）→ 授权（有效期/scope/IP/健康）→
 多级限流（内存）→ 配额预占 → 请求构建（模板 + 凭证注入 + 剥离入站凭证）→ 系统转发
-（超时/连接错误按 max_retry 重试，401/403 不重试）→ 响应（透传/信封 + 错误归一化）→
+（只读安全方法的连接错误有限重试，超时及 401/403 不重试）→ 响应（透传/信封 + 错误归一化）→
 异步日志。**透明代理**无 API 上下文，鉴权取该系统第一个 API 的 auth_config。
 
 ## 2. 数据模型（apihub_* 六表，models.py）
@@ -128,7 +128,7 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
   经 `token_fetch(provider, cred)` 回调取 `Authorization: QQBot <token>`（网关/探活绑定
   `state.token_exchange`，纯函数调用不绑定时抛 TemplateError）。
 - `TokenExchanger`：QQ access_token 交换（POST token_url JSON {appId, clientSecret}），按
-  (token_url, app_id) 进程内缓存、`expires_in - 300s` 自动刷新；请求走共享连接池（含出站代理）；
+  (token_url, app_id, secret 指纹) 每 app 缓存、提前 min(300s, expires_in/2) 刷新，同键交换单次在途；请求走共享连接池（含出站代理）；
   非 200/无 token 抛 ValueError（routes 归入 upstream_error）。
 - `RateLimiter`：进程内多级限流（令牌桶 `TokenBucket` + 固定窗口 `FixedWindow`），
   check 依次判定 L1..Ln 任一拒绝短路；空闲桶 600s / 每 60s 清扫一次；`snapshot` 供规则列表。
@@ -147,7 +147,7 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
   等待，超时按 UpstreamTimeout）；空闲连接 **4.5s 过期**（低于常见服务端 keepalive 5s）、
   每目标空闲上限 256。
 - **陈旧连接重试一次**：空闲连接被服务端提前关闭（RemoteDisconnected/BadStatusLine/
-  ConnectionError/OSError）→ 换新连接重试一次（仅复用连接时；新连接直接抛）；
+  ConnectionError/OSError）→ 仅 GET/HEAD/OPTIONS 可换新连接重试一次（复用连接时；POST 等结果未知时直接抛）；
   **超时不重试**（慢系统 ≠ 连接坏）。
 - 请求头重建：剥离 host/content-length/connection/transfer-encoding/accept-encoding，
   显式 `Connection: keep-alive`（不发 Accept-Encoding，系统响应按 identity 返回）；
@@ -161,9 +161,7 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 - `ApiHubState` 聚合：Store（配置内存快照 + reload）+ RateLimiter + HealthMonitor +
   UpstreamPool + TokenExchanger + LogWriter（不再持 CryptoBox/KeySelector）。
 - `get_state(app)`：惰性创建并挂 `app.state.apihub`（持真实 app 对象引用，后台线程直接用）。
-- `LogWriter`：队列 + 单写者 daemon 线程（2s / 100 条批量写 `apihub_call_logs`，并把内存
-  quota_used 写回 token 行、刷新 last_used_at；写完显式 `db.session.remove()` 对齐请求级
-  会话回收；失败 rollback 丢批不阻塞网关）。
+- `LogWriter`：有界队列 + 单写者 daemon 线程（2s / 100 条批量写 `apihub_call_logs`，配额独立累积 delta，以 SQL 增量写回 token 行、刷新 last_used_at；成功后才扣除已落库 delta）。写完显式 `db.session.remove()`；失败 rollback 丢弃调用日志批并计 failed，配额 delta 保留到下轮重试。
 - `probe_due_apis()`：到期需探活的 API 列表（enabled 且 interval_s>0 且过 next_due）。
 
 ### 路由与执行模型（routes.py）
@@ -296,3 +294,17 @@ quota_used 计数），管理端任何写操作后 `reload()` 整体重建并 ve
 ## 公共 UI 外壳（2026-10-13）
 
 前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+
+
+## 2026-10-21 并发、隔离与传输边界
+
+- `Store.reserve/refund` 在同一锁内检查并修改配额；票据带 reset 代次，重置前的在途退款不会修改重置后的额度。reload 保留内存未持久化 delta；令牌 id 被复用但 key_hash 已变化时重建计数代次。
+- 认证 TTL 缓存在每个 Store 内，reload 清空，消除不同 app 相同 version 的令牌串用。每次转发捕获同一代配置，探活结果采用复制发布，避免原地修改已有快照。首次惰建 Store 后归还 scoped session。
+- writer 队列上限 10000 条，满时计 `dropped`；写失败计 `failed`，日志不承诺崩溃耐久。配额 pending delta 不依赖队列；写入成功才清零，失败会在下一周期重试。`flush/stop` 允许生命周期钩子排空，writer 捕获创建时 registry。
+- 网关任务（包括 GET 透明代理）纳入数据库 runtime 的 write admission；取消等待不伪装成远端操作已停止，在途执行结束后才释放代次计数。切库先阻止新请求、等待在途执行，再排空 writer。
+- HTTP 总期限覆盖池等待、令牌交换、连接、请求发送、HTTP 头及响应体。stdlib 包装 socket 的每次真实读取，避免慢速分片反复刷新单次 socket timeout；响应仍限 32 MiB。只有 GET/HEAD/OPTIONS 的连接错误允许有限重试；超时不重试，POST/PATCH 等不因丢失响应被重复发送。`max_retry=0` 明确保留为零。
+- 生产继续使用 `UpstreamPool`。`HttpxCandidatePool` 是显式 A/B 候选，同样本地化连接池与原始字节响应；HTTPX 公开接口的 phase timeout 无法缩短已经阻塞的读取，不能替代已实现的严格总期限。最终选择依据隔离基准，而非库宣传；无自动双发或真实 POST 对照。
+- `backend/tools/apihub_transport_bench.py` 可对本机 optimization_mock 的 echo 执行 3 轮交替顺序 A/B（默认并发 1/16/64）；预热与每次响应均核对业务内容，记录吞吐、p50/p95/p99 和失败数。与正式全站基准统一独占执行，结果写指定 JSON。
+- 出站代理配置缓存按 runtime 数据目录的文件路径/签名隔离，配置原子写入；不同 app/切库不共用一份 cfg。凭据和 controller secret 不进入缓存状态响应。
+- 高级 JSON 编辑复用 CodeMirror；有效编辑立即进入父状态，非法草稿阻止整个 API 表单保存，避免失焦尚未提交或误存旧值。
+- 新回归 `tests/test_apihub_reliability.py`：1000 次并发配额预占、reset 旧票据、reload 未落库 delta、日志溢出不丢配额、POST 超时/陈旧连接不重放、两个 transport 本机 HTTP 契约、QQ 单次交换/凭证轮换、跨 app 认证隔离及慢分片总期限。

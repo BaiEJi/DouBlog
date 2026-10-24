@@ -7,16 +7,18 @@
   "资源不存在",必须显式返回保住原始文案
 - /health 舍弃(Doublog 有全局 /health);manager 从 request.app.state 懒取
   (get_manager,禁模块级单例,多 app 测试互不干扰)
-- 处理器保持源版 sync def(FastAPI 自动入线程池执行):manager 调用混合
-  DB/Steam 网络/worker join,不适合挤占共享 DB 池;db_svc 每次调用自清理会话
+- 同步业务函数经异步入口提交 steamidler-api SDK 池，并计入在途写操作；
+  manager 混合 DB/Steam 网络/worker join，不占共享 DB 池，db_svc 每次调用自清理会话
 """
-import threading
+from functools import wraps
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.shared.auth import require_basic
 from app.shared.response import api_response
+from app.shared.pools import get_pool
+from app.db import current_runtime, database_context, run_db
 
 from . import config
 from .auth import AuthError
@@ -25,8 +27,14 @@ from .manager import get_manager
 router = APIRouter(prefix="/api/steamidler", tags=["todo-steamidler"],
                    dependencies=[Depends(require_basic)])
 
-_completed_attempts = set()
-_completed_lock = threading.Lock()
+
+def _isolated(handler):
+    """Track complete network + DB operations through the shared runtime contract."""
+    @wraps(handler)
+    async def run(*args, **kwargs):
+        with database_context(current_runtime(), write=True):
+            return await run_db(handler, *args, _pool=get_pool('steamidler-api', workers=8), **kwargs)
+    return run
 
 
 class BeginLoginBody(BaseModel):
@@ -55,6 +63,7 @@ class AutoResumeBody(BaseModel):
 
 # ---------------- 登录 ----------------
 @router.post("/login/begin")
+@_isolated
 def login_begin(body: BeginLoginBody, request: Request):
     if not body.username.strip() or not body.password:
         return api_response(None, 400, "请输入账号和密码")
@@ -67,59 +76,64 @@ def login_begin(body: BeginLoginBody, request: Request):
 
 
 @router.post("/login/code")
+@_isolated
 def login_code(body: SubmitCodeBody, request: Request):
     m = get_manager(request.app)
     return api_response(m.submit_code(body.attempt_id, body.code, body.code_type))
 
 
 @router.get("/login/status")
+@_isolated
 def login_status(attempt_id: str, request: Request):
     m = get_manager(request.app)
-    with m._lock:
-        attempt = m.attempts.get(attempt_id)
+    attempt = m._get_attempt(attempt_id)
     if not attempt:
         return api_response(None, 404, "登录会话不存在或已过期")
     status = attempt.status()
 
     # 登录成功 -> 落库并启动 worker (只执行一次)
     if status["state"] == "success":
-        with _completed_lock:
-            fresh = attempt.id not in _completed_attempts
-            if fresh:
-                _completed_attempts.add(attempt.id)
-        if fresh:
-            try:
-                acc = m.maybe_complete(attempt)
-                if acc:
-                    status["account"] = {
-                        "steamid": acc["steamid"],
-                        "account_name": acc["account_name"],
-                        "avatar_url": acc.get("avatar_url") or "",
-                    }
-            except Exception as e:
-                status["state"] = "failed"
-                status["error"] = f"保存账号失败: {e}"
+        try:
+            acc = m.complete_login(attempt)
+            if not acc:
+                status['state'] = 'failed'
+                status['error'] = '账号令牌尚未完整，请重新登录'
+            else:
+                status["account"] = {"steamid": acc["steamid"],
+                                     "account_name": acc["account_name"],
+                                     "avatar_url": acc.get("avatar_url") or ""}
+        except Exception:
+            status["state"] = "polling"
+            status["retryable"] = True
+            status["error"] = "账号尚未保存，正在重试；可以取消后重新登录"
     return api_response(status)
 
 
 # ---------------- 账号 ----------------
 @router.get("/accounts")
+@_isolated
 def list_accounts(request: Request):
     return api_response(get_manager(request.app).accounts_snapshot())
 
 
 @router.delete("/accounts/{steamid}")
+@_isolated
 def remove_account(steamid: str, request: Request):
-    get_manager(request.app).remove_account(steamid)
+    try:
+        get_manager(request.app).remove_account(steamid)
+    except AuthError as error:
+        return api_response(None, 400, str(error))
     return api_response({"ok": True})
 
 
 @router.get("/accounts/{steamid}/log")
+@_isolated
 def account_log(steamid: str, request: Request):
     return api_response({"lines": get_manager(request.app).account_log(steamid)})
 
 
 @router.get("/accounts/{steamid}/games")
+@_isolated
 def account_games(steamid: str, request: Request, force: bool = False):
     try:
         games = get_manager(request.app).fetch_games(steamid, force=force)
@@ -129,6 +143,7 @@ def account_games(steamid: str, request: Request, force: bool = False):
 
 
 @router.post("/accounts/{steamid}/idle")
+@_isolated
 def start_idle(steamid: str, body: IdleBody, request: Request):
     try:
         get_manager(request.app).start_idle(steamid, body.appids)
@@ -138,12 +153,14 @@ def start_idle(steamid: str, body: IdleBody, request: Request):
 
 
 @router.post("/accounts/{steamid}/stop")
+@_isolated
 def stop_idle(steamid: str, request: Request):
     get_manager(request.app).stop_idle(steamid)
     return api_response({"ok": True})
 
 
 @router.post("/accounts/{steamid}/shared_secret")
+@_isolated
 def set_shared_secret(steamid: str, body: SharedSecretBody, request: Request):
     m = get_manager(request.app)
     if not m.db.get_account(steamid):
@@ -158,11 +175,13 @@ def set_shared_secret(steamid: str, body: SharedSecretBody, request: Request):
 
 
 @router.post("/accounts/{steamid}/auto_resume")
+@_isolated
 def set_auto_resume(steamid: str, body: AutoResumeBody, request: Request):
     get_manager(request.app).db.update_fields(steamid, auto_resume=1 if body.enabled else 0)
     return api_response({"ok": True})
 
 
 @router.get("/meta")
+@_isolated
 def meta():
     return api_response({"max_idle_games": config.MAX_IDLE_GAMES})

@@ -34,8 +34,8 @@ export async function pwsvcCreateType(pid, payload) {
   return res.json()
 }
 
-export async function pwsvcListTypes(pid) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/types`)
+export async function pwsvcListTypes(pid, options) {
+  const res = await apiFetch(`/api/pwsvc/projects/${pid}/types`, options)
   return res.json()
 }
 
@@ -54,8 +54,8 @@ export async function pwsvcCreateUser(pid, payload) {
   return res.json()
 }
 
-export async function pwsvcListUsers(pid) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/users`)
+export async function pwsvcListUsers(pid, options) {
+  const res = await apiFetch(`/api/pwsvc/projects/${pid}/users`, options)
   return res.json()
 }
 
@@ -69,14 +69,14 @@ export async function pwsvcDeleteUser(uid) {
   return res.json()
 }
 
-export async function pwsvcCurrentPassword(uid) {
-  const res = await apiFetch(`/api/pwsvc/users/${uid}/current`)
+export async function pwsvcCurrentPassword(uid, options) {
+  const res = await apiFetch(`/api/pwsvc/users/${uid}/current`, options)
   return res.json()
 }
 /** 校验日志（倒序分页）+ 失败统计（近 1h/24h 成败计数、失败 TOP5 用户名） */
 
-export async function pwsvcListLogs(pid, page = 1, perPage = 50) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/logs?page=${page}&per_page=${perPage}`)
+export async function pwsvcListLogs(pid, page = 1, perPage = 50, options) {
+  const res = await apiFetch(`/api/pwsvc/projects/${pid}/logs?page=${page}&per_page=${perPage}`, options)
   return res.json()
 }
 
@@ -150,14 +150,14 @@ export async function vaultImport(backup) {
 
 // ─── 安全附件（零知识：前端 VEK 加密后上传，服务端只见密文）──
 
-export async function vaultListAttachments(itemId) {
-  const res = await apiFetch(`/api/vault/items/${itemId}/attachments`)
+export async function vaultListAttachments(itemId, options) {
+  const res = await apiFetch(`/api/vault/items/${itemId}/attachments`, options)
   return res.json()
 }
 
-export async function vaultAddAttachment(itemId, { blob, size }) {
+export async function vaultAddAttachment(itemId, { blob, size }, options) {
   const res = await apiFetch(`/api/vault/items/${itemId}/attachments`, {
-    method: 'POST', body: JSON.stringify({ blob, size }),
+    ...options, method: 'POST', body: JSON.stringify({ blob, size }),
   })
   return res.json()
 }
@@ -167,7 +167,7 @@ export async function vaultGetAttachment(aid) {
   return res.json()
 }
 
-export async function vaultDeleteAttachment(aid) {
-  const res = await apiFetch(`/api/vault/attachments/${aid}`, { method: 'DELETE' })
+export async function vaultDeleteAttachment(aid, options) {
+  const res = await apiFetch(`/api/vault/attachments/${aid}`, { ...options, method: 'DELETE' })
   return res.json()
 }

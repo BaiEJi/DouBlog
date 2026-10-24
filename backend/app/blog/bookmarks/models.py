@@ -61,6 +61,7 @@ class BookmarkItem(Base):
         Index("ix_bmitem_status", "status"),
         Index("ix_bmitem_category", "category_id"),
         Index("ix_bmitem_created", "created_at"),
+        Index("ix_bmitem_deleted_created_id", "deleted_at", "created_at", "id"),
         Index("ix_bmitem_normalized", "normalized_url"),
         Index("ix_bmitem_link", "link_status"),
     )

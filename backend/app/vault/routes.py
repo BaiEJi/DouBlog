@@ -121,16 +121,19 @@ def _jts(value):
 
 def _items_response(rows) -> Response:
     """items 列表响应直拼（字段序与 VaultItem.to_dict 一致，信封同 api_response）"""
-    parts = [
-        '{"id":%d,"blob":%s,"favorite":%s,"last_used_at":%s,"password_updated_at":%s,'
-        '"deleted_at":%s,"created_at":%s,"updated_at":%s}' % (
+    parts = ['{"success":true,"code":200,"message":"操作成功","data":{"items":[']
+    total = 0
+    for r in rows:
+        if total:
+            parts.append(',')
+        parts.append('{"id":%d,"blob":%s,"favorite":%s,"last_used_at":%s,"password_updated_at":%s,'
+                     '"deleted_at":%s,"created_at":%s,"updated_at":%s}' % (
             r[0], _blob_json(r[1]), 'true' if r[2] else 'false',
-            _jts(r[3]), _jts(r[4]), _jts(r[5]), _jts(r[6]), _jts(r[7]))
-        for r in rows
-    ]
-    body = ('{"success":true,"code":200,"message":"操作成功",'
-            '"data":{"items":[%s],"total":%d}}' % (','.join(parts), len(parts)))
-    return Response(body.encode('utf-8'), media_type='application/json')
+            _jts(r[3]), _jts(r[4]), _jts(r[5]), _jts(r[6]), _jts(r[7])))
+        total += 1
+    # 信封与条目一次拼接，免去先拼全部条目再包裹信封的整段字符串拷贝。
+    parts.append('],"total":%d}}' % total)
+    return Response(''.join(parts).encode('utf-8'), media_type='application/json')
 
 
 # ─── 账号（加密材料）────────────────────────────────────

@@ -2,15 +2,18 @@
  * 密码服务（轮换密码）：项目 / 用户类型（策略）/ 用户（独立密码链 + 倒计时）/ API 集成。
  * 注意：本模块为服务端校验服务（非零知识），UI 中已明确标注。
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
-  pwsvcCreateProject, pwsvcListProjects, pwsvcUpdateProject, pwsvcDeleteProject,
+  pwsvcCreateProject, pwsvcListProjects, pwsvcUpdateProject,
   pwsvcResetApiKey, pwsvcCreateType, pwsvcListTypes, pwsvcUpdateType, pwsvcDeleteType,
   pwsvcCreateUser, pwsvcListUsers, pwsvcUpdateUser, pwsvcDeleteUser, pwsvcCurrentPassword,
   pwsvcListLogs,
 } from '../api'
 import { API_BASE } from '../api'
 import { CopyButton, I, Select } from './ui'
+import usePolling from '../../shared/usePolling'
+import useClock from '../../shared/useClock'
+import VirtualList from '../../shared/VirtualList'
 
 const ROTATIONS = [
   { v: 30, l: '30 秒' }, { v: 60, l: '60 秒' }, { v: 120, l: '2 分钟' },
@@ -38,31 +41,28 @@ function Modal({ title, children, onClose, wide }) {
 // ─── 用户行：当前密码 + 倒计时 + 自动刷新 ────────────────
 function UserRow({ user, types, copier, onChanged }) {
   const [cur, setCur] = useState(null)
-  const [left, setLeft] = useState(null)
-  const timerRef = useRef(0)
+  const [expiresAt, setExpiresAt] = useState(0)
+  const expiry = useRef(0)
+  const fetchedKey = useRef('')
+  const [currentKey, setCurrentKey] = useState('')
+  const configurationKey = JSON.stringify([user.updated_at, user.type_id, user.status, types.find(type => type.id === user.type_id)])
+  const now = useClock()
+  const left = cur ? Math.max(0, Math.ceil((expiresAt - now) / 1000)) : null
 
-  const refresh = useCallback(async () => {
-    const d = await pwsvcCurrentPassword(user.id).catch(() => null)
+  usePolling(async ({ signal }) => {
+    if (expiry.current > Date.now() && fetchedKey.current === configurationKey) return
+    const d = await pwsvcCurrentPassword(user.id, { signal })
     if (d?.success) {
       setCur(d.data)
-      setLeft(d.data.expires_in)
+      fetchedKey.current = configurationKey; setCurrentKey(configurationKey)
+      expiry.current = Date.now() + d.data.expires_in * 1000
+      setExpiresAt(expiry.current)
     }
-  }, [user.id])
-
-  useEffect(() => {
-    refresh()
-    timerRef.current = setInterval(() => {
-      setLeft(l => {
-        if (l === null) return l
-        if (l <= 1) { refresh(); return null }
-        return l - 1
-      })
-    }, 1000)
-    return () => clearInterval(timerRef.current)
-  }, [refresh])
+  }, { intervalMs: 1000, enabled: user.status !== 'disabled' })
 
   const type = types.find(t => t.id === user.type_id)
   const disabled = user.status === 'disabled'
+  const fresh = currentKey === configurationKey && left > 0
   const pct = cur && cur.rotation_seconds ? Math.min(100, (left ?? 0) / cur.rotation_seconds * 100) : 0
 
   return (
@@ -80,9 +80,9 @@ function UserRow({ user, types, copier, onChanged }) {
       {/* 当前密码 */}
       <div className="flex items-center gap-1.5 shrink-0">
         <span className="font-mono text-xs text-stone-600 dark:text-stone-300 tabular-nums tracking-wider select-all">
-          {disabled ? '—' : (cur ? cur.password : '…')}
+          {disabled ? '—' : (cur && fresh ? cur.password : '…')}
         </span>
-        {!disabled && cur && <CopyButton value={cur.password} copier={copier} />}
+        {!disabled && cur && fresh && <CopyButton value={cur.password} copier={copier} />}
         {/* 倒计时圆环 */}
         {!disabled && (
           <span className="relative w-7 h-7 shrink-0" title={left != null ? `${left} 秒后刷新` : ''}>
@@ -205,22 +205,29 @@ export default function PwsvcView({ copier }) {
   const [users, setUsers] = useState(null)
   const [keyOnce, setKeyOnce] = useState(null)       // {api_key, name}
   const [newProject, setNewProject] = useState(false)
+  const projectLoad = useRef(null)
+  const activeProject = useRef(null)
+  const alive = useRef(true)
 
   const loadProjects = async () => {
     const d = await pwsvcListProjects().catch(() => null)
-    if (d?.success) setProjects(d.data)
+    if (alive.current && d?.success) setProjects(d.data)
   }
-  useEffect(() => { loadProjects() }, [])
+  useEffect(() => { alive.current = true; loadProjects(); return () => { alive.current = false; activeProject.current = null; projectLoad.current?.abort() } }, [])
 
   // 打开项目：拉类型与用户
   const openProject = async (p) => {
+    projectLoad.current?.abort()
+    const controller = new AbortController(); projectLoad.current = controller
+    activeProject.current = p.id
     setCurrent(p)
     setUsers(null)
     setTypes([])
     const [usersRes, typesRes] = await Promise.all([
-      pwsvcListUsers(p.id).catch(() => null),
-      pwsvcListTypes(p.id).catch(() => null),
+      pwsvcListUsers(p.id, { signal: controller.signal }).catch(() => null),
+      pwsvcListTypes(p.id, { signal: controller.signal }).catch(() => null),
     ])
+    if (!alive.current || controller.signal.aborted || activeProject.current !== p.id) return
     if (typesRes?.success) setTypes(typesRes.data)
     if (usersRes?.success) setUsers(usersRes.data)
   }
@@ -240,13 +247,14 @@ export default function PwsvcView({ copier }) {
         {!projects ? <p className="text-sm text-stone-400 py-8 text-center">加载中…</p>
           : current ? (
             <ProjectDetail
+              key={current.id}
               project={current}
               users={users}
               types={types}
               copier={copier}
-              onTypesChange={setTypes}
-              onUsersChange={async () => { const d = await pwsvcListUsers(current.id); if (d.success) setUsers(d.data) }}
-              onBack={async () => { setCurrent(null); loadProjects() }}
+              onTypesChange={value => { if (alive.current && activeProject.current === current.id) setTypes(value) }}
+              onUsersChange={async () => { const d = await pwsvcListUsers(current.id); if (alive.current && activeProject.current === current.id && d.success) setUsers(d.data) }}
+              onBack={async () => { activeProject.current = null; projectLoad.current?.abort(); setCurrent(null); loadProjects() }}
               onResetKey={async () => {
                 const d = await pwsvcResetApiKey(current.id)
                 if (d.success) setKeyOnce({ api_key: d.data.api_key, name: current.name })
@@ -335,6 +343,7 @@ function NewProjectModal({ onClose, onCreated }) {
 }
 
 function ProjectDetail({ project, users, types, copier, onTypesChange, onUsersChange, onBack, onResetKey }) {
+  const [logsOpen, setLogsOpen] = useState(false)
   const [typeEditor, setTypeEditor] = useState(null)
   const [newUser, setNewUser] = useState(false)
   const [limit, setLimit] = useState(project.rate_limit ?? 120)   // 校验限流（次/分钟）
@@ -422,16 +431,15 @@ function ProjectDetail({ project, users, types, copier, onTypesChange, onUsersCh
       <div className="space-y-1.5">
         {!users ? <p className="text-[12.5px] text-stone-400">加载中…</p>
           : users.length === 0 ? <p className="text-[12.5px] text-stone-400">还没有用户</p>
-            : users.map(u => (
-              <UserRow key={u.id} user={u} types={types} copier={copier} onChanged={onUsersChange} />
-            ))}
+            : <VirtualList items={users} getKey={user => user.id} estimateSize={70} height={Math.min(500, users.length * 80)} renderItem={u => <div className="pb-1.5"><UserRow user={u} types={types} copier={copier} onChanged={onUsersChange} /></div>} />}
       </div>
 
       {/* 校验日志 */}
       <div className="mt-10 mb-2.5">
         <SecTitle>校验日志</SecTitle>
       </div>
-      <LogsPanel pid={project.id} />
+      <button onClick={() => setLogsOpen(value => !value)} className="text-sm text-stone-500 dark:text-stone-400 underline">{logsOpen ? '收起日志' : '查询校验日志'}</button>
+      {logsOpen && <LogsPanel pid={project.id} />}
 
       {/* 类型编辑弹层 */}
       {typeEditor && (
@@ -464,18 +472,24 @@ function LogsPanel({ pid }) {
   const [data, setData] = useState(null)
   const [page, setPage] = useState(1)
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const request = useRef(null)
 
   const load = async (p = 1, append = false) => {
-    setBusy(true)
-    const d = await pwsvcListLogs(pid, p).catch(() => null)
-    setBusy(false)
-    if (!d?.success) return
-    setData(prev => (append && prev ? { ...d.data, items: [...prev.items, ...d.data.items] } : d.data))
-    setPage(p)
+    request.current?.abort(); const controller = new AbortController(); request.current = controller
+    setBusy(true); setError('')
+    try {
+      const d = await pwsvcListLogs(pid, p, 50, { signal: controller.signal })
+      if (controller.signal.aborted) return
+      if (!d?.success) throw new Error(d?.message || '读取日志失败')
+      setData(previous => append && previous ? { ...d.data, items: [...previous.items, ...d.data.items.filter(item => !previous.items.some(old => old.id === item.id))] } : d.data)
+      setPage(p)
+    } catch (error) { if (!controller.signal.aborted) setError(error.message) }
+    finally { if (!controller.signal.aborted) setBusy(false) }
   }
-  useEffect(() => { load(1) }, [pid])
+  useEffect(() => { load(1); return () => request.current?.abort() }, [pid])
 
-  if (!data) return <p className="text-[12.5px] text-stone-400">加载中…</p>
+  if (!data) return <p className="text-[12.5px] text-stone-400">{error || '加载中…'}</p>
 
   const { items, total, stats } = data
   const s1 = stats?.h1 ?? { ok: 0, fail: 0 }
@@ -513,7 +527,7 @@ function LogsPanel({ pid }) {
           <div className="grid grid-cols-[130px_1fr_70px_120px] gap-2 px-3.5 py-2.5 bg-stone-50 dark:bg-white/[0.03] text-[11px] text-stone-400">
             <span>时间</span><span>用户名</span><span>结果</span><span>来源 IP</span>
           </div>
-          {items.map(l => (
+          <VirtualList items={items} getKey={item => item.id} height={Math.min(440, items.length * 42)} estimateSize={42} renderItem={l => (
             <div key={l.id} className="grid grid-cols-[130px_1fr_70px_120px] gap-2 px-3.5 py-2.5 text-sm border-t border-black/[0.06] dark:border-white/[0.06]">
               <span className="text-stone-400 tabular-nums">{fmtLogTime(l.created_at)}</span>
               <span className="truncate text-stone-700 dark:text-stone-200">{l.username}</span>
@@ -522,7 +536,7 @@ function LogsPanel({ pid }) {
                 : <b className="text-red-500">✗ 失败</b>}</span>
               <span className="text-stone-400 font-mono text-[11px] truncate">{l.ip || '—'}</span>
             </div>
-          ))}
+          )} />
         </div>
       )}
 
@@ -546,7 +560,7 @@ function fmtLogTime(iso) {
 }
 
 
-function NewUserForm({ pid, types, onDone, onCancel }) {
+function NewUserForm({ pid, types, onDone }) {
   const [username, setUsername] = useState('')
   const [display, setDisplay] = useState('')
   const [typeId, setTypeId] = useState(types[0]?.id ?? '')

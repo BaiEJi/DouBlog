@@ -105,14 +105,14 @@ export function TwoPane({ leftTitle, rightTitle, left, right, leftActions, right
   return (
     <div className="grid grid-cols-2 gap-4">
       <div className="min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-2 min-h-8">
           <span className={LBL}>{leftTitle}</span>
           <div className="flex items-center gap-1.5">{leftActions}</div>
         </div>
         {left}
       </div>
       <div className="min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="flex items-center justify-between gap-2 mb-2 min-h-8">
           <span className={LBL}>{rightTitle}</span>
           <div className="flex items-center gap-1.5">{rightActions}</div>
         </div>

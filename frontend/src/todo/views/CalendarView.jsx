@@ -4,9 +4,11 @@
  * variant: 'todo'（全部任务）| 'life'（plan_only=true 生活模式）。
  * 点某天 → onOpenDay(dateStr)（今日页特定日期 / life 今日打卡）。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getDataIdentity } from '@/shared/dataEpoch'
 
-import { todoTasks } from '../api'
+import { todoTasks, todoCalendar } from '../api'
 import {
   Segmented, fmtDate, todayStr, monthMatrix, startOfWeek, addDays,
   weekdayIndex, WEEKDAY_LABELS, quadrantMeta,
@@ -28,7 +30,7 @@ function TaskMiniList({ list, max = 4 }) {
           </div>
         )
       })}
-      {list.length > max && <div className="text-[10px] text-stone-400 px-1">还有 {list.length - max} 项…</div>}
+      {(list.total ?? list.length) > max && <div className="text-[10px] text-stone-400 px-1">还有 {(list.total ?? list.length) - max} 项…</div>}
     </div>
   )
 }
@@ -41,10 +43,9 @@ const intensityCls = count => {
   return 'bg-indigo-500'
 }
 
-export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
+export default function CalendarView({ variant = 'todo', onOpenDay }) {
   const [mode, setMode] = useState('month')
   const [anchor, setAnchor] = useState(new Date())
-  const [tasks, setTasks] = useState(null)
   const today = todayStr()
 
   const range = useMemo(() => {
@@ -64,20 +65,17 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
     }
   }, [mode, anchor])
 
-  const load = useCallback(async () => {
-    try {
-      const params = { from: fmtDate(range.start), to: fmtDate(range.end), status: 'all' }
-      if (variant === 'life') params.plan_only = true
-      setTasks(await todoTasks(params))
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '加载日历数据失败', 'error')
-    }
-  }, [range, variant, toast])
-
-  useEffect(() => {
-    setTasks(null)
-    load()
-  }, [load])
+  const calendarQuery = useQuery({
+    queryKey: ['todo-calendar', getDataIdentity(), variant, mode, fmtDate(range.start), fmtDate(range.end)],
+    queryFn: async ({ signal }) => {
+      const params = { from: fmtDate(range.start), to: fmtDate(range.end), status: 'all', plan_only: variant === 'life' || undefined }
+      if (mode === 'week') return { tasks: await todoTasks(params, { signal }), summary: null }
+      const summary = await todoCalendar(params, { signal })
+      return { tasks: summary.days.flatMap(day => day.items), summary }
+    },
+  })
+  const tasks = calendarQuery.data?.tasks || null
+  const summary = calendarQuery.data?.summary || null
 
   const byDate = useMemo(() => {
     const map = new Map()
@@ -86,8 +84,13 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
       if (!map.has(t.task_date)) map.set(t.task_date, [])
       map.get(t.task_date).push(t)
     }
+    for (const day of summary?.days || []) {
+      const items = map.get(day.date) || []
+      items.total = day.total; items.done = day.done
+      map.set(day.date, items)
+    }
     return map
-  }, [tasks])
+  }, [tasks, summary])
 
   const shift = dir => {
     const next =
@@ -109,6 +112,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
 
   return (
     <div className="h-full min-h-0 flex flex-col">
+      {calendarQuery.error && <div role="alert" className="mb-3 text-sm text-red-500">{calendarQuery.error.message}</div>}
       {/* 工具栏 */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 mb-4">
         <Segmented value={mode} onChange={setMode}
@@ -129,7 +133,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
         </div>
         <span className="text-sm font-medium tabular-nums">{rangeLabel}</span>
         <span className="ml-auto text-xs text-stone-400 dark:text-stone-500">
-          {tasks ? `共 ${tasks.length} 个任务` : '加载中…'}
+          {tasks ? `共 ${summary?.total ?? tasks.length} 个任务` : '加载中…'}
         </span>
       </div>
 
@@ -227,12 +231,12 @@ export default function CalendarView({ variant = 'todo', onOpenDay, toast }) {
                     if (!d) return <div key={i} className="rounded-[3px]" />
                     const ds = fmtDate(d)
                     const list = byDate.get(ds) || []
-                    const done = list.filter(t => t.status === 'done').length
+                    const done = list.done ?? list.filter(t => t.status === 'done').length
                     return (
                       <button key={i} onClick={() => onOpenDay(ds)}
-                        title={`${ds}：共 ${list.length} 项${done ? `，完成 ${done}` : ''}`}
+                        title={`${ds}：共 ${list.total ?? list.length} 项${done ? `，完成 ${done}` : ''}`}
                         className={'rounded-[3px] transition-transform hover:scale-110 ' +
-                          intensityCls(list.length) +
+                          intensityCls(list.total ?? list.length) +
                           (ds === today ? ' ring-2 ring-indigo-400 ring-offset-1 ring-offset-white dark:ring-offset-[#1c1b1a]' : '')} />
                     )
                   })}

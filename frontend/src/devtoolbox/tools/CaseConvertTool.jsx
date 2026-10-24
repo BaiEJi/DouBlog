@@ -11,7 +11,7 @@ export default function CaseConvertTool() {
   return (
     <div>
       <ToolHead title="命名转换" desc="自动切词（驼峰边界 / 分隔符 / 中英混排），13 种命名风格同时给出" />
-      <input className={inputCls + ' w-full font-mono'} value={text} spellCheck={false}
+      <input className={inputCls + ' w-full font-mono'} value={text} spellCheck={false} maxLength={20000}
         onChange={e => setText(e.target.value)} placeholder="输入标识符，如 getUserByID / http_response_code" aria-label="标识符输入" />
       <div className={'mt-4 divide-y divide-black/[0.05] dark:divide-white/[0.06] ' + card}>
         {rows.map(r => (

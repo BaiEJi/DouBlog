@@ -1,5 +1,6 @@
 """配置中心 CRUD / 校验 / 浏览 / 鉴权测试（docs/confcenter-spec.md 第 6 节）。"""
 from tests.confcenter.conftest import AUTH
+from app.confcenter.cache import cache_key
 
 
 def _put(client, namespace, key, type_, data, expect=201):
@@ -290,10 +291,10 @@ def test_rename_validation_400(client):
 def test_rename_invalidates_cache_both_keys(cache_env, client):
     _put(client, 'app', 'ck', 'str', 'v')
     assert client.get('/api/confcenter/app/ck', headers=AUTH).status_code == 200   # 回填缓存
-    assert 'confcenter:app:ck' in cache_env.store
+    assert cache_key('app', 'ck') in cache_env.store
     _rename(client, 'app', 'ck', 'ck2')
-    assert 'confcenter:app:ck' in cache_env.deleted      # 旧键失效
-    assert 'confcenter:app:ck2' in cache_env.deleted     # 新键失效（防陈旧）
+    assert cache_key('app', 'ck') in cache_env.deleted      # 旧键失效
+    assert cache_key('app', 'ck2') in cache_env.deleted     # 新键失效（防陈旧）
 
 
 def test_rename_counts_toward_ratelimit(app, client, auth_headers):

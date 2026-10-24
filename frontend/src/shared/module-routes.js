@@ -1,4 +1,5 @@
+import { MODULES, MODULE_ALIASES } from './modules'
 export function moduleForPath(pathname) {
-  if (/^\/(blog|post|create|assets|diary|bookmarks)(\/|$)/.test(pathname)) return 'blog'
-  return ['subs', 'todo', 'practice', 'steamidler', 'gamemap', 'mindmap', 'vault', 'apihub', 'logs', 'config', 'confcenter', 'clash', 'devtoolbox'].find(key => pathname === `/${key}` || pathname.startsWith(`/${key}/`))
+  const key = pathname.split('/')[1]
+  return MODULE_ALIASES[key] || (MODULES[key] ? key : undefined)
 }

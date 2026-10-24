@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, inspect as sa_inspect, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func, inspect as sa_inspect, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -38,6 +38,7 @@ class Diary(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     content: Mapped[str] = mapped_column(Text, nullable=False, default='', comment='Markdown 内容')
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     entry_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True,
                                             comment='日记日期 YYYY-MM-DD（同一天可多篇）')
     mood: Mapped[str | None] = mapped_column(String(20), nullable=True, comment='心情: great/good/ok/low/bad')
@@ -71,6 +72,7 @@ class Diary(Base):
     def to_dict(self, include_content: bool = True):
         result = {
             'id': self.id,
+            'revision': self.revision,
             'entry_date': self.entry_date,
             'kind': self.kind or 'note',
             'mood': self.mood,
@@ -135,6 +137,7 @@ def ensure_migrations(engine):
         ('location', 'TEXT'),
         ('share_token', 'VARCHAR(40)'),
         ('share_expires', 'DATETIME'),
+        ('revision', 'INTEGER NOT NULL DEFAULT 1'),
     ]
     for name, ddl in adds:
         if name not in cols:
@@ -163,3 +166,19 @@ def ensure_migrations(engine):
         if name not in idx_existing:
             with engine.begin() as conn:
                 conn.execute(text(f'CREATE INDEX {name} ON diary_diaries ({col})'))
+
+
+class DiaryMutation(Base):
+    __tablename__ = 'diary_mutations'
+    mutation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DiaryWriteLock(Base):
+    """不可由用户删本操作移除的写锚点（包含空日记本集合）。"""
+    __tablename__ = 'diary_write_locks'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    touch: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -21,7 +21,8 @@ function qs(params = {}) {
 
 // ── 任务 tasks ─────────────────────────────────────────────
 /** 全部过滤参数：date / from / to / inbox / overdue / status / category_id / quadrant / q / sort / plan_only / exclude_plans */
-export const todoTasks = (params = {}) => json(`/api/todo/tasks${qs(params)}`)
+export const todoCalendar = (params, options = {}) => json(`/api/todo/tasks/calendar${qs(params)}`, options)
+export const todoTasks = (params = {}, options = {}) => json(`/api/todo/tasks${qs(params)}`, options)
 export const todoTask = id => json(`/api/todo/tasks/${id}`)
 export const todoCreateTask = payload =>
   json('/api/todo/tasks', { method: 'POST', body: JSON.stringify(payload) })
@@ -63,7 +64,7 @@ export const todoDeletePlan = id => json(`/api/todo/plans/${id}`, { method: 'DEL
 
 // ── 今日聚合 day ───────────────────────────────────────────
 /** 四象限分组 + 待迁移 + 昨日概况 + streak（date 缺省 = 今天） */
-export const todoDay = (date) => json(`/api/todo/today${qs({ date })}`)
+export const todoDay = (date, options = {}) => json(`/api/todo/today${qs({ date })}`, options)
 
 // ── 迁移 migrations ────────────────────────────────────────
 export const todoMigrationsPending = () => json('/api/todo/migrations/pending')

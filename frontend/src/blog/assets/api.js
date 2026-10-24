@@ -35,7 +35,7 @@ export const assetsBulkItems = payload =>
   apiFetch('/api/assets/items/bulk', { method: 'POST', body: JSON.stringify(payload) }).then(j)
 
 // ── 版本 ──
-export const assetsVersions = itemId => apiFetch(`/api/assets/items/${itemId}/versions`).then(j)
+export const assetsVersions = (itemId, page = 1) => apiFetch(`/api/assets/items/${itemId}/versions?page=${page}&page_size=20`).then(j)
 export const assetsVersion = vid => apiFetch(`/api/assets/versions/${vid}`).then(j)
 export const assetsRestoreVersion = (itemId, vid) =>
   apiFetch(`/api/assets/items/${itemId}/versions/${vid}/restore`, { method: 'POST' }).then(j)

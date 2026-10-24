@@ -27,6 +27,8 @@ import { BatchImportModal, DiffModal, EmptyGuide, EventsPanel, StatsPanel, AddTa
 import { PhotoCodex } from './PhotoCodex'
 import { CARD_WIDTH, EdgeLayer, clampDragPosition, nodeTypes } from './shared'
 import { useBoardUI } from './ui-store'
+import { createPositionWriter } from './positionWriter'
+import { getDataIdentity } from '../../shared/dataEpoch'
 import { useModuleNavigation } from '../../shared/module-navigation'
 
 const GM = '/gamemap'
@@ -88,7 +90,7 @@ export default function Workspace() {
   useEffect(() => {
     if (!game.data || !activeChapterId || game.data.current_chapter_id === activeChapterId) return
     api(`/games/${gid}`, { method: 'PATCH', body: JSON.stringify({ current_chapter_id: activeChapterId }) }).catch(() => {})
-  }, [activeChapterId, gid, game.data?.id])
+  }, [activeChapterId, gid, game.data])
   // 切换章节（左侧菜单导航）时回到单章模式
   useEffect(() => { setScopeModeRaw('chapter') }, [chapterId])
 
@@ -149,6 +151,8 @@ export default function Workspace() {
   const dragStart = useRef(null)
   const nudgeBefore = useRef(new Map())
   const nudgeTimers = useRef(new Map())
+  const nudgeLatest = useRef(new Map())
+  const pendingDrag = useRef(null)
   const selectedIdRef = useRef(null)   // 非受控模式下 RF 不回写 node.selected，自行跟踪
 
   const allCharMap = useMemo(() => new Map((characters.data || []).map((c) => [c.id, c])), [characters.data])
@@ -207,7 +211,7 @@ export default function Workspace() {
       const dim = focusId != null && focusId !== n.character_id &&
         !focusNeighbours.has(n.character_id)
       return {
-        id: `c-${n.character_id}`, type: 'character', position: { x: n.x, y: n.y }, draggable: true,
+        id: `c-${n.character_id}`, type: 'character', position: { x: n.x, y: n.y },
         data: {
           characterId: n.character_id,
           posChapterId: n.chapter_id,
@@ -238,19 +242,72 @@ export default function Workspace() {
   useEffect(() => { if (board.data) loadedVersion.current = board.data.version }, [board.data])
 
   /* ---------- 写路径 ---------- */
-  const patchNodePosition = async (characterId, x, y, chapterId, replay = true) => {
-    const req = () => api(`/games/${gid}/boards/chapters/${chapterId}/nodes/${characterId}`, {
-      method: 'PATCH', body: JSON.stringify({ x, y }),
+  const positionWriter = useRef(null)
+  const positionLifecycle = useRef(0)
+  const [positionDraft, setPositionDraft] = useState(false)
+  const [positionStorageError, setPositionStorageError] = useState(false)
+  const positionVersions = useRef({})
+  const positionActiveChapter = useRef(activeChapterId)
+  useEffect(() => { positionActiveChapter.current = activeChapterId }, [activeChapterId])
+  useEffect(() => {
+    if (board.data) positionVersions.current[board.data.chapter_id] = board.data.version
+    Object.assign(positionVersions.current, mergedBoard.data?.board_versions || {})
+  }, [board.data, mergedBoard.data])
+  useEffect(() => {
+    let alive = true
+    const timers = nudgeTimers.current, latestNudges = nudgeLatest.current, beforeNudges = nudgeBefore.current
+    positionLifecycle.current += 1
+    const draftKey = `doublog.gamemap.positions:${getDataIdentity()}:${gid}`
+    let initialDraft
+    try { const raw = JSON.parse(localStorage.getItem(draftKey) || 'null'); if (Array.isArray(raw?.snapshot?.boards)) initialDraft = raw } catch { /* invalid local draft */ }
+    queueMicrotask(() => {
+      if (!alive) return
+      setPositionDraft(!!initialDraft)
+      if (initialDraft) { setSaveError('存在未确认的位置草稿，请恢复或放弃后继续移动节点。'); setSaveState('error') }
+      else { setSaveState('idle'); setSaveError('') }
     })
-    return req().catch(async (e) => {
-      const status = e?.status
-      if (replay && (status === 409 || String(e.message).includes('409'))) {
-        await qc.invalidateQueries({ queryKey: ['board', gid] })
-        await new Promise((r) => setTimeout(r, 400))
-        return patchNodePosition(characterId, x, y, chapterId, false)
-      }
-      throw e
+    positionWriter.current = createPositionWriter({
+      initialDraft,
+      draft: { write: value => localStorage.setItem(draftKey, JSON.stringify(value)), remove: () => localStorage.removeItem(draftKey) },
+      getRevisions: () => ({ ...positionVersions.current }),
+      save: (payload, options) => api(`/games/${gid}/boards/positions/batch`, { ...options, method: 'POST', body: JSON.stringify(payload) }),
+      onState: state => { setPositionStorageError(!!state.draftError); setSaveState(state.status === 'pending' ? 'saving' : state.status === 'conflict' ? 'error' : state.status); if (state.error) setSaveError(state.status === 'conflict' ? '章节已在别处更新，本地位置仍在；请先导出或刷新核对。' : state.error.message) },
+      onSaved: result => {
+        Object.assign(positionVersions.current, result.revision)
+        if (positionVersions.current[positionActiveChapter.current] != null) loadedVersion.current = positionVersions.current[positionActiveChapter.current]
+        setSaveError('')
+      },
     })
+    return () => {
+      alive = false
+      positionLifecycle.current += 1
+      for (const timer of timers.values()) clearTimeout(timer)
+      const finalPoints = [...latestNudges.values(), ...(pendingDrag.current ? [pendingDrag.current] : [])]
+      if (finalPoints.length) positionWriter.current?.setMany(finalPoints).catch(() => {})
+      timers.clear(); latestNudges.clear(); beforeNudges.clear(); pendingDrag.current = null
+      positionWriter.current?.dispose(); positionWriter.current = null
+    }
+  }, [gid])
+  const retryPositions = async () => {
+    const writer = positionWriter.current
+    if (!writer) return
+    if (positionDraft) {
+      const pending = new Map(writer.getPending().map(point => [`${point.chapter_id}:${point.character_id}`, point]))
+      rfInstanceRef.current?.setNodes(nodes => nodes.map(node => {
+        const point = pending.get(`${isMerged ? node.data?.posChapterId : activeChapterId}:${Number(node.id.slice(2))}`)
+        return point ? { ...node, position: { x: point.x, y: point.y } } : node
+      }))
+      setPositionDraft(false)
+    }
+    try { await writer.retry() } catch (error) { failSave(error) }
+  }
+  const patchNodePosition = (characterId, x, y, chapterId) => positionWriter.current
+    ? positionWriter.current.set({ chapter_id: chapterId, character_id: characterId, x, y }) : Promise.reject(new DOMException('工作区已关闭', 'AbortError'))
+  const downloadPositions = () => {
+    const payload = { format: 'doublog.gamemap.positions', schema_version: 1, game_id: gid, revision: positionWriter.current?.getState().revision,
+      positions: positionWriter.current?.getPending() || [], exported_at: new Date().toISOString() }
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })), anchor = document.createElement('a')
+    anchor.href = url; anchor.download = `gamemap-${gid}-positions.json`; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const failSave = (e) => {   // #10：失败改持续横幅（不再一闪而过）
@@ -266,11 +323,14 @@ export default function Workspace() {
   }, [isMerged, activeChapterId])
 
   const onNodeDragStop = useCallback((_, node) => {
-    if (!node?.id) return
+    if (!node?.id || positionDraft) return
     const cid = Number(node.id.slice(2))
     const chId = isMerged ? node.data?.posChapterId : activeChapterId
     if (!chId) return
+    pendingDrag.current = { chapter_id: chId, character_id: cid, x: node.position.x, y: node.position.y }
+    const lifecycle = positionLifecycle.current
     setTimeout(() => {
+      if (lifecycle !== positionLifecycle.current) return
       const inst = rfInstanceRef.current
       if (!inst) return
       const cur = inst.getNodes().find((n) => n.id === node.id)
@@ -293,12 +353,13 @@ export default function Workspace() {
         if (undoStack.current.length > 80) undoStack.current.shift()
       }
       dragStart.current = null
+      pendingDrag.current = null
       setSaveState('saving')
       patchNodePosition(cid, drag.x, drag.y, chId)
-        .then((res) => { if (typeof res?.version === 'number') loadedVersion.current = res.version; okSave() })
+        .then(() => {})
         .catch(failSave)
     }, 50)
-  }, [isMerged, gid, activeChapterId, density])
+  }, [isMerged, activeChapterId, density, positionDraft])
 
   /** 统一撤销（#9）：位置/关系增删/移出人物全栈回退 */
   const runUndo = useCallback(async (op) => {
@@ -382,24 +443,9 @@ export default function Workspace() {
       .catch((e) => message.error(e.message))
   }, [gid, isMerged, activeChapterId, board.data, message, refreshBoards, runUndo])
 
-  const saveBoard = useMutation({
-    mutationFn: async () => {
-      setSaveState('saving')
-      return api(`/games/${gid}/boards/chapters/${activeChapterId}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          version: loadedVersion.current ?? 1,
-          nodes: (rfInstanceRef.current?.getNodes() || []).map((n) => ({
-            character_id: Number(n.id.slice(2)), x: n.position.x, y: n.position.y })),
-          relations: edges.map((e) => e.data.relation),
-        }),
-      })
-    },
-    onSuccess: (b) => { loadedVersion.current = b.version; okSave() },
-    onError: (e) => failSave(e),
-  })
 
   const scatterLayout = () => {
+    if (positionDraft) { message.warning('请先恢复或放弃位置草稿'); return }
     const inst = rfInstanceRef.current
     const cur = inst?.getNodes() || []
     if (!cur.length) return
@@ -427,18 +473,10 @@ export default function Workspace() {
           undoStack.current.push({ kind: 'move', id: nd.id, chId, from: { ...nd.position } })
         }
         inst.setNodes(cur.map((nd) => ({ ...nd, position: posMap.get(nd.id) || nd.position })))
-        if (isMerged) {
-          setSaveState('saving')
-          Promise.all(cur.map((nd) => {
-            const p = posMap.get(nd.id)
-            const chId = nd.data?.posChapterId
-            return chId && p ? patchNodePosition(Number(nd.id.slice(2)), p.x, p.y, chId) : Promise.resolve()
-          }))
-            .then(() => { okSave(); message.success('打散布局已写回各来源章节') })
-            .catch(failSave)
-        } else {
-          setTimeout(() => saveBoard.mutate(), 150)
-        }
+        setSaveState('saving')
+        positionWriter.current.setMany(cur.map(nd => ({ chapter_id: isMerged ? nd.data?.posChapterId : activeChapterId,
+          character_id: Number(nd.id.slice(2)), ...posMap.get(nd.id) })).filter(point => point.chapter_id))
+          .then(() => message.success('打散布局已保存')).catch(failSave)
       },
     })
   }
@@ -565,10 +603,12 @@ export default function Workspace() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) return
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
+        if (positionDraft) return
         runUndo()
         return
       }
       if (e.key.startsWith('Arrow')) {
+        if (positionDraft) { e.preventDefault(); return }
         const inst = rfInstanceRef.current
         const sel = selectedIdRef.current
           ? (inst?.getNodes() || []).filter((n) => n.id === selectedIdRef.current)
@@ -585,16 +625,18 @@ export default function Workspace() {
         for (const [id, pnt] of moved) {
           const chId = pnt.chId ?? activeChapterId
           if (!chId) continue
+          nudgeLatest.current.set(id, { chapter_id: chId, character_id: Number(id.slice(2)), x: pnt.x, y: pnt.y })
           if (!nudgeBefore.current.has(id)) nudgeBefore.current.set(id, { pos: { x: pnt.x - dx, y: pnt.y - dy }, chId })
           clearTimeout(nudgeTimers.current.get(id))
           nudgeTimers.current.set(id, setTimeout(() => {
             const before = nudgeBefore.current.get(id)
             nudgeBefore.current.delete(id)
+            nudgeLatest.current.delete(id)
             nudgeTimers.current.delete(id)
             if (before) undoStack.current.push({ kind: 'move', id, chId, from: before.pos })
             setSaveState('saving')
             patchNodePosition(Number(id.slice(2)), pnt.x, pnt.y, chId)
-              .then((res) => { if (typeof res?.version === 'number') loadedVersion.current = res.version; okSave() })
+              .then(() => {})
               .catch(failSave)
           }, 600))
         }
@@ -608,7 +650,7 @@ export default function Workspace() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [view, isMerged, activeChapterId, gid, runUndo, removeNode])
+  }, [view, isMerged, activeChapterId, gid, runUndo, removeNode, positionDraft])
 
   useModuleNavigation({
     items: [
@@ -684,7 +726,7 @@ export default function Workspace() {
           ) : view === 'board' ? (
             <ReactFlowProvider>
               <div ref={boardBoxRef} className="gm8-board" style={{ position: 'absolute', inset: 0, background: 'var(--gm-canvas-bg)' }}>
-                <ReactFlow defaultNodes={[]} nodeTypes={nodeTypes}
+                <ReactFlow defaultNodes={[]} nodeTypes={nodeTypes} nodesDraggable={!positionDraft} nodesConnectable={!positionDraft}
                   connectionMode={ConnectionMode.Loose}
                   onConnect={onConnect} onNodeDragStart={onNodeDragStart} onNodeDragStop={onNodeDragStop}
                   onNodeClick={(_, n) => { selectedIdRef.current = n.id; setDrawer({ kind: 'node', characterId: Number(n.id.slice(2)) }); setFocusId(Number(n.id.slice(2))) }}
@@ -702,9 +744,10 @@ export default function Workspace() {
                 {saveState === 'error' && (
                   <Alert type="error" showIcon className="gm8-hud" style={{ position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', zIndex: 30, maxWidth: 460 }}
                     title={`保存失败：${saveError}`}
-                    action={<Button size="small" danger onClick={() => { if (isMerged) { /* 重试最近一次逐节点写入不现实，提示刷新 */ location.reload() } else saveBoard.mutate() }}>重试</Button>}
-                    closable onClose={() => setSaveState('idle')} />
+                    action={<Space><Button size="small" danger onClick={retryPositions}>{positionDraft ? '恢复草稿' : '重试'}</Button><Button size="small" onClick={downloadPositions}>下载位置</Button>{positionDraft && <Button size="small" onClick={() => { positionWriter.current.discard(); setPositionDraft(false); setSaveState('idle'); setSaveError('') }}>放弃草稿</Button>}</Space>}
+                    closable={!positionDraft} onClose={() => setSaveState('idle')} />
                 )}
+                {positionStorageError && <Alert type="warning" className="gm8-hud" style={{ position: 'absolute', bottom: 12, left: 70, zIndex: 31 }} title="浏览器草稿存储不可用，离开前请确认服务器已保存，或下载位置。" action={<Button size="small" onClick={downloadPositions}>下载位置</Button>} />}
                 {/* #2 统一 HUD：图例过滤 + 密度 + 聚焦 + FPS + 保存状态 */}
                 <BoardHUD relations={relations} typeMap={typeMap} />
                 {/* 边覆盖层：在 RF 之上接收点击；线端点外扩 8px 不压卡片；图例可按类型隐藏 */}

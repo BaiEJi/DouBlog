@@ -3,18 +3,17 @@
  * 顶部「从网站导入」条（粘贴链接 → 自动识别域名 → 抓取填充，失败原地中文提示）+
  * 基本信息区（来源/题号/标题/难度/链接/标签）+ 描述与易错点 Markdown 编辑（预览切换）+
  * 解法编辑器（动态增删；名称/思路/复杂度快选+自由输入/按语言 Tab 的代码编辑器）。
- * 编辑保存走差异同步：PATCH 题目（revision 乐观锁）→ 新增/更新/删除解法 → 新增/更新/删除代码。
+ * 编辑保存通过聚合事务：题目、标签、解法和代码整体提交；冲突和失败保留本地输入。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import CodeEditor from '@/shared/CodeEditor'
 
 import {
-  getProblem, createProblem, updateProblem,
-  createSolution, updateSolution, deleteSolution,
-  createCode, updateCode, deleteCode,
+  getProblem, createProblem, saveProblemAggregate,
   fetchFromSite, detectSourceFromUrl, buildFetchPayload,
   SOURCES, DIFFICULTIES, LANGUAGES, langMeta,
 } from '../api'
-import { Segmented, Spinner, Field, inputCls, btn, Icon } from '../../todo/kit'
+import { Segmented, Spinner, Field, inputCls, btn, Icon } from '@/shared/ui/kit'
 import TagSelect from './TagSelect'
 import { MdBlock } from './ProblemDetail'
 
@@ -25,7 +24,7 @@ const COMPLEXITY_PRESETS = ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)', 'O(n²)', 
 const selectCls = 'h-9 px-2.5 rounded-lg text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
 
 /** Markdown 编辑区（textarea + 编辑/预览切换），描述/易错点/解法思路共用 */
-function MdArea({ label, value, onChange, dark, minHeight = 200, placeholder = '支持 Markdown：代码块、公式、mermaid…' }) {
+function MdArea({ label, value, onChange, dark, minHeight = 200 }) {
   const [mode, setMode] = useState('edit')
   return (
     <div>
@@ -35,9 +34,7 @@ function MdArea({ label, value, onChange, dark, minHeight = 200, placeholder = '
           options={[{ value: 'edit', label: '编辑' }, { value: 'preview', label: '预览' }]} />
       </div>
       {mode === 'edit' ? (
-        <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
-          className={inputCls + ' font-mono text-[13px] leading-relaxed resize-y py-2.5'}
-          style={{ minHeight }} />
+        <CodeEditor value={value || ''} onChange={onChange} language="markdown" height={minHeight} ariaLabel={label} />
       ) : (
         <div className="rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] px-4 py-3 min-h-[80px]">
           <MdBlock text={value} dark={dark} />
@@ -147,10 +144,9 @@ function SolutionEditor({ solution, index, onChange, onRemove, dark }) {
 
         {active ? (
           <div className="space-y-2">
-            <textarea value={active.code} onChange={e => patchCode(active.key, { code: e.target.value })}
-              placeholder={`在此粘贴 ${langMeta(active.language).label} 代码…`}
-              className="w-full px-3 py-2.5 rounded-lg font-mono text-[13px] leading-relaxed resize-y bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors"
-              style={{ minHeight: 180 }} />
+            <CodeEditor value={active.code} onChange={value => patchCode(active.key, { code: value })}
+              language={['javascript', 'typescript'].includes(active.language) ? 'javascript' : 'text'}
+              height={220} ariaLabel={`${langMeta(active.language).label} 代码`} />
             <input value={active.note} onChange={e => patchCode(active.key, { note: e.target.value })}
               placeholder="备注（可空）：如「注意边界处理」"
               className="w-full h-8 px-3 rounded-lg text-xs bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors" />
@@ -177,6 +173,12 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
   const isEdit = !!problemId
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
+  const requestRef = useRef(null)
+  const resourceRef = useRef(problemId || null)
+  const confirmedRevision = useRef(null)
+  const busyRef = useRef(false)
+  const saveRef = useRef(null)
 
   // 从网站导入
   const [fetchUrl, setFetchUrl] = useState('')
@@ -210,6 +212,7 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
     setDescriptionMd(p.description_md || '')
     setPitfallMd(p.pitfall_md || '')
     setRevision(p.revision ?? null)
+    confirmedRevision.current = p.revision ?? null
     const sols = (raw?.solutions || p.solutions || []).map(s => ({
       key: nextKey(), id: s.id, name: s.name || '', approach_md: s.approach_md || '',
       time_complexity: s.time_complexity || '', space_complexity: s.space_complexity || '',
@@ -319,81 +322,78 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
     s.name.trim() || s.approach_md.trim() || s.codes.some(c => (c.code || '').trim())
 
   const handleSave = async () => {
-    if (saving) return
+    if (busyRef.current) return
     if (!title.trim()) { toast('请填写题目标题', 'error'); return }
+    busyRef.current = true
     setSaving(true)
     try {
       const { payload, norm } = buildPayload()
-      const realSolutions = solutions.filter(isRealSolution)
-      if (!isEdit) {
-        // 新建：一次性带初始解法（跳过空解法）
-        await createProblem({ ...payload, solutions: realSolutions.map((s, i) => norm(s, i)) })
-        toast('题目已创建')
-        onSaved?.(null)
-        return
+      let localSolutions = solutions.filter(isRealSolution)
+      const contentFingerprint = JSON.stringify({ payload, solutions: localSolutions.map(norm) })
+      const execute = request => request.mode === 'create'
+        ? createProblem(request.body) : saveProblemAggregate(request.id, request.body)
+      const adopt = result => {
+        resourceRef.current = result.id
+        setRevision(result.revision)
+        confirmedRevision.current = result.revision
+        snapshotRef.current = result.solutions || []
+        localSolutions = localSolutions.map(solution => ({ ...solution,
+          id: result.client_ids?.solutions?.[solution.key] || solution.id,
+          codes: solution.codes.map(code => ({ ...code, id: result.client_ids?.codes?.[code.key] || code.id })),
+        }))
+        setSolutions(localSolutions.length ? localSolutions : [emptySolution()])
       }
-      // 编辑：题目基本信息（revision 乐观锁）
-      await updateProblem(problemId, { ...payload, ...(revision != null ? { revision } : {}) })
-      // 解法差异同步（跳过空解法）。code 写路径（增/删/改）借用的都是父级
-      // solution.revision 且每次成功 +1：用 solRev 跟踪最新值，同一解法连续
-      // 多次写不再拿旧 revision 撞 409（R7-5）
-      const orig = snapshotRef.current
-      const keptIds = new Set(solutions.filter(s => s.id).map(s => s.id))
-      for (const o of orig) {
-        if (!keptIds.has(o.id)) await deleteSolution(o.id)
-      }
-      for (let i = 0; i < realSolutions.length; i++) {
-        const s = realSolutions[i]
-        const body = norm(s, i)
-        if (!s.id) {
-          await createSolution(problemId, body)
-          continue
-        }
-        const o = orig.find(x => x.id === s.id)
-        let solRev = o?.revision ?? null
-        const bumpRev = () => { solRev = (solRev ?? 0) + 1 }
-        const baseChanged = !o || body.name !== o.name || body.approach_md !== (o.approach_md || '') ||
-          body.time_complexity !== (o.time_complexity || '') || body.space_complexity !== (o.space_complexity || '') ||
-          body.is_preferred !== !!o.is_preferred
-        if (baseChanged) {
-          await updateSolution(s.id, { ...body, ...(solRev != null ? { revision: solRev } : {}) })
-          bumpRev()
-        }
-        if (o) {
-          const keptCodeIds = new Set(s.codes.filter(c => c.id).map(c => c.id))
-          for (const oc of o.codes) {
-            if (!keptCodeIds.has(oc.id)) { await deleteCode(oc.id); bumpRev() }
-          }
-          for (const c of s.codes) {
-            const cb = { language: c.language, code: c.code, note: c.note.trim() || null }
-            if (!c.id) {
-              if ((cb.code || '').trim()) { await createCode(s.id, cb); bumpRev() }
-              continue
-            }
-            const oc = o.codes.find(x => x.id === c.id)
-            if (!oc || oc.language !== cb.language || (oc.code || '') !== (cb.code || '') || (oc.note || '') !== (cb.note || '')) {
-              await updateCode(c.id, { ...cb, revision: solRev ?? c.revision ?? 1 })
-              bumpRev()
-            }
-          }
+      if (requestRef.current) {
+        // 未确认请求先用原幂等标识重放；不能因用户继续修改而遗弃未知的新建结果。
+        const pending = requestRef.current
+        const replayed = await execute(pending)
+        adopt(replayed)
+        requestRef.current = null
+        if (pending.contentFingerprint === contentFingerprint) {
+          setSaveError(null); toast('题目已保存'); onSaved?.(replayed.id); return
         }
       }
-      toast('题目已保存')
-      onSaved?.(problemId)
+      const body = {
+        ...payload,
+        ...(resourceRef.current ? {
+          revision: confirmedRevision.current ?? revision,
+          solution_revisions: Object.fromEntries(snapshotRef.current.filter(solution => solution.id).map(solution => [solution.id, solution.revision])),
+        } : {}),
+        solutions: localSolutions.map((solution, index) => ({
+          ...norm(solution, index), ...(resourceRef.current ? { id: solution.id || null } : {}), client_id: solution.key,
+          codes: solution.codes.filter(code => (code.code || '').trim()).map(code => ({
+            ...(resourceRef.current ? { id: code.id || null } : {}), client_id: code.key,
+            language: code.language, code: code.code, note: code.note.trim() || null,
+          })),
+        })),
+        mutation_id: crypto.randomUUID(),
+      }
+      requestRef.current = { mode: resourceRef.current ? 'update' : 'create', id: resourceRef.current, body, contentFingerprint }
+      const result = await execute(requestRef.current)
+      requestRef.current = null
+      setSaveError(null)
+      toast(isEdit ? '题目已保存' : '题目已创建')
+      onSaved?.(result.id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : '保存失败'
-      toast(err?.conflict ? `${msg}（页面已刷新为最新内容）` : msg, 'error')
-      if (isEdit) {
-        // 保存中断（乐观锁冲突/网络失败/部分子行已写成功）：整体重拉详情回填表单，
-        // 消除本地快照与服务端的失配，避免下次保存按旧快照误删/误改（R8-2）
-        try {
-          applyDetail(await getProblem(problemId))
-        } catch { /* 重拉失败：保持现态，用户可手动重试 */ }
-      }
+      toast(err?.conflict ? `${msg}（当前输入已保留）` : msg, 'error')
+      setSaveError({ message: msg, conflict: !!err?.conflict })
+      if (err?.status >= 400 && err?.status < 500 && err.status !== 409) requestRef.current = null
     } finally {
+      busyRef.current = false
       setSaving(false)
     }
   }
+  useLayoutEffect(() => { saveRef.current = handleSave })
+  useEffect(() => {
+    const onKey = event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault(); saveRef.current?.()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   if (loading) return <Spinner text="加载题目中…" />
 
@@ -411,6 +411,20 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
           {saving ? '保存中…' : '保存'}
         </button>
       </div>
+
+      {saveError && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm space-y-2">
+          <p>{saveError.message}。本地输入仍保留，可修正后重试。</p>
+          {saveError.conflict && <button type="button" className={btn.secondary} onClick={async () => {
+            const local = { ...buildPayload().payload, solutions }
+            const blob = new Blob([JSON.stringify(local, null, 2)], { type: 'application/json' })
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'practice-local-draft.json'; link.click()
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000)
+            try { applyDetail(await getProblem(resourceRef.current)); requestRef.current = null; setSaveError(null) }
+            catch (error) { toast(error.message || '读取最新版本失败', 'error') }
+          }}>下载本地输入后读取最新版本</button>}
+        </div>
+      )}
 
       {/* ── 从网站导入 ── */}
       <div className="rounded-2xl border border-indigo-500/25 dark:border-indigo-400/25 bg-indigo-500/[0.05] dark:bg-indigo-400/[0.06] p-4">

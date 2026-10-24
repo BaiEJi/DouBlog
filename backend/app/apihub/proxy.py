@@ -20,14 +20,19 @@ _LOCAL_HOSTS = {'localhost', '127.0.0.1', '::1'}
 
 
 def _path() -> str:
-    return os.path.join(settings.data_dir, 'apihub_proxy.json')
+    from app.db import current_runtime
+    return os.path.join(current_runtime().data_dir, 'apihub_proxy.json')
 
 
 def load_proxy_config() -> dict:
     """读配置：文件 > 默认值（进程内缓存，save 后刷新）。"""
     with _LOCK:
-        if _CACHE['cfg'] is not None:
-            return dict(_CACHE['cfg'])
+        path = _path()
+        stat = os.stat(path) if os.path.exists(path) else None
+        signature = (stat.st_mtime_ns, stat.st_size, stat.st_ino) if stat else None
+        cached = _CACHE.get(path)
+        if cached is not None and cached[0] == signature:
+            return dict(cached[1])
         cfg = dict(DEFAULTS)
         try:
             with open(_path(), encoding='utf-8') as f:
@@ -41,7 +46,9 @@ def load_proxy_config() -> dict:
                     cfg['port'] = stored['port']
         except (OSError, ValueError):
             pass
-        _CACHE['cfg'] = dict(cfg)
+        if len(_CACHE) >= 16:
+            _CACHE.clear()
+        _CACHE[path] = (signature, dict(cfg))
         return cfg
 
 
@@ -54,10 +61,11 @@ def save_proxy_config(cfg: dict) -> dict:
         and 1 <= cfg.get('port') <= 65535 else DEFAULTS['port'],
     }
     with _LOCK:
-        os.makedirs(settings.data_dir, exist_ok=True)
-        with open(_path(), 'w', encoding='utf-8') as f:
-            json.dump(normalized, f, ensure_ascii=False, indent=2)
-        _CACHE['cfg'] = dict(normalized)
+        from app.shared.files import atomic_write_json
+        path = _path()
+        atomic_write_json(path, normalized)
+        stat = os.stat(path)
+        _CACHE[path] = ((stat.st_mtime_ns, stat.st_size, stat.st_ino), dict(normalized))
     return normalized
 
 

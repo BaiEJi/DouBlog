@@ -42,6 +42,8 @@ export const subsStatsSpending = (startDate, endDate) =>
   apiFetch(`/api/subs/stats/spending?start_date=${startDate}&end_date=${endDate}`).then(j)
 export const subsStatsByCategory = (startDate, endDate) =>
   apiFetch(`/api/subs/stats/by-category?start_date=${startDate}&end_date=${endDate}`).then(j)
+export const subsStatsRanking = (metric, options = {}) => apiFetch(`/api/subs/stats/ranking?metric=${metric}&limit=10`, options).then(j)
+export const subsStatsDetails = (start, end, page = 1) => apiFetch(`/api/subs/stats/details?start_date=${start}&end_date=${end}&page=${page}&page_size=20`).then(j)
 export const subsStatsTrend = (startDate, endDate, granularity) =>
   apiFetch(`/api/subs/stats/trend?start_date=${startDate}&end_date=${endDate}&granularity=${granularity}`).then(j)
 

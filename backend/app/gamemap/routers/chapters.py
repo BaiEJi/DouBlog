@@ -18,6 +18,8 @@ from ..models import (
 )
 from ..schemas import ChapterCreate, ChapterOut, ChapterUpdate
 from ._base import _dump, _guard
+from ..deletion import delete_chapters
+from app.shared.mutations import run_locked
 
 router = APIRouter(prefix="/api/gamemap/games/{game_id}/chapters", tags=["gamemap-chapters"],
                    dependencies=[Depends(require_basic)])
@@ -112,8 +114,8 @@ async def delete_chapter(game_id: int, chapter_id: int):
         chapter = session.get(Chapter, chapter_id)
         if not chapter or chapter.game_id != game_id:
             raise HTTPException(404, "章节不存在")
-        session.delete(chapter)
+        delete_chapters(session, game_id, [chapter_id])
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard(lambda: run_locked(('gamemap-board', game_id), _impl)))

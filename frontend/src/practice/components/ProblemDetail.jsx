@@ -9,7 +9,7 @@ import md, { renderMermaidDiagrams } from '@/shared/md'
 import hljs from 'highlight.js/lib/common'
 
 import { getProblem, updateProblem, deleteProblem, unreviewProblem, diffMeta, statusMeta, sourceLabel, langMeta } from '../api'
-import { Card, Empty, Spinner, Confirm, btn, Icon } from '../../todo/kit'
+import { Card, Empty, Spinner, Confirm, btn, Icon } from '@/shared/ui/kit'
 import { todayStr, mdhmOf } from '../../todo/kit'
 
 // ─── Markdown 渲染块（详情/复习/编辑预览共用） ────────────────

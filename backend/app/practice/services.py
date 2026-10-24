@@ -8,6 +8,9 @@
 """
 from __future__ import annotations
 
+import hashlib
+import json
+
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -16,6 +19,7 @@ from fastapi import HTTPException
 from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
+from sqlalchemy.engine import Row
 
 from app.todo.services import get_settings
 
@@ -30,12 +34,14 @@ from .models import (
     PracticeSolution,
     PracticeSolutionCode,
     PracticeTag,
+    PracticeMutation,
 )
 from .schemas import (
     CodeCreate,
     CodeUpdate,
     ProblemCreate,
     ProblemUpdate,
+    ProblemAggregateUpdate,
     ProblemOut,
     ProblemSummaryOut,
     SolutionCreate,
@@ -65,6 +71,14 @@ TAG_PALETTE = (
 )
 
 SORT_OPTIONS = ("created_desc", "solved_desc", "difficulty_asc", "review_asc")
+
+# 列表DTO确实消费的12列；正文已经由既有路径排除，Core投影再避免ORM状态装配。
+_SUMMARY_COLUMNS = (
+    PracticeProblem.id, PracticeProblem.source, PracticeProblem.source_no,
+    PracticeProblem.title, PracticeProblem.difficulty, PracticeProblem.url,
+    PracticeProblem.status, PracticeProblem.first_solved_at, PracticeProblem.last_reviewed_at,
+    PracticeProblem.revision, PracticeProblem.created_at, PracticeProblem.updated_at,
+)
 
 
 # ─── 公共小工具 ──────────────────────────────────────────
@@ -102,6 +116,15 @@ def _get_problem(session: Session, pid: str) -> PracticeProblem:
     return p
 
 
+def _lock_problem(session: Session, pid: str) -> None:
+    """先取得题目写锁；SQLite 与 PG 的旧子行 API 也参与聚合编辑的事务边界。"""
+    result = session.execute(update(PracticeProblem).where(
+        PracticeProblem.id == pid, PracticeProblem.deleted_at.is_(None)
+    ).values(revision=PracticeProblem.revision).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        raise HTTPException(404, "题目不存在")
+
+
 def _get_solution(session: Session, sid: str) -> PracticeSolution:
     s = session.get(PracticeSolution, sid)
     if s is None:
@@ -130,13 +153,15 @@ def _problem_fields(p: PracticeProblem) -> dict:
     return ProblemOut.model_validate(p).model_dump(mode="json")
 
 
-def _summary_fields(p: PracticeProblem) -> dict:
-    """ORM → 列表摘要 dict（键与 schemas.ProblemSummaryOut 一致）。
+def _summary_fields(p: PracticeProblem | Row) -> dict:
+    """Core Row或ORM → 列表摘要dict（键与schemas.ProblemSummaryOut一致）。
 
-    P1-B：列表/review_today 查询 defer 了 description_md/pitfall_md（Text 大字段），
+    列表只投影小字段，review_today仍defer description_md/pitfall_md（Text大字段），
     此处不得触碰这两个属性（否则逐行惰性加载退化成 N+1）；键补 None 保持响应形状。
     """
-    d = ProblemSummaryOut.model_validate(p).model_dump(mode="json")
+    d = ProblemSummaryOut.model_validate(p._mapping if isinstance(p, Row) else p).model_dump(mode="json", exclude={
+        "tags", "solution_count", "code_languages", "next_review",
+    })  # 四个聚合字段由_build_summaries填写，不先序列化其默认值再覆盖。
     d["description_md"] = None  # 前端列表不消费，详情端点才返回
     d["pitfall_md"] = None
     return d
@@ -358,6 +383,12 @@ def _create_solution_rows(
 
 
 def create_problem(session: Session, data: ProblemCreate) -> dict:
+    if data.mutation_id:
+        receipt = session.get(PracticeMutation, data.mutation_id)
+        if receipt:
+            if receipt.fingerprint != create_fingerprint(data):
+                raise HTTPException(409, 'mutation_id 已被其他内容使用')
+            return receipt.result
     _check_source(data.source)
     _check_status(data.status)
     title = data.title.strip()
@@ -394,12 +425,29 @@ def create_problem(session: Session, data: ProblemCreate) -> dict:
         nr = _create_first_pending(session, problem)
     # R16-2：响应由本次新建的 ORM 对象直构（不回读 detail，省 4 条 SELECT）
     codes_by_sid = {sol.id: codes for sol, codes in solution_rows}
-    return _problem_detail_fields(
+    result = _problem_detail_fields(
         problem, [sol for sol, _ in solution_rows], codes_by_sid,
         _tag_briefs(tags), nr)
+    if data.mutation_id:
+        result['client_ids'] = {'solutions': {}, 'codes': {}}
+        for source, (solution, codes) in zip(data.solutions, solution_rows):
+            if source.client_id:
+                result['client_ids']['solutions'][source.client_id] = solution.id
+            for code_source, code in zip(source.codes, codes):
+                if code_source.client_id:
+                    result['client_ids']['codes'][code_source.client_id] = code.id
+        session.add(PracticeMutation(mutation_id=data.mutation_id, problem_id=problem.id,
+            fingerprint=create_fingerprint(data), result=result, created_at=now))
+    return result
+
+
+def create_fingerprint(data):
+    return hashlib.sha256(json.dumps({'operation': 'create', **data.model_dump(mode='json')},
+        sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 
 
 def update_problem(session: Session, pid: str, data: ProblemUpdate) -> dict:
+    _lock_problem(session, pid)
     problem = _get_problem(session, pid)
     if data.revision != problem.revision:
         raise HTTPException(409, "数据已被修改，请刷新后重试")
@@ -489,6 +537,101 @@ def update_problem(session: Session, pid: str, data: ProblemUpdate) -> dict:
     return _problem_detail_fields(problem, solutions, codes_by_sid, tags, nr)
 
 
+def save_problem_aggregate(session: Session, pid: str, data: ProblemAggregateUpdate) -> dict:
+    """题目、标签、解法与代码一次事务保存，任何校验/冲突都回滚整个集合。
+
+    旧子行 API 也先锁题目，因此在这里核对完整 base 集合后，不会有子行插队。
+    幂等回执与实际修改同事务落库，未知网络结果可用同 mutation_id 安全重试。
+    """
+    fingerprint = hashlib.sha256(json.dumps(
+        {"id": pid, **data.model_dump(mode="json")}, sort_keys=True,
+        ensure_ascii=False, separators=(",", ":")
+    ).encode()).hexdigest()
+    _lock_problem(session, pid)
+    receipt = session.get(PracticeMutation, data.mutation_id)
+    if receipt is not None:
+        if receipt.problem_id != pid or receipt.fingerprint != fingerprint:
+            raise HTTPException(409, "mutation_id 已被其他内容使用")
+        return receipt.result
+    problem = _get_problem(session, pid)
+    if problem.revision != data.revision:
+        raise HTTPException(409, "数据已被修改；本地输入已保留，请对照最新版本")
+    existing = {s.id: s for s in session.scalars(select(PracticeSolution).where(
+        PracticeSolution.problem_id == pid))}
+    if {sid: s.revision for sid, s in existing.items()} != data.solution_revisions:
+        raise HTTPException(409, "解法已被修改；本地输入已保留，请对照最新版本")
+    existing_codes = {c.id: c for c in session.scalars(select(PracticeSolutionCode).where(
+        PracticeSolutionCode.solution_id.in_(list(existing))))} if existing else {}
+    seen_solutions, seen_codes, seen_clients = set(), set(), set()
+    preferred_count = 0
+    for item in data.solutions:
+        if not item.name.strip():
+            raise HTTPException(400, "解法名称不能为空")
+        if item.id and (item.id not in existing or item.id in seen_solutions):
+            raise HTTPException(400, "解法不属于此题目或重复")
+        seen_solutions.add(item.id)
+        preferred_count += bool(item.is_preferred)
+        languages = set()
+        for entry in [item, *item.codes]:
+            if entry.client_id:
+                if entry.client_id in seen_clients:
+                    raise HTTPException(400, "client_id 重复")
+                seen_clients.add(entry.client_id)
+        for code in item.codes:
+            _check_language(code.language)
+            if code.language in languages:
+                raise HTTPException(400, "同一解法的代码语言不能重复")
+            languages.add(code.language)
+            if code.id:
+                old = existing_codes.get(code.id)
+                if old is None or old.solution_id != item.id or code.id in seen_codes:
+                    raise HTTPException(400, "代码不属于此解法或重复")
+                seen_codes.add(code.id)
+    if preferred_count > 1:
+        raise HTTPException(400, "最多只能设置一个主解法")
+    base = ProblemUpdate.model_validate(data.model_dump(exclude={
+        "mutation_id", "solution_revisions", "solutions"}))
+    update_problem(session, pid, base)
+    # 先删除代码再插入，支持交换语言且不触碰唯一约束；保留已有代码 id。
+    if existing:
+        session.execute(delete(PracticeSolutionCode).where(
+            PracticeSolutionCode.solution_id.in_(list(existing))))
+    for sid in set(existing) - {s.id for s in data.solutions if s.id}:
+        session.delete(existing[sid])
+    session.flush()
+    mapping = {"solutions": {}, "codes": {}}
+    now = now_utc()
+    for index, item in enumerate(data.solutions):
+        sol = existing.get(item.id)
+        if sol is None:
+            sol = PracticeSolution(id=uuid7(), problem_id=pid, revision=1,
+                                   created_at=now, updated_at=now)
+            session.add(sol)
+        else:
+            sol.revision += 1
+            sol.updated_at = now
+        for field in ("name", "approach_md", "time_complexity", "space_complexity", "is_preferred"):
+            setattr(sol, field, getattr(item, field))
+        sol.name = sol.name.strip()
+        sol.sort_order = float(index)
+        if item.client_id:
+            mapping["solutions"][item.client_id] = sol.id
+        session.flush()
+        for entry in item.codes:
+            code = PracticeSolutionCode(id=entry.id or uuid7(), solution_id=sol.id,
+                language=entry.language, code=entry.code, note=entry.note)
+            session.add(code)
+            if entry.client_id:
+                mapping["codes"][entry.client_id] = code.id
+    session.flush()
+    out = get_problem_detail(session, pid)
+    out["client_ids"] = mapping
+    session.add(PracticeMutation(mutation_id=data.mutation_id, problem_id=pid,
+        fingerprint=fingerprint, result=out, created_at=now))
+    session.flush()
+    return out
+
+
 def delete_problem(session: Session, pid: str) -> None:
     """软删题目 + 级联硬删子行（解法/代码/复习/标签关联）。
 
@@ -534,7 +677,7 @@ def get_problem_detail(session: Session, pid: str) -> dict:
     return _problem_detail_fields(problem, solutions, codes_by_sid, tags, nr)
 
 
-def _review_brief(r: PracticeReview) -> dict:
+def _review_brief(r: PracticeReview | Row) -> dict:
     return {
         "id": r.id, "cycle": r.cycle, "seq": r.seq,
         "prev_interval_days": r.prev_interval_days,
@@ -662,11 +805,7 @@ def list_problems(
         )
         conds.append(due_exists)
 
-    stmt = select(PracticeProblem).where(*conds).options(
-        # P1-B：列表不消费 Text 大字段，defer 掉避免整页大对象传输
-        defer(PracticeProblem.description_md),
-        defer(PracticeProblem.pitfall_md),
-    )
+    stmt = select(*_SUMMARY_COLUMNS).where(*conds)
 
     if sort == "solved_desc":
         stmt = stmt.order_by(PracticeProblem.first_solved_at.is_(None),
@@ -694,7 +833,7 @@ def list_problems(
         select(func.count()).select_from(PracticeProblem).where(*conds)) or 0
     page = min(max(1, page), 1000)  # P2-D：深翻页 OFFSET 护栏
     page_size = min(max(1, page_size), 100)
-    rows = session.scalars(
+    rows = session.execute(
         stmt.offset((page - 1) * page_size).limit(page_size)).all()
 
     items = _build_summaries(session, rows)
@@ -706,19 +845,19 @@ def _tags_of(session: Session, pids: list[str]) -> dict[str, list[dict]]:
     if not pids:
         return {}
     rows = session.execute(
-        select(PracticeProblemTag.problem_id, PracticeTag)
+        select(PracticeProblemTag.problem_id, PracticeTag.id, PracticeTag.name, PracticeTag.color)
         .join(PracticeTag, PracticeTag.id == PracticeProblemTag.tag_id)
         .where(PracticeProblemTag.problem_id.in_(pids))
         .order_by(PracticeTag.sort_order, PracticeTag.name)
     ).all()
     out: dict[str, list[dict]] = {}
-    for pid, tag in rows:
+    for pid, tag_id, name, color in rows:
         out.setdefault(pid, []).append(
-            {"id": tag.id, "name": tag.name, "color": tag.color})
+            {"id": tag_id, "name": name, "color": color})
     return out
 
 
-def _build_summaries(session: Session, rows: list[PracticeProblem]) -> list[dict]:
+def _build_summaries(session: Session, rows: list[PracticeProblem | Row]) -> list[dict]:
     """当页 ids → 3 条 IN 查询（标签 / 解法⋈代码 / 待复习行）→ Python 拼装摘要。"""
     pids = [p.id for p in rows]
     if not pids:
@@ -741,9 +880,10 @@ def _build_summaries(session: Session, rows: list[PracticeProblem]) -> list[dict
         if lang:
             lang_map.setdefault(pid, set()).add(lang)
 
-    next_map: dict[str, PracticeReview] = {}
-    for r in session.scalars(
-        select(PracticeReview)
+    next_map: dict[str, Row] = {}
+    for r in session.execute(
+        select(PracticeReview.problem_id, PracticeReview.id, PracticeReview.cycle,
+               PracticeReview.seq, PracticeReview.prev_interval_days, PracticeReview.scheduled_date)
         .where(PracticeReview.problem_id.in_(pids), PracticeReview.status == "pending")
     ):
         next_map[r.problem_id] = r
@@ -799,6 +939,7 @@ def _set_preferred(session: Session, problem_id: str, solution_id: str) -> None:
 
 
 def create_solution(session: Session, pid: str, data: SolutionCreate) -> dict:
+    _lock_problem(session, pid)
     _get_problem(session, pid)
     base = session.scalar(
         select(func.max(PracticeSolution.sort_order))
@@ -818,6 +959,8 @@ def _solution_out(session: Session, sol: PracticeSolution) -> dict:
 
 def update_solution(session: Session, sid: str, data: SolutionUpdate) -> dict:
     sol = _get_solution(session, sid)
+    _lock_problem(session, sol.problem_id)
+    session.refresh(sol)
     if data.revision != sol.revision:
         raise HTTPException(409, "数据已被修改，请刷新后重试")
     if data.name is not None:
@@ -848,6 +991,7 @@ def update_solution(session: Session, sid: str, data: SolutionUpdate) -> dict:
 
 def delete_solution(session: Session, sid: str) -> None:
     sol = _get_solution(session, sid)
+    _lock_problem(session, sol.problem_id)
     session.execute(delete(PracticeSolutionCode)
                     .where(PracticeSolutionCode.solution_id == sid))
     session.delete(sol)
@@ -874,6 +1018,8 @@ def _create_code(session: Session, solution_id: str, data: CodeCreate,
 
 def create_code(session: Session, sid: str, data: CodeCreate) -> dict:
     sol = _get_solution(session, sid)
+    _lock_problem(session, sol.problem_id)
+    session.refresh(sol)
     c = _create_code(session, sid, data)
     sol.revision += 1  # code 写路径借用父级 solution 的乐观锁（与 update_code 校验一致）
     sol.updated_at = now_utc()
@@ -886,6 +1032,9 @@ def create_code(session: Session, sid: str, data: CodeCreate) -> dict:
 
 def update_code(session: Session, cid: str, data: CodeUpdate) -> dict:
     c, sol = _get_code(session, cid)
+    _lock_problem(session, sol.problem_id)
+    session.refresh(sol)
+    session.refresh(c)
     if data.revision != sol.revision:
         raise HTTPException(409, "数据已被修改，请刷新后重试")
     if data.language is not None:
@@ -912,6 +1061,8 @@ def update_code(session: Session, cid: str, data: CodeUpdate) -> dict:
 
 def delete_code(session: Session, cid: str) -> None:
     c, sol = _get_code(session, cid)
+    _lock_problem(session, sol.problem_id)
+    session.refresh(sol)
     sol.revision += 1
     sol.updated_at = now_utc()
     session.delete(c)

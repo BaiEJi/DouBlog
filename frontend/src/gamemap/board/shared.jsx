@@ -2,7 +2,9 @@
  * 从 GameWorkspace 拆出（巨石组件重构 #7）。
  * 适配 DouBlog：去 TS 类型（JSX 项目）；画布样式 canvas.css 与 xyflow 样式在此统一引入。 */
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import * as RF from '@xyflow/react'
+import { createGeometryCache } from './geometry'
 import '@xyflow/react/dist/style.css'
 
 /* ---------- 类型（JSDoc） ----------
@@ -172,109 +174,44 @@ export function clampDragPosition(drag, others) {
  * 因此边不再交给 RF 渲染（edges 传空），改由本组件订阅 store 中的节点位置/实测
  * 尺寸/视口变换，用普通 SVG 自绘：确定性 100%，且随拖动/缩放实时更新。 */
 
-/** 求中心连线与节点矩形的交点（返回靠近中心的边界点） */
-function rectBoundaryPoint(cx, cy, w, h, tx, ty) {
-  const dx = tx - cx, dy = ty - cy
-  if (dx === 0 && dy === 0) return [cx, cy - h / 2]
-  const scaleX = (w / 2 + 8) / Math.abs(dx || 1e-9)
-  const scaleY = (h / 2 + 8) / Math.abs(dy || 1e-9)
-  const t = Math.min(scaleX, scaleY)
-  return [cx + dx * t, cy + dy * t]
+const EdgeShape = React.memo(function EdgeShape({ geometry: g, hit, dim, onEdgeClick }) {
+  const pointer = React.useRef(null)
+  const { edge, type, x1, y1, x2, y2, mx, my, angle, ax, ay, labelW } = g
+  const color = type?.color || '#888'
+  if (hit) return <path d={`M ${x1} ${y1} L ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth={14}
+    style={{ pointerEvents: dim ? 'none' : 'stroke', cursor: 'pointer' }} onPointerDown={event => { pointer.current = { x: event.clientX, y: event.clientY } }}
+    onClick={event => { const start = pointer.current; if (!start || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5) onEdgeClick(edge.data.relation) }} />
+  return <g className="gm8-edge-g" style={{ opacity: dim ? 0.12 : 1, transition: 'opacity .18s ease', pointerEvents: 'none' }}>
+    <path d={`M ${x1} ${y1} L ${ax} ${ay}`} fill="none" stroke={color} strokeWidth={2} strokeDasharray={type?.line_style === 'dashed' ? '7 5' : undefined} strokeLinecap="round" />
+    {type?.directional && <polygon points={`${x2},${y2} ${x2 - Math.cos(angle - 0.45) * 10},${y2 - Math.sin(angle - 0.45) * 10} ${x2 - Math.cos(angle + 0.45) * 10},${y2 - Math.sin(angle + 0.45) * 10}`} fill={color} />}
+    <g transform={`translate(${mx},${my})`}><rect x={-labelW / 2} y={-10} width={labelW} height={20} rx={10} fill={color} /><text textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={11}>{type?.name}</text></g>
+  </g>
+})
+const EdgeShapes = React.memo(function EdgeShapes({ geometries, focusSet, onEdgeClick, hit }) {
+  return geometries.map(geometry => <EdgeShape key={geometry.edge.id} {...{geometry,hit,onEdgeClick}} dim={focusSet ? !(focusSet.has(geometry.edge.source) && focusSet.has(geometry.edge.target)) : false} />)
+})
+function TransformedEdges({ children, hit }) {
+  const transform = RF.useStore(state => state.transform)
+  const flowRoot = RF.useStore(state => state.domNode)
+  const layer = <svg className={hit ? 'gm8-edge-hit-layer' : 'gm8-edge-layer'} style={{ position:'absolute',inset:0,width:'100%',height:'100%',pointerEvents:'none',overflow:'visible',zIndex:hit ? 30 : 5 }}>
+    <g transform={`translate(${transform[0]},${transform[1]}) scale(${transform[2]})`}>{children}</g>
+  </svg>
+  const renderer = hit ? flowRoot?.querySelector('.react-flow__renderer') : null
+  // Keep native wheel/pan events inside React Flow's ZoomPane while retaining custom edges.
+  return renderer ? createPortal(layer, renderer) : layer
 }
-
-/** edges: [{id, source, target, data:{relation}}]；typeMap: Map<id, RelationType>；
- *  focusSet: 聚焦时仅高亮圈内边（Set<"c-<id>">），其余淡出 */
 export function EdgeLayer({ edges, typeMap, onEdgeClick, focusSet }) {
-  // 整店订阅（恒等选择器）：任何节点位置/视口变化都会重渲染。
-  // 注意不能用返回新对象的选择器——快照不稳定会导致永不更新。
-  const store = RF.useStore((s) => s)
-  const transform = store.transform
-  const nodesInfo = {}
-  store.nodeLookup.forEach((n, id) => {
-    nodesInfo[id] = {
-      x: n.internals.positionAbsolute.x, y: n.internals.positionAbsolute.y,
-      w: n.measured?.width || 208, h: n.measured?.height || 80,
-    }
-  })
-  const zoom = transform[2]
-  // 绘制层（zIndex 5，位于节点之下）：穿越第三方卡片的连线不再遮挡卡片文字
-  const drawing = (
-    <svg className="gm8-edge-layer" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible', zIndex: 5 }}>
-      <g transform={`translate(${transform[0]},${transform[1]}) scale(${zoom})`}>
-        {edges.map((e) => {
-          const a = nodesInfo[e.source], b = nodesInfo[e.target]
-          if (!a || !b) return null
-          const acx = a.x + a.w / 2, acy = a.y + a.h / 2
-          const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2
-          const [x1, y1] = rectBoundaryPoint(acx, acy, a.w, a.h, bcx, bcy)
-          const [x2, y2] = rectBoundaryPoint(bcx, bcy, b.w, b.h, acx, acy)
-          const t = typeMap.get(e.data.relation.relation_type_id)
-          const color = t?.color || '#888'
-          const dashed = t?.line_style === 'dashed'
-          const dim = focusSet ? !(focusSet.has(e.source) && focusSet.has(e.target)) : false
-          // 标签位置：默认边中点；标签外接矩形与任一节点矩形（膨胀 4px）相交则沿线段滑动避让
-          const labelW = String(t?.name || '').length * 6 + 14, labelH = 20
-          const hitsNode = (lx, ly) =>
-            Object.values(nodesInfo).some((n) =>
-              lx + labelW / 2 > n.x - 4 && lx - labelW / 2 < n.x + n.w + 4 &&
-              ly + labelH / 2 > n.y - 4 && ly - labelH / 2 < n.y + n.h + 4)
-          let mt = 0.5
-          for (const cand of [0.5, 0.36, 0.64, 0.28, 0.72, 0.2, 0.8, 0.12, 0.88, 0.06, 0.94]) {
-            const lx = x1 + (x2 - x1) * cand, ly = y1 + (y2 - y1) * cand
-            if (!hitsNode(lx, ly)) { mt = cand; break }
-          }
-          const mx = x1 + (x2 - x1) * mt, my = y1 + (y2 - y1) * mt
-          const angle = Math.atan2(y2 - y1, x2 - x1)
-          const ax = x2 - Math.cos(angle) * 10, ay = y2 - Math.sin(angle) * 10 // 箭头尖端前留空
-          return (
-            <g key={e.id} className="gm8-edge-g" style={{ opacity: dim ? 0.12 : 1, transition: 'opacity .18s ease', pointerEvents: 'none' }}>
-              <path d={`M ${x1} ${y1} L ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth={14} style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
-                onClick={() => onEdgeClick(e.data.relation)} />
-              <path d={`M ${x1} ${y1} L ${ax} ${ay}`} fill="none" stroke={color} strokeWidth={2}
-                strokeDasharray={dashed ? '7 5' : undefined} strokeLinecap="round" />
-              {t?.directional && (
-                <polygon
-                  points={`${x2},${y2} ${x2 - Math.cos(angle - 0.45) * 10},${y2 - Math.sin(angle - 0.45) * 10} ${x2 - Math.cos(angle + 0.45) * 10},${y2 - Math.sin(angle + 0.45) * 10}`}
-                  fill={color} />
-              )}
-              <g transform={`translate(${mx},${my})`}>
-                <rect x={-(String(t?.name || '').length * 6 + 14 + (e.data.relation.description ? 12 : 0)) / 2} y={-10}
-                  width={String(t?.name || '').length * 6 + 14 + (e.data.relation.description ? 12 : 0)} height={20} rx={10} fill={color} />
-                <text textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize={11}>
-                  {t?.name}
-                </text>
-              </g>
-            </g>
-          )
-        })}
-      </g>
-    </svg>
-  )
-  // 命中层（zIndex 30，节点之上）：仅透明宽线接收点击，不绘制任何可见内容
-  const hitLayer = (
-    <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'visible', zIndex: 30 }}>
-      <g transform={`translate(${transform[0]},${transform[1]}) scale(${zoom})`}>
-        {edges.map((e) => {
-          const a = nodesInfo[e.source], b = nodesInfo[e.target]
-          if (!a || !b) return null
-          const acx = a.x + a.w / 2, acy = a.y + a.h / 2
-          const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2
-          const [x1, y1] = rectBoundaryPoint(acx, acy, a.w, a.h, bcx, bcy)
-          const [x2, y2] = rectBoundaryPoint(bcx, bcy, b.w, b.h, acx, acy)
-          const dim = focusSet ? !(focusSet.has(e.source) && focusSet.has(e.target)) : false
-          return (
-            <path key={`h-${e.id}`} d={`M ${x1} ${y1} L ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth={14}
-              style={{ pointerEvents: dim ? 'none' : 'stroke', cursor: 'pointer' }}
-              onClick={() => onEdgeClick(e.data.relation)} />
-          )
-        })}
-      </g>
-    </svg>
-  )
-  return (
-    <>
-      {drawing}
-      {hitLayer}
-    </>
-  )
+  const nodeList = RF.useStore(state => state.nodes)
+  const initialized = RF.useNodesInitialized()
+  const store = RF.useStoreApi()
+  const [cache] = React.useState(createGeometryCache)
+  const geometries = React.useMemo(() => {
+    const nodes = new Map()
+    store.getState().nodeLookup.forEach((node,id) => nodes.set(id, { x:node.internals.positionAbsolute.x,y:node.internals.positionAbsolute.y,w:node.measured?.width || 208,h:node.measured?.height || 80 }))
+    return cache.update(nodes, edges, typeMap)
+    // nodeList/initialized invalidate this imperative nodeLookup snapshot on
+    // drag and measured-size changes; geometry reads values via nodeLookup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeList, initialized, edges, typeMap, store, cache])
+  return <><TransformedEdges><EdgeShapes {...{geometries,focusSet,onEdgeClick}} /></TransformedEdges><TransformedEdges hit><EdgeShapes hit {...{geometries,focusSet,onEdgeClick}} /></TransformedEdges></>
 }

@@ -21,3 +21,9 @@ def ensure_migrations(engine):
     """init_db 钩子：播种登录账号（system_accounts 表由 create_all 建，此处只补数据）"""
     from .accounts import seed_if_empty
     seed_if_empty(engine)
+    from sqlalchemy.orm import Session
+    from .models import SystemHomeState
+    with Session(engine) as session:
+        if session.get(SystemHomeState, 1) is None:
+            session.add(SystemHomeState(id=1, revision=0))
+            session.commit()

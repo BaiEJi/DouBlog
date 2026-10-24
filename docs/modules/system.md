@@ -1,271 +1,84 @@
-# system + shared 模块文档（系统管理 / 公共骨架 / 统一登录）
-
-> 覆盖范围：`backend/app/system/**`、`backend/app/shared/**`、`backend/app/db.py`、`backend/app/main.py`、`backend/app/config.py`，以及对应前端 `frontend/src/config/**`、`frontend/src/app/**`（App 壳 + LoginPage）、`frontend/src/portal/**`、`frontend/src/shared/client.js`；测试 `backend/tests/system/`、`backend/tests/shared/`。
->
-> **生成日期：2026-10-10**（依据当日代码现状；统一登录系统已上线；2026-10-12 凭据迁入 system_accounts 表）。
-
----
-
-## 0. 登录账号存储（system_accounts 表，2026-10-12）
-
-- **表**：`system_accounts`（单行；username + password_hash + updated_at）——凭据从
-  `config.py` 硬编码迁入数据库；`config.py` 的 `auth_username/auth_password` 仅作
-  **首次播种默认**（system 模块 `ensure_migrations` 空表时写入，幂等不覆盖）与
-  system 模块未注册时的中间态回退
-- **哈希**：PBKDF2-SHA256（200k 迭代 + 随机盐，`app/system/accounts.py` 标准库实现，
-  格式 `pbkdf2_sha256$iters$salt$hash`）；明文不落库不落日志
-- **校验**：`shared/auth.verify_password` → 延迟导入 `system.accounts.verify_account`
-  （避免 shared↔system 模块环），登录与 Basic 两路即时读表——**改密后旧密码立即失效**
-- **管理**：`GET/PUT /api/admin/account`（PUT 验旧密码；username 3-64 位字母数字_-、
-  new_password ≥8 位，二者可只改其一）；前端 `/config` 登录账号卡（三输入框 + 保存）
-- **会话不失效**：会话 Cookie 是 HMAC 签名（secret_key 仍在 config.py），改密不影响
-  已登录设备；需要踢出时改用户名
-- **测试**：`tests/system/test_account.py` 12 例（播种/幂等/两路校验/改密改用户名/弱口令与非法用户名拒绝/旧密码错误 401）
-
----
-
-## 1. 功能概述
-
-| 能力 | 说明 |
-|---|---|
-| **统一登录与认证** | `POST /api/auth/login`（JSON 或 Basic 头）→ HttpOnly 会话 Cookie `doublog_session`（HMAC-SHA256 签名，30 天）；`require_basic` 依赖 = **Cookie 优先、Basic 兼容**双通道；`POST /api/auth/logout` 清除会话；前端 `/login` 页 + AuthGate 守卫 + 401 兜底重定向 |
-| **数据库后端一键切换** | `GET/POST /api/admin/database(/test|/switch)`：SQLite ↔ PostgreSQL **只换连接不迁移数据**，空库自动建表播种，PG 库不存在自动创建，429 防并发切换，dev 模式戳文件触发 uvicorn 重载 |
-| **日志上报配置** | `GET/PUT/POST /api/admin/logging(/test)`：各模块 lizysdk 日志外发开关/地址/级别，PUT 即时重装配日志管道；配置落 `data/logs_config.json` |
-| **门户布局持久化** | `GET/PUT/DELETE /api/home/layout`：门户卡片分组/顺序/标题描述覆盖全量落库（system_home_groups + system_home_cards；2026-10-17 前仅 localStorage） |
-| **响应信封** | `shared/response.py::api_response`——全站统一 `{success, code, message, data}` JSONResponse（中文不转义） |
-| **SDK 并发池注册表** | `shared/pools.py`：`DB_POOL`（doublog-db，16 worker）+ `get_pool(module)` 模块命名池缓存；全站禁止裸 `ThreadPoolExecutor` |
-| **时间戳** | `shared/timestamps.py::_iso/_utcnow`：SQLite（naive）与 PG（timestamptz 带偏移）双后端输出一致的序列化 |
-| **模块 sys_name 映射** | `shared/modules.py`：请求路径前缀 → 模块名 → `doublog.<module>` 记录级覆盖；mod_logger / 日志上报配置持久化 |
-| **应用工厂** | `main.py::create_app`：CORS（凭据模式）+ GZip + 统一异常信封 + 动态模块注册表 + init_db |
-| **前端总配置页** | `/config` ConfigPage（账号 / 数据库 / 日志上报）；`/` 门户 15 卡 + 登出；`/login` 登录页；client.js Cookie 化（**不再持有任何凭据**） |
-
-模块注册顺序（`main.py::MODULES`）：`blog → diary → vault → pwsvc → sdklogs → subs → apihub → system → todo → confcenter`；auth 路由（`/api/auth/*`，属 shared 层）在所有模块路由之后单独挂载。
-
----
-
-## 2. 统一登录系统（2026-10 上线）
-
-### 2.1 会话令牌与 Cookie
-
-- **令牌格式**：`{user}.{exp}.{sig}`
-  - `user`：用户名；`exp`：Unix 秒级过期时间（签发时刻 + 30 天）；`sig`：`HMAC-SHA256(secret_key, "{user}.{exp}")` 的 hex
-  - 签名密钥 = `settings.secret_key`（`config.py`，默认 dev 值，生产必须更换）
-  - 校验：三段拆分 → `int(exp)` 未过期 → `hmac.compare_digest` 常数时间比对签名
-- **Cookie 属性**：名 `doublog_session`；`HttpOnly`（JS 不可读，防 XSS 窃取）；`SameSite=Lax`（缓解跨站 CSRF）；`Max-Age` 30 天；`path=/`；**未设 Secure**（本机/内网 HTTP 部署场景）
-- Cookie 必须设在**最终返回的 Response 对象**上（`login` 直接构造 `api_response` 返回值再 `set_cookie`——FastAPI 不合并注入参数 Response 的 Set-Cookie）
-
-### 2.2 认证端点（`shared/auth.py`，路由前缀 `/api/auth`）
-
-| 端点 | 行为 |
-|---|---|
-| `POST /api/auth/login` | 双通道取凭据：优先 JSON body `{username, password}`（前端登录页）；无 JSON 再解析 `Authorization: Basic` 头（兼容 API 工具/curl/既有测试）。验证通过 → 信封 `{username}` + `Set-Cookie doublog_session`；失败 401「认证失败」（无 Cookie） |
-| `GET /api/auth/check` | 挂 `require_basic`；返回 `{authenticated: true, username}`。前端 AuthGate 用它探测会话（`credentials: 'include'`） |
-| `POST /api/auth/logout` | **无需认证、幂等**：`delete_cookie` 清除会话即 200「已登出」 |
-
-`verify_password(u, p)`：`settings.auth_enabled=False` 时放行（本地免认证模式）；默认 `admin / lizy111A`。
-
-### 2.3 require_basic 双通道依赖（历史名保留）
-
-```
-auth_enabled=False → 直接放行
-  ↓
-请求 Cookie 中 doublog_session 校验通过 → 放行（前端登录态）
-  ↓
-Authorization: Basic 头解析 + verify_password → 放行（API/SDK/测试通道）
-  ↓
-否则抛 lizysdk AuthError → main.py 全局处理器 → 401 信封 + WWW-Authenticate: Basic
-```
-
-- 免认证端点不变：sdklogs 摄入（`/api/v1/logs(/batch)`）、diary 分享（`/diary/s/:token`）、apihub gw（sk- 令牌）、图片下载
-- 旧 Flask 的 `@auth.login_required` 不存在；路由用 `dependencies=[Depends(require_basic)]`
-
-### 2.4 CORS 凭据模式（`main.py`）
-
-```python
-CORSMiddleware(
-    allow_origin_regex=r'^https?://.*:60101$',   # 收敛为前端端口 60101（dev/preview 同端口）
-    allow_credentials=True,                       # 会话 Cookie 跨端口（60101→60100）携带必需
-    allow_methods=['GET','POST','PUT','DELETE','OPTIONS'],
-    allow_headers=['Content-Type','Authorization'],
-)
-```
-
-- **凭据模式下不能用通配 `*`**——浏览器规范禁止 `Access-Control-Allow-Origin: *` 与 `Allow-Credentials: true` 共存，必须显式来源；故 `config.py` 里的 `cors_origins: '*'` 已是**死配置**（代码不再读取，见第 7 节）
-- 中间件未限 `routes`，作用于全应用（`/api/*` 与 `/`、`/health`）
-
-### 2.5 前端守卫与 401 兜底
-
-- **AuthGate**（`app/App.jsx`）：包裹全部路由。免登录路径 = `/login` 与 `/diary/s/*`；其余路径挂载时 `fetch(API_BASE/api/auth/check, {credentials:'include'})`——`r.ok` 放行、非 ok → `<Navigate to="/login?next=<原路径>">`；**后端不可达时放行**（网络错误不挡页面，由 apiFetch 的 401 兜底接管）。路径变化时重查
-- **apiFetch 401 兜底**（`shared/client.js`）：任何请求返回 401 且非 login 接口自身、当前不在 `/login` 页 → `window.location.href = '/login?next=<当前路径>'`（防重定向环）
-- **client.js 已 Cookie 化**：`credentials: 'include'`；**不再持有任何 btoa/Basic 凭据**——前端 bundle 中不存在明文密码
-- **LoginPage**（`/login`）：JSON 载荷登录；`?next=` 回跳（`//` 开头拒绝，防开放重定向）；失败显示后端 message
-- **登出**：门户页右上角按钮 → `POST /api/auth/logout`（fire-and-forget）→ 跳 `/login`
-- **vault 主密码解锁 ≠ 登录**：vault 是零知识加密——主密码仅在前端派生/解包 VEK（Argon2id + AES-GCM），服务端只存密文。会话登录解决的是「HTTP API 访问权」，vault 解锁解决的是「密文解密权」，二者独立：已登录会话下 vault 仍需主密码解锁；登出不清除 vault 内存外的任何东西（VEK 本就仅内存，锁屏即丢）
-
----
-
-## 3. 数据库切换 API（`system/routes.py`，前缀 `/api/admin`，挂 require_basic）
-
-**切换语义**：只更换连接配置（写 `data/db_config.json`）并重启生效，**不迁移数据**——直接读目标库现有数据；空库由 `init_db` 的 create_all 自动建表并播种默认知识库/虚拟根；两侧数据互不影响，随时可切回。
-
-| 端点 | 说明 |
-|---|---|
-| `GET /api/admin/database` | 当前状态：`backend`、`database_url_masked`（PG 只显示 `@` 之后部分）、`data_dir`、`postgres` 连接配置、`counts`（`posts` **不含虚拟根 id=0**、`audit_logs`）、`running_under_reloader`（= settings.debug）。统计 SQL 用新表名 `blog_posts`/`blog_audit_logs` |
-| `POST /api/admin/database/test` | `{target: "sqlite"\|"postgres", postgres?: {host,port,user,password,dbname}}`。sqlite 恒 ok；PG 连接（connect_timeout 3s）成功返回版本串；库不存在时**自动建库**（连 `postgres` 系统库 CREATE DATABASE 后重试），成功提示「连接成功（已自动创建数据库）」；失败 400 含驱动错误首行。**不切换**（但可能已在目标 PG 上建出库） |
-| `POST /api/admin/database/switch` | 校验：`target` 合法（否则 400）、与当前不同（否则 400「当前已在使用 xxx」）、模块级 `threading.Lock` 非阻塞抢占（并发切换 → **429「已有切换操作进行中」**）。PG 目标先 `_ensure_postgres_database`（连 `postgres` 系统库查 `pg_database`，不存在则 AUTOCOMMIT `CREATE DATABASE`，再重试连接）；通过后 `save_db_config` 落盘 |
-
-**生效方式**：
-
-- `restart_required = not settings.debug`；dev（uvicorn `--reload` 监听 `app/`）为 `false`，并在**延时 daemon 线程**（等 1s 让响应先送达）touch `app/_reload_stamp.py` 戳文件触发自动重启——与编辑源码触发的重启同一机制（比 `os._exit` 自杀式退出可靠）；戳文件由 `main.py` 顶部 `import app._reload_stamp` 保证进入 reload 监听列表
-- 生产模式返回 `restart_required: true`，需手动重启后端
-- 引擎重建交给重启后的 `init_db`（切换请求内不重建）
-
-### 日志上报配置三端点
-
-| 端点 | 说明 |
-|---|---|
-| `GET /api/admin/logging` | `{enabled, url, level, modules: [{module, sys_name}]}`（modules 来自 `ALL_MODULES`） |
-| `PUT /api/admin/logging` | 部分更新 `enabled`（必须 bool）/`url`（http(s):// 开头）/`level`（仅 INFO/WARNING）；非法 400。保存落 `data/logs_config.json` 后**立即调 `setup_logging_for_app()` 重装配 lizysdk 管道**（幂等），即时生效 |
-| `POST /api/admin/logging/test` | 发一条 WARNING 测试日志（`mod_logger('system')`，sys_name=doublog.system），返回 `{marker}`，到 `/logs` 页搜索 marker 验证链路 |
-
-### 门户工作台布局（`system/home.py`，前缀 `/api/home`，挂 require_basic，2026-10-17）
+# system + shared 模块
 
-门户 `/` 各模块卡片的**分组 / 顺序 / 标题描述自定义覆盖**全量持久化（此前仅 localStorage）：
-
-- **表**：`system_home_groups`（id/name/position/updated_at——组间顺序）+
-  `system_home_cards`（key 主键/group_id/position/title/desc/updated_at——归组 +
-  组内顺序 + 文案覆盖）。`title/desc` 为 **null = 沿用前端内置默认文案**（内置文案
-  升级可向前传播；"恢复默认文案"= 清覆盖不动分组）；`key` 是模块标识
-  （`blog`/`diary`/…，前端 `portal/systems.jsx` 单源），服务端只校验格式
-  （`^[a-z][a-z0-9_-]{0,39}$`），新增模块无需后端同步——前端对未知 key 滤除、
-  缺失模块自动补到末组
-- **端点**：`GET /api/home/layout`（空库 → `groups: []`，前端渲染内置默认单组）；
-  `PUT /api/home/layout` **整体替换**（全删全插一个事务，分组 id 重新自增分配；
-  单用户低频操作，无并发顾虑）；`DELETE /api/home/layout` 清空（恢复默认）。
-  校验 400：groups 非空数组（≤20 组、每组 ≤60 卡）、分组名必填 ≤64、key 非法或
-  **跨组重复**、标题 ≤120 / 描述 ≤300（strip 后空串 = null 清覆盖）
-- **无 DB 级外键**：group_id 不建 FK（SQLite 连接未开 PRAGMA foreign_keys，两后端
-  行为对齐靠应用层事务内先删卡后删组）
-- **前端**（`portal/`）：卡片 hover 出铅笔按钮 → `CardEditModal`（标题/描述输入，
-  placeholder = 内置默认；「恢复默认文案」清覆盖；Esc 捕获阶段 stopPropagation 叠层
-  隔离）；每次布局变更（拖拽/建组/改名/删组/编辑文案）乐观提交——本地 setState +
-  localStorage 首屏缓存（`doublog_portal_layout_v2`）+ PUT 服务端；失败顶部红条提示
-  （5s 自动消失，不回滚）。**服务端为唯一事实源**：挂载后 GET 覆盖本地（用户未动过
-  时）；服务端为空且本地有**非默认**布局（含旧 `doublog_portal_layout` /
-  `doublog_portal_order`，路由剥斜杠转 key）时一次性迁移上存
-
----
-
-## 4. shared 层逐文件 + db.py + main.py
-
-### shared/__init__.py
-导出 `auth_router`（main.py 挂载）、`require_basic`、`verify_password`。
-
-### shared/response.py
-`api_response(data=None, code=200, message='操作成功') -> JSONResponse`：`{success: 200<=code<300, code, message, data}` + 同步 HTTP 状态码；中文不转义。全站唯一响应出口。
-
-### shared/auth.py
-统一登录系统实现（第 2 节）：`SESSION_COOKIE`/`SESSION_TTL_S`、`verify_password`、`_parse_basic`、`_sign`/`issue_session`/`verify_session`（纯标准库 hmac）、`_session_user`、`_set_session_cookie`/`_clear_session_cookie`、`require_basic` 依赖、`/api/auth/login|check|logout` 三端点。
-
-### shared/pools.py
-lizysdk 池注册表：`DB_POOL = create_pool('thread', name='doublog-db', workers=16)`（run_db 专用）；`get_pool(module, workers=None)` 首建缓存（`doublog-<module>` 命名）；`shutdown_pools()` 幂等回收。结构性单写者/调度线程保留 threading，执行体经池。
-
-### shared/modules.py
-- `MODULE_BY_PREFIX`：路径前缀 → 模块（`/api/subs` subs、`/api/diary` diary、`/api/vault` vault、`/api/pwsvc` pwsvc、`/api/v1` sdklogs、`/api/admin` 与 `/api/home` system、`/api/apihub` apihub、`/api/todo` todo、`/api/confcenter` confcenter、`/api/auth` **shared**、`/api/workspaces|posts|images|export` blog）；未命中 → main
-- `ALL_MODULES`（含 shared/main 共 12 个，管理页下拉数据源）、`MODULES_WITH_DB`（9 个，init_db 调其 `ensure_migrations`）
-- `sys_name_for(m)` = `doublog.<m>`；`mod_logger(module)` 返回 `_SysNameAdapter`——**显式持有模块名**注入 `extra.sys_name`（用 logger 名拼前缀会得 `doublog.doublog.x` 双前缀，禁止）
-- 日志上报配置：`load_logs_config/save_logs_config`（文件 > 环境默认，`data/logs_config.json`，线程锁保护写）
-
-### shared/timestamps.py
-`_iso(dt)`：带时区的 datetime 去掉 tzinfo 输出「本地墙上时间」字符串——SQLite（naive）与 PG（timestamptz）双后端 JSON 输出一致；`_utcnow()`：naive UTC（SQLite 比较用，PG timestamptz 兼容 naive 绑定）。
-
-### shared/logging_setup.py
-`setup_logging_for_app()`：lizysdk `setup_logging` 落盘 `data/logs/doublog.log`（INFO+，size 轮转 10MB×5，console），`sys_name='doublog'`，外发按上报配置（send_json/send_url，timeout 1.5s）。**防回环闸门 `_SendGate`**：只放行 WARNING+（级别随配置 INFO/WARNING）且未标记 `no_remote` 的记录；必须在 Filter 里判级别——发送 handler 在 SDK QueueListener 消费端，标准库默认 `respect_handler_level=False` 会无视 `handler.setLevel`。`_SendHandler` 位置兼容两种形态（`_BACKEND.listener.handlers` 或 root.handlers）。
-
-### db.py
-- **配置**：`data/db_config.json`（`{backend, postgres:{...}}`）；`load_db_config`（缺失/损坏回退默认）/`save_db_config`/`get_database_url`（sqlite → `<data_dir>/blog.db`；pg → `postgresql+psycopg2://` URL 编码密码）/`SUPPORTED_BACKENDS = ('sqlite','postgres')`
-- **Base + query 描述符**：`class Base(DeclarativeBase)` 自带 `_QueryProperty`——`Model.query` ≡ 当前线程 scoped session 的 `query(Model)`（Flask-SQLAlchemy 写法兼容层）
-- **db 门面**：`db.engine` / `db.session`（scoped_session 本体：query/add/commit/rollback/get/remove）；`rebuild_engine()` 按 db_config 重建（sqlite：`check_same_thread=False` + `pool_pre_ping`；pg：`pool_size=5, max_overflow=10`）
-- **run_db(fn)**：async——同步 fn 提交 `DB_POOL` 执行；**rollback + remove 必须在池工作线程内做**（scoped_session 按线程隔离，事件循环线程清不到工作线程的 session，读事务不 commit 会滞留连接耗尽池）
-- **LEGACY_TABLE_MAP**：posts→blog_posts、workspaces→blog_workspaces、audit_logs→blog_audit_logs、diaries→diary_diaries、sdk_logs→sdklogs_logs、sdk_alerts→sdklogs_alerts（旧存在且新不存在才 RENAME，幂等）
-- **init_db(app) 顺序**：`rebuild_engine` → **存量 RENAME（必须先于 create_all**——否则 create_all 先建全新空新名表，RENAME 因目标已存在被跳过，存量数据滞留旧表）→ `create_all` → 逐 `MODULES_WITH_DB` 调 `ensure_migrations(engine)` 钩子 → `seed_virtual_root`（id=0 的 Post 行，blog 未注册时容错跳过）→ SQLite 专属：`journal_mode=WAL` **无并发窗口一次设置并校验返回值**（失败抛 RuntimeError）+ 每连接 PRAGMA（busy_timeout=5000 / synchronous=NORMAL / cache_size=-20000 / temp_store=MEMORY）→ 挂 `app.state.engine`
-
-### main.py
-- 顶部保证 `app/_reload_stamp.py` 存在并 import（进入 uvicorn reload 监听列表）
-- `setup_logging_for_app()` 模块导入期装配日志；`create_app()`：
-  1. FastAPI（docs/redoc/openapi 全关）；`app.state.testing`（`DOUBLOG_TESTING=1`）
-  2. CORS 凭据模式（第 2.4 节）+ `GZipMiddleware(minimum_size=1024, compresslevel=6)` + 请求级 trace 纯 ASGI 中间件（每请求绑 lizysdk trace_id，日志自动携带；上游带 `X-Trace-Id` 则透传，否则生成并回写响应头）
-  3. 四类异常处理器统一信封：`AppError`（lizysdk）→ `{success:False, code:http_status, message, data:{error_code, details}}`，**401 附 `WWW-Authenticate: Basic realm=...`**；`StarletteHTTPException`（404→「资源不存在」、405→「方法不被允许」）；`RequestValidationError`→400「请求参数错误」；未知异常→500「服务器内部错误」+ `exc_info` 日志。错误日志经 `_log_extra` 按路径标注 `sys_name=doublog.<module>`；`/api/v1/logs` 路径额外 `no_remote=True` 防摄入错误自摄回环
-  4. 动态模块注册：按 `MODULES` 顺序 importlib 导入（**先注册模型后建表**）；导入失败捕获 WARNING 跳过（中间态可启动）
-  5. `init_db(app)` → 逐模块 `include_router(router)` + `start_background(app)`（存在才调）→ `include_router(auth_router)` → `/`（欢迎语）与 `/health`（免认证）
-
----
-
-## 5. 前端
-
-### ConfigPage（`/config`，`config/ConfigPage.jsx` + `config/api.js`）
-全站总配置页；数据库和日志上报统一从此页操作：
-
-- **数据库卡**：状态区（当前后端徽章 SQLite/PostgreSQL、文章数/审计日志计数、掩码连接串 font-mono）；PG 连接参数表单（host/port/dbname/user/密码——密码留空则沿用已存值）；「测试连接」「一键切换到 PostgreSQL」「一键切换回 SQLite」（当前后端按钮禁用置灰）；切换带 confirm（说明只换连接不迁移）；dev 切换后提示自动重启并 3.5s 后重拉状态
-- **日志上报卡**：外发启用 checkbox、服务地址、外发最低级别（WARNING/INFO select）、各模块 sys_name chips（font-mono）；「保存」（即时生效）/「发送测试日志」（返回 marker 提示到 /logs 验证）
-- `config/api.js` 六函数全走 `shared/client.js::apiFetch`（fetchDbStatus/testDbConnection/switchDatabase/fetchLoggingConfig/saveLoggingConfig/testLoggingSend）；旧独立管理页已移除，`/admin` 地址跳回 `/blog`
-
-### LoginPage（`/login`，`app/LoginPage.jsx`）
-全站唯一登录入口：用户名/密码表单 → `POST /api/auth/login`（JSON + `credentials:'include'`）；成功 `navigate(safeNext)`（`?next=` 回跳，`//` 开头拒绝）；401 显示后端 message；网络失败提示后端未启动；主题切换按钮；卡片下方微注（会话 30 天）。
-
-### AuthGate + 应用壳（`app/App.jsx`）
-- AuthGate 守卫逻辑见 2.5 节；`PageFallback`（居中细进度条）
-- 主题状态：`localStorage['doublog_dark']` > `prefers-color-scheme`；`documentElement.classList.toggle('dark')` + 350ms transitioning 类防闪烁
-- 路由表（路由级 lazy）：`/login`、`/`（门户）、`/blog /post/:id(/edit) /create`（blog）、`/diary`、`/diary/s/:token`（免登录分享）、`/vault`、`/logs`、`/apihub`、`/subs/*`、`/config`、`/confcenter`、`/todo/*`
-- 全局行为：ScrollToTop（锚点除外）、代码块复制按钮事件委托（clipboard API + execCommand 降级）
-
-### PortalPage（`/`，`portal/PortalPage.jsx` + `portal/systems.jsx` + `portal/api.js` + `portal/CardEditModal.jsx`）
-15 张系统卡（博客/日记/剧情图谱/待办四象限/刷题/书签/Steam 挂机/订阅管理/密码库/API Hub/系统配置/配置中心/日志查询/Clash 代理/开发者工具箱），桌面 `grid-cols-6`；"管理"卡片已删除，历史 localStorage 分组会过滤旧卡片，同时保留分组名称及其他卡片顺序。卡片分组布局可自定义（默认单组全卡）：跨组/组内拖拽排序（dnd-kit 多容器 + DragOverlay 悬浮克隆）、分组新建/双击重命名/删除（卡片并入相邻组）；**卡片标题与描述可编辑**（hover 铅笔按钮 → 弹窗，空 = 内置默认文案）；布局与文案覆盖**持久化在服务端**（/api/home/layout，见第 3 节；localStorage `doublog_portal_layout_v2` 仅首屏缓存，旧 key 自动迁移上存）；头部"工作台"标题 + 恢复默认布局 + 主题切换 + 登出按钮（logout 后跳 `/login`）。`systems.jsx` 是卡片定义单源（key/to/默认文案/配色/图标）。
-
-### client.js（Cookie 化）
-`API_BASE = http://{hostname}:60100`（后端地址全项目唯一持有处）；`apiFetch`：自动 Content-Type（FormData 除外）、`credentials:'include'`、401 统一重定向 `/login?next=`（登录接口与 /login 页排除，防环）。**不含任何凭据/btoa**。
-
----
-
-## 6. 测试
-
-### tests/system/test_admin.py（9 例）
-- 状态 2：GET /api/admin/database 信封与计数；未认证 401
-- 连通性 3：sqlite 恒 ok；PG 不可达 400「连接失败」；非法 target 400
-- 切换校验 2：同后端 400「当前已在」；不可达 PG 400「无法连接」
-- 真实往返 1：`pgserver`（`importorskip` 在 `pg` fixture 内——未装时**只跳过本例**，上方 8 个无 PG 依赖用例照常运行）内嵌 PG——sqlite 造数 → 切 PG（断言响应**无 migrated 字段**、db_config.json 落盘）→ 新 app 绑 PG（空库自动播种默认知识库/0 文章，PG 写一篇）→ 未重启连续切回 → sqlite 原数据原封不动
-- 日志上报 1：GET 默认 → PUT 改三项（落盘 + 重读）→ 非法值 400 ×3 → test 发送返回 marker
-- 辅助：`_prod_semantics`（debug=False 对齐非 reloader 语义）、`_ensure_count_tables`（blog 未迁移中间态护栏）、`_has_blog_routes`（FastAPI 惰性 _IncludedRouter 展开探针）
-
-### tests/system/test_home.py（8 例，2026-10-17）
-- 空库默认：GET → `groups: []`
-- PUT 往返：分组 id 服务端分配、文案 strip 保留、无覆盖/空串 → null；GET 读回一致
-- 整体替换：第二次 PUT 后旧组旧卡无残留；DELETE 重置；未认证 401 ×3
-- 校验拒绝 11 组用例（空体/空数组/缺名/cards 非数组/key 大写或带斜杠/跨组重复/名称·标题·描述超长/分组超 20）
-- 重启持久化：新 app 实例后布局仍在（库持久化非进程态）
-- 真实 PG 往返（pgserver 可选）：切换 → PG 上建表 → PUT/GET → 再起新 app 仍在，且 `system_home_groups`/`system_home_cards` 确在 PG 表清单中
-
-### tests/shared/（14 例）
-- **test_auth.py（11 例）**：Basic 通道 5（登录成功/无凭据 401/错误凭据 401/check 成功/check 401）+ 会话 6（JSON 登录签发 HttpOnly Cookie；Cookie 登录一次后受保护端点免 Basic；JSON 错误凭据 401 且无 Set-Cookie；logout 清除后 check 401；**篡改令牌 401 且 Basic 通道不受影响**；Basic 兼容通道与既有测试共存）
-- **test_logging_integration.py（3 例）**：AppError 异常信封（sdklogs 摄入非法 JSON→400 PARAM_INVALID；token 错→401 CREDENTIALS_ERROR）；自摄回灌（uvicorn 线程伺服本 app 真实 HTTP，WARNING 10s 内可查且 sys_name=doublog、本地文件同步落盘）；no_remote 闸门（摄入路径错误落盘但 /logs 搜不到）
-
-> 本模块域合计 31 例；后端全量当前 437 例（collect-only 实测；AGENTS.md 常用命令注释写 367 已过时，属跨模块文档同步问题）。
-
----
-
-## 7. 已知边界
-
-1. **Cookie 未设 Secure**：HTTP 内网/本机部署场景刻意为之；公网 HTTPS 部署应补 `secure=True`
-2. **secret_key 默认 dev 值**：会话令牌签名密钥，生产不换 = 任何知道默认值者可伪造会话；`config.py` 亦无环境变量注入
-3. **无服务端会话撤销**：令牌自包含（user.exp.sig），logout 只清客户端 Cookie——已签发令牌在 30 天内天然有效；改密码/换 secret_key 才能整体失效；无滑动续期
-4. **无 CSRF token**：依赖 SameSite=Lax + CORS 来源收敛（:60101）缓解；Lax 不挡顶级导航 GET 与同站请求
-5. **`cors_origins` 死配置**：`config.py` 仍保留 `'*'` 但 main.py 改用 `allow_origin_regex` + `allow_credentials`，不再读取该项（易误导，根文档仍列在配置表中）
-6. **数据库切换窗口**：切换期间并发写入可能丢失（单用户可忽略）；生产模式需手动重启；测试环境 monkeypatch `debug=False` 模拟非 reloader 语义
-7. **require_basic 命名是历史包袱**：实际是「Cookie 优先 + Basic 兼容」统一认证依赖，阅读代码勿望文生义
-8. **登录 ≠ vault 解锁**：见 2.5 节；已登录会话对 vault 密文无能为力（零知识设计，服务端无法也不应提供「登录即解锁」）
-9. AuthGate 对后端不可达放行（网络错误不挡页面），认证真正裁决在后端 401 + apiFetch 重定向——前端守卫只是体验层
-10. `GET /api/admin/database` 返回的 `postgres` 配置**含明文 password**（前端表单不回显、以空占位「留空使用已存密码」，但响应体中可见）；如需收敛应在后端掩码并让 `_merged_cfg` 识别掩码占位，暂列观察项
-
-## 公共 UI 外壳（2026-10-13）
-
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+本文覆盖系统管理、门户、认证、公共请求执行与应用生命周期。接口完整索引见根目录 `api.md`；本轮验收记录见 `docs/optimization-execution.md`。
+
+## 数据库与任务归属
+
+每个应用的 `app.state.db_runtime` 持有独立 engine、scoped_session、稳定 `identity`、本次启动的 `generation`、在途计数与写入屏障。`db.engine`、`db.session` 和 `Model.query` 优先解析 ContextVar 绑定；请求由纯 ASGI 中间件绑定所属应用。没有绑定时保留最近初始化 runtime 的同步兼容入口，供脚本与旧测试使用。
+
+`run_db(fn,*args,_pool=None,**kwargs)` 在提交时捕获 runtime，计入排队与执行中的任务，在实际工作线程清理同一个 registry。清理前用 `runtime.sessions.registry.has()` 检查该线程是否已有 Session；已有时仍按 `try rollback() / finally remove()` 执行，即使回滚异常也移除会话，没有时跳过，避免纯缓存或仅 `engine.connect()` 的函数因清理而创建空 ORM 会话。Core 连接仍由函数自己的上下文关闭。Future 完成或排队取消时释放 admission，已经运行的线程在HTTP取消后仍保留ticket，直到实际执行及会话清理完成。默认使用 SDK 的 `doublog-db`（16 workers、512 在途上限、满载503）。配置中心可指定自己的 SDK 池隔离 Redis 等待。创建另一个 app 不再 dispose 第一个 app 的连接；嵌套创建应用也临时清除调用方数据库绑定，再用新runtime执行全部迁移。
+
+后台模块必须在 `database_context(app)` 中执行，不能在执行时重新寻找全局最新数据库。后台执行仍使用 lizysdk 模块命名池；结构性调度/单写者线程允许保留。`run_blocking(module,fn,...,workers=N)` 提供带 context 与限长 admission 的通用阻塞任务入口。模块池注册受锁保护，进程退出统一回收；单个 app 的退出不会关闭其他 app 正在使用的共享池。
+
+建库顺序：存量表 RENAME → create_all → 模块迁移 → 虚拟根/默认数据 → SQLite WAL 校验。必需模块导入或迁移失败会使启动失败。SQLite 每连接 busy_timeout=5000、synchronous=NORMAL、cache_size=-20000、temp_store=MEMORY。
+
+## 认证
+
+`system_accounts` 保存 PBKDF2-SHA256 200000次迭代与随机盐的哈希。配置中的默认用户名/密码只用于空库首次播种；存储不可用返回503，不能回退到默认密码放行。
+
+会话 Cookie 优先、Basic 兼容。Basic 校验和登录的 PBKDF2 在限长 `doublog-auth` SDK 池（4 workers）执行。会话 HMAC 快速路径保持不变：`user.exp.sig`，从右侧拆分最后两段，签名/过期校验通过才放行；Cookie HttpOnly、SameSite=Lax、30天、本地HTTP部署未强制 Secure。改密使旧 Basic 密码失效，既有签名 Cookie 仍遵循有效期；需要撤销全部 Cookie 时轮换 secret_key。
+
+- `POST /api/auth/login`：JSON凭据或Basic头，成功设置最终 Response 的 Cookie。
+- `GET /api/auth/check`：返回真实 Cookie/Basic 用户 `username`、`authenticated`、`database_identity`、`generation`。
+- `POST /api/auth/logout`：幂等清Cookie。
+- 401使用统一信封，不附 `WWW-Authenticate: Basic`，避免浏览器额外弹框。
+
+AuthGate 共用去重校验与身份命名空间，只有401视为登录失效；网络/503提供重试状态。业务挂载前设置用户/数据库 scope，切换时中止旧请求并清理共享查询缓存。公开分享、登录等免认证入口单独放行。未知前端路径显示404，页面加载异常有错误边界。
+
+所有 HTTP 响应附 `X-Database-Identity`、`X-Database-Generation`；正常请求还附 `X-Trace-Id`。身份是隐藏密码后的数据库URL的SHA-256前24位，generation每次app创建重新生成。它们不包含连接密码。CORS允许前端60101的凭据请求，并暴露这些响应头；隔离验收使用相对API地址走同源代理。
+
+现代客户端在业务请求中发送`X-Expected-Database-Identity`。身份不匹配时中间件在业务执行前返回409（`DATABASE_CHANGED`与实际identity/generation），读写请求均受保护；认证、探针和GET数据库/运行状态入口可继续访问以恢复。前端停止旧请求并保留当前未保存输入，显示备份后重新加载提示，不直接把旧草稿提交到新库。未带该头的旧客户端仍兼容。
+
+## 数据库配置与切换
+
+三接口仍为 `/api/admin/database`、`/test`、`/switch`。切换只改变连接配置，不复制数据；新进程读取目标库，空库自动建表播种。原有 switch 成功响应保持 `{backend,restart_required}`。
+
+状态额外返回 `identity`、`generation`、`running_backend`、`pending_restart`、pending任务计数。`backend` 表示配置目标，不能据此认定运行连接已切换。`postgres` 不返回密码，`password_configured` 表示是否已保存密码；请求不提供新密码时保留原值。
+
+切换先验证目标、串行取得切换锁，设置屏障，等待已接收的数据库任务以及模块耐久写入 drain，停止后台资源后才原子发布配置。同目录临时文件 fsync+replace，失败保留原文件。排空失败不发布配置；停止失败保留屏障并返回503，要求重启后端，防止半停止状态继续接收业务。恢复配置为当前运行库时可重新启动已停止资源。
+
+屏障期间业务请求503，状态、认证和切换入口仍可用。开发模式通过重载戳触发重启；生产模式仍需手动重启。前端最长45秒轮询实际 running_backend 与 pending_restart，不再固定等待3.5秒后宣称成功。目标PG不存在时可创建数据库；test接口也保留该原有行为。
+
+`GET /api/admin/runtime` 需认证，返回数据库任务/屏障、SDK池快照、模块列表与后台状态。runtime额外含admissions_paused与pending_controls；pending_tasks计工作单元，一个HTTP请求及其worker可以各有ticket，并非唯一请求数。`GET /health` 是廉价存活探针；`GET /ready` 需认证，检查实际数据库和启动状态，未就绪503。
+
+## 应用生命周期
+
+短HTTP请求在读取body前取得ticket，覆盖慢上传及非DB写入者；数据库切换控制请求与长连接SSE单独处理。显式绑定runtime的`run_blocking`也在Future最终完成后才释放ticket，防止HTTP取消后文件IO等任务越过停机屏障。system-config控制任务单独计数，切库不等待自身，停机仍等待全部控制任务。Basic认证按只读任务计数，待重启期间仍可认证并恢复配置。
+
+资源在构造时初始化以兼容同步脚本与旧测试；lifespan重入/退出转换通过SDK工作线程中的锁串行执行。最后一个使用者退出时，在总计5秒预算内先封闭新admission，再等待业务及控制任务，随后drain写入水位、stop后台资源，最后dispose自身engine。超时不提前停掉仍有生产者的writer或销毁engine，保留围栏、未完成资源和`shutdown_error`；之后重入先重试清理，再恢复服务。模块可导出幂等 `drain_background(app,timeout=5.0)` 与 `stop_background(app,timeout=5.0)`；返回False表示未完成。创建新app、关闭旧app与关闭进程是三个不同边界。
+
+公共启动入口也登记仅有 `stop_background` 的惰性资源模块（如 Confcenter），不创建额外线程。普通启动钩子成功后才登记，已登记模块不重复启动；停止按模块反序执行，成功才移除登记，失败保留以便重试。`tests/system/test_lazy_resource_lifecycle.py` 经真实 lifespan 和数据库切换路径验证 Redis 只关闭一次、缓存/限流状态清理、多 app 隔离及重入重建，并覆盖启动失败和停止失败后的登记语义。
+
+日志设置可重复执行，LogRecord上下文工厂只安装一层，避免每次保存配置增加递归包装。日志配置同样原子写入。
+
+## 门户布局
+
+表：`system_home_groups`、`system_home_cards`、`system_home_state`、`system_home_mutations`。状态单行revision从0开始，空布局/恢复默认也保留版本。
+
+- `GET /api/home/layout`：`{groups,revision}`。无自定义布局时groups为空。
+- `PUT /api/home/layout`：groups整体替换；现代客户端带revision、mutation_id。
+- `DELETE /api/home/layout`：可带revision、mutation_id的JSON体，清布局并递增revision。
+
+SQL条件更新版本、分组/卡片替换、幂等回执在同一事务。相同mutation与相同请求重试返回首次结果；复用ID但改变内容409；旧revision409，不能覆盖重置后的状态。保留不传revision的旧客户端兼容写入。前端保存协调器串行确认，reset先建立队列屏障；失败保留输入。
+
+GET使用一条outer join读取revision、分组与卡片，确保它们属于同一已提交快照，避免多条SELECT在并发写入时混合内容与版本。
+
+该固定Select经懒初始化仅构建一次，保留模型延迟导入；每次仍由当前runtime的db.session执行并重新拼装完整JSON，不缓存Engine、Session或布局结果。双app相同ID不串库，关闭一个app不影响另一个，提交内容/revision后下次读取可见；专项见tests/system/test_home_expression.py。
+
+布局上限20组、每组60卡，组名64字，标题120字、描述300字；key小写字母开头、字母数字下划线短横线、最多40位、全布局唯一。title/desc null沿用默认文案，卡片未知key由前端过滤。
+
+## 公共前端组件
+
+- `ApiError/readEnvelope/apiJson`：统一结构错误、trace和AbortError，读取响应体时也校验dataEpoch。
+- `saveCoordinator`：每资源一个在途请求，未确认请求复用mutation ID，冲突停止自动写，身份/数据库草稿隔离。
+- `usePolling`：单飞、隐藏页面暂停、卸载取消、退避。
+- `CodeEditor`：CodeMirror6适配，事务、撤销、只读、语言扩展和主题；旧textarea引用通过桥兼容。
+- `VirtualList`：TanStack Virtual，动态行高、滚动容器和可到达末行。
+- `workerTask/compute`：任务ID、截止时间、取消、超时终止；差异、正则和大JSON在Worker计算。
+- `shared/ui`：通用组件，todo旧入口保留reexport兼容。
+
+## 验证与已知边界
+
+`tests/system/test_system_optimization.py` 覆盖双app隔离、取消清理、原子文件失败、门户CAS/幂等/reset、失败排空与停止屏障、认证存储失败、lifespan重入。`tests/system/test_run_db_sessions.py` 覆盖纯缓存/Core-only 任务不创建 Session、实际数据库事务在成功/失败时回滚并移除精确工作线程 registry、回滚异常仍移除，以及运行中取消直到真实清理完成才释放 ticket。`tests/system/test_home.py`、`test_admin.py` 包含真实临时PostgreSQL往返。全量回归与浏览器/性能最终证据以实施记录为准。
+
+后台线程无法强制中断任意Python阻塞调用；各模块需对网络/执行设置自身截止时间，失败状态必须可见。生产切库仍依赖重启。签名Cookie没有逐设备撤销列表。布局旧客户端不传revision的兼容写没有跨标签页冲突保护。

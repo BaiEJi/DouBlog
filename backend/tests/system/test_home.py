@@ -25,7 +25,7 @@ LAYOUT = {
 def test_get_empty_by_default(client, auth_headers):
     r = client.get('/api/home/layout', headers=auth_headers)
     assert r.status_code == 200
-    assert r.json()['data'] == {'groups': []}
+    assert r.json()['data'] == {'groups': [], 'revision': 0}
 
 
 def test_put_roundtrip_with_ids(client, auth_headers):
@@ -63,7 +63,7 @@ def test_delete_resets(client, auth_headers):
     r = client.delete('/api/home/layout', headers=auth_headers)
     assert r.status_code == 200
     assert '默认' in r.json()['message']
-    assert client.get('/api/home/layout', headers=auth_headers).json()['data'] == {'groups': []}
+    assert client.get('/api/home/layout', headers=auth_headers).json()['data'] == {'groups': [], 'revision': 2}
 
 
 def test_auth_required(client):
@@ -131,7 +131,7 @@ def test_pg_layout_roundtrip(client, auth_headers, tmp_path_factory, monkeypatch
         pg_app = create_app()
         with TestClient(pg_app) as c:
             # 空库：建表 + 空布局
-            assert c.get('/api/home/layout', headers=auth_headers).json()['data'] == {'groups': []}
+            assert c.get('/api/home/layout', headers=auth_headers).json()['data'] == {'groups': [], 'revision': 0}
             r = c.put('/api/home/layout', json=LAYOUT, headers=auth_headers)
             assert r.status_code == 200, r.json()
 

@@ -55,8 +55,9 @@ _SETTINGS_PARSE_CACHE: tuple[str | None, dict] = (None, {})
 
 def _stored_settings(raw: str | None) -> dict:
     global _SETTINGS_PARSE_CACHE
-    if raw == _SETTINGS_PARSE_CACHE[0]:
-        return _SETTINGS_PARSE_CACHE[1]
+    cached_raw, cached_value = _SETTINGS_PARSE_CACHE
+    if raw == cached_raw:
+        return cached_value
     try:
         stored = json.loads(raw) if raw else {}
         if not isinstance(stored, dict):
@@ -67,15 +68,18 @@ def _stored_settings(raw: str | None) -> dict:
     return stored
 
 
-def get_settings(session: Session) -> dict[str, Any]:
+def settings_from_raw(raw: str | None) -> dict[str, Any]:
+    """仅由存储JSON合并默认配置；无数据库访问，与get_settings共享解析规则。"""
     merged = {k: (dict(v) if isinstance(v, dict) else v) for k, v in DEFAULT_SETTINGS.items()}
-    row = session.get(AppSetting, _SETTING_KEY)
-    if row:
-        stored = _stored_settings(row.value)
-        for k, v in stored.items():
-            if k in merged:
-                merged[k] = v
+    for k, v in _stored_settings(raw).items():
+        if k in merged:
+            merged[k] = v
     return merged
+
+
+def get_settings(session: Session) -> dict[str, Any]:
+    row = session.get(AppSetting, _SETTING_KEY)
+    return settings_from_raw(row.value if row else None)
 
 
 def save_settings(session: Session, patch: dict[str, Any]) -> dict[str, Any]:

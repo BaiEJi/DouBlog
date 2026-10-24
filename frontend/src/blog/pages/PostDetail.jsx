@@ -379,6 +379,14 @@ export default function PostDetail({ dark, setDark }) {
   const [contextMenu, setContextMenu] = useState(null)
   const [confirmDialog, setConfirmDialog] = useState(null)
   const [tree, setTree] = useState([])
+  const [treeRevision, setTreeRevision] = useState(null)
+  const [treeError, setTreeError] = useState('')
+  const reorderBusy = useRef(false)
+  const readResponse = useCallback(async response => {
+    const revision = response.headers.get('X-Tree-Revision')
+    if (revision !== null) setTreeRevision(Number(revision))
+    return response.json()
+  }, [])
   const [loading, setLoading] = useState(true)
   const [activeTocId, setActiveTocId] = useState('')
   const [expandedMap, setExpandedMap] = useState(() => {
@@ -448,19 +456,19 @@ export default function PostDetail({ dark, setDark }) {
 
   const doDeletePost = useCallback((node) => {
     apiFetch(`/api/posts/id/${node.id}?recursive=1`, { method: 'DELETE' })
-      .then(r => r.json())
+      .then(readResponse)
       .then(d => {
         if (d && d.success) {
           invalidatePost(node.id)
           const wsId = post?.workspace_id
           apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`)
-            .then(r => r.json())
+            .then(readResponse)
             .then(d => { if (d.success) setTree(d.data) })
           if (node.id === parseInt(id)) navigate('/')
         }
       })
       .catch(console.error)
-  }, [id, navigate, post?.workspace_id])
+  }, [id, navigate, post?.workspace_id, readResponse])
 
   const handleDeletePost = useCallback((node) => {
     setConfirmDialog({
@@ -472,7 +480,18 @@ export default function PostDetail({ dark, setDark }) {
   }, [doDeletePost])
 
   // 拖拽排序回调
-  const handleReorder = useCallback((parentId, newOrder) => {
+  const handleReorder = useCallback(async (parentId, newOrder) => {
+    if (reorderBusy.current) return
+    reorderBusy.current = true
+    let expected = treeRevision
+    if (parentId !== 0) {
+      const pending = [...tree]
+      while (pending.length) {
+        const node = pending.pop()
+        if (node.id === parentId) { expected = node.revision; break }
+        pending.push(...(node.children || []))
+      }
+    }
     // 乐观更新本地 tree
     const reorderInTree = (nodes, targetParentId) => {
       if (targetParentId === 0) {
@@ -491,17 +510,32 @@ export default function PostDetail({ dark, setDark }) {
     }
     setTree(prev => reorderInTree(prev, parentId))
 
-    // 调 API（顶级排序需要带上知识库）
-    apiFetch('/api/posts/reorder', {
-      method: 'PUT',
-      body: JSON.stringify({ parent_id: parentId, workspace_id: post?.workspace_id, children_order: newOrder })
-    }).catch(() => {
-      // 失败回滚
+    try {
+      const response = await apiFetch('/api/posts/reorder', {
+        method: 'PUT', body: JSON.stringify({ parent_id: parentId, workspace_id: post?.workspace_id,
+          children_order: newOrder, revision: expected, mutation_id: crypto.randomUUID() }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || '排序保存失败')
+      if (parentId === 0) setTreeRevision(result.data.revision)
+      else {
+        const patchRevision = nodes => nodes.map(node => ({ ...node,
+          ...(node.id === parentId ? { revision: result.data.revision } : {}),
+          children: patchRevision(node.children || []),
+        }))
+        setTree(patchRevision)
+      }
+      setTreeError('')
+    } catch (error) {
+      setTreeError(error.message || '排序保存失败，正在恢复服务器顺序')
       const wsId = post?.workspace_id
-      apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`)
-        .then(r => r.json()).then(d => { if (d.success) setTree(d.data) })
-    })
-  }, [post?.workspace_id])
+      try {
+        const response = await apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`)
+        const latest = await readResponse(response)
+        if (latest.success) setTree(latest.data)
+      } catch { /* 显示失败，不再向服务器写入乐观顺序 */ }
+    } finally { reorderBusy.current = false }
+  }, [post?.workspace_id, tree, treeRevision, readResponse])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -519,7 +553,7 @@ export default function PostDetail({ dark, setDark }) {
 
     // 先取文章(得知所属知识库),再按库取树
     apiFetch(`/api/posts/id/${id}`, { signal: controller.signal })
-      .then(r => r.json())
+      .then(readResponse)
       .then(postRes => {
         if (postRes?.success) {
           setPost(postRes.data)
@@ -528,7 +562,7 @@ export default function PostDetail({ dark, setDark }) {
           setLoading(false)
           const wsId = postRes.data.workspace_id
           return apiFetch(`/api/posts/tree${wsId ? `?workspace_id=${wsId}` : ''}`, { signal: controller.signal })
-            .then(r => r.json())
+            .then(readResponse)
             .then(treeRes => {
               if (treeRes?.success) setTree(treeRes.data)
             })
@@ -544,7 +578,7 @@ export default function PostDetail({ dark, setDark }) {
       })
 
     return () => controller.abort()
-  }, [id])
+  }, [id, readResponse])
 
   // 切换文章：内容区滚动位置归零（滚动容器被复用，不会自动重置）
   useEffect(() => { articleRef.current?.scrollTo({ top: 0 }) }, [id])
@@ -555,11 +589,11 @@ export default function PostDetail({ dark, setDark }) {
     let stale = false
     setBacklinks(null)
     apiFetch(`/api/posts/id/${id}/backlinks`)
-      .then(r => r.json())
+      .then(readResponse)
       .then(d => { if (!stale && d?.success) setBacklinks(d.data.items) })
       .catch(() => {})
     return () => { stale = true }
-  }, [id])
+  }, [id, readResponse])
 
   const { html, headings } = useMemo(() => {
     return post?.content ? renderPostContent(post.content) : EMPTY_RENDER
@@ -753,6 +787,7 @@ export default function PostDetail({ dark, setDark }) {
             </div>
           </div>
           <div className="space-y-0.5 overflow-y-auto">
+            {treeError && <p role="alert" className="px-3 py-2 text-xs text-red-600 dark:text-red-400">{treeError}</p>}
             <SortableTree
               nodes={tree}
               activeId={parseInt(id)}

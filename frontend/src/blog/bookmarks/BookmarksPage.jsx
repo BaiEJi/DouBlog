@@ -3,7 +3,7 @@
  * BookmarksView 将 收藏夹 / 稍后阅读 / 统计 / 工具 / 回收站 注册到 blog 模块侧栏。
  */
 import { useCallback, useState } from 'react'
-import { Toast } from '../../todo/kit'
+import { Toast } from '@/shared/ui/kit'
 
 import BookmarksView from './BookmarksView'
 

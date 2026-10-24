@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 
 /**
  * 编辑器页全局快捷键：
@@ -9,16 +9,16 @@ import { useEffect, useRef } from 'react'
  */
 export function useEditorShortcuts({ onSave, insert }) {
   const ref = useRef({})
-  ref.current = { onSave, insert }
+  useLayoutEffect(() => { ref.current = { onSave, insert } }, [onSave, insert])
 
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.ctrlKey || e.metaKey
       const active = document.activeElement
-      const inEditor = active && (active.id === 'md-editor' || active.tagName === 'BODY')
+      const inEditor = active && (active.id === 'md-editor' || active.closest?.('[data-code-editor]') || active.tagName === 'BODY')
 
       if (!mod) {
-        if (e.key === 'Tab' && active && active.id === 'md-editor') {
+        if (e.key === 'Tab' && active && (active.id === 'md-editor' || active.closest?.('[data-code-editor]'))) {
           e.preventDefault()
           ref.current.insert('  ', '')
         }

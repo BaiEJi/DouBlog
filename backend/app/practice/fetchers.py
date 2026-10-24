@@ -123,7 +123,7 @@ def clear_cache() -> None:
 
 # ─── HTML → Markdown（简单正则，LeetCode 描述结构够用）──
 
-def _html_to_md(html: str) -> str:
+def _legacy_html_to_md(html: str) -> str:
     """HTML → Markdown（简单正则，LeetCode 描述结构够用）。
 
     顺序关键：先处理结构性标签、再剥离剩余标签、**最后**才解码 HTML 实体。
@@ -156,6 +156,13 @@ def _html_to_md(html: str) -> str:
     # 4. 清理
     s = re.sub(r'\n{3,}', '\n\n', s)
     return s.strip()
+
+
+def _html_to_md(html: str, *, adapter='markdownify') -> str:
+    if adapter == 'legacy':
+        return _legacy_html_to_md(html)
+    from app.shared.html import html_to_markdown
+    return html_to_markdown(html)
 
 
 def _strip_html(s: Any) -> str:

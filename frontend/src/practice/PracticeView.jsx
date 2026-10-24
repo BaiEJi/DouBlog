@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listTags, createTag, reviewToday, importProblems, exportProblems } from './api'
-import { Icon } from '../todo/kit'
+import { Icon } from '@/shared/ui/kit'
 import { useModuleNavigation } from '../shared/module-navigation'
 import ProblemList from './components/ProblemList'
 import ProblemDetail from './components/ProblemDetail'

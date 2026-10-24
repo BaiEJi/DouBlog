@@ -133,7 +133,7 @@ def test_redis_mode_uses_sliding_window(cache_env, client, auth_headers, enable)
     assert r.status_code == 429
     assert r.json()['data']['details']['mode'] == 'redis'
     # allow 先计数再判定：被拒请求同样占名额（3 允许 + 1 拒绝 = 4 member）
-    assert cache_env.zcard('confcenter_rl:app') == 4
+    assert cache_env.zcard(rl.key_prefix() + ':app') == 4
     st = client.get('/api/confcenter/ratelimit/status', headers=auth_headers).json()['data']
     assert st['mode'] == 'redis' and st['tracked'] == {'app': 4}
     assert st['redis']['reachable'] is True
@@ -143,10 +143,10 @@ def test_redis_prefix_not_flushed_by_cache(cache_env, client, auth_headers, enab
     enable(limit=5)
     put_kv(client, auth_headers, 'app')
     client.get('/api/confcenter/app/k', headers=auth_headers)
-    assert 'confcenter_rl:app' in cache_env.zsets
+    assert rl.key_prefix() + ':app' in cache_env.zsets
     r = client.post('/api/confcenter/cache/flush', headers=auth_headers)
     assert r.status_code == 200
-    assert 'confcenter_rl:app' in cache_env.zsets      # 下划线前缀不被 confcenter:* 误伤
+    assert rl.key_prefix() + ':app' in cache_env.zsets      # KV 清理不误伤限流前缀
 
 
 def test_redis_eval_failure_degrades_local(client, auth_headers, monkeypatch, enable):
@@ -212,7 +212,7 @@ def test_reset_local_and_redis(cache_env, client, auth_headers, enable):
     assert r.status_code == 200
     d = r.json()['data']
     assert d['redis_cleared'] is True
-    assert 'confcenter_rl:app' not in cache_env.zsets
+    assert rl.key_prefix() + ':app' not in cache_env.zsets
     assert client.get('/api/confcenter/app/k', headers=auth_headers).status_code == 200
 
 

@@ -17,6 +17,7 @@ import requests
 import yaml
 
 from app.shared.yamlfast import YamlLoader
+from app.clash.service import serial_operation
 from lizysdk.errors import ParamError, ServiceUnavailableError
 
 #: 延迟测试默认目标（与 zashboard 一致，走节点出网）
@@ -40,9 +41,8 @@ def _controller_info():
     from app.clash import service
     path = os.path.join(service.resources_dir(), 'runtime.yaml')
     try:
-        with open(path, encoding='utf-8', errors='replace') as f:
-            cfg = yaml.load(f, Loader=YamlLoader) or {}
-    except (OSError, yaml.YAMLError):
+        cfg = service.runtime_config()
+    except (OSError, yaml.YAMLError, ValueError):
         raise ParamError(message=f'运行时配置不可读：{path}') from None
     addr = (cfg.get('external-controller') or '').strip()
     if not addr:
@@ -51,6 +51,8 @@ def _controller_info():
     if host in ('0.0.0.0', '*', '', '[::]'):
         host = '127.0.0.1'
     host = host.strip('[]')
+    if ':' in host:
+        host = f'[{host}]'
     return f'http://{host}:{port}', str(cfg.get('secret') or ''), addr
 
 
@@ -90,6 +92,7 @@ def configs_get() -> dict:
         'bind-address', 'ipv6', 'tun')}
 
 
+@serial_operation
 def configs_patch(patch: dict) -> dict:
     allowed = ('rule', 'global', 'direct')
     clean = {}
@@ -145,6 +148,7 @@ def proxies_list() -> dict:
     return {'groups': groups}
 
 
+@serial_operation
 def proxy_select(group: str, name: str) -> dict:
     if not group or not name:
         raise ParamError(message='缺少 group 或 name')
@@ -184,7 +188,10 @@ def group_delay(group: str, url: str = '', timeout_ms: int = 5000) -> dict:
 # ─── 连接 ────────────────────────────────────────────────
 
 def connections_get() -> dict:
-    data = _req('GET', '/connections')
+    return shape_connections(_req('GET', '/connections'))
+
+
+def shape_connections(data) -> dict:
     conns = []
     for c in data.get('connections') or []:
         m = c.get('metadata') or {}
@@ -209,6 +216,7 @@ def connections_get() -> dict:
     }
 
 
+@serial_operation
 def connection_close(conn_id: str) -> dict:
     if not conn_id:
         raise ParamError(message='缺少连接 id')
@@ -216,6 +224,7 @@ def connection_close(conn_id: str) -> dict:
     return {'closed': conn_id}
 
 
+@serial_operation
 def connections_close_all() -> dict:
     _req('DELETE', '/connections')
     return {'closed': 'all'}
@@ -245,6 +254,7 @@ def providers_get() -> dict:
     return {'providers': out}
 
 
+@serial_operation
 def provider_update(name: str) -> dict:
     """热更新 Provider（HTTP 订阅即时拉新节点，不重启内核——zashboard 同款）。"""
     if not name:

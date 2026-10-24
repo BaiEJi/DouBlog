@@ -11,6 +11,7 @@ from . import (  # noqa: F401
     events,
     games,
     photos,
+    positions,
     relation_types,
     search,
     uploads,
@@ -18,5 +19,5 @@ from . import (  # noqa: F401
 
 gamemap_router = APIRouter()
 for _r in (games.router, chapters.router, characters.router, relation_types.router,
-           boards.router, events.router, photos.router, search.router, uploads.router):
+           boards.router, positions.router, events.router, photos.router, search.router, uploads.router):
     gamemap_router.include_router(_r)

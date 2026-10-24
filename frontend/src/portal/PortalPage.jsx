@@ -11,7 +11,7 @@
  * - 头部「恢复默认」清空服务端布局回默认单组
  * 鼠标：拖动 6px 激活；拖完 120ms 内吞 click 防误跳转。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   DndContext, DragOverlay, KeyboardSensor, PointerSensor,
@@ -27,8 +27,11 @@ import { clashAvailability } from '../clash/api'
 import { SYSTEMS, SYS_BY_KEY } from './systems'
 import { fetchHomeLayout, saveHomeLayout, resetHomeLayout } from './api'
 import CardEditModal from './CardEditModal'
+import { advanceDataEpoch, getDataIdentity } from '../shared/dataEpoch'
+import { createSaveCoordinator } from '../shared/saveCoordinator'
 
 function logout() {
+  advanceDataEpoch()
   fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', credentials: 'include' })
     .catch(() => {})
     .finally(() => { window.location.href = '/login' })
@@ -50,9 +53,8 @@ const PENCIL = (
 // ─── 布局读取与规整（服务端为事实源，localStorage 仅首屏缓存）──
 
 const LAYOUT_KEY = 'doublog_portal_layout_v2'
-const LEGACY_LAYOUT_KEY = 'doublog_portal_layout'
-const LEGACY_ORDER_KEY = 'doublog_portal_order'
 const DEFAULT_GROUP_NAME = '常用'
+const scopedKey = key => `${key}:${getDataIdentity()}`
 
 const gid = () => 'g_' + Math.random().toString(36).slice(2, 9)
 
@@ -60,49 +62,26 @@ const defaultGroups = () => [{ id: gid(), name: DEFAULT_GROUP_NAME, cards: SYSTE
 
 function writeCache(groups, overrides) {
   try {
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify({ groups: groups.map(g => ({ id: g.id, name: g.name, cards: g.cards })), overrides }))
+    localStorage.setItem(scopedKey(LAYOUT_KEY), JSON.stringify({ groups: groups.map(g => ({ id: g.id, name: g.name, cards: g.cards })), overrides }))
   } catch { /* 存储禁用时仅本次会话生效 */ }
 }
 
 function clearCache() {
   try {
-    localStorage.removeItem(LAYOUT_KEY)
-    localStorage.removeItem(LEGACY_LAYOUT_KEY)
-    localStorage.removeItem(LEGACY_ORDER_KEY)
+    localStorage.removeItem(scopedKey(LAYOUT_KEY))
   } catch { /* 同上 */ }
 }
 
 /** 首屏缓存（v2）；损坏回退 null（走默认 + 服务器同步） */
 function readCached() {
   try {
-    const raw = localStorage.getItem(LAYOUT_KEY)
+    const raw = localStorage.getItem(scopedKey(LAYOUT_KEY))
     if (!raw) return null
     const parsed = JSON.parse(raw)
     if (Array.isArray(parsed?.groups) && parsed.groups.length
       && parsed.groups.every(g => g && typeof g.name === 'string' && Array.isArray(g.cards))
       && typeof parsed.overrides === 'object' && parsed.overrides) {
       return { groups: parsed.groups.map(g => ({ id: g.id || gid(), name: g.name, cards: g.cards })), overrides: parsed.overrides }
-    }
-  } catch { /* 损坏 → 回退 */ }
-  return null
-}
-
-/** 旧版 localStorage 布局（卡片存的是路由 '/blog'，剥斜杠转模块标识）；无则 null */
-function readLegacyGroups() {
-  try {
-    const raw = localStorage.getItem(LEGACY_LAYOUT_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed) && parsed.length && parsed.every(g => g && typeof g.name === 'string' && Array.isArray(g.cards))) {
-        return parsed.map(g => ({ id: g.id || gid(), name: g.name, cards: g.cards.map(t => t.replace(/^\//, '')) }))
-      }
-    }
-    const orderRaw = localStorage.getItem(LEGACY_ORDER_KEY)
-    if (orderRaw) {
-      const arr = JSON.parse(orderRaw)
-      if (Array.isArray(arr) && arr.length) {
-        return [{ id: gid(), name: DEFAULT_GROUP_NAME, cards: arr.map(t => t.replace(/^\//, '')) }]
-      }
     }
   } catch { /* 损坏 → 回退 */ }
   return null
@@ -127,15 +106,11 @@ function normalize(groups, overrides) {
 }
 
 /** 是否等价于"出厂默认"（单组 / 默认名 / 全卡原序 / 无覆盖）——决定要不要迁移上存 */
-function isDefaultLayout(groups, overrides) {
-  if (groups.length !== 1 || Object.keys(overrides || {}).length) return false
-  const defaults = SYSTEMS.map(s => s.key)
-  return groups[0].name === DEFAULT_GROUP_NAME && JSON.stringify(groups[0].cards) === JSON.stringify(defaults)
-}
+
 
 /** 服务端布局 → 组件态（cards 只留 key；title/desc 抽成覆盖表） */
 function fromServer(data) {
-  const groups = (data?.groups || []).map(g => ({ id: g.id, name: g.name, cards: (g.cards || []).map(c => c.key) }))
+  const groups = (data?.groups || []).map(g => ({ id: g.id || gid(), name: g.name, cards: (g.cards || []).map(c => c.key) }))
   const overrides = {}
   for (const g of data?.groups || []) {
     for (const c of g.cards || []) {
@@ -328,12 +303,11 @@ function GroupSection({ group, total, overrides, onRename, onDelete, guardClick,
 
 export default function PortalPage({ dark, setDark }) {
   // 首屏：localStorage 缓存（v2）→ 旧版布局 → 默认单组；随后 GET 服务端覆盖
-  const initial = useMemo(() => {
+  const [initial] = useState(() => {
     const cached = readCached()
     if (cached) return normalize(cached.groups, cached.overrides)
-    const legacy = readLegacyGroups()
-    return legacy ? normalize(legacy, {}) : { groups: defaultGroups(), overrides: {} }
-  }, [])
+    return { groups: defaultGroups(), overrides: {} }
+  })
   const [groups, setGroups] = useState(initial.groups)
   const [overrides, setOverrides] = useState(initial.overrides)
 
@@ -350,6 +324,12 @@ export default function PortalPage({ dark, setDark }) {
   const errorTimer = useRef(null)
   // 服务端同步到达前本地已改过 → 本地为准（下次 PUT 覆盖服务端）
   const mutated = useRef(false)
+  const writer = useRef(null)
+  const pendingLayout = useRef(null)
+  const [saveStatus, setSaveStatus] = useState('loading')
+  const [draftError, setDraftError] = useState(null)
+  const [resetting, setResetting] = useState(false)
+  const resetGuard = useRef(false)
 
   const showError = useCallback((err) => {
     setSaveError(err?.message || String(err))
@@ -357,26 +337,31 @@ export default function PortalPage({ dark, setDark }) {
     errorTimer.current = setTimeout(() => setSaveError(null), 5000)
   }, [])
 
-  // 服务端布局同步：非空则覆盖本地（未动过时）；空则把本地非默认布局一次性迁移上存
+  // One writer per layout; unknown network outcomes retain their mutation ID.
   useEffect(() => {
     let alive = true
-    fetchHomeLayout()
-      .then(data => {
-        if (!alive) return
-        const server = fromServer(data)
-        if (server.groups.length) {
-          if (mutated.current) return
-          const next = normalize(server.groups, server.overrides)
-          setGroups(next.groups)
-          setOverrides(next.overrides)
-          writeCache(next.groups, next.overrides)
-        } else if (!mutated.current && !isDefaultLayout(initial.groups, initial.overrides)) {
-          saveHomeLayout(buildPayload(initial.groups, initial.overrides)).catch(showError)
-        }
+    const draftKey = scopedKey(LAYOUT_KEY + ':pending')
+    fetchHomeLayout().then(data => {
+      if (!alive) return
+      let initialDraft
+      try { initialDraft = JSON.parse(localStorage.getItem(draftKey) || 'null') } catch { /* damaged draft */ }
+      const source = initialDraft?.snapshot || data
+      const server = fromServer(source)
+      if (!mutated.current) {
+        const next = server.groups.length ? normalize(server.groups, server.overrides) : { groups: defaultGroups(), overrides: {} }
+        setGroups(next.groups); setOverrides(next.overrides); writeCache(next.groups, next.overrides)
+      }
+      writer.current = createSaveCoordinator({ revision: data.revision, initialDraft, idempotent: true,
+        save: (snapshot, { revision, mutationId, signal }) => saveHomeLayout({ ...snapshot, revision, mutation_id: mutationId }, { signal }),
+        onState: state => { if (alive) { setDraftError(state.draftError || null); setSaveStatus(state.status); if (state.error) showError(state.error); else if (state.status === 'saved') { setSaveError(null); clearTimeout(errorTimer.current) } } },
+        draft: { write: value => localStorage.setItem(draftKey, JSON.stringify(value)), remove: () => localStorage.removeItem(draftKey) },
       })
-      .catch(err => showError(err?.message ? `布局加载失败：${err.message}` : err))
-    return () => { alive = false }
-  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+      setSaveStatus(initialDraft ? 'pending' : 'saved')
+      if (pendingLayout.current) writer.current.change(pendingLayout.current)
+      if (initialDraft) writer.current.flush().catch(showError)
+    }).catch(error => { if (alive) { setSaveStatus('error'); showError(error) } })
+    return () => { alive = false; writer.current?.dispose(); writer.current = null; clearTimeout(errorTimer.current) }
+  }, [showError])
 
   useEffect(() => {
     let alive = true
@@ -407,12 +392,14 @@ export default function PortalPage({ dark, setDark }) {
 
   /** 乐观提交：更新本地 + 写缓存 + PUT 服务端（失败仅提示，不回滚——单用户低频） */
   const commit = useCallback((nextGroups, nextOverrides) => {
+    if (resetGuard.current) return
     mutated.current = true
     setGroups(nextGroups)
     setOverrides(nextOverrides)
     writeCache(nextGroups, nextOverrides)
-    saveHomeLayout(buildPayload(nextGroups, nextOverrides)).catch(showError)
-  }, [showError])
+    pendingLayout.current = buildPayload(nextGroups, nextOverrides)
+    writer.current?.change(pendingLayout.current)
+  }, [])
 
   const handleDragEnd = useCallback(({ active, over }) => {
     endDrag()
@@ -493,13 +480,19 @@ export default function PortalPage({ dark, setDark }) {
     else delete next[key]
     commit(groups, next)
   }
-  const resetLayout = () => {
-    mutated.current = true
-    resetHomeLayout().catch(showError)
-    clearCache()
-    setGroups(defaultGroups())
-    setOverrides({})
+  const resetLayout = async () => {
+    if (!writer.current || resetGuard.current) return
+    resetGuard.current = true; setResetting(true)
+    try {
+      await writer.current.flush()
+      const data = await resetHomeLayout({ revision: writer.current.getState().revision, mutation_id: crypto.randomUUID() })
+      writer.current.reset({ revision: data.revision })
+      mutated.current = true; pendingLayout.current = null
+      clearCache(); setGroups(defaultGroups()); setOverrides({}); setSaveStatus('saved')
+    } catch (error) { showError(error) }
+    finally { resetGuard.current = false; setResetting(false) }
   }
+
 
   return (
     <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
@@ -512,7 +505,7 @@ export default function PortalPage({ dark, setDark }) {
             <p className="mt-2 text-[13px] text-stone-400">个人系统统一入口——卡片可拖入任意分组，标题描述可编辑，布局云端保存</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={resetLayout} title="恢复默认布局" aria-label="恢复默认布局"
+            <button disabled={resetting || saveStatus === 'loading'} onClick={resetLayout} title="恢复默认布局" aria-label="恢复默认布局"
               className="w-9 h-9 rounded-xl border border-black/[0.08] dark:border-white/[0.1] text-stone-500 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] transition-colors">
               <svg className="w-4 h-4 mx-auto" viewBox="0 0 20 20" fill="none">
                 <path d="M16 8A6.5 6.5 0 1 0 16 12.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -537,6 +530,8 @@ export default function PortalPage({ dark, setDark }) {
           </div>
         </div>
 
+        <div role="status" className="mb-4 text-xs text-stone-500 dark:text-stone-400">{resetting ? '正在恢复默认…' : ({ loading: '正在读取布局…', pending: '布局待保存', saving: '正在保存布局…', saved: '布局已保存', error: '布局未保存', conflict: '布局已在其他页面更新，请刷新后核对' }[saveStatus] || '')}{saveStatus === 'error' && <button className="ml-3 underline" onClick={() => writer.current?.retry().catch(showError)}>重试</button>}</div>
+        {draftError && <p role="alert" className="mb-4 text-sm text-amber-700 dark:text-amber-300">本地草稿存储不可用，关闭页面前请确认布局已保存。</p>}
         {saveError && (
           <div role="alert"
             onClick={() => setSaveError(null)}

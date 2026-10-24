@@ -12,8 +12,10 @@
  * 配置类字段（auth/请求/响应/探活）用 JSON 编辑，失焦校验。
  * 接口全部走 ./api（admin，Basic Auth）；网关调用（sk-）是给外部调用方的，不在本页。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import CodeEditor from '../shared/CodeEditor'
+import { isRecord, parseConfigDraft } from './configDraft'
 import PageHeader from '../shared/PageHeader'
 import md from '../shared/md'
 import {
@@ -56,26 +58,31 @@ function fmtTime(s) {
   return isNaN(d) ? s : d.toLocaleString('zh-CN', { hour12: false })
 }
 
-/** JSON 编辑器：失焦解析，无效标红不改值 */
-function JsonArea({ value, onChange, rows = 6, placeholder }) {
+const JsonValidity = createContext(null)
+
+/** 大JSON虚拟化编辑；有效修改立即提交父状态，非法草稿阻止整个API保存。 */
+function JsonArea({ value, onChange, rows = 6, placeholder, kind }) {
   const [text, setText] = useState(() => (value == null ? '' : JSON.stringify(value, null, 2)))
   const [err, setErr] = useState(null)
   const touched = useRef(false)
+  const fieldId = useId()
+  const invalidFields = useContext(JsonValidity)
+  useEffect(() => () => invalidFields?.current.delete(fieldId), [invalidFields, fieldId])
   useEffect(() => {
     if (!touched.current) setText(value == null ? '' : JSON.stringify(value, null, 2))
   }, [value])
   return (
     <div className="w-full">
-      <textarea
-        rows={rows} value={text} placeholder={placeholder}
-        onChange={e => { touched.current = true; setText(e.target.value) }}
-        onBlur={() => {
-          touched.current = false
-          if (!text.trim()) { onChange(null); setErr(null); return }
-          try { onChange(JSON.parse(text)); setErr(null) }
-          catch (e) { setErr(e.message) }
+      <CodeEditor
+        height={Math.max(160, rows * 24)} value={text} language="json" ariaLabel={placeholder || 'JSON配置'}
+        onChange={next => {
+          touched.current = true; setText(next)
+          try {
+            const parsed = parseConfigDraft(next, kind)
+            onChange(parsed); setErr(null); invalidFields?.current.delete(fieldId)
+          } catch (error) { setErr(error.message); invalidFields?.current.add(fieldId) }
         }}
-        className={`w-full px-3 py-2 font-mono text-xs bg-white dark:bg-white/[0.04] border rounded-lg text-stone-800 dark:text-stone-100 outline-none transition-colors ${err ? 'border-red-400 dark:border-red-500/60' : 'border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30'}`} />
+        onBlur={() => { touched.current = false }} />
       {err && <div className="mt-1 text-[11.5px] text-red-600 dark:text-red-400">JSON 无效: {err}</div>}
     </div>
   )
@@ -810,6 +817,7 @@ function DocModal({ row, onClose }) {
  *  全控件化配置页——鉴权/请求/响应/探活都是表单字段，用户不接触 JSON；
  *  多 provider / template 等复杂配置与"高级"逃生通道收在底部折叠的 JSON 编辑器里。 */
 function ApiForm({ row, system, onClose, onSaved, setErr }) {
+  const invalidFields = useRef(new Set())
   const [form, setForm] = useState(() => ({
     name: row.name || '', slug: row.slug || '', system_id: row.system_id || system.id,
     method: row.method || 'GET', path_tpl: row.path_tpl || '/',
@@ -822,6 +830,7 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
   }))
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const save = async () => {
+    if (invalidFields.current.size) { setErr(new Error('高级配置含无效 JSON，请修正后保存')); return }
     try {
       await apihubSaveApi({ ...form, id: row.id, system_id: +form.system_id, enabled: !!form.enabled,
         timeout_ms: form.timeout_ms == null ? null : +form.timeout_ms })
@@ -829,7 +838,7 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
     } catch (e) { setErr(e) }
   }
   return (
-    <Modal xwide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
+    <JsonValidity.Provider value={invalidFields}><Modal xwide title={row.id ? `编辑 API：${row.name}` : '新建 API'} onClose={onClose}>
       <div className="space-y-6">
         {/* 基本信息 */}
         <section>
@@ -899,14 +908,14 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
             高级（JSON 原始配置，一般无需改动）
           </summary>
           <div className="mt-3 space-y-3">
-            <JsonBlock label="鉴权配置" value={form.auth_config} onChange={v => set('auth_config', v)} />
-            <JsonBlock label="请求配置" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
-            <JsonBlock label="响应配置" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
-            <JsonBlock label="探活配置" value={form.probe} onChange={v => set('probe', v)} />
+            <JsonBlock kind="auth" label="鉴权配置" value={form.auth_config} onChange={v => set('auth_config', v)} />
+            <JsonBlock kind="request" label="请求配置" value={form.request_cfg} onChange={v => set('request_cfg', v)} />
+            <JsonBlock kind="response" label="响应配置" value={form.response_cfg} onChange={v => set('response_cfg', v)} />
+            <JsonBlock kind="probe" label="探活配置" value={form.probe} onChange={v => set('probe', v)} />
           </div>
         </details>
       </div>
-    </Modal>
+    </Modal></JsonValidity.Provider>
   )
 }
 
@@ -964,10 +973,11 @@ const AUTH_PROVIDER_FIELDS = {
 }
 
 function AuthSection({ auth, onChange }) {
-  const providers = auth.providers || []
+  auth = isRecord(auth) ? auth : {}
+  const providers = Array.isArray(auth.providers) ? auth.providers.filter(isRecord) : []
   const type = providers.length === 1 && AUTH_DEFAULTS[providers[0].type] ? providers[0].type : 'custom'
   const provider = providers[0] || {}
-  const fields = auth.credential_fields || []
+  const fields = Array.isArray(auth.credential_fields) ? auth.credential_fields : []
   const cred = auth.credential || {}
 
   const setType = t => {
@@ -1087,6 +1097,7 @@ function FieldRowAdder({ placeholder, valPlaceholder, onAdd }) {
 // ─── 请求分区 ───────────────────────────────────────────────────────
 
 function RequestSection({ req, onChange }) {
+  req = isRecord(req) ? req : {}
   const body = req.body || {}
   const bodyType = body.type || 'json'
   const setBody = (k, v) => onChange({ ...req, body: { ...body, [k]: v } })
@@ -1140,6 +1151,7 @@ function KVBlock({ label, hint, obj, onChange }) {
 // ─── 响应分区 ───────────────────────────────────────────────────────
 
 function ResponseSection({ res, onChange }) {
+  res = isRecord(res) ? res : {}
   const em = res.error_mapping || {}
   const setEm = (k, v) => onChange({ ...res, error_mapping: { ...em, [k]: v } })
   return (
@@ -1159,7 +1171,7 @@ function ResponseSection({ res, onChange }) {
       </Field>
       <Field label="成功业务码" hint="逗号分隔">
         <input className={inputCls + ' w-full font-mono text-xs'} placeholder="0, 200, OK"
-               value={(em.success_codes || []).join(', ')}
+               value={(Array.isArray(em.success_codes) ? em.success_codes : []).join(', ')}
                onChange={e => setEm('success_codes', e.target.value.split(',').map(s => s.trim()).filter(Boolean))} />
       </Field>
       <Field label="错误消息路径" hint="如 $.msg">
@@ -1188,7 +1200,7 @@ function ProbeSection({ probe, onChange }) {
       </Field>
       <Field label="期望状态码" hint="逗号分隔">
         <input className={inputCls + ' w-full font-mono text-xs'}
-               value={(p.expect_status || []).join(', ')}
+               value={(Array.isArray(p.expect_status) ? p.expect_status : []).join(', ')}
                onChange={e => set('expect_status', e.target.value.split(',').map(s => s.trim()).filter(Boolean).map(Number))} />
       </Field>
       <Field label="Body 正则" hint="可选">
@@ -1221,11 +1233,11 @@ function ProbeSection({ probe, onChange }) {
 }
 
 /** JSON 配置块（高级区用）：标签 + 编辑器 */
-function JsonBlock({ label, value, onChange }) {
+function JsonBlock({ label, value, onChange, kind }) {
   return (
     <div>
       <span className="text-xs font-medium text-stone-600 dark:text-stone-300">{label}</span>
-      <div className="mt-1"><JsonArea rows={8} value={value} onChange={onChange} /></div>
+      <div className="mt-1"><JsonArea rows={8} value={value} onChange={onChange} kind={kind} placeholder={label} /></div>
     </div>
   )
 }

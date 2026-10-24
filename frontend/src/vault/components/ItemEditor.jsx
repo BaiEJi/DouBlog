@@ -39,6 +39,7 @@ export default function ItemEditor({ initial, catalog, onCancel, onSave, saving 
   const [pwReason, setPwReason] = useState('')
   const [showPw, setShowPw] = useState(false)
   const [tagInput, setTagInput] = useState('')
+  const [saveError, setSaveError] = useState('')
 
   const patch = (fields) => setD(prev => ({ ...prev, ...fields }))
 
@@ -49,7 +50,8 @@ export default function ItemEditor({ initial, catalog, onCancel, onSave, saving 
   const save = () => {
     const next = JSON.parse(JSON.stringify(d))
     if (pwChanged) applyPasswordChange(next, pwInput, pwReason)
-    onSave(next)
+    setSaveError('')
+    Promise.resolve(onSave(next)).catch(error => { if (error.name !== 'AbortError') setSaveError(error.message || '保存失败') })
   }
 
   const addTag = () => {
@@ -76,6 +78,7 @@ export default function ItemEditor({ initial, catalog, onCancel, onSave, saving 
       </div>
 
       <div className="grid grid-cols-2 gap-4 mb-4">
+        {saveError && <p role="alert" className="col-span-2 text-sm text-red-600 dark:text-red-400">{saveError}</p>}
         <div>
           <label className={label}>服务名称 *</label>
           <input className={input} value={d.service} onChange={e => patch({ service: e.target.value })} placeholder="GitHub" autoFocus />

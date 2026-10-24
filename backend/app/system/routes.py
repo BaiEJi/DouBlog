@@ -19,7 +19,8 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy import create_engine, text
 
 from app.config import settings
-from app.db import db, load_db_config, save_db_config, get_database_url, run_db, SUPPORTED_BACKENDS
+from app.db import db, load_db_config, save_db_config, get_database_url, run_db, SUPPORTED_BACKENDS, current_runtime
+from app.shared.pools import run_blocking
 from app.shared.auth import require_basic
 from app.shared.modules import mod_logger
 from app.shared.response import api_response
@@ -54,12 +55,15 @@ def _try_connect(url: str, timeout: int = 3):
     connect_args = {}
     if url.startswith('postgresql'):
         connect_args['connect_timeout'] = timeout
+    engine = None
     try:
         engine = create_engine(url, connect_args=connect_args)
         with engine.connect():
             pass
         return engine, None
     except Exception as e:  # noqa: BLE001 - 连接错误统一上报给前端
+        if engine is not None:
+            engine.dispose()
         return None, str(e).split('\n')[0]
 
 
@@ -70,6 +74,7 @@ def _ensure_postgres_database(pg: dict) -> str | None:
     """
     engine, err = _try_connect(_pg_connection_url(pg))
     if err is None:
+        engine.dispose()
         return None
 
     if 'does not exist' not in err.lower() and '不存在' not in err:
@@ -85,14 +90,17 @@ def _ensure_postgres_database(pg: dict) -> str | None:
                 text("SELECT 1 FROM pg_database WHERE datname = :name"), {'name': pg['dbname']}
             ).first()
             if not exists:
-                conn.execute(text(f'CREATE DATABASE "{pg["dbname"]}"'))
+                quoted = str(pg['dbname']).replace('"', '""')
+                conn.execute(text(f'CREATE DATABASE "{quoted}"'))
     except Exception as e:  # noqa: BLE001
         return str(e).split('\n')[0]
     finally:
         admin_engine.dispose()
 
     # 创建后重试
-    _, retry_err = _try_connect(_pg_connection_url(pg))
+    retry_engine, retry_err = _try_connect(_pg_connection_url(pg))
+    if retry_engine is not None:
+        retry_engine.dispose()
     return retry_err
 
 
@@ -136,16 +144,28 @@ async def database_status():
             audits = conn.execute(text('SELECT COUNT(*) FROM blog_audit_logs')).scalar() or 0
         url = get_database_url(cfg)
         return {
+            **current_runtime().snapshot(),
             'backend': cfg['backend'],
             # PG 只显示 @ 之后部分（掩掉凭据），SQLite 显示文件路径
             'database_url_masked': url.split('@')[-1] if cfg['backend'] == 'postgres' else url,
-            'data_dir': settings.data_dir,
-            'postgres': cfg['postgres'],
+            'data_dir': current_runtime().data_dir,
+            'postgres': {key: value for key, value in cfg['postgres'].items() if key != 'password'},
+            'password_configured': bool(cfg['postgres'].get('password')),
             'counts': {'posts': posts, 'audit_logs': audits},
             'running_under_reloader': bool(settings.debug),
         }
 
     return api_response(await run_db(_payload))
+
+
+@router.get('/runtime')
+async def runtime_status(request: Request):
+    """Authenticated, cheap operational counters; no connection credentials."""
+    from app.shared.pools import pool_stats
+    runtime = request.app.state.db_runtime
+    return api_response({'database': runtime.snapshot(), 'pools': pool_stats(),
+                         'background_started': request.app.state.background_started,
+                         'modules': [name for name, _ in request.app.state.loaded_modules]})
 
 
 @router.post('/database/test')
@@ -156,7 +176,7 @@ async def database_test(request: Request):
     请求体：{"target": "postgres"|"sqlite", "postgres": {"host","port","user","password","dbname"}}
     """
     data = await _json_body(request)
-    return await run_db(_database_test_sync, data)
+    return await run_blocking('system-config', _database_test_sync, data, workers=2)
 
 
 def _database_test_sync(data: dict):
@@ -199,10 +219,10 @@ async def database_switch(request: Request):
         {backend, restart_required}
     """
     data = await _json_body(request)
-    return await run_db(_database_switch_sync, data)
+    return await run_blocking('system-config', _database_switch_sync, data, request.app, workers=2)
 
 
-def _database_switch_sync(data: dict):
+def _database_switch_sync(data: dict, app=None):
     target = data.get('target')
     if target not in SUPPORTED_BACKENDS:
         return api_response(None, 400, 'target 必须是 sqlite 或 postgres')
@@ -224,11 +244,38 @@ def _database_switch_sync(data: dict):
             cfg = {**current, 'backend': 'sqlite'}
             os.makedirs(settings.data_dir, exist_ok=True)
 
-        save_db_config(cfg)
+        runtime = current_runtime()
+        from sqlalchemy.engine import make_url
+        matches_running = (make_url(get_database_url(cfg)).set(password=None)
+                           == runtime.engine.url.set(password=None))
+        if app is not None:
+            from app.main import drain_background, stop_background, start_background
+            with runtime.condition:
+                runtime.writes_paused = True
+            if (not runtime.drain(timeout=5.0)
+                    or not drain_background(app, timeout=5.0)):
+                with runtime.condition:
+                    runtime.writes_paused = False
+                start_background(app)
+                return api_response(None, 503, '后台写入尚未完成，数据库配置未切换')
+            if not stop_background(app, timeout=5.0):
+                app.state.ready = False
+                return api_response(None, 503, '后台任务未能停止，配置未切换；请重启后端后重试')
+        try:
+            save_db_config(cfg)
+        except BaseException:
+            if app is not None:
+                runtime.writes_paused = False
+                start_background(app)
+            raise
+
+        if app is not None and matches_running:
+            runtime.writes_paused = False
+            start_background(app)
 
         # 引擎重建交给重启后的 init_db（uvicorn --reload 触发或生产手动重启）
         restart_required = not settings.debug
-        if not restart_required:
+        if not restart_required and not matches_running:
             _request_reload_after_response()
 
         return api_response({
@@ -302,7 +349,7 @@ async def account_update(request: Request):
     """修改用户名/密码：必须验旧密码；username 与 new_password 可只改其一。
 
     密码只存 PBKDF2 哈希；变更即刻生效（Basic 通道立即用新凭据）。
-    会话 Cookie（HMAC）不因改密失效——30 天内已登录设备不受影响，需要踢出时改用户名。
+    既有签名 Cookie 保持有效；撤销全部 Cookie 需要轮换 secret_key。
     """
     import re as _re
 

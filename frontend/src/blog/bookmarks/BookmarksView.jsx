@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { listCategories, listTags, listItems } from './api'
-import { Icon } from '../../todo/kit'
+import { Icon } from '@/shared/ui/kit'
 import { useModuleNavigation } from '../../shared/module-navigation'
 import ListView from './components/ListView'
 import QueueView from './components/QueueView'

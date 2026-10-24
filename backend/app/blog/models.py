@@ -2,7 +2,7 @@
 
 import json
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, Index, JSON
 from sqlalchemy.orm import mapped_column, relationship
 
 from app.db import Base
@@ -17,6 +17,7 @@ class Workspace(Base):
     name = mapped_column(String(100), nullable=False, unique=True, comment='知识库名称')
     description = mapped_column(String(500), nullable=True, comment='描述')
     children_order = mapped_column(Text, nullable=True, comment='顶级文章排序JSON数组')
+    revision = mapped_column(Integer, nullable=False, default=1, server_default='1')
 
     created_at = mapped_column(DateTime(timezone=True), server_default=func.now(), comment='创建时间')
     updated_at = mapped_column(DateTime(timezone=True), server_default=func.now(),
@@ -25,6 +26,7 @@ class Workspace(Base):
     def to_dict(self, post_count: int = None):
         result = {
             'id': self.id,
+            'revision': self.revision,
             'name': self.name,
             'description': self.description or '',
             'created_at': _iso(self.created_at),
@@ -45,6 +47,7 @@ class Workspace(Base):
 class Post(Base):
     """文章模型，支持树形结构，隶属于某个知识库"""
     __tablename__ = 'blog_posts'
+    __table_args__ = (Index('ix_blog_link_scope', 'workspace_id', 'id'),)
 
     id = mapped_column(Integer, primary_key=True, autoincrement=True)
     title = mapped_column(String(200), nullable=False, comment='文章标题')
@@ -60,6 +63,8 @@ class Post(Base):
                               nullable=True, index=True, comment='父文章ID')
     level = mapped_column(Integer, default=0, comment='层级深度')
     children_order = mapped_column(Text, nullable=True, comment='子节点排序JSON数组，如[3,1,5]')
+    revision = mapped_column(Integer, nullable=False, default=1, server_default='1')
+    links_hash = mapped_column(String(64), nullable=True)
 
     author = mapped_column(String(50), default='admin', comment='作者')
     status = mapped_column(String(20), default='published', index=True, comment='状态')
@@ -90,6 +95,7 @@ class Post(Base):
         """
         result = {
             'id': self.id,
+            'revision': self.revision,
             'title': self.title,
             'name': self.name,
             'slug': self.slug,
@@ -120,6 +126,7 @@ class Post(Base):
         """
         return {
             'id': self.id,
+            'revision': self.revision,
             'title': self.title,
             'name': self.name,
             'slug': self.slug,
@@ -181,3 +188,20 @@ class AuditLog(Base):
             'ip_address': self.ip_address,
             'created_at': _iso(self.created_at),
         }
+
+
+class PostLink(Base):
+    """可重建投影，只保存双链寻址文字；改名/重名按当前文章元信息解析。"""
+    __tablename__ = 'blog_post_links'
+    source_id = mapped_column(Integer, ForeignKey('blog_posts.id', ondelete='CASCADE'), primary_key=True)
+    target_text = mapped_column(String(500), primary_key=True)
+    workspace_id = mapped_column(Integer, nullable=True)
+    __table_args__ = (Index('ix_blog_post_link_target', 'workspace_id', 'target_text', 'source_id'),)
+
+
+class BlogMutation(Base):
+    __tablename__ = 'blog_mutations'
+    mutation_id = mapped_column(String(64), primary_key=True)
+    fingerprint = mapped_column(String(64), nullable=False)
+    result = mapped_column(JSON, nullable=False)
+    created_at = mapped_column(DateTime(timezone=True), server_default=func.now())

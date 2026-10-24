@@ -12,6 +12,7 @@ import { totpNow, parseOtpauth } from './totp'
 import { encryptBlob, decryptBlob } from './crypto'
 import { vaultListAttachments, vaultAddAttachment, vaultDeleteAttachment } from '../api'
 import { SecretField, FieldRow, CopyButton, Favicon, I } from './ui'
+import { createVaultTaskScope, decryptBatches } from './session'
 
 function Section({ title, children }) {
   if (!children) return null
@@ -73,52 +74,63 @@ function TotpDisplay({ secret, copier, digits, period }) {
 }
 
 /** 安全附件区：上传（VEK 加密→密文上传）/ 下载（密文→解密→Blob）/ 删除 */
-function Attachments({ item, vek, copier }) {
+function Attachments({ item, vek, vaultSession }) {
   const [rows, setRows] = useState(null)      // [{meta, attachment}]，meta=解密后 {filename, mime, data}
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const fileRef = useRef(null)
+  const lifecycle = useRef(null), reloadGeneration = useRef(0)
   const MAX = 5 * 1024 * 1024
 
   const reload = async () => {
-    const d = await vaultListAttachments(item.id).catch(() => null)
-    if (!d?.success) { setRows([]); return }
-    const out = []
-    for (const a of d.data) {
-      try {
-        const meta = await decryptBlob(vek, a.blob)
-        out.push({ a, meta })
-      } catch {
-        out.push({ a, meta: { filename: '（无法解密）', mime: '', data: '' } })
-      }
-    }
-    setRows(out)
+    const scope = lifecycle.current, generation = ++reloadGeneration.current
+    if (!scope?.isCurrent()) return
+    const current = () => scope.isCurrent() && generation === reloadGeneration.current
+    try {
+      const d = await vaultListAttachments(item.id, { signal: scope.signal })
+      if (!current()) return
+      if (!d?.success) { setRows([]); setErr(d?.message || '读取附件失败'); return }
+      const out = await decryptBatches(d.data, async a => {
+        try { return { a, meta: await decryptBlob(vek, a.blob) } }
+        catch { return { a, meta: { filename: '（无法解密）', mime: '', data: '' } } }
+      }, { concurrency: 3, batchSize: 10, isCurrent: current })
+      if (current() && out) { setRows(out); setErr('') }
+    } catch (error) { if (current() && error.name !== 'AbortError') { setRows([]); setErr(error.message || '读取附件失败') } }
   }
 
-  useEffect(() => { if (vek && !item.deleted_at) reload(); else setRows([]) }, [item.id, vek])
+  useEffect(() => {
+    const scope = createVaultTaskScope(vaultSession); lifecycle.current = scope
+    if (vek && !item.deleted_at) reload(); else setRows([])
+    return () => { scope.dispose(); reloadGeneration.current += 1; if (lifecycle.current === scope) lifecycle.current = null }
+  }, [item.id, item.deleted_at, vek, vaultSession])
 
   const upload = async file => {
-    if (!file) return
+    const scope = lifecycle.current
+    if (!file || !scope?.isCurrent()) return
     setErr('')
     if (file.size > MAX) { setErr(`文件超过 5MB 上限（当前 ${(file.size / 1024 / 1024).toFixed(1)}MB）`); return }
     setBusy(true)
     try {
       const buf = new Uint8Array(await file.arrayBuffer())
+      scope.assert()
       let bin = ''
       for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000))
       const b64 = btoa(bin)
       const blob = await encryptBlob(vek, { filename: file.name, mime: file.type || 'application/octet-stream', data: b64 })
-      const d = await vaultAddAttachment(item.id, { blob, size: file.size })
+      scope.assert()
+      const d = await vaultAddAttachment(item.id, { blob, size: file.size }, { signal: scope.signal })
+      scope.assert()
       if (!d.success) setErr(d.message || '上传失败')
       else await reload()
     } catch (e) {
-      setErr('加密/上传失败：' + (e?.message || String(e)))
+      if (scope.isCurrent() && e.name !== 'AbortError') setErr('加密/上传失败：' + (e?.message || String(e)))
     }
-    setBusy(false)
-    if (fileRef.current) fileRef.current.value = ''
+    if (scope.isCurrent()) { setBusy(false); if (fileRef.current) fileRef.current.value = '' }
   }
 
   const download = async row => {
+    const scope = lifecycle.current
+    if (!scope?.isCurrent()) return
     try {
       const { filename, mime, data } = row.meta
       const bin = atob(data)
@@ -128,17 +140,21 @@ function Attachments({ item, vek, copier }) {
       const a = document.createElement('a')
       a.href = url
       a.download = filename || 'attachment'
+      scope.assert()
       a.click()
       URL.revokeObjectURL(url)
     } catch {
-      setErr('下载/解密失败')
+      if (scope.isCurrent()) setErr('下载/解密失败')
     }
   }
 
   const remove = async row => {
+    const scope = lifecycle.current
+    if (!scope?.isCurrent()) return
     if (!window.confirm(`删除附件「${row.meta.filename}」？不可恢复。`)) return
-    const d = await vaultDeleteAttachment(row.a.id).catch(() => null)
-    if (d?.success) reload()
+    if (!scope.isCurrent()) return
+    const d = await vaultDeleteAttachment(row.a.id, { signal: scope.signal }).catch(() => null)
+    if (scope.isCurrent() && d?.success) reload()
   }
 
   const fmtSize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${(n / 1024).toFixed(0)} KB` : `${n} B`
@@ -169,7 +185,7 @@ function Attachments({ item, vek, copier }) {
   )
 }
 
-export default function ItemDetail({ item, copier, vek, onEdit, onDelete, onToggleFav, categoryLabel }) {
+export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, onDelete, onToggleFav, categoryLabel }) {
   const d = item.data
   const domain = domainOf(d.urls?.[0]?.value)
   const entropy = passwordEntropy(d.password?.value)
@@ -352,7 +368,7 @@ export default function ItemDetail({ item, copier, vek, onEdit, onDelete, onTogg
       </Section>
 
       {/* 附件（VEK 可用时） */}
-      {vek && <Attachments item={item} vek={vek} copier={copier} />}
+      {vek && <Attachments key={item.id} item={item} vek={vek} vaultSession={vaultSession} />}
 
       {/* PASSWORD HISTORY */}
       {d.password?.value && (

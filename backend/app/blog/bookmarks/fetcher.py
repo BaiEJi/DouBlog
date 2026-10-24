@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html as html_mod
 import re
+import time
 import urllib.parse
 from html.parser import HTMLParser
 from typing import Any, Optional
@@ -29,6 +30,7 @@ CHECK_TIMEOUT = 8
 META_LIMIT = 2 * 1024 * 1024     # 元信息 2MB 上限
 SNAPSHOT_LIMIT = 3 * 1024 * 1024  # 快照 3MB 上限
 SNAPSHOT_MAX_CHARS = 200_000     # 快照 Markdown 长度上限（防超大页拖垮库）
+FETCH_TOTAL_SECONDS = 20
 
 #: 视为"可达"的受限响应码：需登录/防爬/方法受限，链接本身没死
 _REACHABLE_CODES = {401, 403, 405, 429}
@@ -103,19 +105,40 @@ def domain_of(url: str) -> str:
 
 # ─── 受限读取（防超大响应拖垮内存）───────────────────────────
 
-def _read_limited(resp: requests.Response, limit: int) -> str:
+def _read_limited(resp: requests.Response, limit: int, deadline=None) -> str:
     chunks, total = [], 0
-    for chunk in resp.iter_content(chunk_size=64 * 1024):
+    def chunks_from_response():
+        raw = getattr(resp, 'raw', None)
+        if raw is not None and hasattr(raw, 'read1'):
+            while True:
+                remaining = (deadline - time.monotonic()) if deadline else FETCH_TOTAL_SECONDS
+                if remaining <= 0:
+                    raise FetchError('抓取超过总期限 20 秒')
+                connection = getattr(raw, '_connection', None)
+                sock = getattr(connection, 'sock', None)
+                if sock is not None:
+                    sock.settimeout(min(FETCH_TIMEOUT[1], max(.01, remaining)))
+                chunk = raw.read1(amt=min(64 * 1024, limit + 1 - total), decode_content=True)
+                if not chunk:
+                    return
+                yield chunk
+        else:  # Mock 响应与旧 requests 兼容；真实响应走 read1，避免慢速流一直攒满 chunk。
+            yield from resp.iter_content(chunk_size=64 * 1024)
+    for chunk in chunks_from_response():
         if not chunk:
             continue
+        if deadline is not None and time.monotonic() > deadline:
+            raise FetchError('抓取超过总期限 20 秒')
         chunks.append(chunk)
         total += len(chunk)
-        if total >= limit:
-            break
+        if total > limit:
+            raise FetchError(f'网页内容超过 {limit // 1024}KB，未保存截断内容')
     raw = b"".join(chunks)
     enc = resp.encoding
     if not enc or enc.lower() == "iso-8859-1":
-        enc = resp.apparent_encoding or "utf-8"
+        # apparent_encoding 会重新消费 response.content；必须只检测已限长的原始字节。
+        from requests.compat import chardet
+        enc = chardet.detect(raw[:64 * 1024]).get('encoding') or 'utf-8'
     try:
         return raw.decode(enc, errors="replace")
     except (LookupError, UnicodeDecodeError):
@@ -123,16 +146,38 @@ def _read_limited(resp: requests.Response, limit: int) -> str:
 
 
 def _get(url: str, what: str, limit: int) -> tuple[requests.Response, str]:
+    deadline = time.monotonic() + FETCH_TOTAL_SECONDS
     try:
-        resp = requests.get(url, timeout=FETCH_TIMEOUT, headers={"User-Agent": UA},
-                            stream=True, allow_redirects=True)
+        for redirect in range(6):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise FetchError(f'{what}超过总期限 20 秒')
+            resp = requests.get(url, timeout=(min(5, remaining), min(10, remaining)),
+                headers={"User-Agent": UA}, stream=True, allow_redirects=False)
+            location = resp.headers.get('Location') if hasattr(resp, 'headers') else None
+            if 300 <= resp.status_code < 400 and location:
+                resp.close()
+                url = urllib.parse.urljoin(url, location)
+                if not url.startswith(('http://', 'https://')):
+                    raise FetchError('重定向目标仅支持 http(s)')
+                continue
+            break
+        else:
+            raise FetchError('重定向超过 5 次')
     except requests.RequestException as e:
         raise _net_error(what, e) from e
     if resp.status_code >= 400:
         resp.close()
         raise FetchError(f"{what}失败: HTTP {resp.status_code}")
     try:
-        return resp, _read_limited(resp, limit)
+        return resp, _read_limited(resp, limit, deadline)
+    except FetchError:
+        raise
+    except Exception as error:
+        from urllib3.exceptions import HTTPError
+        if isinstance(error, (HTTPError, requests.RequestException, OSError)):
+            raise FetchError(f'{what}失败: 网络读取超时或中断') from error
+        raise
     finally:
         resp.close()
 
@@ -292,7 +337,7 @@ def _html_to_md(fragment: str, base_url: str) -> str:
     return md[:SNAPSHOT_MAX_CHARS]
 
 
-def extract_content(page_html: str, base_url: str = "") -> str:
+def _legacy_extract_content(page_html: str, base_url: str = "") -> str:
     """主体抽取 + Markdown 化。article/main/body 取文本最长者，全无则整页。"""
     page = _COMMENT_RE.sub("", _NOISE_RE.sub("", page_html))
     candidates = [m.group(1) for m in _ARTICLE_RE.finditer(page)]
@@ -305,6 +350,18 @@ def extract_content(page_html: str, base_url: str = "") -> str:
         # 主体可读文本占比过低（抽取失败征兆）→ 回退整页
         main = page
     return _html_to_md(main, base_url)
+
+
+def extract_content(page_html: str, base_url: str = "", *, adapter='markdownify') -> str:
+    if adapter == 'legacy':
+        return _legacy_extract_content(page_html, base_url)
+    if adapter != 'markdownify':
+        raise ValueError('未知正文提取适配器')
+    from app.shared.html import article_html, html_to_markdown
+    markdown = html_to_markdown(article_html(page_html, base_url), base_url)
+    if len(markdown) > SNAPSHOT_MAX_CHARS:
+        raise FetchError('快照正文超过 20 万字符，未保存截断内容')
+    return markdown
 
 
 def count_words(text: str) -> int:
@@ -339,23 +396,39 @@ def check_url(url: str) -> dict[str, Any]:
     if not norm.startswith(("http://", "https://")):
         return {"status": "error", "code": None}
     headers = {"User-Agent": UA}
-    try:
-        r = requests.head(norm, timeout=CHECK_TIMEOUT, allow_redirects=True, headers=headers)
-        if r.status_code in (400, 403, 404, 405, 411) or 500 <= r.status_code < 600:
-            r2 = requests.get(norm, timeout=CHECK_TIMEOUT, allow_redirects=True,
-                              headers=headers, stream=True)
+    deadline = time.monotonic() + FETCH_TOTAL_SECONDS
+    def request_headers(method):
+        current_url = norm
+        for redirect in range(6):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise requests.Timeout('total deadline')
+            kwargs = {'timeout': (min(5, remaining), min(CHECK_TIMEOUT, remaining)),
+                      'allow_redirects': False, 'headers': headers}
+            if method == 'get': kwargs['stream'] = True
+            response = getattr(requests, method)(current_url, **kwargs)
             try:
-                code = r2.status_code
+                status = response.status_code
+                location = getattr(response, 'headers', {}).get('Location')
+                if 300 <= status < 400 and location:
+                    current_url = urllib.parse.urljoin(current_url, location)
+                    if not current_url.startswith(('http://', 'https://')):
+                        raise requests.RequestException('unsupported redirect')
+                    continue
+                return status
             finally:
-                r2.close()
-        else:
-            code = r.status_code
-    except requests.Timeout as e:
-        _log.warning("死链检测超时: %s", norm)
-        return {"status": "error", "code": None}
-    except requests.RequestException as e:
-        _log.warning("死链检测失败: %s: %s", type(e).__name__, e)
-        return {"status": "error", "code": None}
+                response.close()
+        raise requests.TooManyRedirects('redirect limit')
+    try:
+        code = request_headers('head')
+        if code in (400, 403, 404, 405, 411) or 500 <= code < 600:
+            code = request_headers('get')
+    except requests.Timeout:
+        _log.warning('死链检测超时: %s', norm)
+        return {'status': 'error', 'code': None}
+    except requests.RequestException as error:
+        _log.warning('死链检测失败: %s: %s', type(error).__name__, error)
+        return {'status': 'error', 'code': None}
     if code < 400 or code in _REACHABLE_CODES:
         return {"status": "ok", "code": code}
     return {"status": "dead", "code": code}

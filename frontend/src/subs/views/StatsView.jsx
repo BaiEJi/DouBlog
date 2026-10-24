@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 
-import { subsStatsTrend, subsStatsByCategory } from '../api'
+import { subsStatsTrend, subsStatsSpending, subsStatsDetails } from '../api'
 import { AreaTrend, DonutPie } from '../charts'
 import { fmtPrice, adjustForDark, DateInput } from '../kit'
 
@@ -49,6 +49,9 @@ export default function StatsView({ dark, toast }) {
   const [showDetails, setShowDetails] = useState(false)
   const [trend, setTrend] = useState(null)
   const [cats, setCats] = useState(null)
+  const [detailPage, setDetailPage] = useState(1)
+  const [detailData, setDetailData] = useState(null)
+  const changeRange = next => { setRange(next); setDetailPage(1) }
 
   const palette = dark ? DARK_PALETTE : PALETTE
 
@@ -64,12 +67,24 @@ export default function StatsView({ dark, toast }) {
 
   const [trendError, setTrendError] = useState('')
   useEffect(() => {
+    let alive = true
     subsStatsTrend(range[0], range[1], granularity).then(d => {
+      if (!alive) return
       if (d.success) { setTrend(d.data.trend); setTrendError('') }
       else setTrendError(d.message)
     })
-    subsStatsByCategory(range[0], range[1]).then(d => d.success && setCats(d.data))
+    subsStatsSpending(range[0], range[1]).then(d => alive && d.success && setCats(d.data))
+    return () => { alive = false }
   }, [range, granularity])
+  useEffect(() => {
+    if (!showDetails) return
+    let alive = true
+    subsStatsDetails(range[0], range[1], detailPage).then(result => {
+      if (alive && result.success) setDetailData(result.data)
+      else if (alive) setTrendError(result.message || '明细加载失败')
+    }).catch(error => { if (alive) setTrendError(error.message) })
+    return () => { alive = false }
+  }, [range, detailPage, showDetails])
 
   const inputCls = 'px-3 h-8 rounded-lg text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30'
 
@@ -125,10 +140,10 @@ export default function StatsView({ dark, toast }) {
       <div className="flex flex-wrap items-center gap-2.5 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
         <div className="flex items-center gap-1.5">
           <DateInput className={inputCls} value={range[0]}
-            onChange={e => { setRange([e.target.value, range[1]]); setQuick('') }} />
+            onChange={e => { changeRange([e.target.value, range[1]]); setQuick('') }} />
           <span className="text-stone-400">→</span>
           <DateInput className={inputCls} value={range[1]}
-            onChange={e => { setRange([range[0], e.target.value]); setQuick('') }} />
+            onChange={e => { changeRange([range[0], e.target.value]); setQuick('') }} />
         </div>
         <select className={inputCls + ' w-24'} value={granularity} onChange={e => setGranularity(e.target.value)}>
           <option value="day" disabled={dayDisabled}>按天</option>
@@ -142,7 +157,7 @@ export default function StatsView({ dark, toast }) {
               className={'px-2 h-7 rounded-lg text-xs transition-colors ' + (quick === q.key
                 ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
                 : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-300')}
-              onClick={() => { setRange(dateRange(q.key)); setQuick(q.key) }}>
+              onClick={() => { changeRange(dateRange(q.key)); setQuick(q.key) }}>
               {q.label}
             </button>
           ))}
@@ -178,6 +193,19 @@ export default function StatsView({ dark, toast }) {
           </div>
         </div>
       </div>
+      {showDetails && <section className="p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
+        <h2 className="text-sm font-semibold mb-3">所选范围支出明细</h2>
+        {!detailData ? <p className="text-sm text-stone-500">加载中…</p> : <>
+          <table className="w-full text-sm"><thead><tr className="text-left text-stone-500"><th className="py-2">会员</th><th>分类</th><th>级别</th><th className="text-right">折算支出</th></tr></thead>
+            <tbody>{detailData.items.map(item => <tr key={item.subscription_id} className="border-t border-black/[0.05] dark:border-white/[0.07]"><td className="py-2">{item.member_name}</td><td>{item.category_name}</td><td>{item.level || '—'}</td><td className="text-right tabular-nums">{fmtPrice(item.amount)}</td></tr>)}</tbody>
+          </table>
+          <nav aria-label="支出明细分页" className="flex justify-center gap-4 text-xs mt-4">
+            <button type="button" disabled={detailPage <= 1} onClick={() => setDetailPage(value => value - 1)} className="disabled:opacity-30">上一页</button>
+            <span>{detailPage} / {Math.max(1, Math.ceil(detailData.total / 20))} · {detailData.total} 条</span>
+            <button type="button" disabled={detailPage * 20 >= detailData.total} onClick={() => setDetailPage(value => value + 1)} className="disabled:opacity-30">下一页</button>
+          </nav>
+        </>}
+      </section>}
     </div>
   )
 }

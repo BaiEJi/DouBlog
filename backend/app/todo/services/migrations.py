@@ -12,7 +12,7 @@ from ..models import Task
 from ..schemas import MigrationPendingOut, TaskOut
 from app.shared.timeutil import iso, local_today, now_utc
 from . import get_settings, log_event
-from .tasks import append_position, quadrant_of, serialize_task, serialize_task_dict
+from .tasks import append_position, claim_revision, quadrant_of, serialize_task, serialize_task_dict
 
 
 def _pending_rows(session: Session, today):
@@ -87,6 +87,7 @@ def migrate_task(session: Session, task_id: str, to_date: str, reason: Optional[
         raise HTTPException(422, f"任务已属于 {target.isoformat()}")
 
     old = t.task_date
+    claim_revision(session, t)
     t.task_date = target
     t.last_migrated_from = old
     t.migrated_count += 1
@@ -94,7 +95,6 @@ def migrate_task(session: Session, task_id: str, to_date: str, reason: Optional[
     # 迁移后置于目标象限尾部,让"旧面孔"沉底、新计划在上方
     t.position = append_position(session, t.is_important, t.is_urgent)
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(
         session,
         t.id,
@@ -122,11 +122,11 @@ def decide(session: Session, task_id: str, decision: str) -> dict:
     t = session.get(Task, task_id)
     if t is None or t.deleted_at is not None:
         raise HTTPException(404, "任务不存在")
+    claim_revision(session, t)
     if decision == "keep":
         # 搁置:保留原日期,不再出现在待迁移列表;回顾/统计页可查看全部搁置
         t.shelved_at = now_utc()
         t.updated_at = now_utc()
-        t.revision += 1
         log_event(session, t.id, "migration_decision", {"decision": "keep"})
         return {"ok": True}
     if decision == "unshelve":

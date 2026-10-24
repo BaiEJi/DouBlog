@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { todoCategories, todoSettings } from './api'
+import { getDataIdentity } from '@/shared/dataEpoch'
 
 // ─── 象限 ───────────────────────────────────────────────────
 
@@ -28,21 +29,23 @@ export const flagsForQuadrant = q => ({
 })
 
 /** 拉取设置中的象限文案覆盖（模块级缓存，全页只请求一次；设置保存后调 invalidateQuadrantText 失效） */
-let quadrantTextCache = null
-export function invalidateQuadrantText() { quadrantTextCache = null }
+const quadrantTextCache = new Map()
+export function invalidateQuadrantText() { quadrantTextCache.delete(getDataIdentity()) }
 export function useQuadrantText() {
-  const [text, setText] = useState(quadrantTextCache)
+  const identity = getDataIdentity()
+  const [text, setText] = useState(() => quadrantTextCache.get(identity))
   useEffect(() => {
-    if (quadrantTextCache) return
+    if (quadrantTextCache.has(identity)) return
     let alive = true
     todoSettings()
       .then(s => {
-        quadrantTextCache = { labels: s.quadrant_labels || {}, subtitles: s.quadrant_subtitles || {} }
-        if (alive) setText(quadrantTextCache)
+        const value = { labels: s.quadrant_labels || {}, subtitles: s.quadrant_subtitles || {} }
+        quadrantTextCache.set(identity, value)
+        if (alive) setText(value)
       })
       .catch(() => { /* 读取失败用默认文案 */ })
     return () => { alive = false }
-  }, [])
+  }, [identity])
   const labelOf = q => text?.labels?.[`q${q}`] || quadrantMeta(q).label
   const subtitleOf = q => text?.subtitles?.[`q${q}`] || quadrantMeta(q).subtitle
   return { labels: labelOf, subtitles: subtitleOf }
@@ -161,171 +164,7 @@ export const Dot = ({ color, size = 8 }) => (
 
 // ─── 弹层 ───────────────────────────────────────────────────
 
-export function Modal({ title, open, onClose, children, footer, width = 'max-w-lg' }) {
-  useEffect(() => {
-    if (!open) return
-    const onKey = e => e.key === 'Escape' && onClose?.()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4 overflow-y-auto"
-      onClick={onClose}>
-      <div className={`w-full ${width} my-4 max-h-[calc(100vh-32px)] flex flex-col rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown`}
-        role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}
-        onClick={e => e.stopPropagation()}>
-        <div className="shrink-0 flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">
-          <div className="text-base font-semibold truncate">{title}</div>
-          <button onClick={onClose} aria-label="关闭弹窗"
-            className="w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-          </button>
-        </div>
-        <div className="min-h-0 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && (
-          <div className="shrink-0 flex gap-2 justify-end px-5 py-3.5 border-t border-black/[0.05] dark:border-white/[0.07]">
-            {footer}
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-export function Confirm({ text, onOk, onCancel, danger }) {
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={onCancel}>
-      <div className="w-full max-w-xs p-5 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown"
-        onClick={e => e.stopPropagation()}>
-        <p className="text-sm leading-relaxed mb-4">{text}</p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm text-stone-500 hover:bg-black/5 dark:hover:bg-white/10">取消</button>
-          <button onClick={onOk}
-            className={'px-4 py-2 rounded-lg text-sm font-medium text-white ' + (danger ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-500 hover:bg-indigo-600')}>
-            确定
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export function Toast({ msg, kind }) {
-  if (!msg) return null
-  return (
-    <div className={'fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] rounded-lg px-3 py-2 flex items-center text-[13px] shadow-lg animate-fade-in ' +
-      (kind === 'error'
-        ? 'bg-red-500 text-white'
-        : 'bg-stone-800 dark:bg-stone-100 dark:text-stone-900 text-white')}>
-      {msg}
-    </div>
-  )
-}
-
-// ─── 表单档位 ───────────────────────────────────────────────
-
-export const inputCls = 'w-full px-3 h-9 rounded-lg text-sm bg-white dark:bg-white/[0.04] ' +
-  'border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
-
-export function Field({ label, children, hint }) {
-  return (
-    <label className="block">
-      <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">{label}{hint && <span className="ml-1 text-stone-300 dark:text-stone-600">({hint})</span>}</div>
-      {children}
-    </label>
-  )
-}
-
-export const btn = {
-  primary: 'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-indigo-500 text-white hover:bg-indigo-600 transition-colors disabled:opacity-50',
-  plain: 'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50',
-  ghost: 'inline-flex items-center gap-1 px-2 h-7 rounded-lg text-xs text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40',
-  danger: 'inline-flex items-center gap-1 px-2 h-7 rounded-lg text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors',
-  /** 看板/列表内的小操作按钮 */
-  mini: 'inline-flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50',
-  miniPrimary: 'inline-flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs font-medium bg-indigo-500 text-white hover:bg-indigo-600 transition-colors disabled:opacity-50',
-  miniDanger: 'inline-flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs text-red-600 dark:text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors',
-}
-
-// ─── 通用小件 ───────────────────────────────────────────────
-
-export function Spinner({ text = '加载中…' }) {
-  return (
-    <div className="py-14 flex items-center justify-center gap-2 text-xs text-stone-400">
-      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
-        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-      </svg>{text}
-    </div>
-  )
-}
-
-export function Empty({ text }) {
-  return <div className="py-10 text-center text-xs text-stone-400">{text}</div>
-}
-
-/** 数字统计卡（基线：text-lg~xl font-semibold tabular-nums） */
-export function StatTile({ title, value, suffix, tone }) {
-  return (
-    <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
-      <div className="text-xs text-stone-500 dark:text-stone-400 mb-1">{title}</div>
-      <div className={'text-xl font-semibold tabular-nums ' + (tone || '')}>
-        {value}{suffix && <span className="text-xs font-normal text-stone-400 ml-1">{suffix}</span>}
-      </div>
-    </div>
-  )
-}
-
-/** 区块卡片 */
-export function Card({ title, extra, children, className = '' }) {
-  return (
-    <section className={'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5 ' + className}>
-      {(title || extra) && (
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          {extra}
-        </div>
-      )}
-      {children}
-    </section>
-  )
-}
-
-/** 段选器（antd Segmented 的平替）——档位对齐 UI 基线：控件文字 text-sm */
-export function Segmented({ value, onChange, options }) {
-  return (
-    <div className="inline-flex p-0.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.06]">
-      {options.map(o => (
-        <button key={o.value} onClick={() => onChange(o.value)}
-          className={'px-3 h-9 rounded-md text-sm transition-colors whitespace-nowrap ' +
-            (value === o.value
-              ? 'bg-white dark:bg-white/[0.12] text-stone-900 dark:text-stone-100 shadow-sm font-medium'
-              : 'text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-300')}>
-          {o.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
-/** 开关（antd Switch 平替） */
-export function Switch({ checked, onChange, size = 'md' }) {
-  const w = size === 'sm' ? 'w-8 h-[18px]' : 'w-10 h-[22px]'
-  const k = size === 'sm' ? 'w-3.5 h-3.5' : 'w-4.5 h-4.5'
-  return (
-    <button role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
-      className={'relative rounded-full transition-colors shrink-0 ' + w + ' ' +
-        (checked ? 'bg-indigo-500' : 'bg-black/[0.15] dark:bg-white/[0.2]')}>
-      <span className={'absolute top-1/2 -translate-y-1/2 rounded-full bg-white shadow transition-all ' + k +
-        ' ' + (size === 'sm'
-          ? (checked ? 'left-[16px]' : 'left-[3px]')
-          : (checked ? 'left-[18px]' : 'left-[4px]'))} />
-    </button>
-  )
-}
-
-// ─── 类别 Hook（useCategories 平替） ────────────────────────
+export { Modal, Confirm, Toast, Field, inputCls, btn, Spinner, Empty, StatTile, Card, Segmented, Switch } from '@/shared/ui/kit'
 
 export function useTodoCategories(includeArchived = false) {
   const [categories, setCategories] = useState([])
@@ -340,33 +179,4 @@ export function useTodoCategories(includeArchived = false) {
 
 // ─── 图标（viewBox 0 0 20 20，stroke 1.5） ─────────────────
 
-const I = (children, size = 16, sw = 1.5) => (
-  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor"
-    strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-)
-
-export const Icon = {
-  today: I(<><rect x="3" y="3" width="6.2" height="6.2" rx="1.5" /><rect x="10.8" y="3" width="6.2" height="6.2" rx="1.5" /><rect x="10.8" y="10.8" width="6.2" height="6.2" rx="1.5" /><rect x="3" y="10.8" width="6.2" height="6.2" rx="1.5" /></>),
-  inbox: I(<><path d="M3 10.5 5 4h10l2 6.5V15a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 15v-4.5z" /><path d="M3 10.5h4l1 2h4l1-2h4" /></>),
-  calendar: I(<><rect x="3" y="4.5" width="14" height="12" rx="2" /><path d="M3 8.5h14M7 3v3M13 3v3" /></>),
-  review: I(<><rect x="4" y="3" width="12" height="14" rx="2" /><path d="M7 7.5h6M7 10.5h6M7 13.5h3.5" /></>),
-  stats: I(<><path d="M4.5 16.5v-6M10 16.5v-11M15.5 16.5v-8M2.5 16.5h15" /></>),
-  life: I(<path d="M10 16.5s-6-3.6-6-7.8A3.3 3.3 0 0 1 10 6.6a3.3 3.3 0 0 1 6 2.1c0 4.2-6 7.8-6 7.8z" />),
-  settings: I(<><circle cx="10" cy="10" r="2.2" /><path d="M10 2.8v2.4M10 14.8v2.4M2.8 10h2.4M14.8 10h2.4M4.9 4.9l1.7 1.7M13.4 13.4l1.7 1.7M15.1 4.9l-1.7 1.7M6.6 13.4l-1.7 1.7" /></>),
-  plus: I(<path d="M10 4.5v11M4.5 10h11" />),
-  chevL: I(<path d="M12 4l-5 6 5 6" />),
-  chevR: I(<path d="M8 4l5 6-5 6" />),
-  dots: I(<><circle cx="4.5" cy="10" r="1.1" fill="currentColor" stroke="none" /><circle cx="10" cy="10" r="1.1" fill="currentColor" stroke="none" /><circle cx="15.5" cy="10" r="1.1" fill="currentColor" stroke="none" /></>, 15),
-  check: I(<path d="M4 10.5l4 4 8-9" />),
-  trash: I(<><path d="M3.5 5.5h13M8 5.5V3.5h4v2M5.5 5.5l.8 11h7.4l.8-11" /></>, 13),
-  edit: I(<path d="M13.5 3.5l3 3L7 16l-4 1 1-4 9.5-9.5z" />, 13),
-  refresh: I(<><path d="M16 8A6.5 6.5 0 1 0 16 12.5" /><path d="M16 3.5V8h-4.5" /></>, 14),
-  clock: I(<><circle cx="10" cy="10" r="7" /><path d="M10 6v4l2.8 1.8" /></>, 13),
-  fire: I(<path d="M10 2.5c.4 2.2 3.5 3.6 3.5 7a3.5 3.5 0 1 1-7 0c0-1.5.8-2.8 1.9-3.8.2 1.2.9 2 1.6 2.5-.1-1.9-.4-4 0-5.7z" />, 14),
-  migrate: I(<><path d="M4.2 10a6 6 0 0 1 10.2-4.3M15.8 10a6 6 0 0 1-10.2 4.3" /><path d="M14.6 2.6v3.2h-3.2M5.4 17.4v-3.2h3.2" /></>, 14),
-  warning: I(<><path d="M10 3 1.8 17h16.4L10 3z" /><path d="M10 9v4M10 15.6v.1" /></>, 14),
-  checkCircle: I(<><circle cx="10" cy="10" r="7" /><path d="M6.5 10.2l2.4 2.4 4.6-5.2" /></>, 14),
-  sun: I(<><circle cx="10" cy="10" r="3.4" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M15.3 4.7l-1.4 1.4M6.1 13.9l-1.4 1.4" /></>),
-  moon: I(<path d="M15.5 12.6A6.5 6.5 0 0 1 7.4 4.5 6.8 6.8 0 1 0 15.5 12.6Z" />),
-  back: I(<path d="M15 5l-7 7 7 7" />, 15),
-}
+export { Icon } from '@/shared/ui/icons'

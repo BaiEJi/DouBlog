@@ -8,6 +8,31 @@
 
 ## 目录
 
+> 2026-10-21 全模块优化增量以下表为准；未传新版本字段的旧客户端兼容入口保留。现代客户端使用版本与mutation ID，409保留本地输入，超时重试复用同一mutation ID。
+
+| 范围 | 当前契约增量 |
+|---|---|
+| 登录/运行状态 | `GET /api/auth/check`增真实username、database_identity、generation；数据库不可用时登录503，不回退默认密码。响应附数据库identity/generation头。`GET /ready`需认证，实际DB就绪200/未就绪503；`GET /api/admin/runtime`需认证，返回池/在途任务快照 |
+| 数据库状态/切换 | `GET /api/admin/database`增running_backend、identity、generation、pending_restart、在途计数，postgres不再回传password，改password_configured。switch成功仍为backend/restart_required；屏障/排空失败503且不发布配置，待重启时业务503。界面按实际运行库确认 |
+| 门户布局 | GET返回groups/revision；PUT和DELETE可带revision/mutation_id。空布局与重置也递增revision；SQL CAS与持久幂等回执，同ID不同请求409 |
+| 文章树与排序 | tree增X-Tree-Revision及节点revision；文章PUT可带revision；reorder可带revision/mutation_id，必须提交完整兄弟集，返回revision/children_order；移动同步子孙level |
+| 资产版本 | `/api/assets/items/{id}/versions`带page时返回items/total/page/page_size，列表不含content；不带page保留旧数组，正文读单版本详情 |
+| 日记 | entries默认50/最多500，支持offset、include_content=0（600字摘要），返回limit/offset/has_more；新增GET `/api/diary/entries/{id}`。POST/PUT/summary可带mutation_id/revision，重复创建重试不重建 |
+| 书签导入 | `/api/bookmarks/import?dry_run=true`预检；导入预算16MiB、10000条书签、2000分类、32层，单快照20万字符、总快照8MiB。抓取有总截止时间和体积预算，失败不覆盖旧快照 |
+| Todo | tasks带page时分页对象，否则保留数组；新增GET `/api/todo/tasks/calendar?from&to&plan_only`，最多367天，每日total/done及最多4条小字段样本；move/reorder可带revision/mutation_id |
+| Practice | 新增PUT `/api/practice/problems/{id}/aggregate`：revision、mutation_id、solution_revisions、solutions，题目/解法/代码同事务；返回完整题目和client_ids。POST可带mutation_id及子项client_id |
+| Subs | PUT会员/订阅可带revision；新增stats/ranking（metric四枚举、limit1..100，返回items/total/metric）、stats/details（日期范围/category_id/page/page_size明细）。trend默认details空数组，include_details=1获取旧嵌套；最多10年、按天500点 |
+| 图谱坐标 | 新增PUT `/api/gamemap/games/{game_id}/boards/chapters/{chapter_id}/positions`，带revision/mutation_id/positions；POST同前缀`/positions/batch`接收boards数组，多章同事务。最多100板/10000坐标，有限数值且绝对值≤10000000。merged增board_versions；同ID不同请求/旧版409 |
+| 数据库身份围栏 | 业务请求可带`X-Expected-Database-Identity`；与实际runtime不一致时，在业务执行前返回409，`data.error_code=DATABASE_CHANGED`，`data.details={identity,generation}`。认证、存活/就绪探针和GET数据库/运行状态允许恢复访问。前端保留草稿并提示备份后重载 |
+| 日志增量/观测 | `GET /api/v1/logs?after_id=N`按入库ID升序返回items/has_more/next_after_id/limit/offset:0，无total；追平后水位推进至查询开始的全局maxID。旧offset模式保留倒序和total并增初始水位。stats增queue_rows/queue_bytes/persisted/dead_letter_failed；accepted与202均不表示崩溃耐久 |
+| 日志聚合/导出 | histogram对全部命中行做SQL聚合（最多240桶）；export按(ts,id)倒序、500行keyset批次输出完整快照，响应头`X-Log-Snapshot-Max-Id`，断开停止。patterns返回sampled/analysis_limit:20000；trace返回has_more/limit:1000；context严格分离前后行 |
+| 配置中心CAS | PUT单值增if_updated_at、if_absent:true；DELETE可带query if_updated_at。`PUT /api/confcenter/rename`增成对type+data及if_updated_at，核版本/改值/改名同事务，冲突409，无部分写入。版本使用API返回的原始UTC时间字符串 |
+| Clash实时/保存 | 新增authenticated SSE `GET /api/clash/controller/connections/events`：mode、connections、status三种事件，8订阅上限（503）；原生WS不支持时2秒REST回退。PUT config限4MiB合法YAML对象/空内容；成功含file_saved/runtime_applied，已保存但应用失败400且details分别标记 |
+| Steam完成态 | login/status落库失败返回polling/retryable:true/error，允许继续查询；只有持久化和worker启动完成才返回success/account，重复查询返回同一账号 |
+| APIHub执行边界 | 无新增端点；max_retry=0有效，仅GET/HEAD/OPTIONS连接错误允许重试，超时及POST/PATCH不重试。总deadline包含排队、令牌交换和响应头体；配额持久化独立于调用日志队列 |
+
+模块权威细节与故障边界见 `docs/modules/`；本轮依赖与验收记录见 `docs/optimization-dependencies.md`、`docs/optimization-execution.md`。
+
 - [1. 通用规范](#1-通用规范)
 - [2. 认证 API（统一登录）](#2-认证-api)
 - [3. 知识库 API](#3-知识库-api)
@@ -46,7 +71,7 @@
 curl -u admin:lizy111A http://localhost:60100/api/posts
 ```
 
-未认证或凭据错误返回 401（附 `WWW-Authenticate`）：
+未认证或凭据错误返回 401，不附 `WWW-Authenticate: Basic`，避免浏览器额外弹框：
 
 ```json
 { "success": false, "code": 401, "message": "认证失败", "data": null }
@@ -65,7 +90,7 @@ curl -u admin:lizy111A http://localhost:60100/api/posts
 }
 ```
 
-错误时 `success` 为 `false`，`code` 为对应 HTTP 状态码，`data` 为 `null`。
+错误时 `success` 为 `false`，`code` 为对应 HTTP 状态码。无额外信息时`data`为null；冲突、保存后应用失败等可返回结构化`data.error_code`与`data.details`，客户端应保留并处理。
 
 ### 1.3 分页参数
 
@@ -93,7 +118,7 @@ curl -u admin:lizy111A http://localhost:60100/api/posts
 
 ### 1.6 请求级 trace（X-Trace-Id）
 
-后端为每个请求绑定 lizysdk trace_id 并在响应头回写 `X-Trace-Id`；请求头自带 `X-Trace-Id`（网关/SDK 调用方）则透传延续链路。该请求产生的所有日志行自动携带同一 `trace_id`，可在 `/logs` 页用 `GET /api/v1/logs/trace?trace_id=` 查看时间线。
+进入业务链的请求绑定 lizysdk trace_id 并在响应头回写 `X-Trace-Id`；请求头自带 `X-Trace-Id`（网关/SDK 调用方）则透传延续链路。该请求产生的日志携带同一 `trace_id`，可在 `/logs` 页用 `GET /api/v1/logs/trace?trace_id=` 查看时间线。数据库身份围栏/切换屏障在进入该链之前拒绝的响应仍带数据库身份头。
 
 ---
 
@@ -993,7 +1018,7 @@ GET    /api/gamemap/search?q= · POST /api/gamemap/uploads
 GET    /api/gamemap/files/{name}                        # 附件下载（免认证，目录围栏）
 
 ## 17. Practice API（刷题，独立顶级模块；22 端点，6 表 practice_*，规范 docs/practice-spec.md）
-# 题目（revision 乐观锁 409；列表/队列摘要 defer 不回传 description_md/pitfall_md 大字段，恒 null）
+# 题目（revision 乐观锁 409；列表精确Core投影、队列摘要defer，description_md/pitfall_md均恒null，详情返回正文）
 GET    /api/practice/problems            多维筛选 ?q=（标题/题号 icontains，超 200 截断）
                                                ?tags=id1,id2&tags_op=and|or ?difficulty=1,3 ?status= ?source=
                                                ?language= ?from=&to=（创建日期区间 YYYY-MM-DD）?only_due_review=true

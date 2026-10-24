@@ -28,6 +28,96 @@ from .models import (
 )
 from . import services
 
+IMPORT_MAX_BYTES = 16 * 1024 * 1024
+IMPORT_MAX_ITEMS = 10000
+IMPORT_MAX_CATEGORIES = 2000
+IMPORT_MAX_DEPTH = 32
+IMPORT_MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
+
+
+def preflight_import(session, content):
+    """只解析/查询的导入预检；记录数、分类树和快照总预算在写入前检查。"""
+    if len(content.encode('utf-8')) > IMPORT_MAX_BYTES:
+        raise HTTPException(400, '书签文件不能超过 16MB')
+    text = content.lstrip('\ufeff \t\r\n')
+    if text.startswith('<'):
+        parser = _NetscapeParser()
+        try:
+            parser.feed(text); parser.close()
+        except Exception as error:
+            raise HTTPException(400, f'书签文件解析失败: {error}') from error
+        entries, categories = parser.entries, parser.folders
+        for folder in categories:
+            if folder['depth'] > IMPORT_MAX_DEPTH:
+                raise HTTPException(400, '分类深度不能超过 32 层')
+    else:
+        try:
+            data = json.loads(text)
+        except (ValueError, RecursionError) as error:
+            raise HTTPException(400, '书签文件不是有效 JSON/HTML') from error
+        if isinstance(data, list):
+            data = {'items': data}
+        if not isinstance(data, dict) or not isinstance(data.get('items', []), list) or not isinstance(data.get('categories', []), list):
+            raise HTTPException(400, 'items/categories 必须为数组')
+        entries, categories = data.get('items') or [], data.get('categories') or []
+        if any(not isinstance(item, dict) for item in [*entries, *categories]):
+            raise HTTPException(400, '书签与分类必须为对象')
+        for category in categories:
+            for field in ('id', 'parent_id'):
+                if category.get(field) is not None and (isinstance(category[field], bool) or not isinstance(category[field], (str, int))):
+                    raise HTTPException(400, f'分类 {field} 必须为字符串或整数')
+            if category.get('name') is not None and not isinstance(category['name'], str):
+                raise HTTPException(400, '分类名称必须为字符串')
+        by_id = {category.get('id'): category for category in categories if isinstance(category.get('id'), (str, int))}
+        for category in categories:
+            current, seen = category, set()
+            while current and current.get('parent_id'):
+                parent = current['parent_id']
+                if not isinstance(parent, (str, int)) or parent in seen:
+                    raise HTTPException(400, '分类引用非法或存在循环')
+                seen.add(parent)
+                if len(seen) >= IMPORT_MAX_DEPTH:
+                    raise HTTPException(400, '分类深度不能超过 32 层')
+                current = by_id.get(parent)
+    if len(entries) > IMPORT_MAX_ITEMS or len(categories) > IMPORT_MAX_CATEGORIES:
+        raise HTTPException(400, '最多导入 10000 条书签和 2000 个分类')
+    snapshot_bytes = 0
+    for item in entries:
+        for field in ('title', 'description', 'note', 'site_name', 'favicon_url', 'snapshot_at', 'created_at', 'read_at'):
+            if item.get(field) is not None and not isinstance(item[field], str):
+                raise HTTPException(400, f'{field} 必须为字符串')
+        if item.get('category_id') is not None and not isinstance(item['category_id'], (str, int)):
+            raise HTTPException(400, 'category_id 必须为字符串或整数')
+        if item.get('tag_names') is not None and (not isinstance(item['tag_names'], list) or
+                any(not isinstance(tag, str) for tag in item['tag_names'])):
+            raise HTTPException(400, 'tag_names 必须为字符串数组')
+        if item.get('snapshot_words') is not None and (isinstance(item['snapshot_words'], bool) or
+                not isinstance(item['snapshot_words'], int) or item['snapshot_words'] < 0):
+            raise HTTPException(400, 'snapshot_words 必须为非负整数')
+        snapshot = item.get('snapshot_md')
+        if snapshot is not None:
+            if not isinstance(snapshot, str) or len(snapshot) > 200000:
+                raise HTTPException(400, '单条快照必须为 ≤20万字符文本')
+            snapshot_bytes += len(snapshot.encode('utf-8'))
+    if snapshot_bytes > IMPORT_MAX_SNAPSHOT_BYTES:
+        raise HTTPException(400, '导入快照总量不能超过 8MB')
+    existing = set(session.scalars(select(BookmarkItem.normalized_url).where(BookmarkItem.deleted_at.is_(None))))
+    imported = skipped = invalid = 0
+    for item in entries:
+        url = item.get('url')
+        if not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+            invalid += 1; continue
+        try:
+            normalized = normalize_url(url)
+        except ValueError:
+            invalid += 1; continue
+        if normalized in existing:
+            skipped += 1
+        else:
+            imported += 1; existing.add(normalized)
+    return {'dry_run': True, 'imported': imported, 'skipped': skipped, 'invalid': invalid,
+            'items': len(entries), 'categories': len(categories), 'snapshot_bytes': snapshot_bytes}
+
 
 # ─── 导出 ───────────────────────────────────────────────────
 
@@ -167,6 +257,8 @@ class _NetscapeParser(HTMLParser):
         if tag == "dl":
             self._finish_dd()
             self._depth += 1
+            if self._depth > IMPORT_MAX_DEPTH + 1:
+                raise ValueError('分类深度不能超过 32 层')
         elif tag == "h3":
             self._finish_dd()
             self._in_h3 = True
@@ -198,6 +290,8 @@ class _NetscapeParser(HTMLParser):
             name = "".join(self._h3_buf).strip()
             if name:
                 self.folders.append({"name": name, "depth": self._depth})
+                if len(self.folders) > IMPORT_MAX_CATEGORIES:
+                    raise ValueError('分类不能超过 2000 个')
         elif tag == "a" and self._in_a:
             self._in_a = False
             entry = dict(self._cur_a)
@@ -205,6 +299,8 @@ class _NetscapeParser(HTMLParser):
             if entry["url"]:
                 self._last = entry
                 self.entries.append(entry)
+                if len(self.entries) > IMPORT_MAX_ITEMS:
+                    raise ValueError('书签不能超过 10000 条')
         elif tag == "dd" and self._in_dd:
             self._finish_dd()
 
@@ -311,11 +407,15 @@ def _import_one(session: Session, url: str, title: str, description: Optional[st
                 category_id: Optional[str], created_at: Optional[datetime],
                 read_at: Optional[datetime], counters: dict,
                 extra: Optional[dict] = None) -> None:
-    url = (url or "").strip()
+    url = url.strip() if isinstance(url, str) else ''
     if not url or not url.startswith(("http://", "https://")):
         counters["invalid"] = counters.get("invalid", 0) + 1
         return
-    normalized = normalize_url(url)
+    try:
+        normalized = normalize_url(url)
+    except ValueError:
+        counters['invalid'] = counters.get('invalid', 0) + 1
+        return
     exists = session.scalars(
         select(BookmarkItem.id).where(BookmarkItem.normalized_url == normalized,
                                       BookmarkItem.deleted_at.is_(None))).first()
@@ -327,7 +427,7 @@ def _import_one(session: Session, url: str, title: str, description: Optional[st
     now = now_utc()
     it = BookmarkItem(
         id=uuid7(), url=url, normalized_url=normalized,
-        title=(title or "").strip()[:512] or url[:512],
+        title=str(title or "").strip()[:512] or url[:512],
         description=description, note=note,
         category_id=category_id, status=status, starred=bool(starred),
         read_at=read_at or (created_at if status == "read" else None),
@@ -350,6 +450,7 @@ def _import_one(session: Session, url: str, title: str, description: Optional[st
 
 def import_bookmarks(session: Session, content: str) -> dict:
     """导入书签文件（HTML/JSON 自动嗅探）。"""
+    preflight_import(session, content)
     text = content.lstrip("\ufeff \t\r\n")
     counters = {"imported": 0, "skipped": 0, "invalid": 0}
     cache: dict = {}

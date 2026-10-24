@@ -15,7 +15,8 @@ from app.confcenter import cache as cache_mod
 from app.config import settings
 from tests.confcenter.conftest import AUTH, FakeRedis
 
-KEY = 'confcenter:app:k1'
+def _key():
+    return cache_mod.cache_key('app', 'k1')
 
 
 def _put(client, namespace, key, type_, data, expect=201):
@@ -61,10 +62,10 @@ def test_miss_backfills_cache(client, auth_headers, cache_env):
     assert r.status_code == 200 and r.json()['data']['data'] == 'v1'
 
     # 回填：键名/载荷/TTL 正确
-    assert KEY in cache_env.store
-    payload = json.loads(cache_env.store[KEY])
+    assert _key() in cache_env.store
+    payload = json.loads(cache_env.store[_key()])
     assert payload['type'] == 'str' and payload['data'] == 'v1' and payload['updated_at']
-    assert cache_env.ttls[KEY] == 60
+    assert cache_env.ttls[_key()] == 60
 
     st = _status(client)
     assert st['misses'] == 1 and st['hits'] == 0
@@ -83,7 +84,7 @@ def test_hit_returns_cached_value_without_db(client, auth_headers, cache_env):
     _put(client, 'app', 'k1', 'json', '{"real": false}')
     cache_env.store.clear()
     # 篡改缓存：命中路径应原样返回缓存值（不查库）
-    cache_env.store[KEY] = json.dumps(
+    cache_env.store[_key()] = json.dumps(
         {'type': 'json', 'data': '{"stale": true}', 'updated_at': '2020-01-01T00:00:00'})
 
     r = client.get('/api/confcenter/app/k1', headers=AUTH)
@@ -96,12 +97,12 @@ def test_hit_returns_cached_value_without_db(client, auth_headers, cache_env):
 def test_hit_corrupt_payload_counts_as_miss(client, auth_headers, cache_env):
     _put(client, 'app', 'k1', 'str', 'v1')
     cache_env.store.clear()
-    cache_env.store[KEY] = json.dumps({'no_type_field': 1})   # 损坏载荷
+    cache_env.store[_key()] = json.dumps({'no_type_field': 1})   # 损坏载荷
     r = client.get('/api/confcenter/app/k1', headers=AUTH)
     assert r.status_code == 200 and r.json()['data']['data'] == 'v1'
     st = _status(client)
     assert st['misses'] == 1
-    assert json.loads(cache_env.store[KEY])['data'] == 'v1'   # 已被正确载荷覆盖
+    assert json.loads(cache_env.store[_key()])['data'] == 'v1'   # 已被正确载荷覆盖
 
 
 # ─── 路径 3：写/删后失效（先落库再 DEL）────────────────
@@ -109,25 +110,25 @@ def test_hit_corrupt_payload_counts_as_miss(client, auth_headers, cache_env):
 def test_write_invalidates_cache(client, auth_headers, cache_env):
     _put(client, 'app', 'k1', 'str', 'v1')
     client.get('/api/confcenter/app/k1', headers=AUTH)   # 回填
-    assert KEY in cache_env.store
+    assert _key() in cache_env.store
 
     _put(client, 'app', 'k1', 'str', 'v2', expect=200)   # 覆盖写 → DEL
-    assert KEY in cache_env.deleted                      # DEL 被调用
-    assert KEY not in cache_env.store
+    assert _key() in cache_env.deleted                      # DEL 被调用
+    assert _key() not in cache_env.store
 
     r = client.get('/api/confcenter/app/k1', headers=AUTH)   # 重建缓存
     assert r.json()['data']['data'] == 'v2'
-    assert json.loads(cache_env.store[KEY])['data'] == 'v2'
+    assert json.loads(cache_env.store[_key()])['data'] == 'v2'
 
 
 def test_delete_invalidates_cache(client, auth_headers, cache_env):
     _put(client, 'app', 'k1', 'str', 'v1')
     client.get('/api/confcenter/app/k1', headers=AUTH)
-    assert KEY in cache_env.store
+    assert _key() in cache_env.store
 
     r = client.delete('/api/confcenter/app/k1', headers=AUTH)
     assert r.status_code == 200
-    assert KEY in cache_env.deleted and KEY not in cache_env.store
+    assert _key() in cache_env.deleted and _key() not in cache_env.store
     r = client.get('/api/confcenter/app/k1', headers=AUTH)
     assert r.status_code == 404
 
@@ -143,7 +144,7 @@ def test_connection_error_degrades_to_db(client, auth_headers, monkeypatch):
 
     _put(client, 'app', 'k1', 'str', 'v1')                # DEL 正常
     client.get('/api/confcenter/app/k1', headers=AUTH)    # 回填正常
-    assert KEY in fake.store
+    assert _key() in fake.store
 
     # 连接开始抛错 → 读回退 DB，不计数、不报错
     fake.fail = True
@@ -167,11 +168,10 @@ def test_connection_error_degrades_to_db(client, auth_headers, monkeypatch):
     r = client.post('/api/confcenter/cache/test', headers=AUTH)
     assert r.status_code == 200 and r.json()['data']['ok'] is True
     assert cache_mod.get_cache_state(client.app).failed is False
-    # 降级期的 DEL 被跳过 → 恢复后短暂命中旧值 'v1'（陈旧窗口由键 TTL 兜底，
-    # 这正是规范要求 setex 带 TTL 的理由；flush 可立即清理）
+    # 故障恢复先清理旧键，再允许缓存命中；不能复活降级前的 v1。
     r = client.get('/api/confcenter/app/k1', headers=AUTH)
-    assert r.json()['data']['data'] == 'v1'
-    assert cache_mod.get_cache_state(client.app).hits == 1
+    assert r.json()['data']['data'] == 'v2'
+    assert cache_mod.get_cache_state(client.app).hits == 0
     r = client.post('/api/confcenter/cache/flush', headers=AUTH)
     assert r.json()['data']['ok'] is True
     r = client.get('/api/confcenter/app/k1', headers=AUTH)
@@ -230,7 +230,7 @@ def test_cache_config_persists_to_file(client, auth_headers, cache_env):
     assert r.json()['data']['ttl_seconds'] == 120 and r.json()['data']['db'] == 2
     _put(client, 'app', 'k9', 'str', 'x')
     client.get('/api/confcenter/app/k9', headers=AUTH)
-    assert cache_env.ttls['confcenter:app:k9'] == 120
+    assert cache_env.ttls[cache_mod.cache_key('app', 'k9')] == 120
 
 
 def test_cache_config_invalid_400(client, auth_headers):

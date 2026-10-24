@@ -14,4 +14,7 @@ segno==1.6.6              # devtoolbox 二维码生成（纯 Python，零依赖�
 orjson==3.13.0            # 全站 JSON 序列化（FastJSONResponse；大响应 ~19x）
 steam[client]>=1.4.0      # Steam 挂机模块（todo/steamidler；gevent 限在 worker 线程独立 hub，禁 monkey.patch_all）
 requests>=2.31            # Steam Web API 调用
+markdownify==1.2.3        # MIT；书签/题面 HTML→Markdown（保留代码、表格与嵌套列表）
+beautifulsoup4==4.15.0    # MIT；书签正文候选选择与HTML结构解析
+soupsieve==2.10          # MIT；BeautifulSoup选择器依赖，固定语料验收版本
 lizysdk @ git+https://github.com/BaiEJi/LizySDK.git   # 日志/异常/并发池体系（本地开发可 pip install -e ../basekit）

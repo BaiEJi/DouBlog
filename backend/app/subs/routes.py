@@ -18,14 +18,18 @@ import threading
 import time
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import func as sql_func
+from sqlalchemy import func as sql_func, update, select
 from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.config import settings
-from app.db import db, run_db
+from app.db import db, run_db, database_context
+from app.shared.timeutil import local_today, now_utc, get_zone
+from app.todo.services import get_settings, settings_from_raw
+from app.todo.models import AppSetting
 from app.shared.auth import require_basic
 from app.shared.modules import mod_logger
 from app.shared.response import api_response
@@ -43,6 +47,27 @@ from lizysdk.errors import ConflictError, NotFoundError, ParamError
 router = APIRouter(prefix='/api/subs', dependencies=[Depends(require_basic)])
 
 DATE_FMT = '%Y-%m-%d'
+
+
+def _today():
+    return local_today(get_settings(db.session)['timezone'])
+
+
+def _business_now():
+    return now_utc().astimezone(get_zone(get_settings(db.session)['timezone']))
+
+
+def _claim(row, revision=None):
+    expected = row.revision if revision is None else revision
+    if isinstance(expected, bool) or not isinstance(expected, int):
+        raise ParamError(message='revision 必须为整数')
+    model = type(row)
+    with db.session.no_autoflush:
+        changed = db.session.execute(update(model).where(model.id == row.id, model.revision == expected)
+            .values(revision=expected + 1).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        raise ConflictError(message='记录已被修改，当前输入已保留，请读取最新版本')
+    set_committed_value(row, 'revision', expected + 1)
 
 
 # ─── 校验工具 ─────────────────────────────────────────────
@@ -86,11 +111,15 @@ def _valid_date(raw, field):
 def _valid_price(raw, field='价格'):
     """价格校验，返回 (规范化字符串, 错误信息)"""
     try:
-        v = float(raw)
-    except (ValueError, TypeError):
+        v = Decimal(str(raw))
+    except (InvalidOperation, ValueError, TypeError):
         return None, f'{field}必须为有效数字'
+    if not v.is_finite():
+        return None, f'{field}必须为有限数字'
     if v < 0:
         return None, f'{field}不能为负数'
+    if v > Decimal('99999999.99'):
+        return None, f'{field}不能超过 99999999.99'
     return str(v), None
 
 
@@ -280,8 +309,9 @@ async def list_members(request: Request):
             q = q.filter(SubsMember.category_id == category_id)
 
         status = request.query_params.get('status')
+        today = None
         if status:
-            today = datetime.now().strftime(DATE_FMT)
+            today = _today().isoformat()
             if status not in ('active', 'expired'):
                 raise ParamError(message='status 必须是 active 或 expired')
             active_ids = (db.session.query(SubsSubscription.member_id)
@@ -299,9 +329,15 @@ async def list_members(request: Request):
         col = getattr(SubsMember, sort_by)
         q = q.order_by(col.asc() if order == 'asc' else col.desc(), SubsMember.id.desc())
 
-        total = q.count()
+        count_query = q.enable_eagerloads(False).order_by(None)
+        if status:
+            total = count_query.with_entities(sql_func.count(SubsMember.id)).scalar()
+        else:
+            raw_settings = select(AppSetting.value).where(AppSetting.key == 'app').scalar_subquery()
+            total, raw = count_query.with_entities(sql_func.count(SubsMember.id), raw_settings).one()
+            today = local_today(settings_from_raw(raw)['timezone']).isoformat()
         items = q.offset((page - 1) * page_size).limit(page_size).all()
-        return api_response({'items': [m.to_dict() for m in items], 'total': total})
+        return api_response({'items': [m.to_dict(today=today) for m in items], 'total': total})
     return await run_db(_impl)
 
 
@@ -361,6 +397,7 @@ async def update_member(member_id: int, request: Request):
 
     def _impl():
         member = _require_member(member_id)
+        _claim(member, data.get('revision'))
 
         if 'name' in data:
             name = (data['name'] or '').strip()
@@ -403,7 +440,7 @@ async def list_member_subscriptions(member_id: int, request: Request):
 
         status = request.query_params.get('status')
         if status:
-            today = datetime.now().strftime(DATE_FMT)
+            today = _today().isoformat()
             if status == 'active':
                 q = q.filter(SubsSubscription.end_date >= today)
             elif status == 'expired':
@@ -473,6 +510,7 @@ async def update_subscription(sub_id: int, request: Request):
         sub = db.session.get(SubsSubscription, sub_id)
         if not sub:
             raise NotFoundError(message='订阅记录不存在')
+        _claim(sub, data.get('revision'))
         payload, err = _validate_subscription_payload(data, partial=True)
         if err:
             raise ParamError(message=err)
@@ -551,7 +589,7 @@ def _spend_rows(subs) -> list:
 
 
 def _month_year_bounds():
-    now = datetime.now()
+    now = _business_now()
     month_start = now.replace(day=1).strftime(DATE_FMT)
     month_end = ((now.replace(day=1) + timedelta(days=32)).replace(day=1)
                  - timedelta(days=1)).strftime(DATE_FMT)
@@ -587,7 +625,7 @@ def _range_subscriptions(start_date, end_date):
 async def stats_overview():
     def _impl():
         """会员总数 / 活跃会员 / 本月支出 / 年度支出（折算基准币）"""
-        today = datetime.now().strftime(DATE_FMT)
+        today = _today().isoformat()
         month_start, month_end, year_start, year_end = _month_year_bounds()
         m_s, m_e = date_ordinal(month_start), date_ordinal(month_end)
         y_s, y_e = date_ordinal(year_start), date_ordinal(year_end)
@@ -616,6 +654,65 @@ async def stats_overview():
     return await run_db(_impl)
 
 
+@router.get('/stats/ranking')
+async def stats_ranking(metric: str = 'total_spending', limit: int = 10):
+    def _impl():
+        from heapq import nsmallest
+        if metric not in ('total_spending', 'avg_per_sub', 'subscription_count', 'total_duration_days'):
+            raise ParamError(message='无效排行维度')
+        if not 1 <= limit <= 100:
+            raise ParamError(message='limit 必须为 1..100')
+        totals = {}
+        for member_id, price, currency, start, end in db.session.query(
+                SubsSubscription.member_id, SubsSubscription.price, SubsSubscription.currency,
+                SubsSubscription.start_date, SubsSubscription.end_date):
+            bucket = totals.setdefault(member_id, {'total_spending': Decimal(0), 'subscription_count': 0,
+                                                   'total_duration_days': 0})
+            bucket['total_spending'] += convert_to_base(price, currency)
+            bucket['subscription_count'] += 1
+            bucket['total_duration_days'] += date_ordinal(end) - date_ordinal(start)
+        members = db.session.query(SubsMember.id, SubsMember.name, SubsMember.category_id).all()
+        def value(member):
+            aggregate = totals.get(member.id, {})
+            if metric == 'avg_per_sub':
+                return aggregate.get('total_spending', Decimal(0)) / max(1, aggregate.get('subscription_count', 0))
+            return aggregate.get(metric, 0)
+        ranked = nsmallest(limit, members, key=lambda member: (-value(member), member.id))
+        categories = {category.id: category.to_dict() for category in SubsCategory.query.all()}
+        items = []
+        for member in ranked:
+            aggregate = totals.get(member.id, {'total_spending': Decimal(0), 'subscription_count': 0,
+                                               'total_duration_days': 0})
+            amount = aggregate['total_spending']
+            items.append({'id': member.id, 'name': member.name, 'category': categories.get(member.category_id),
+                **aggregate, 'total_spending': float(amount.quantize(Decimal('0.01'))),
+                'avg_per_sub': float((amount / max(1, aggregate['subscription_count'])).quantize(Decimal('0.01')))})
+        return api_response({'items': items, 'total': len(members), 'metric': metric})
+    return await run_db(_impl)
+
+
+@router.get('/stats/details')
+async def stats_details(request: Request, page: int = 1, page_size: int = 20, category_id: int | None = None):
+    def _impl():
+        start, end = _require_range_args(request)
+        if page < 1 or not 1 <= page_size <= 100:
+            raise ParamError(message='page/page_size 超出范围')
+        start_ord, end_ord = date_ordinal(start), date_ordinal(end)
+        items = []
+        for row in _spend_rows(_range_subscriptions(start, end)):
+            if category_id is not None and (row.cat_id or 0) != category_id:
+                continue
+            amount = row.daily_base * _overlap_ord(row.start_ord, row.end_ord, start_ord, end_ord)
+            items.append({'subscription_id': row.sub_id, 'member_name': row.member_name,
+                'level': row.level, 'category_name': row.cat.name if row.cat else '未分类',
+                'amount': float(amount.quantize(Decimal('0.01')))})
+        items.sort(key=lambda item: (-item['amount'], item['subscription_id']))
+        offset = (page - 1) * page_size
+        return api_response({'items': items[offset:offset + page_size], 'total': len(items),
+                             'page': page, 'page_size': page_size})
+    return await run_db(_impl)
+
+
 @router.get('/stats/spending')
 async def stats_spending(request: Request):
     def _impl():
@@ -634,10 +731,10 @@ async def stats_spending(request: Request):
             spend = row.daily_base * ov
             total += spend
             by_currency[row.currency] += row.daily * ov
-            if row.cat_id:
-                cat_stats[row.cat_id]['total'] += spend
-                cat_stats[row.cat_id]['count'] += 1
-                cat_meta.setdefault(row.cat_id, row.cat)
+            category_id = row.cat_id or 0
+            cat_stats[category_id]['total'] += spend
+            cat_stats[category_id]['count'] += 1
+            cat_meta.setdefault(category_id, row.cat)
 
         days = ((parse_date(end_date).toordinal()) - (parse_date(start_date).toordinal())) + 1
         daily_average = total / Decimal(days) if days > 0 else Decimal('0')
@@ -683,27 +780,21 @@ async def stats_by_category(request: Request):
                 continue
             spend = row.daily_base * ov
             total += spend
-            if row.cat_id:
-                cat_totals[row.cat_id] += spend
-                cat_details[row.cat_id].append({
-                    'subscription_id': row.sub_id,
-                    'member_name': row.member_name,
-                    'level': row.level,
-                    'amount': float(spend.quantize(Decimal('0.01'))),
-                })
-                cat_meta.setdefault(row.cat_id, row.cat)
+            category_id = row.cat_id or 0
+            cat_totals[category_id] += spend
+            cat_details[category_id].append({'subscription_id': row.sub_id, 'member_name': row.member_name,
+                'level': row.level, 'amount': float(spend.quantize(Decimal('0.01')))})
+            cat_meta.setdefault(category_id, row.cat)
 
         result = []
         for cat_id, cat_total in cat_totals.items():
             cat = cat_meta.get(cat_id)
-            if not cat:
-                continue
             pct = float(cat_total / total * 100) if total > 0 else 0
             result.append({
                 'category_id': cat_id,
-                'category_name': cat.name,
-                'category_icon': cat.icon,
-                'category_color': cat.color,
+                'category_name': cat.name if cat else '未分类',
+                'category_icon': cat.icon if cat else None,
+                'category_color': cat.color if cat else '#a8a29e',
                 'total': float(cat_total.quantize(Decimal('0.01'))),
                 'percentage': round(pct, 2),
                 'details': sorted(cat_details[cat_id], key=lambda x: x['amount'], reverse=True),
@@ -725,8 +816,6 @@ async def stats_category_summary():
         cat_meta = {}
 
         for row in _spend_rows(_range_subscriptions(year_start, year_end)):
-            if not row.cat_id:
-                continue
             ov = _overlap_ord(row.start_ord, row.end_ord, m_s, m_e)
             if ov > 0:
                 cat_monthly[row.cat_id] += row.daily_base * ov
@@ -737,9 +826,9 @@ async def stats_category_summary():
 
         categories = [{
             'category_id': cat_id,
-            'category_name': cat.name,
-            'category_icon': cat.icon,
-            'category_color': cat.color,
+            'category_name': cat.name if cat else '未分类',
+            'category_icon': cat.icon if cat else None,
+            'category_color': cat.color if cat else '#a8a29e',
             'monthly_spending': float(cat_monthly[cat_id].quantize(Decimal('0.01'))),
             'yearly_spending': float(cat_yearly[cat_id].quantize(Decimal('0.01'))),
         } for cat_id, cat in cat_meta.items()]
@@ -764,6 +853,12 @@ async def stats_trend(request: Request):
 
         start_dt = datetime.strptime(start_date, DATE_FMT)
         end_dt = datetime.strptime(end_date, DATE_FMT)
+        include_details = request.query_params.get('include_details') in ('1', 'true')
+        if (end_dt - start_dt).days > 3660:
+            raise ParamError(message='趋势范围不能超过 10 年')
+        estimated = (end_dt - start_dt).days + 1
+        if granularity == 'day' and estimated > 500:
+            raise ParamError(message='按天最多 500 个数据点，请选择更粗粒度')
 
         periods = []  # (period_start, period_end, label)
         if granularity == 'day':
@@ -781,7 +876,7 @@ async def stats_trend(request: Request):
                                 cur.strftime('%Y-%m')))
                 cur = next_month
         elif granularity == 'week':
-            first_mon = start_dt + timedelta(days=(7 - start_dt.weekday()) % 7)
+            first_mon = start_dt - timedelta(days=start_dt.weekday())
             last_mon = end_dt - timedelta(days=end_dt.weekday())
             cur = first_mon
             while cur <= last_mon:
@@ -809,7 +904,13 @@ async def stats_trend(request: Request):
 
         trend = []
         for p_start, p_end, label in periods:
-            p_s, p_e = date_ordinal(p_start), date_ordinal(p_end)
+            p_s, p_e = max(date_ordinal(p_start), date_ordinal(start_date)), min(date_ordinal(p_end), date_ordinal(end_date))
+            if not include_details:
+                amount = sum((row.daily_base * max(0, _overlap_ord(row.start_ord, row.end_ord, p_s, p_e))
+                              for row in rows), Decimal(0))
+                trend.append({'date': label, 'amount': float(amount.quantize(Decimal('0.01'))), 'details': [],
+                              'start_date': p_start, 'end_date': p_end})
+                continue
             cat_details = {}
             for row in rows:
                 overlap = _overlap_ord(row.start_ord, row.end_ord, p_s, p_e)
@@ -884,7 +985,7 @@ def _reminder_item(sub, today):
 async def reminders_upcoming():
     def _impl():
         """即将到期：end_date >= 今天 且 剩余天数 <= 会员 reminder_days"""
-        today = datetime.now().date()
+        today = _today()
         subs = (SubsSubscription.query.options(
             joinedload(SubsSubscription.member).joinedload(SubsMember.category))
             .filter(SubsSubscription.end_date >= today.strftime(DATE_FMT))
@@ -906,7 +1007,7 @@ async def reminders_upcoming():
 async def reminders_all():
     def _impl():
         """全部未到期订阅（到期日历数据源），按剩余天数升序"""
-        today = datetime.now().date()
+        today = _today()
         subs = (SubsSubscription.query.options(
             joinedload(SubsSubscription.member).joinedload(SubsMember.category))
             .filter(SubsSubscription.end_date >= today.strftime(DATE_FMT))
@@ -925,13 +1026,18 @@ _DAILY_DONE = {'spending': None}   # 已执行日期 'YYYY-MM-DD'
 
 
 def run_daily_spending_log(app) -> str:
+    with database_context(app):
+        return _run_daily_spending_log(app)
+
+
+def _run_daily_spending_log(app) -> str:
     """当日活跃订阅支出摘要（按分类），写模块日志（info 级落盘）。
 
     app 参数保留（测试与调度线程传真实 app 对象；无 app_context，会话用后即还）。
     """
     log = mod_logger('subs')
     try:
-        today = datetime.now().strftime(DATE_FMT)
+        today = _today().isoformat()
         subs = (SubsSubscription.query.options(
             joinedload(SubsSubscription.member).joinedload(SubsMember.category))
             .filter(SubsSubscription.start_date <= today,
@@ -957,30 +1063,40 @@ def run_daily_spending_log(app) -> str:
 
 
 def start_daily_loop(app):
-    """
-    每日任务线程（daemon，随进程）：10:00 后写当日活跃订阅支出摘要。
-    启动即补跑当天未执行的任务；测试直接调 run_daily_spending_log。
-    """
+    """每 app 可停止调度器；数据库上下文与去重日期均不跨 app 共享。"""
     if getattr(app.state, 'testing', False):
-        return   # 测试模式空转（不启动线程）
-
-    def _mark_once(key, today):
-        with _DAILY_LOCK:
-            if _DAILY_DONE[key] == today:
-                return False
-            _DAILY_DONE[key] = today
-            return True
-
-    def _loop():
-        time.sleep(10)
-        while True:
+        return
+    previous = getattr(app.state, 'subs_daily', None)
+    if previous and previous.thread.is_alive():
+        return
+    from types import SimpleNamespace
+    from app.shared.pools import get_pool
+    runtime = SimpleNamespace(stop=threading.Event(), thread=None, done=None)
+    def loop():
+        if runtime.stop.wait(10):
+            return
+        while not runtime.stop.is_set():
             try:
-                now = datetime.now()
+                with database_context(app):
+                    now = _business_now()
                 today = now.strftime(DATE_FMT)
-                if now.hour >= 10 and _mark_once('spending', today):
-                    run_daily_spending_log(app)
-            except Exception:  # noqa: BLE001 后台任务永不中断
-                pass
-            time.sleep(60)
+                if now.hour >= 10 and runtime.done != today:
+                    # 调度线程仅调度；执行体复用 SDK 命名池，完成后才记当日成功。
+                    get_pool('subs', workers=2).submit(run_daily_spending_log, app).result()
+                    runtime.done = today
+            except Exception:
+                mod_logger('subs').exception('每日支出摘要失败，下轮重试')
+            runtime.stop.wait(60)
+    runtime.thread = threading.Thread(target=loop, name='subs-daily', daemon=True)
+    app.state.subs_daily = runtime
+    runtime.thread.start()
 
-    threading.Thread(target=_loop, name='subs-daily', daemon=True).start()
+
+def stop_daily_loop(app, timeout=5):
+    runtime = getattr(app.state, 'subs_daily', None)
+    if runtime is None:
+        return True
+    runtime.stop.set()
+    if runtime.thread is not threading.current_thread():
+        runtime.thread.join(timeout=max(0, timeout))
+    return not runtime.thread.is_alive()

@@ -3,10 +3,11 @@
  * + 泄露检查（HIBP k-anonymity，只上传 SHA-1 前 5 位）——全部基于客户端解密数据，
  * 明文密码永不上传服务端。
  */
-import { useMemo, useState, useRef, useCallback } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { analyzeSecurity, daysAgo, expiryInfo } from './core'
 import { pwnedCount } from './hibp'
 import { Favicon, I } from './ui'
+import { createVaultTaskScope, runVaultTasks } from './session'
 
 function Group({ icon, title, tone, items, empty, children, gref, neutral }) {
   return (
@@ -76,18 +77,24 @@ function ScoreRing({ score, total, checked, onDive }) {
   )
 }
 
-export default function SecurityCenter({ items, onSelect }) {
+export default function SecurityCenter({ items, onSelect, vaultSession }) {
   const s = useMemo(() => analyzeSecurity(items), [items])
   const [pwned, setPwned] = useState({})         // itemId → 次数（≥1 泄露 / 0 安全 / -1 不可达）
   const [checking, setChecking] = useState(false)
   const [progress, setProgress] = useState({ done: 0, total: 0 })
   const groupRefs = useRef({})
+  const lifecycle = useRef(null)
 
   // 含密码的条目（HIBP 查询时按密码去重，同密码只查一次）
   const withPw = useMemo(() => items.filter(i => i.data.password?.value), [items])
+  useEffect(() => {
+    const scope = createVaultTaskScope(vaultSession); lifecycle.current = scope
+    return () => scope.dispose()
+  }, [vaultSession, withPw])
 
   const runCheck = useCallback(async () => {
-    if (checking) return
+    const scope = lifecycle.current
+    if (checking || !scope?.isCurrent()) return
     setChecking(true)
     // 按密码去重 → 并发 3 逐个查
     const uniq = new Map()
@@ -100,20 +107,16 @@ export default function SecurityCenter({ items, onSelect }) {
     setProgress({ done: 0, total: entries.length })
     const results = { ...pwned }
     let done = 0
-    const CONC = 3
-    let idx = 0
-    const worker = async () => {
-      while (idx < entries.length) {
-        const [pw, ids] = entries[idx++]
-        const n = await pwnedCount(pw)
+    try {
+      await runVaultTasks(entries, async ([pw, ids], { signal }) => ({ ids, n: await pwnedCount(pw, { signal }) }), {
+        signal: scope.signal, isCurrent: scope.isCurrent, concurrency: 3, onResult: ({ ids, n }) => {
         for (const id of ids) results[id] = n
         done += 1
         setProgress({ done, total: entries.length })
         setPwned({ ...results })
-      }
-    }
-    await Promise.all([...Array(CONC)].map(worker))
-    setChecking(false)
+        },
+      })
+    } finally { if (lifecycle.current?.isCurrent()) setChecking(false) }
   }, [checking, withPw, pwned])
 
   const checked = Object.values(pwned).length > 0

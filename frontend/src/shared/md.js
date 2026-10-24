@@ -232,13 +232,14 @@ md.inline.ruler.after('escape', 'wiki_link', (state, silent) => {
  * @returns {Object} 目标 -> 文章ID
  */
 export function buildWikiMap(nodes) {
-  const m = {}
+  const m = Object.create(null)
   const posts = []
   const walk = (arr) => (arr || []).forEach(n => {
     if (n.id !== 0) posts.push(n)
     if (n.children) walk(n.children)
   })
   walk(nodes)
+  posts.sort((a, b) => Number(a.id) - Number(b.id))
   posts.forEach(p => { if (p.name && !(p.name in m)) m[p.name] = p.id })
   posts.forEach(p => { if (p.title && !(p.title in m)) m[p.title] = p.id })
   return m

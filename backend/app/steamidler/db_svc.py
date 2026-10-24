@@ -84,6 +84,18 @@ def list_accounts():
     return _run(_impl)
 
 
+def list_accounts_public():
+    """轮询投影不读取 refresh token、共享密钥内容和完整游戏库 JSON。"""
+    table = SteamidlerAccount.__table__.c
+    columns = [table[name] for name in ('steamid', 'account_name', 'avatar_url',
+               'idle_appids', 'auto_resume', 'farmed_seconds', 'created_at')]
+    def _impl(session):
+        rows = session.execute(select(*columns,
+            (table.shared_secret != '').label('shared_secret_set')).order_by(table.created_at))
+        return [dict(row._mapping) for row in rows]
+    return _run(_impl)
+
+
 def get_account(steamid):
     def _impl(session):
         acc = session.get(SteamidlerAccount, str(steamid))

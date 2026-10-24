@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     SmallInteger,
     String,
     Text,
@@ -172,4 +173,15 @@ class PracticeReview(Base):
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     next_interval_days: Mapped[Optional[int]] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PracticeMutation(Base):
+    """聚合编辑的耐久回执；重试同一请求返回原结果，不再次修改子行。"""
+
+    __tablename__ = "practice_mutations"
+    mutation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    problem_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

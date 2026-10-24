@@ -19,6 +19,8 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
   const [wx, setWx] = useState(null)          // {weather, location}
   const [wxState, setWxState] = useState('')  // '' | getting | done | denied
   const taRef = useRef(null)
+  const requestRef = useRef(null)
+  const [error, setError] = useState('')
 
   // 跟随侧栏选择：选中具体本子 → 用它；选“全部” → 退化到第一本
   useEffect(() => {
@@ -43,21 +45,28 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
     if (!text || busy) return
     if (!jid) return          // 随记必须选择日记本
     setBusy(true)
-    const payload = { content: text, entry_date: new Date().toISOString().slice(0, 10), journal_id: jid }
+    const payload = { content: text, entry_date: new Date().toLocaleDateString('sv-SE'), journal_id: jid }
     if (mood) payload.mood = mood
     if (wx?.weather) payload.weather = wx.weather
     if (wx?.location) payload.location = wx.location
-    const d = await diaryCreate(payload)
-    setBusy(false)
+    const fingerprint = JSON.stringify(payload)
+    if (requestRef.current?.fingerprint !== fingerprint) requestRef.current = { fingerprint, body: { ...payload, mutation_id: crypto.randomUUID() } }
+    try {
+    const d = await diaryCreate(requestRef.current.body)
+    if (!d.success) throw new Error(d.message || '保存失败')
+    requestRef.current = null; setError('')
     if (d.success) {
       setContent(''); setMood(''); setWx(null); setWxState('')
       onSaved(d.data)
       taRef.current?.focus()
     }
+    } catch (failure) { setError(failure.message || '保存失败，当前输入已保留') }
+    finally { setBusy(false) }
   }
 
   return (
     <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 shadow-sm">
+      {error && <p role="alert" className="text-xs text-red-600 dark:text-red-400 mb-2">{error}</p>}
       <textarea
         ref={taRef}
         value={content}

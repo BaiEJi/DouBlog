@@ -113,6 +113,10 @@ def _guard(fn):
 
 # ---------- tasks ----------
 
+@tasks_router.get('/calendar')
+async def task_calendar(from_: str = Query(..., alias='from'), to: str = ..., plan_only: bool = False):
+    return await run_db(_guard(lambda: api_response(task_svc.calendar_summary(db.session, from_, to, plan_only))))
+
 @tasks_router.get("")
 async def list_tasks(
     date: Optional[str] = None,
@@ -127,9 +131,12 @@ async def list_tasks(
     sort: str = "position",
     plan_only: bool = False,      # true: 只看规律生活计划实例
     exclude_plans: bool = False,  # true: 排除计划实例(Todo 视图用)
+    page: Optional[int] = None,
+    page_size: int = 50,
 ):
     def _impl():
         session = db.session
+        today = _today(session)
         rows = task_svc.list_tasks(
             session,
             date_str=date,
@@ -144,10 +151,14 @@ async def list_tasks(
             sort=sort,
             plan_only=plan_only,
             exclude_plans=exclude_plans,
+            page=page, page_size=page_size,
+            today=today,
         )
-        today = _today(session)
-        cats = task_svc._category_map(session)
+        items = rows['items'] if page is not None else rows
+        cats = task_svc._category_map(session) if any(t.category_id for t in items) else None
         # 列表序列化走原生 dict(与 TaskOut.model_dump(mode="json") 键值一致),省 pydantic 往返
+        if page is not None:
+            return api_response({**rows, 'items': [task_svc.serialize_task_dict(t, today, cats) for t in rows['items']]})
         return api_response([task_svc.serialize_task_dict(t, today, cats) for t in rows])
     return await run_db(_guard(_impl))
 
@@ -242,10 +253,13 @@ async def reopen_task(task_id: str):
 async def move_task(task_id: str, p: TaskMoveIn):
     def _impl():
         session = db.session
-        t = task_svc.move_task(session, task_id, p)
+        def mutate():
+            t = task_svc.move_task(session, task_id, p)
+            return _dump(task_svc.serialize_task(t, _today(session), task_svc._category_map(session)))
+        result = task_svc.reorder_mutation(session, task_id, p, 'move', mutate)
         session.commit()
         readcache.bump()
-        return api_response(_dump(task_svc.serialize_task(t, _today(session), task_svc._category_map(session))))
+        return api_response(result)
     return await run_db(_guard(_impl))
 
 
@@ -253,10 +267,13 @@ async def move_task(task_id: str, p: TaskMoveIn):
 async def reorder_task(task_id: str, p: TaskReorderIn):
     def _impl():
         session = db.session
-        t = task_svc.reorder_task(session, task_id, p)
+        def mutate():
+            t = task_svc.reorder_task(session, task_id, p)
+            return _dump(task_svc.serialize_task(t, _today(session), task_svc._category_map(session)))
+        result = task_svc.reorder_mutation(session, task_id, p, 'reorder', mutate)
         session.commit()
         readcache.bump()
-        return api_response(_dump(task_svc.serialize_task(t, _today(session), task_svc._category_map(session))))
+        return api_response(result)
     return await run_db(_guard(_impl))
 
 
@@ -461,16 +478,19 @@ async def today(request: Request, date: Optional[str] = None):
         if cache_state is None:
             cache_state = {}
             request.app.state.todo_today_cache = cache_state
-        key = (view_date, local_today(_tz(session)))
+        from app.db import current_runtime
+        runtime = current_runtime()
+        key = (runtime.identity, runtime.generation, view_date, local_today(_tz(session)))
         cached = readcache.get(cache_state, key)
         if cached is not None:
             return Response(content=cached, media_type="application/json")
+        read_epoch = readcache.epoch()
         try:
             out = day_svc.get_today(session, view_date)
         except ValueError as e:
             return api_response(None, 422, str(e))
         body = _today_envelope(out)
-        readcache.put(cache_state, key, body)
+        readcache.put(cache_state, key, body, read_epoch)
         return Response(content=body, media_type="application/json")
     return await run_db(_impl)
 

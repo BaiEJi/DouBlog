@@ -29,12 +29,13 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
-from sqlalchemy import and_, func, insert, select, text
+from sqlalchemy import and_, or_, case, cast, Integer, func, insert, select, text
 
 from lizysdk.errors import AuthError, ParamError
 
 from app.config import settings
-from app.db import db, run_db
+from app.db import db, run_db, current_runtime
+from app.shared.files import atomic_write_json
 from app.shared.auth import require_basic
 from app.shared.response import api_response
 from app.shared.timestamps import _iso, _utcnow
@@ -69,7 +70,7 @@ _FASTPATH = os.environ.get('SDKLOGS_FASTPATH', '1') != '0'
 BATCH_MAX = 1000
 QUERY_RESERVED = {'start', 'end', 'sys_name', 'level', 'level_gte', 'trace_id',
                   'q', 'limit', 'offset', 'format', 'buckets', 'top',
-                  'before', 'after', 'id'}
+                  'before', 'after', 'id', 'after_id', 'cursor', 'direction'}
 KEY_SAFE = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.')
 
 
@@ -82,7 +83,12 @@ _PAGE_COLS = ('id, ts, level, level_text, sys_name, file, line, trace_id, '
 _COUNT_ALL = text('SELECT count(*) FROM sdklogs_logs')
 _PAGE_ALL = text(f'SELECT {_PAGE_COLS} FROM sdklogs_logs '
                  'ORDER BY ts DESC, id DESC LIMIT :_lim OFFSET :_off')
-_COUNT_SYS = text('SELECT count(*) FROM sdklogs_logs WHERE sys_name = :_sn')
+_PAGE_META_ALL = text('SELECT (SELECT count(*) FROM sdklogs_logs), '
+                     '(SELECT max(id) FROM sdklogs_logs)')
+_PAGE_META_SYS = text('SELECT (SELECT count(*) FROM sdklogs_logs WHERE sys_name = :_sn), '
+                     '(SELECT max(id) FROM sdklogs_logs)')
+_GLOBAL_WATERMARK = select(func.max(SdkLog.id)).correlate(None).scalar_subquery()
+_FILTERED_COUNT = select(func.count()).select_from(SdkLog).correlate(None)
 _PAGE_SYS = text(f'SELECT {_PAGE_COLS} FROM sdklogs_logs WHERE sys_name = :_sn '
                  'ORDER BY ts DESC, id DESC LIMIT :_lim OFFSET :_off')
 
@@ -111,42 +117,54 @@ def _row_out(r):
 
 
 def _fast_page(fast_key, limit: int, offset: int):
-    """静态 SQL 取页：(总数, 行 dict 列表)；fast_key 为 None 时返回 None。"""
+    """静态 SQL 取页：(总数, 行 dict 列表, 全局 ID 水位)，两次数据库往返。"""
     if fast_key is None or not _FASTPATH:
         return None
     with db.engine.connect() as conn:
         if fast_key == 'all':
-            total = conn.execute(_COUNT_ALL).scalar()
+            total, watermark = conn.execute(_PAGE_META_ALL).one()
             rows = conn.execute(_PAGE_ALL, {'_lim': limit, '_off': offset}).fetchall()
         else:
-            total = conn.execute(_COUNT_SYS, {'_sn': fast_key}).scalar()
+            total, watermark = conn.execute(_PAGE_META_SYS, {'_sn': fast_key}).one()
             rows = conn.execute(_PAGE_SYS, {'_sn': fast_key, '_lim': limit,
                                              '_off': offset}).fetchall()
-    return total, [_row_out(r) for r in rows]
+    return total, [_row_out(r) for r in rows], watermark or 0
 
 
 # ─── 短 TTL 结果缓存（挂 app.state，多 app 测试互不泄漏；UI 轮询型端点专用）──
 
 _CACHE_TTL = 5.0        # 秒；下拉/直方图/统计秒级新鲜度足够
+_CACHE_MAX = 128
+_CACHE_LOCK = threading.Lock()
 
 
 def _cache_get(app, key):
     if not _FASTPATH:
         return None
-    box = getattr(app.state, 'sdklogs_cache', None)
-    if box is not None:
-        hit = box.get(key)
-        if hit is not None and hit[0] > time.monotonic():
-            return hit[1]
+    key = (current_runtime().generation, key)
+    with _CACHE_LOCK:
+        box = getattr(app.state, 'sdklogs_cache', None)
+        if box is not None:
+            hit = box.get(key)
+            if hit is not None and hit[0] > time.monotonic():
+                return hit[1]
     return None
 
 
 def _cache_put(app, key, value):
-    box = getattr(app.state, 'sdklogs_cache', None)
-    if box is None:
-        box = {}
-        app.state.sdklogs_cache = box
-    box[key] = (time.monotonic() + _CACHE_TTL, value)
+    key = (current_runtime().generation, key)
+    with _CACHE_LOCK:
+        box = getattr(app.state, 'sdklogs_cache', None)
+        if box is None:
+            box = {}
+            app.state.sdklogs_cache = box
+        now = time.monotonic()
+        if len(box) >= _CACHE_MAX:
+            for expired in [k for k, v in box.items() if v[0] <= now]:
+                box.pop(expired, None)
+            if len(box) >= _CACHE_MAX and key not in box:
+                box.pop(min(box, key=lambda k: box[k][0]))
+        box[key] = (now + _CACHE_TTL, value)
 
 
 # ─── 时间解析：无时区按配置时区解释，带时区直接采用 ────────
@@ -279,9 +297,17 @@ class _Pipeline:
 
     def __init__(self, app):
         self.app = app
-        self.q = queue.Queue(maxsize=settings.logs_queue_max)
+        self.q = queue.Queue()
         self.lock = threading.Lock()
-        self.stats = {'accepted': 0, 'dropped': 0, 'failed': 0, 'dead_letter': 0}
+        self._done = threading.Condition(self.lock)
+        self._queued_rows = self._queued_bytes = self._seq = 0
+        self._pending = set()
+        self.max_rows = max(1, settings.logs_queue_max)
+        self.max_bytes = max(1024, int(os.environ.get('LOGSDB_QUEUE_BYTES', 32 * 1024 * 1024)))
+        self.stats = {'accepted': 0, 'dropped': 0, 'failed': 0, 'dead_letter': 0,
+                      'persisted': 0, 'dead_letter_failed': 0}
+        self._data_dir = app.state.db_runtime.data_dir
+        self._dead_lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name='sdklogs-writer', daemon=True)
         self._started = False
@@ -302,58 +328,82 @@ class _Pipeline:
         self.submit_list([row])
 
     def submit_list(self, rows: list):
-        """入队（可整批作为一个队列元素，摊薄锁开销）；满则丢最旧并计数，永不阻塞接收协程。"""
+        """按行数及规范化 JSON 字节预算限长；批量保留单次队列锁，不阻塞接收者。"""
         self.ensure_started()
         n = len(rows)
-        while True:
-            try:
-                self.q.put_nowait(rows)
-                with self.lock:
-                    self.stats['accepted'] += n
-                return
-            except queue.Full:
+        sizes = [len(orjson.dumps(r)) for r in rows]
+        size = sum(sizes)
+        cut = 0
+        while cut < n and (n - cut > self.max_rows or size > self.max_bytes):
+            size -= sizes[cut]
+            cut += 1
+        with self._done:
+            if self._stop.is_set():
+                raise ParamError(message='日志管道正在停止，请重试')
+            self.stats['accepted'] += n
+            self.stats['dropped'] += cut
+            while (self._queued_rows + n - cut > self.max_rows or
+                   self._queued_bytes + size > self.max_bytes):
                 try:
-                    old = self.q.get_nowait()
-                    with self.lock:
-                        self.stats['dropped'] += len(old) if isinstance(old, list) else 1
+                    seq, old, old_bytes = self.q.get_nowait()
                 except queue.Empty:
-                    pass
+                    break
+                self._queued_rows -= len(old)
+                self._queued_bytes -= old_bytes
+                self.stats['dropped'] += len(old)
+                self._pending.discard(seq)
+                self.q.task_done()
+            if cut < n:
+                self._seq += 1
+                self._pending.add(self._seq)
+                self._queued_rows += n - cut
+                self._queued_bytes += size
+                self.q.put_nowait((self._seq, rows[cut:], size))
+            self._done.notify_all()
 
     def dead_letter(self, payload, reason: str):
         """坏日志/落库失败批次 → data/dead_letters/YYYYMMDD.jsonl（可整文件重放回 /logs/batch）。"""
         try:
-            d = os.path.join(settings.data_dir, 'dead_letters')
+            d = os.path.join(self._data_dir, 'dead_letters')
             os.makedirs(d, exist_ok=True)
             path = os.path.join(d, _utcnow().strftime('%Y%m%d') + '.jsonl')
             entry = {'reason': reason, 'received_at': _iso_now(), 'payload': payload}
-            with open(path, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+            with self._dead_lock, open(path, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(entry, ensure_ascii=False, default=str) + '\n')
             with self.lock:
                 self.stats['dead_letter'] += 1
         except OSError:
-            pass
+            with self.lock:
+                self.stats['dead_letter_failed'] += 1
+
+    def _take(self, timeout):
+        seq, rows, size = self.q.get(timeout=timeout)
+        with self.lock:
+            self._queued_rows -= len(rows)
+            self._queued_bytes -= size
+        return seq, rows
 
     def _batch_rows(self):
         """攒批：满 batch_size 或自首条起 flush_ms 到期才返回；返回 (行列表, 队列元素数)。
         队列元素可能是单行 dict 或整批 list（submit_list），统一摊平。"""
         rows = []
         try:
-            first = self.q.get(timeout=0.2)
+            seq, first = self._take(timeout=0.2)
         except queue.Empty:
-            return rows, 0
-        rows.extend(first if isinstance(first, list) else (first,))
-        items = 1
+            return rows, []
+        rows.extend(first)
+        items = [seq]
         deadline = time.monotonic() + settings.logs_flush_ms / 1000.0
         while len(rows) < settings.logs_batch_size:
             remain = deadline - time.monotonic()
             if remain <= 0:
                 break
             try:
-                item = self.q.get(timeout=remain)
+                seq, item = self._take(timeout=remain)
             except queue.Empty:
                 break
-            rows.extend(item if isinstance(item, list) else (item,))
-            items += 1
+            rows.extend(item)
+            items.append(seq)
         return rows, items
 
     def _run(self):
@@ -363,9 +413,19 @@ class _Pipeline:
             if not rows:
                 self._stop.wait(0.2)
                 continue
-            self._flush_rows(rows)
-            for _ in range(n_items):
-                self.q.task_done()
+            try:
+                self._flush_rows(rows)
+            except Exception:
+                with self.lock:
+                    self.stats['failed'] += len(rows)
+                for row in rows:
+                    self.dead_letter(row, 'writer_exception')
+            finally:
+                with self._done:
+                    self._pending.difference_update(n_items)
+                    self._done.notify_all()
+                for _ in n_items:
+                    self.q.task_done()
 
     def _flush_rows(self, rows):
         """批量落库：SQLite 走驱动级 executemany 快路径（绕过 ORM 逐行参数处理），
@@ -400,30 +460,35 @@ class _Pipeline:
                     if attempt < 2:
                         time.sleep(0.1 * (2 ** attempt))
         sess.remove()                     # 写者线程的 scoped session 用完即还
-        if not ok:
+        if ok:
+            with self.lock:
+                self.stats['persisted'] += len(rows)
+        else:
             with self.lock:
                 self.stats['failed'] += len(rows)
             for r in rows:
                 self.dead_letter(r, 'db_insert_failed')
 
     def flush(self, timeout: float = 5.0) -> bool:
-        """等待已入队日志全部落库或进死信（测试与停机语义用）。"""
+        """等待调用时的序号水位完成；后续持续摄入不延长本次等待，不创建 watcher。"""
         self.ensure_started()
-        done = threading.Event()
-
-        def _join():
-            self.q.join()
-            done.set()
-
-        watcher = threading.Thread(target=_join, daemon=True)
-        watcher.start()
-        return done.wait(timeout)
+        deadline = time.monotonic() + max(0, timeout)
+        with self._done:
+            target = self._seq
+            while any(seq <= target for seq in self._pending):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._done.wait(remaining)
+            return self.stats['dead_letter_failed'] == 0
 
     def stop(self, timeout: float = 5.0):
         """优雅停机：停接收 → 排空 → 退出（残留批次已由 _run 循环条件兜底落库/死信）。"""
         self._stop.set()
-        self.flush(timeout)
-        self._thread.join(timeout)
+        deadline = time.monotonic() + timeout
+        drained = self.flush(timeout)
+        self._thread.join(max(0, deadline - time.monotonic()))
+        return drained and not self._thread.is_alive()
 
 
 def _iso_now():
@@ -479,7 +544,16 @@ def _check_token(request: Request):
 async def _ingest_payload(request: Request) -> list:
     """请求体 → 记录列表：JSON 单对象 / JSON 数组 / JSONL 文本；非法直接抛 ParamError。"""
     ct = (request.headers.get('content-type') or '').lower()
-    raw = (await request.body()).decode('utf-8') or ''
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > 8 * 1024 * 1024:
+            raise ParamError(message='日志请求上限 8 MiB')
+        chunks.append(chunk)
+    try:
+        raw = b''.join(chunks).decode('utf-8')
+    except UnicodeDecodeError:
+        raise ParamError(message='日志必须使用 UTF-8')
     if 'json' in ct or (raw.lstrip()[:1] == '[' and raw.rstrip()[-1:] == ']'):
         try:
             obj = orjson.loads(raw)
@@ -626,19 +700,28 @@ async def search_logs(request: Request):
     try:
         limit = min(1000, max(1, int(request.query_params.get('limit', 100))))
         offset = max(0, int(request.query_params.get('offset', 0)))
+        after_id = int(request.query_params.get('after_id', 0))
+        if after_id < 0:
+            raise ValueError()
     except ValueError:
-        return api_response(None, 400, 'limit/offset 需为整数')
+        return api_response(None, 400, 'limit/offset/after_id 需为非负整数')
 
     def _impl():
+        if 'after_id' in request.query_params:
+            watermark = db.session.query(func.max(SdkLog.id)).scalar() or after_id
+            rows = db.session.query(SdkLog).filter(*filters, SdkLog.id > after_id, SdkLog.id <= watermark) \
+                .order_by(SdkLog.id.asc()).limit(limit + 1).all()
+            items = [row.to_dict() for row in rows[:limit]]
+            return api_response({'items': items, 'has_more': len(rows) > limit,
+                                 'next_after_id': items[-1]['id'] if len(rows) > limit else watermark,
+                                 'limit': limit, 'offset': 0})
         # 热路径（无过滤 / 单一 sys_name）：静态 SQL 直取，跳过 ORM 会话
         fast = _fast_page(fast_key, limit, offset)
         if fast is not None:
             return api_response({'total': fast[0], 'items': fast[1],
-                                 'limit': limit, 'offset': offset})
-        q = db.session.query(SdkLog)
-        for f in filters:
-            q = q.filter(f)
-        total = q.count()
+                                 'limit': limit, 'offset': offset, 'next_after_id': fast[2]})
+        count = _FILTERED_COUNT.where(*filters).scalar_subquery()
+        total, watermark = db.session.execute(select(count, _GLOBAL_WATERMARK)).one()
         # Core 直取列 + 手工装 dict：省掉 ORM 实例化与逐行 to_dict（百行级省毫秒）
         sel = (select(SdkLog.id, SdkLog.ts, SdkLog.level, SdkLog.level_text, SdkLog.sys_name,
                       SdkLog.file, SdkLog.line, SdkLog.trace_id, SdkLog.message,
@@ -650,7 +733,7 @@ async def search_logs(request: Request):
                   'message': r[8], 'fields': r[9] or {}, 'received_at': _iso(r[10])}
                  for r in db.session.execute(sel)]
         return api_response({'total': total, 'items': items,
-                             'limit': limit, 'offset': offset})
+                             'limit': limit, 'offset': offset, 'next_after_id': watermark or 0})
     return await run_db(_impl)
 
 
@@ -713,11 +796,19 @@ async def stats(request: Request):
         _cache_put(request.app, 'stats', (by_sys, by_level, total_rows))
 
     p = getattr(request.app.state, 'sdklogs_pipeline', None)
-    counters = dict(p.stats) if p else {'accepted': 0, 'dropped': 0, 'failed': 0, 'dead_letter': 0}
+    if p:
+        with p.lock:
+            counters = dict(p.stats)
+            queue_rows, queue_bytes = p._queued_rows, p._queued_bytes
+    else:
+        counters = {'accepted': 0, 'dropped': 0, 'failed': 0, 'dead_letter': 0,
+                    'persisted': 0, 'dead_letter_failed': 0}
+        queue_rows = queue_bytes = 0
     return api_response({
         'h24_by_sys': by_sys,
         'h24_by_level': by_level,
         'queue_size': p.q.qsize() if p else 0,
+        'queue_rows': queue_rows, 'queue_bytes': queue_bytes,
         'total_rows': total_rows,
         **counters,
     })
@@ -727,12 +818,7 @@ async def stats(request: Request):
 
 @router.get('/logs/histogram', dependencies=[Depends(require_basic)])
 async def histogram(request: Request):
-    """时间直方图：把过滤命中的行按等宽时间桶 × 级别计数。
-
-    单用户量级（≤10 万行窗口）直接拉 (ts, level) 在 Python 聚合，
-    避免跨方言的日期分桶 SQL。缺省时间窗 = 最近 24h。
-    结果按查询串短 TTL 缓存（前端直方图轮询高频、桶数据秒级新鲜度足够）。
-    """
+    """数据库分桶聚合，返回量受桶数限制，不截断命中日志。"""
     filters, err, _fast = _build_filters(request)
     if err is not None:
         return err
@@ -742,9 +828,10 @@ async def histogram(request: Request):
         return api_response(None, 400, 'buckets 需为整数')
     start = _parse_query_ts(request.query_params.get('start'))
     end = _parse_query_ts(request.query_params.get('end'), is_end=True)
-    if not start or not end or end <= start:
-        end = _utcnow()
-        start = end - timedelta(hours=24)
+    end = end or _utcnow()
+    start = start or end - timedelta(hours=24)
+    if end <= start:
+        return api_response(None, 400, 'end 必须晚于 start')
 
     cache_key = ('hist', str(request.query_params))
     cached = _cache_get(request.app, cache_key)
@@ -753,13 +840,21 @@ async def histogram(request: Request):
 
     def _impl():
         bucket_secs = max(1, int((end - start).total_seconds() / buckets_n))
-        rows = (db.session.query(SdkLog.ts, SdkLog.level)
+        if db.engine.dialect.name == 'sqlite':
+            epoch = int(start.replace(tzinfo=timezone.utc, microsecond=0).timestamp())
+            # 整数微秒避免 julianday 浮点误差把边界日志分到前一桶。
+            micros = ((cast(func.strftime('%s', func.substr(SdkLog.ts, 1, 19)), Integer) - epoch)
+                      * 1000000 + cast(func.substr(SdkLog.ts, 21, 6), Integer) - start.microsecond)
+            raw_bucket = cast(micros / (bucket_secs * 1000000), Integer)
+        else:
+            raw_bucket = cast(func.floor(func.extract('epoch', SdkLog.ts - start) / bucket_secs), Integer)
+        bucket = case((raw_bucket >= buckets_n, buckets_n - 1), else_=raw_bucket)
+        rows = (db.session.query(bucket, SdkLog.level, func.count(SdkLog.id))
                 .filter(SdkLog.ts >= start, SdkLog.ts <= end, *filters)
-                .order_by(SdkLog.ts).limit(100000).all())
+                .group_by(bucket, SdkLog.level).all())
         counts = [dict.fromkeys(LEVELS, 0) for _ in range(buckets_n)]
-        for ts, level in rows:
-            idx = min(buckets_n - 1, max(0, int((ts - start).total_seconds() // bucket_secs)))
-            counts[idx][_LEVEL_NAMES.get(level, 'INFO')] += 1
+        for idx, level, count in rows:
+            counts[max(0, idx)][_LEVEL_NAMES.get(level, 'INFO')] += count
         buckets = []
         for i, c in enumerate(counts):
             b_start = start + timedelta(seconds=i * bucket_secs)
@@ -795,10 +890,12 @@ async def log_context(request: Request):
                     'file': r[4], 'line': r[5], 'trace_id': r[6], 'message': r[7], 'anchor': anchor_flag}
 
         prev = list(db.session.execute(
-            select(*sel_cols).where(and_(SdkLog.ts <= anchor.ts, SdkLog.id != anchor.id))
+            select(*sel_cols).where(or_(SdkLog.ts < anchor.ts,
+                                       and_(SdkLog.ts == anchor.ts, SdkLog.id < anchor.id)))
             .order_by(SdkLog.ts.desc(), SdkLog.id.desc()).limit(before)))[::-1]
         nxt = list(db.session.execute(
-            select(*sel_cols).where(and_(SdkLog.ts >= anchor.ts, SdkLog.id != anchor.id))
+            select(*sel_cols).where(or_(SdkLog.ts > anchor.ts,
+                                       and_(SdkLog.ts == anchor.ts, SdkLog.id > anchor.id)))
             .order_by(SdkLog.ts.asc(), SdkLog.id.asc()).limit(after)))
         items = [_dict(r) for r in prev] + \
             [_dict((anchor.id, anchor.ts, anchor.level_text, anchor.sys_name, anchor.file,
@@ -846,7 +943,9 @@ async def log_patterns(request: Request):
 
     def _impl():
         rows = (db.session.query(SdkLog.message, SdkLog.level_text)
-                .filter(*filters).order_by(SdkLog.ts.desc()).limit(20000).all())
+                .filter(*filters).order_by(SdkLog.ts.desc()).limit(20001).all())
+        has_more = len(rows) > 20000
+        rows = rows[:20000]
         grouped = {}
         for message, level_text in rows:
             tpl = templatize(message)
@@ -854,62 +953,82 @@ async def log_patterns(request: Request):
             g['count'] += 1
             g['levels'][level_text] = g['levels'].get(level_text, 0) + 1
         items = sorted(grouped.values(), key=lambda g: -g['count'])[:top]
-        return api_response({'items': items, 'analyzed': len(rows), 'distinct': len(grouped)})
+        return api_response({'items': items, 'analyzed': len(rows), 'distinct': len(grouped),
+                             'sampled': has_more, 'analysis_limit': 20000})
     return await run_db(_impl)
 
 
-EXPORT_MAX = 10000
+EXPORT_BATCH = 500
 
 
 @router.get('/logs/export', dependencies=[Depends(require_basic)])
 async def export_logs(request: Request):
-    """按当前查询条件导出 CSV / JSON（上限 1 万条，流式生成）。"""
+    """Keyset 分批导出全部命中；高水位排除导出开始后的新增行。"""
     filters, err, _fast = _build_filters(request)
     if err is not None:
         return err
     fmt = request.query_params.get('format', 'csv').lower()
     if fmt not in ('csv', 'json'):
         return api_response(None, 400, 'format 仅支持 csv / json')
+    high_water = await run_db(lambda: db.session.query(func.max(SdkLog.id)).scalar() or 0)
+    # 捕获源 engine；切库后继续导出也不读取新库同 ID 的记录。
+    engine = db.engine
 
-    def _impl():
-        sel = (select(SdkLog.ts, SdkLog.level_text, SdkLog.sys_name, SdkLog.file,
-                      SdkLog.line, SdkLog.trace_id, SdkLog.message, SdkLog.fields)
-               .where(*filters).order_by(SdkLog.ts.desc(), SdkLog.id.desc()).limit(EXPORT_MAX))
-        return db.session.execute(sel).fetchall()   # 取回后再流式拼装（session 不跨协程）
+    def _page(cursor):
+        conditions = [*filters, SdkLog.id <= high_water]
+        if cursor is not None:
+            ts, row_id = cursor
+            conditions.append(or_(SdkLog.ts < ts, and_(SdkLog.ts == ts, SdkLog.id < row_id)))
+        sel = (select(SdkLog.id, SdkLog.ts, SdkLog.level_text, SdkLog.sys_name,
+                      SdkLog.file, SdkLog.line, SdkLog.trace_id, SdkLog.message, SdkLog.fields)
+               .where(*conditions).order_by(SdkLog.ts.desc(), SdkLog.id.desc()).limit(EXPORT_BATCH))
+        with engine.connect() as conn:
+            return conn.execute(sel).fetchall()
 
-    rows = await run_db(_impl)
-    stamp = _utcnow().strftime('%Y%m%d-%H%M%S')
-
-    def _gen_csv():
-        import csv as _csv
-        import io as _io
-        buf = _io.StringIO()
-        w = _csv.writer(buf)
-        w.writerow(['ts', 'level', 'sys_name', 'file', 'line', 'trace_id', 'message', 'fields'])
-        yield buf.getvalue()
-        buf.seek(0); buf.truncate(0)
-        for r in rows:
-            w.writerow([r[0].isoformat(), r[1], r[2], r[3] or '', r[4] or '', r[5] or '',
-                        r[6], json.dumps(r[7] or {}, ensure_ascii=False)])
+    async def _generate():
+        import csv
+        import io
+        first, cursor = True, None
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        if fmt == 'json':
+            yield '['
+        else:
+            writer.writerow(['ts', 'level', 'sys_name', 'file', 'line', 'trace_id', 'message', 'fields'])
             yield buf.getvalue()
             buf.seek(0); buf.truncate(0)
+        while True:
+            if await request.is_disconnected():
+                return
+            rows = await run_db(lambda: _page(cursor))
+            if not rows:
+                break
+            out = []
+            for row in rows:
+                _, ts, level, sys_name, file, line, trace_id, message, fields = row
+                if fmt == 'json':
+                    out.append(('' if first else ',') + orjson.dumps({
+                        'ts': _iso(ts), 'level': level, 'sys_name': sys_name, 'file': file,
+                        'line': line, 'trace_id': trace_id, 'message': message, 'fields': fields or {},
+                    }).decode())
+                    first = False
+                else:
+                    writer.writerow([_iso(ts), level, sys_name, file or '', line or '',
+                                     trace_id or '', message, json.dumps(fields or {}, ensure_ascii=False)])
+            yield ''.join(out) if fmt == 'json' else buf.getvalue()
+            buf.seek(0); buf.truncate(0)
+            cursor = rows[-1][1], rows[-1][0]
+            if len(rows) < EXPORT_BATCH:
+                break
+        if fmt == 'json':
+            yield ']'
 
-    def _gen_json():
-        first = True
-        yield '['
-        for r in rows:
-            yield ('' if first else ',') + orjson.dumps(
-                {'ts': r[0].isoformat(), 'level': r[1], 'sys_name': r[2], 'file': r[3],
-                 'line': r[4], 'trace_id': r[5], 'message': r[6], 'fields': r[7] or {}},
-            ).decode('utf-8')
-            first = False
-        yield ']'
-
+    stamp = _utcnow().strftime('%Y%m%d-%H%M%S')
     mt = 'text/csv' if fmt == 'csv' else 'application/json'
-    return StreamingResponse(_gen_csv() if fmt == 'csv' else _gen_json(),
-                             media_type=mt,
-                             headers={'Content-Disposition': f'attachment; filename=logs-{stamp}.{fmt}',
-                                      'Content-Type': f'{mt}; charset=utf-8'})
+    return StreamingResponse(_generate(), media_type=mt, headers={
+        'Content-Disposition': f'attachment; filename=logs-{stamp}.{fmt}',
+        'Content-Type': f'{mt}; charset=utf-8', 'X-Log-Snapshot-Max-Id': str(high_water),
+    })
 
 
 @router.get('/logs/trace', dependencies=[Depends(require_basic)])
@@ -921,13 +1040,16 @@ async def trace_view(request: Request):
 
     def _impl():
         rows = (db.session.query(SdkLog).filter(SdkLog.trace_id == tid)
-                .order_by(SdkLog.ts.asc(), SdkLog.id.asc()).limit(1000).all())
+                .order_by(SdkLog.ts.asc(), SdkLog.id.asc()).limit(1001).all())
+        has_more = len(rows) > 1000
+        rows = rows[:1000]
         items = [r.to_dict() for r in rows]
         span = None
         if items:
             span = {'start': items[0]['ts'], 'end': items[-1]['ts'],
                     'span_ms': int((rows[-1].ts - rows[0].ts).total_seconds() * 1000)}
-        return api_response({'trace_id': tid, 'items': items, 'span': span})
+        return api_response({'trace_id': tid, 'items': items, 'span': span,
+                             'has_more': has_more, 'limit': 1000})
     return await run_db(_impl)
 
 
@@ -942,7 +1064,7 @@ DEFAULT_ALERT_CFG = {'enabled': False, 'level_gte': 'ERROR', 'threshold': 10,
 
 
 def _alert_cfg_path():
-    return os.path.join(settings.data_dir, 'logs_alerts.json')
+    return os.path.join(current_runtime().data_dir, 'logs_alerts.json')
 
 
 def load_alert_cfg() -> dict:
@@ -964,10 +1086,8 @@ def load_alert_cfg() -> dict:
 
 
 def save_alert_cfg(cfg: dict):
-    os.makedirs(settings.data_dir, exist_ok=True)
-    with open(_alert_cfg_path(), 'w', encoding='utf-8') as f:
-        json.dump({k: cfg.get(k, DEFAULT_ALERT_CFG[k]) for k in ALERT_CFG_KEYS},
-                  f, ensure_ascii=False, indent=2)
+    atomic_write_json(_alert_cfg_path(),
+                      {k: cfg.get(k, DEFAULT_ALERT_CFG[k]) for k in ALERT_CFG_KEYS})
 
 
 def _webhook_notify(url: str, payload: dict):
@@ -1119,15 +1239,21 @@ async def alerts_ack(request: Request):
 def start_alert_loop(app):
     """每 60s 巡检一次告警（daemon，随进程；测试直接调 check_alerts）。"""
     def _loop():
-        time.sleep(10)
-        while True:
+        stop = app.state.sdklogs_stop
+        if stop.wait(10):
+            return
+        while not stop.is_set():
             try:
-                check_alerts(app)
+                from app.db import database_context
+                with database_context(app):
+                    check_alerts(app)
             except Exception:  # noqa: BLE001
                 from app.shared.modules import mod_logger
                 mod_logger('sdklogs').warning('告警巡检失败', exc_info=True)
-            time.sleep(60)
-    threading.Thread(target=_loop, name='sdklogs-alerts', daemon=True).start()
+            stop.wait(60)
+    thread = threading.Thread(target=_loop, name='sdklogs-alerts', daemon=True)
+    app.state.sdklogs_threads.append(thread)
+    thread.start()
 
 
 # ─── 保留策略（每日清理；0=永久）─────────────────────────
@@ -1146,7 +1272,7 @@ def run_retention(app) -> int:
     finally:
         db.session.rollback()
         db.session.remove()      # 可能被 run_db 或后台线程直接调用，用完即还
-    d = os.path.join(settings.data_dir, 'dead_letters')
+    d = os.path.join(current_runtime().data_dir, 'dead_letters')
     if os.path.isdir(d):
         cutoff_name = cutoff.strftime('%Y%m%d')
         for name in os.listdir(d):
@@ -1162,23 +1288,55 @@ def run_retention(app) -> int:
 def start_retention_loop(app):
     """每日一次保留清理线程（daemon，随进程；测试直接调 run_retention）。"""
     def _loop():
-        time.sleep(5)
-        while True:
+        stop = app.state.sdklogs_stop
+        if stop.wait(5):
+            return
+        while not stop.is_set():
             try:
-                run_retention(app)
+                from app.db import database_context
+                with database_context(app):
+                    run_retention(app)
             except Exception:  # noqa: BLE001
                 from app.shared.modules import mod_logger
                 mod_logger('sdklogs').warning('保留清理失败', exc_info=True)
-            time.sleep(24 * 3600)
-    threading.Thread(target=_loop, name='sdklogs-retention', daemon=True).start()
+            stop.wait(24 * 3600)
+    thread = threading.Thread(target=_loop, name='sdklogs-retention', daemon=True)
+    app.state.sdklogs_threads.append(thread)
+    thread.start()
 
 
 def start_background(app):
     """模块后台线程入口（main.py 钩子）：保留清理 + 告警巡检；testing 时空转。"""
     if getattr(app.state, 'testing', False):
         return
+    stop = getattr(app.state, 'sdklogs_stop', None)
+    if stop is not None and not stop.is_set():
+        return
+    app.state.sdklogs_stop = threading.Event()
+    app.state.sdklogs_threads = []
     start_retention_loop(app)
     start_alert_loop(app)
+
+
+def drain_background(app, timeout=5.0):
+    pipeline = getattr(app.state, 'sdklogs_pipeline', None)
+    return pipeline.flush(timeout) if pipeline else True
+
+
+def stop_background(app, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    app.state.sdklogs_cache = {}
+    stop = getattr(app.state, 'sdklogs_stop', None)
+    if stop:
+        stop.set()
+    pipeline = getattr(app.state, 'sdklogs_pipeline', None)
+    ok = pipeline.stop(max(0, deadline - time.monotonic())) if pipeline else True
+    if ok and pipeline:
+        app.state.sdklogs_pipeline = None
+    for thread in getattr(app.state, 'sdklogs_threads', []):
+        thread.join(max(0, deadline - time.monotonic()))
+        ok = ok and not thread.is_alive()
+    return ok
 
 
 def ensure_migrations(engine):

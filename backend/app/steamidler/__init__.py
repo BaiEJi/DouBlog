@@ -10,6 +10,12 @@
 - 舍弃源版 main.py(CORS/静态托管由宿主管)与 /health(Doublog 全局提供)
 """
 from .routes import router
+from .manager import stop_manager as stop_background
+
+
+def drain_background(app, timeout=5.0):
+    # worker 的最后累计写入在 stop_background 的统一期限内完成。
+    return True
 
 
 def start_background(app):

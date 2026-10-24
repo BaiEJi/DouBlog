@@ -5,9 +5,9 @@
 import { useEffect, useState } from 'react'
 
 import { statsOverview, statusMeta } from '../api'
-import { Card, Empty, Spinner, StatTile } from '../../../todo/kit'
+import { Card, Empty, Spinner, StatTile } from '@/shared/ui/kit'
 import { adjustForDark } from '../../../todo/kit'
-import { DonutPie } from '../../../todo/charts'
+import { DonutPie } from '@/shared/ui/charts'
 
 const STATUS_COLORS = { unread: '#f97316', reading: '#3b82f6', read: '#10b981', archived: '#a8a29e' }
 

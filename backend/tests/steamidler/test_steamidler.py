@@ -18,17 +18,6 @@ import time
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def _reset_module_state():
-    """复位模块级状态:login/status 的 maybe_complete 去重集合。"""
-    from app.steamidler import routes
-    with routes._completed_lock:
-        routes._completed_attempts.clear()
-    yield
-    with routes._completed_lock:
-        routes._completed_attempts.clear()
-
-
 @pytest.fixture
 def manager(app):
     """该 app 的 steamidler Manager(挂 app.state;构造不启动任何线程)。"""
@@ -439,6 +428,9 @@ def test_manager_start_resumes_accounts(app, db_svc, monkeypatch):
 
         def join(self, timeout=None):
             pass
+
+        def is_alive(self):
+            return not self.stopped
 
     monkeypatch.setattr(manager_mod, "AccountWorker", _FakeWorker)
 

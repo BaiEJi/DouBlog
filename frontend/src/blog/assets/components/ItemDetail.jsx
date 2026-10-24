@@ -4,10 +4,11 @@
  * onAction(action, item) 由页面执行动作并刷新；onRefresh() 仅刷新列表。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import DiffViewer from '@/shared/DiffViewer'
 import md, { renderMermaidDiagrams } from '@/shared/md'
 import { assetsExportItem, assetsItem, assetsItemArchive, assetsItemFiles, assetsRestoreVersion, assetsUseItem, assetsVersion, assetsVersions } from '../api'
 import FileTree, { FileViewerModal } from './FileTree'
-import { KIND_META, copyText, diffLines } from '../kit'
+import { KIND_META, copyText } from '../kit'
 
 const FILL_KEY = id => `doublog_assets_fill_${id}`
 
@@ -91,14 +92,16 @@ function VariableFill({ item, toast, onUsed }) {
 
 function VersionPanel({ item, dark, toast, onChanged }) {
   const [versions, setVersions] = useState(null)
+  const [versionPage, setVersionPage] = useState(1)
+  const [versionTotal, setVersionTotal] = useState(0)
   const [compare, setCompare] = useState(null)   // 被选中对比的版本详情
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(() => {
-    assetsVersions(item.id).then(r => {
-      if (r.success) setVersions(r.data)
+    assetsVersions(item.id, versionPage).then(r => {
+      if (r.success) { setVersions(r.data.items); setVersionTotal(r.data.total) }
     })
-  }, [item.id])
+  }, [item.id, versionPage])
   useEffect(load, [load])
 
   const pick = async v => {
@@ -125,9 +128,13 @@ function VersionPanel({ item, dark, toast, onChanged }) {
   if (versions === null) return <p className="text-[12.5px] text-stone-400">加载中…</p>
   if (!versions.length) return <p className="text-[12.5px] text-stone-400">暂无版本记录。</p>
 
-  const diff = compare ? diffLines(compare.content, item.content) : null
   return (
     <div className="space-y-3">
+      <div className="flex items-center gap-3 text-xs text-stone-500">
+        <button type="button" disabled={versionPage <= 1} onClick={() => setVersionPage(v => v - 1)} className="disabled:opacity-30">上一页</button>
+        <span>{versionPage} / {Math.max(1, Math.ceil(versionTotal / 20))} · {versionTotal} 个版本</span>
+        <button type="button" disabled={versionPage * 20 >= versionTotal} onClick={() => setVersionPage(v => v + 1)} className="disabled:opacity-30">下一页</button>
+      </div>
       <div className="space-y-1.5">
         {versions.map(v => (
           <div key={v.id}
@@ -155,22 +162,7 @@ function VersionPanel({ item, dark, toast, onChanged }) {
             对比：<span className="font-mono">v{compare.version}</span> → <span className="font-mono">v{item.version}（当前）</span>
           </p>
           <div className="rounded-xl border border-black/[0.07] dark:border-white/[0.09] overflow-hidden">
-            {(() => {
-              const rows = diff.filter(r => r.type !== 'same' || r.text.trim()).slice(0, 400)
-              if (!rows.length) return <p className="px-3.5 py-3 text-[12px] text-stone-400">两个版本内容一致</p>
-              return (
-                <table className="w-full text-[12px] font-mono">
-                  <tbody>
-                    {rows.map((r, i) => (
-                      <tr key={i} className={r.type === 'add' ? 'bg-emerald-500/[0.08]' : r.type === 'del' ? 'bg-red-500/[0.08]' : ''}>
-                        <td className="w-7 px-2 py-0.5 text-center text-stone-400 select-none">{r.type === 'add' ? '+' : r.type === 'del' ? '−' : ''}</td>
-                        <td className="px-1 py-0.5 whitespace-pre-wrap break-words">{r.text || ' '}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            })()}
+            <DiffViewer a={compare.content || ''} b={item.content || ''} view="unified" height={420} />
           </div>
         </div>
       )}

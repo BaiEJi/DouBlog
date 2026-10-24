@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { API_BASE } from '../shared/client'
+import { advanceDataEpoch } from '../shared/dataEpoch'
 
 const INPUT = 'w-full px-3 py-2 rounded-lg border text-sm ' +
   'border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] ' +
@@ -22,7 +23,7 @@ export default function LoginPage({ dark, setDark }) {
 
   const next = params.get('next') || '/'
   // next=/login（历史脏 URL，如 /login?next=%2Flogin）会导致"登录成功又回到登录页"，兜底回门户
-  const safeNext = next.startsWith('/') && !next.startsWith('//') && next !== '/login' ? next : '/'
+  const safeNext = next.startsWith('/') && !next.startsWith('//') && !next.includes('\\') && !Array.from(next).some(char => char.charCodeAt(0) < 32) && !/^\/login(?:[/?#]|$)/.test(next) ? next : '/'
 
   async function submit(e) {
     e.preventDefault()
@@ -37,6 +38,7 @@ export default function LoginPage({ dark, setDark }) {
       })
       const body = await r.json().catch(() => ({}))
       if (r.ok && body.success) {
+        advanceDataEpoch()
         navigate(safeNext, { replace: true })
         return
       }

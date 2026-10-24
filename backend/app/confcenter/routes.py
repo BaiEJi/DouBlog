@@ -21,6 +21,7 @@ import json
 import orjson
 import re
 import time
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import bindparam, func, select
@@ -29,14 +30,32 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from app.confcenter import cache, ratelimit
 from app.confcenter.models import ConfEntry, ConfNamespace
 from app.config import settings
-from app.db import db, run_db
+from app.db import db, current_runtime, database_context, run_db as _shared_run_db
 from app.shared.auth import require_basic
 from app.shared.response import api_response
+from app.shared.pools import get_pool
 from app.shared.timestamps import _iso, _utcnow
 from lizysdk.errors import NotFoundError, ParamError
 
 router = APIRouter(prefix='/api/confcenter', tags=['confcenter'],
                    dependencies=[Depends(require_basic)])
+
+
+async def run_db(fn, *args, **kwargs):
+    """Redis 读穿与限流可能阻塞；隔离到模块池，沿用公共 DB 代次/清理/取消。"""
+    return await _shared_run_db(fn, *args, _pool=get_pool('confcenter-db', workers=8), **kwargs)
+
+
+async def _run_cache(fn, *args):
+    """Management includes file writes/client lifecycle; retain admission until done."""
+    with database_context(current_runtime(), write=True):
+        return await _shared_run_db(fn, *args, _pool=get_pool('confcenter-cache', workers=8))
+
+
+def _save_configuration(state, cfg, save):
+    with state.lock:
+        save(cfg)
+        state.apply_config(cfg)
 
 #: namespace/key 字符白名单（防注入；: 允许——缓存键本身就以冒号分隔）
 NAME_RE = re.compile(r'^[A-Za-z0-9_.:-]+$')
@@ -245,7 +264,7 @@ async def list_entries(request: Request):
 async def get_cache_status(request: Request):
     """缓存状态 {enabled, reachable, url_masked, hits, misses}——不可达时 enabled=false 不报错。"""
     state = cache.get_cache_state(request.app)
-    return api_response(cache.cache_status(state))
+    return api_response(await _run_cache(cache.cache_status, state))
 
 
 @router.get('/cache/config')
@@ -264,8 +283,7 @@ async def put_cache_config(request: Request):
         cfg = cache.normalize_config(body, current=state.config)
     except ValueError as e:
         raise ParamError(message=str(e))
-    cache.save_redis_config(cfg)
-    state.apply_config(cfg)          # 快照更新 + 客户端作废（惰性重建）
+    await _run_cache(_save_configuration, state, cfg, cache.save_redis_config)
     return api_response(cfg, 200, '缓存配置已保存')
 
 
@@ -280,9 +298,9 @@ async def test_cache_connection(request: Request):
             cfg = cache.normalize_config(body, current=state.config)
         except ValueError as e:
             raise ParamError(message=str(e))
-    ok, message = cache.test_connection(cfg)
-    if ok:
-        state.failed = False
+    ok, message = await _run_cache(cache.test_connection, cfg)
+    if ok and cfg == state.config:
+        await _run_cache(cache.cache_status, state)
     return api_response({'ok': ok, 'message': message})
 
 
@@ -290,7 +308,7 @@ async def test_cache_connection(request: Request):
 async def flush_cache(request: Request):
     """按前缀 SCAN+DEL 清理本模块缓存键（管理用）。"""
     state = cache.get_cache_state(request.app)
-    ok, message, deleted = cache.cache_flush(state)
+    ok, message, deleted = await _run_cache(cache.cache_flush, state)
     return api_response({'ok': ok, 'deleted': deleted, 'message': message},
                         200, message if not ok else '缓存已清空')
 
@@ -301,7 +319,7 @@ async def flush_cache(request: Request):
 async def get_ratelimit_status(request: Request):
     """限流状态 {enabled, mode: off|local|redis, limit, window_seconds,
     overrides, allowed, rejected, tracked, redis}。"""
-    return api_response(ratelimit.status(request.app))
+    return api_response(await _run_cache(ratelimit.status, request.app))
 
 
 @router.get('/ratelimit/config')
@@ -325,8 +343,7 @@ async def put_ratelimit_config(request: Request):
         cfg = ratelimit.normalize_config(body, current=state.config)
     except ValueError as e:
         raise ParamError(message=str(e))
-    ratelimit.save_config(cfg)
-    state.apply_config(cfg)       # 快照更新 + 本地窗口清空（新额度立即生效）
+    await _run_cache(_save_configuration, state, cfg, ratelimit.save_config)
     return api_response(cfg, 200, '限流配置已保存')
 
 
@@ -338,101 +355,10 @@ async def reset_ratelimit(request: Request):
     if (not isinstance(namespace, str) or not namespace
             or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
         raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
-    return api_response(ratelimit.reset(request.app, namespace), 200, '已清零')
+    return api_response(await _run_cache(ratelimit.reset, request.app, namespace), 200, '已清零')
 
 
-@router.put('/rename')
-async def rename_entry(request: Request):
-    """同空间内重命名 key：单事务「拷贝行（保留 type/data/updated_at）→ 删旧行」，
-    不产生中间态；旧 key 不存在 404，新 key 已存在 409。缓存对两个 key 都失效。
-
-    字面量单段路由，天然先于 /{namespace}/{key} 两段参数路由匹配。
-    """
-    body = await _json_body(request)
-    namespace = body.get('namespace')
-    old_key = body.get('old_key')
-    new_key = body.get('new_key')
-    if (not isinstance(namespace, str) or not namespace
-            or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
-        raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
-    if (not isinstance(old_key, str) or not old_key or len(old_key) > KEY_MAX
-            or not NAME_RE.match(old_key)):
-        raise ParamError(message='old_key 含非法字符（仅允许字母数字 _ . : -）')
-    if (not isinstance(new_key, str) or not new_key or len(new_key) > KEY_MAX
-            or not NAME_RE.match(new_key)):
-        raise ParamError(message='new_key 含非法字符（仅允许字母数字 _ . : -）')
-    if old_key == new_key:
-        return api_response({'namespace': namespace, 'key': new_key}, 200, 'key 未变化')
-
-    await run_db(lambda: ratelimit.check(request.app, namespace))
-
-    def _rename():
-        state = cache.get_cache_state(request.app)
-
-        def _attempt() -> str | None:
-            """'ok' / None(404) / 'conflict'(409)；并发撞新主键由 _run_write 整事务重试。"""
-            with db.engine.begin() as conn:
-                old_row = conn.execute(_GET_ROW, {'ns': namespace, 'k': old_key}).first()
-                if old_row is None:
-                    return None
-                if conn.execute(_GET_ROW, {'ns': namespace, 'k': new_key}).first() is not None:
-                    return 'conflict'
-                conn.execute(_TBL.insert().values(
-                    namespace=namespace, key=new_key, type=old_row[0],
-                    data=old_row[1], updated_at=old_row[2]))
-                conn.execute(_DELETE_ROW, {'ns': namespace, 'k': old_key})
-                return 'ok'
-
-        result = _run_write(_attempt)
-        if result == 'ok':
-            cache.cache_invalidate(state, namespace, old_key)
-            cache.cache_invalidate(state, namespace, new_key)
-        return result
-
-    result = await run_db(_rename)
-    if result is None:
-        raise NotFoundError(message='配置项不存在')
-    if result == 'conflict':
-        return api_response(None, 409, '目标 key 已存在')
-    return api_response({'namespace': namespace, 'key': new_key}, 200, '已重命名')
-
-
-# ─── 单条 CRUD（参数路由放最后；三条路由开头均按 namespace 限流）──
-
-@router.get('/{namespace}/{key}')
-async def get_entry(namespace: str, key: str, request: Request):
-    """读单条：先缓存后 DB（未命中回填）；data 按解析后返回。"""
-    await run_db(lambda: ratelimit.check(request.app, namespace))
-
-    def _read():
-        state = cache.get_cache_state(request.app)
-        payload = cache.cache_get(state, namespace, key)
-        if payload is not None:
-            return payload
-        with db.engine.connect() as conn:
-            row = conn.execute(_GET_ROW, {'ns': namespace, 'k': key}).first()
-        if row is None:
-            return None
-        payload = _row_payload(row)
-        cache.cache_put(state, namespace, key, payload)
-        return payload
-
-    payload = await run_db(_read)
-    if payload is None:
-        raise NotFoundError(message='配置项不存在')
-    return api_response(_entry_dict(namespace, key, payload))
-
-
-@router.put('/{namespace}/{key}')
-async def put_entry(namespace: str, key: str, request: Request):
-    """upsert {type:'str'|'json', data}：新建 201 / 整体覆盖 200（type 可变更）。"""
-    await run_db(lambda: ratelimit.check(request.app, namespace))
-    if len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace):
-        raise ParamError(message='namespace 含非法字符（仅允许字母数字 _ . : -）')
-    if len(key) > KEY_MAX or not NAME_RE.match(key):
-        raise ParamError(message='key 含非法字符（仅允许字母数字 _ . : -）')
-
-    body = await _json_body(request)
+def _stored_value(body):
     entry_type = body.get('type')
     if entry_type not in TYPES:
         raise ParamError(message='type 只能是 str 或 json')
@@ -457,6 +383,134 @@ async def put_entry(namespace: str, key: str, request: Request):
         except (TypeError, ValueError):
             raise ParamError(message='type=json 时 data 必须是合法 JSON') from None
 
+    return entry_type, stored
+
+
+def _expected_timestamp(value):
+    if not isinstance(value, str):
+        raise ParamError(message='if_updated_at 必须为更新时间字符串')
+    try:
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is not None:
+            raise ValueError()
+        return parsed
+    except ValueError:
+        raise ParamError(message='if_updated_at 必须是 API 返回的更新时间') from None
+
+
+@router.put('/rename')
+async def rename_entry(request: Request):
+    """同空间内重命名 key：单事务「拷贝行（保留 type/data/updated_at）→ 删旧行」，
+    不产生中间态；旧 key 不存在 404，新 key 已存在 409。缓存对两个 key 都失效。
+
+    字面量单段路由，天然先于 /{namespace}/{key} 两段参数路由匹配。
+    """
+    body = await _json_body(request)
+    namespace = body.get('namespace')
+    old_key = body.get('old_key')
+    new_key = body.get('new_key')
+    if (not isinstance(namespace, str) or not namespace
+            or len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace)):
+        raise ParamError(message='namespace 仅允许字母数字 _ . : -，长度为 1–100')
+    if (not isinstance(old_key, str) or not old_key or len(old_key) > KEY_MAX
+            or not NAME_RE.match(old_key)):
+        raise ParamError(message='old_key 含非法字符（仅允许字母数字 _ . : -）')
+    if (not isinstance(new_key, str) or not new_key or len(new_key) > KEY_MAX
+            or not NAME_RE.match(new_key)):
+        raise ParamError(message='new_key 含非法字符（仅允许字母数字 _ . : -）')
+    replace_value = 'type' in body or 'data' in body
+    replacement = _stored_value(body) if replace_value else None
+    expected = body.get('if_updated_at')
+    if expected is not None:
+        _expected_timestamp(expected)
+    if old_key == new_key and not replace_value:
+        return api_response({'namespace': namespace, 'key': new_key}, 200, 'key 未变化')
+
+    await run_db(lambda: ratelimit.check(request.app, namespace))
+
+    def _rename():
+        state = cache.get_cache_state(request.app)
+
+        def _attempt() -> str | None:
+            """'ok' / None(404) / 'conflict'(409)；并发撞新主键由 _run_write 整事务重试。"""
+            with db.engine.begin() as conn:
+                old_row = conn.execute(_GET_ROW.with_for_update(), {'ns': namespace, 'k': old_key}).first()
+                if old_row is None:
+                    return None
+                if expected is not None and _iso(old_row[2]) != expected:
+                    return 'stale'
+                if old_key != new_key and conn.execute(_GET_ROW, {'ns': namespace, 'k': new_key}).first() is not None:
+                    return 'conflict'
+                entry_type, stored = replacement or (old_row[0], old_row[1])
+                updated = _utcnow() if replacement else old_row[2]
+                if old_key == new_key:
+                    conn.execute(_UPDATE_ROW, {'ns': namespace, 'k': old_key,
+                                               'v_type': entry_type, 'v_data': stored, 'v_at': updated})
+                else:
+                    conn.execute(_TBL.insert().values(namespace=namespace, key=new_key,
+                                                     type=entry_type, data=stored, updated_at=updated))
+                    conn.execute(_DELETE_ROW, {'ns': namespace, 'k': old_key})
+                return 'ok'
+
+        result = _run_write(_attempt)
+        if result == 'ok':
+            cache.cache_invalidate(state, namespace, old_key)
+            cache.cache_invalidate(state, namespace, new_key)
+        return result
+
+    result = await run_db(_rename)
+    if result is None:
+        raise NotFoundError(message='配置项不存在')
+    if result == 'stale':
+        return api_response(None, 409, '配置已被修改，请重新载入后保存')
+    if result == 'conflict':
+        return api_response(None, 409, '目标 key 已存在')
+    return api_response({'namespace': namespace, 'key': new_key}, 200, '已重命名')
+
+
+# ─── 单条 CRUD（参数路由放最后；三条路由开头均按 namespace 限流）──
+
+@router.get('/{namespace}/{key}')
+async def get_entry(namespace: str, key: str, request: Request):
+    """读单条：先缓存后 DB（未命中回填）；data 按解析后返回。"""
+    def _read():
+        # 保留限流→缓存→DB 的顺序，只提交一次模块 SDK 任务。
+        ratelimit.check(request.app, namespace)
+        state = cache.get_cache_state(request.app)
+        payload = cache.cache_get(state, namespace, key)
+        if payload is not None:
+            return payload
+        generation = state.generation
+        with db.engine.connect() as conn:
+            row = conn.execute(_GET_ROW, {'ns': namespace, 'k': key}).first()
+        if row is None:
+            return None
+        payload = _row_payload(row)
+        cache.cache_put(state, namespace, key, payload, generation=generation)
+        return payload
+
+    payload = await run_db(_read)
+    if payload is None:
+        raise NotFoundError(message='配置项不存在')
+    return api_response(_entry_dict(namespace, key, payload))
+
+
+@router.put('/{namespace}/{key}')
+async def put_entry(namespace: str, key: str, request: Request):
+    """upsert {type:'str'|'json', data}：新建 201 / 整体覆盖 200（type 可变更）。"""
+    await run_db(lambda: ratelimit.check(request.app, namespace))
+    if len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace):
+        raise ParamError(message='namespace 含非法字符（仅允许字母数字 _ . : -）')
+    if len(key) > KEY_MAX or not NAME_RE.match(key):
+        raise ParamError(message='key 含非法字符（仅允许字母数字 _ . : -）')
+
+    body = await _json_body(request)
+    entry_type, stored = _stored_value(body)
+    expected = _expected_timestamp(body['if_updated_at']) if 'if_updated_at' in body else None
+    only_create = body.get('if_absent', False)
+    if not isinstance(only_create, bool):
+        raise ParamError(message='if_absent 必须为布尔值')
+
     def _upsert():
         state = cache.get_cache_state(request.app)
         now = _utcnow()
@@ -465,11 +519,15 @@ async def put_entry(namespace: str, key: str, request: Request):
             """单事务 upsert：UPDATE rowcount=0 → INSERT；返回是否新建。
             并发建同一新行时后者 INSERT 撞主键，由 _run_write 整事务重试。"""
             with db.engine.begin() as conn:
-                r = conn.execute(_UPDATE_ROW, {'ns': namespace, 'k': key,
-                                               'v_type': entry_type, 'v_data': stored,
-                                               'v_at': now})
-                if r.rowcount:
+                if only_create and conn.execute(_GET_ROW.with_for_update(), {'ns': namespace, 'k': key}).first():
+                    return 'conflict'
+                statement = _UPDATE_ROW.where(_TBL.c.updated_at == expected) if expected is not None else _UPDATE_ROW
+                r = None if only_create else conn.execute(statement, {
+                    'ns': namespace, 'k': key, 'v_type': entry_type, 'v_data': stored, 'v_at': now})
+                if r is not None and r.rowcount:
                     return False
+                if expected is not None:
+                    return 'conflict'
                 conn.execute(_REGISTER_NS, {'new_ns': namespace})
                 conn.execute(_TBL.insert().values(
                     namespace=namespace, key=key, type=entry_type,
@@ -477,11 +535,15 @@ async def put_entry(namespace: str, key: str, request: Request):
                 return True
 
         created = _run_write(_attempt)
+        if created == 'conflict':
+            return created, None
         payload = {'type': entry_type, 'data': stored, 'updated_at': _iso(now)}
         cache.cache_invalidate(state, namespace, key)   # 先落库再 DEL
         return created, payload
 
     created, payload = await run_db(_upsert)
+    if created == 'conflict':
+        return api_response(None, 409, '配置已存在或版本已变化，请重新载入')
     return api_response(_entry_dict(namespace, key, payload),
                         201 if created else 200,
                         '创建成功' if created else '更新成功')
@@ -491,13 +553,16 @@ async def put_entry(namespace: str, key: str, request: Request):
 async def delete_entry(namespace: str, key: str, request: Request):
     """删除单条：200；不存在 404。写路径同样先落库再 DEL 缓存。"""
     await run_db(lambda: ratelimit.check(request.app, namespace))
+    expected_raw = request.query_params.get('if_updated_at')
+    expected = _expected_timestamp(expected_raw) if expected_raw is not None else None
 
     def _delete():
         state = cache.get_cache_state(request.app)
 
         def _attempt() -> int:
             with db.engine.begin() as conn:
-                return conn.execute(_DELETE_ROW, {'ns': namespace, 'k': key}).rowcount
+                statement = _DELETE_ROW.where(_TBL.c.updated_at == expected) if expected is not None else _DELETE_ROW
+                return conn.execute(statement, {'ns': namespace, 'k': key}).rowcount
 
         found = _run_write(_attempt) > 0
         if found:
@@ -506,5 +571,7 @@ async def delete_entry(namespace: str, key: str, request: Request):
 
     found = await run_db(_delete)
     if not found:
+        if expected is not None:
+            return api_response(None, 409, '配置已变化或已删除，请重新载入')
         raise NotFoundError(message='配置项不存在')
     return api_response({'namespace': namespace, 'key': key}, 200, '已删除')

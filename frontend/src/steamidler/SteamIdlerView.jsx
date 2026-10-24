@@ -6,12 +6,13 @@
  * 由 TodoPage 顶栏 Tab「挂机」挂载（?v=steamidler），toast 复用页面级单 toast。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import usePolling from '../shared/usePolling'
 import { api, fmtDuration } from './api.js'
 import LoginCard from './components/LoginCard.jsx'
 import AccountCard from './components/AccountCard.jsx'
 import GamePicker from './components/GamePicker.jsx'
 import LogPanel from './components/LogPanel.jsx'
-import { StatTile, Empty } from '../todo/kit'
+import { StatTile, Empty } from '../shared/ui/kit'
 
 export default function SteamIdlerView({ toast }) {
   const [accounts, setAccounts] = useState([])
@@ -28,28 +29,27 @@ export default function SteamIdlerView({ toast }) {
     toast?.(text, kind === 'err' ? 'error' : '')
   }, [toast])
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ signal } = {}) => {
     if (refreshingRef.current || document.hidden) return
     refreshingRef.current = true
     try {
-      const list = await api.accounts()
-      if (!aliveRef.current) return
+      const list = await api.accounts({ signal })
+      if (!aliveRef.current || signal?.aborted) return
       setAccounts(list)
       // 补充游戏名称缓存
-      const acc = list.find((a) => a.idle_appids?.length)
-      if (acc && Date.now() - (gameMetaAt.current.get(acc.steamid) || 0) > 60000) {
+      const due = list.filter(account => account.idle_appids?.length &&
+        Date.now() - (gameMetaAt.current.get(account.steamid) || 0) > 60000).slice(0, 2)
+      await Promise.all(due.map(async account => {
+        gameMetaAt.current.set(account.steamid, Date.now())
         try {
-          const resp = await api.accountGames(acc.steamid)
-          if (resp.games && aliveRef.current) {
-            gameMetaAt.current.set(acc.steamid, Date.now())
-            setGamesMeta((prev) => {
-              const next = new Map(prev)
-              for (const g of resp.games) next.set(g.appid, g.name)
-              return next
-            })
-          }
-        } catch { /* 游戏库获取失败不影响主界面 */ }
-      }
+          const response = await api.accountGames(account.steamid, false, { signal })
+          if (response.games && aliveRef.current && !signal?.aborted) setGamesMeta(previous => {
+            const next = new Map(previous)
+            for (const game of response.games) next.set(game.appid, game.name)
+            return next
+          })
+        } catch { /* 游戏名称失败不影响账号状态 */ }
+      }))
     } catch { /* 后端未就绪时静默 */ }
     finally { refreshingRef.current = false }
   }, [])
@@ -57,11 +57,9 @@ export default function SteamIdlerView({ toast }) {
   useEffect(() => {
     aliveRef.current = true
     api.meta().then((m) => setMaxGames(m.max_idle_games || 32)).catch(() => {})
-    refresh()
-    const t = setInterval(refresh, 3000)
-    document.addEventListener('visibilitychange', refresh)
-    return () => { aliveRef.current = false; clearInterval(t); document.removeEventListener('visibilitychange', refresh) }
-  }, [refresh])
+    return () => { aliveRef.current = false }
+  }, [])
+  usePolling(refresh, { intervalMs: 3000 })
 
   const totalIdling = accounts.filter((a) => a.idle_appids?.length > 0).length
   const totalFarmed = accounts.reduce(

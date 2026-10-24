@@ -18,16 +18,16 @@ sdklogs 是 **lizysdk `send_json` 的服务端**：接收任意接入 lizysdk �
 - **摄入**：单条 JSON 对象 / JSON 数组 / JSONL 文本三种请求体；`202` 异步落库（接收协程只做校验→规范化→入队）
 - **死信兜底**：坏日志（级别/时间戳非法、缺 sys_name/message）不报 4xx，返 202 + 计数，写
   `data/dead_letters/YYYYMMDD.jsonl`（可整文件重放回 `/logs/batch`）；落库批次失败重试 2 次后同样进死信——
-  **已接收的日志不丢**
+  **202 仅代表内存接收；容量溢出会计数丢弃，死信写入失败有独立计数**
 - **保留清理**：每日后台线程删除超期行与超期死信文件（`LOGSDB_RETENTION_DAYS`，默认 30 天，0=永久）
 - **检索全家桶**（全部过滤条件下推后端，列表/直方图/模式/导出共用同一组查询参数）：
   - 时间直方图（等宽桶 × 级别计数，过滤下推）
-  - Live Tail（前端 3s 轮询第一页 + 增量高亮 + 相对窗口滑动）
+  - Live Tail（前端 3s 游标增量拉取 + 增量高亮 + 相对窗口滑动，晚到日志不依赖其业务时间排序）
   - 日志上下文（锚点行前后各 N 条，全局时间序）
   - 字段过滤（展开行 ⊕/⊖ 一键过滤/排除：sys_name/级别/trace_id/任意业务 kv）
   - 模式分组（message 模板化归并：数字/uuid/ip/路径/长 hex/引号串 → 占位符，按频次排序）
   - trace 时间线（同 trace_id 升序 + 跨度毫秒 + 相对偏移点阵）
-  - 导出 CSV / JSON（流式，上限 1 万条）
+  - 导出 CSV / JSON（500 条 keyset 分批流式，导出全部命中）
   - 日志告警（阈值规则 + webhook 通知 + 事件表 + 确认）
 
 ## 2. 数据模型（`app/sdklogs/models.py`）
@@ -64,7 +64,7 @@ acked（index，是否已确认）。
   防 JSON 路径注入（`?user;id=1` → 400）
 - `RESERVED_KEYS`（固定字段，不入 fields）：level/timestamp/file/line/sys_name/message/trace_id
 - `QUERY_RESERVED`（检索保留字，之外的 query 参数视为 kv 过滤）：start/end/sys_name/level/level_gte/trace_id/q/limit/offset/format/buckets/top/before/after/id
-- `BATCH_MAX = 1000`（单批上限，超出 400）；`EXPORT_MAX = 10000`
+- `BATCH_MAX = 1000`（单批上限，超出 400）；HTTP 摄入 8 MiB；`EXPORT_BATCH = 500`（每次导出读取条数，无静默总量截断）
 
 ## 3. API 契约（全部 `/api/v1/*`，前缀 `APIRouter(prefix='/api/v1')`）
 
@@ -94,11 +94,11 @@ token 错误 401（AuthError）。
 | `GET /api/v1/logs/count` | 同上过滤 | 仅 `{total}` |
 | `GET /api/v1/logs/sysnames` | — | distinct sys_name + 条数，按条数倒序，限 200（查询页下拉数据源；**5s TTL 缓存**） |
 | `GET /api/v1/stats` | — | 近 24h 按 sys_name（TOP10）/level 计数 + `queue_size` + `total_rows` + 管道计数器 `accepted/dropped/failed/dead_letter`（DB 聚合部分 **5s TTL 缓存**，队列/计数器实时） |
-| `GET /api/v1/logs/histogram` | 同检索过滤 + buckets(10-240, 默认 60)；缺省窗口=最近 24h | 等宽时间桶 × 级别计数 `{buckets:[{start,total,counts}], bucket_secs, start, end, totals, total}`；拉 (ts,level) 上限 10 万行在 Python 聚合（避免跨方言日期分桶 SQL）；按查询串 **5s TTL 缓存** |
+| `GET /api/v1/logs/histogram` | 同检索过滤 + buckets(10-240, 默认 60)；缺省窗口=最近 24h | 等宽时间桶 × 级别计数 `{buckets:[{start,total,counts}], bucket_secs, start, end, totals, total}`；SQLite 整数微秒 / PostgreSQL epoch 在数据库内分桶聚合，统计全部命中，不拉取逐条日志；按查询串 **5s TTL 缓存** |
 | `GET /api/v1/logs/context` | id（必填）、before/after(1-100, 默认 10) | 锚点行前后各 N 条全局时间序（含锚点，`anchor:true` 标记）；id 不存在 404 |
-| `GET /api/v1/logs/patterns` | 同检索过滤 + top(5-50, 默认 20) | message 模板化分组：`<uuid>/<ip>/<path>/<hex>/<str>/<num>` 占位，按频次排序；分析近 2 万行 |
-| `GET /api/v1/logs/export` | 同检索过滤 + format=csv\|json（默认 csv） | StreamingResponse 流式导出，上限 1 万条，`Content-Disposition: attachment; filename=logs-<时间戳>.<fmt>` |
-| `GET /api/v1/logs/trace` | id（trace_id，必填） | 同 trace_id 日志升序（限 1000）+ `{span:{start,end,span_ms}}` |
+| `GET /api/v1/logs/patterns` | 同检索过滤 + top(5-50, 默认 20) | message 模板化分组：`<uuid>/<ip>/<path>/<hex>/<str>/<num>` 占位，按频次排序；分析近 2 万行，`sampled`/`analysis_limit` 明示采样边界 |
+| `GET /api/v1/logs/export` | 同检索过滤 + format=csv\|json（默认 csv） | StreamingResponse 全量流式导出；每次最多读取 500 行，按 (ts,id) keyset 继续，开始时捕获最大 id 排除后来新增行，`Content-Disposition: attachment; filename=logs-<时间戳>.<fmt>` |
+| `GET /api/v1/logs/trace` | id（trace_id，必填） | 同 trace_id 日志升序（限 1000，`has_more`/`limit` 明示结果边界）+ `{span:{start,end,span_ms}}` |
 
 ### 告警（require_basic）
 
@@ -121,10 +121,10 @@ token 错误 401（AuthError）。
   - **禁跨 app 泄漏**：管道创建时捕获当时的 scoped_session（`self._registry = db.session`）——`db.session` 是随
     `rebuild_engine` 整体替换的全局，若落库时才解析，测试多 app 并存会把上一个 app 的存量行写进新 app 的库（跨库串写）；
     全部存活管道进 `weakref.WeakSet` 注册表，`atexit` 退出前统一排空（不延长 app 生命周期）
-  - **队列满丢最旧并计数**（`dropped`），永不阻塞接收协程；`submit_list` 可整批作为一个队列元素（摊薄锁开销，等效容量大增）
+  - **队列满丢最旧并计数**（`dropped`），按规范化日志行数（LOGSDB_QUEUE_MAX）及 JSON 字节（LOGSDB_QUEUE_BYTES，默认 32 MiB）双预算；单条超预算也计数丢弃。批次仅摊薄锁开销，不扩大容量。写者在途批次另受摄入批次和 batch_size 限制
   - 攒批：首元素最多等 0.2s，之后满 `logs_batch_size`（默认 500）行或自首条起 `logs_flush_ms`（默认 500ms）到期即落库
   - 落库失败重试 2 次（共 3 次，退避 0.1s×2^n），仍失败 → 每行进死信（`db_insert_failed`），`failed` 计数
-  - 写者线程 scoped session 用完即 `remove()`；`flush(timeout)` 用 `q.join()` + watcher 线程实现——**测试等待落库用它**，不要 sleep
+  - 写者线程 scoped session 用完即 `remove()`；`flush(timeout)` 用条件变量等待调用时的序号水位；后续摄入不延长该等待，丢弃批次同步完成记账，无 watcher 线程——**测试等待落库用它**，不要 sleep
 - **uvicorn 访问日志过滤**（`_QuietIngestLog`）：`POST /api/v1/logs*` 逐条访问日志被丢弃（高频摄入纯耗 I/O），其他端点保留
 - 时间解析快路径：19 字符朴素格式（lizysdk 现行 `YYYY-MM-DDTHH:MM:SS`）走 `fromisoformat` − 缓存时区偏移
   （`_tz_offset`，避免每条 zoneinfo 换算；本项目时区无 DST）；带时区（`Z`/±offset）直接采用转 UTC
@@ -151,7 +151,7 @@ token 错误 401（AuthError）。
     点击展开全字段表格）→ 无限滚动哨兵 + 加载更多
   - **交互细节**：
     - 键盘导航：`j/k` 选行（scrollIntoView）、`Enter` 展开、`/` 聚焦搜索框
-    - Live Tail：3s 轮询第一页、新日志 `animate-newlog` 置顶高亮、相对窗口随墙钟滑动
+    - Live Tail：3s 按递增 id 游标增量拉取、新日志 `animate-newlog` 置顶高亮、相对窗口随墙钟滑动
     - 展开行：⊕/⊖ 一键字段过滤（核心字段映射到对应控件、业务 kv 走 kv 过滤）、⇅ 上下文、⇗ trace、复制 JSON、
       多行堆栈折叠展开
     - **保存的查询**（localStorage `doublog.log.saved`，命名/应用/删除）
@@ -202,7 +202,7 @@ token 错误 401（AuthError）。
   （隔离实测），但 HTTP 层受 GIL 分片与机器噪声影响，净增益 ~+5-15%。SDKLOGS_FASTPATH=0 可回退全 ORM 路径（A/B 对照）
 - **检索快路径**（2026-10 性能专项）：`/logs`、`/logs/count` 的「无过滤 / 单一 sys_name」两形状走模块级
   静态 SQL（绕过 ORM 会话；实测 impl 2.47ms → 0.53ms），其余过滤组合走原 ORM 路径，输出逐字段一致（有等价性测试）
-- 直方图在 Python 侧聚合（拉 ≤10 万行 (ts,level)），超大窗口下内存/延迟随之增长；单用户量级（≤10 万行窗口）设计
+- 直方图数据库分桶，返回量受 buckets≤240 限制；扫描成本仍随过滤命中范围增长，需按实测数据量评估时间/系统索引
 - `parse_ts` 依赖 `_tz_offset` 缓存——解释时区若有 DST 会取固定时刻偏移（本项目 Asia/Shanghai 无 DST，非问题）
 - 队列满丢最旧是设计语义（保接收不保全量）；`dropped` 计数可在 `/api/v1/stats` 观察
 - webhook 通知为尽力而为（3s 超时静默失败），可靠性以事件表 `notified` 标志为准
@@ -216,3 +216,15 @@ token 错误 401（AuthError）。
 同时间戳上下文结果按 ID 去重并保留锚点标记。Live Tail 在隐藏页面暂停，避免请求重叠；增量合并使用 Set。
 
 > 2026-10-16 性能：摄入解析/写者序列化/JSON 导出换 orjson（各 2-2.7×）；JSON 导出行内分隔符更紧凑（`"k":v`，原 `"k": v`），语义不变。信封响应随全站 FastJSONResponse 提速（大响应 ~18×）。
+
+
+## 2026-10-21 可靠性与渲染优化
+
+- 检索新增 `after_id`（非负整数）：按入库 id 升序返回 `items/has_more/next_after_id`；无该参数仍保留原 ts/id 倒序分页并提供初始追尾水位。追平时水位推进到查询开始的最大 id；页面每轮最多追 10 页、每页 1000，下一轮继续，内存保留最近 5000 条。
+- offset 检索的 COUNT 与全局 max(id) 在同一 SQL 中读取，再取分页行，共两次往返；无过滤、单系统与普通过滤路径均保持这一点。空库水位为 0，空过滤结果或越界页仍返回全局水位，不用页内最大 ID 替代。
+- 列表改公共可变高度 VirtualList，逻辑数据与 DOM 行数分开；j/k 通过虚拟列表定位，展开行会重测高度。过滤请求代次 + AbortSignal，旧请求不能覆盖新查询。
+- stats 新增 `queue_rows/queue_bytes/persisted/dead_letter_failed`；accepted 是合法日志接收数，dropped 是内存容量丢弃数，failed 是最终入库失败数，dead_letter 是成功写入死信数。未 fsync 的进程崩溃窗口仍存在，不能把 202 当作耐久确认。
+- 上下文使用 (ts,id) 严格前后条件，同时间戳不重复进入两侧。
+- 模块提供 `drain_background`（确认序号水位）及 `stop_background`（统一期限排空并停调度）；每个管道捕获自己的 session registry 与死信目录，停机清理查询缓存。
+- 告警配置、保留清理与死信目录均跟随 app runtime；告警配置原子替换。直方图/统计短缓存每 app 最多 128 项，定期淘汰过期或最早到期项，并按 runtime generation 分键，避免不同过滤组合无限积累或切库旧请求回填污染。
+- 新回归 `tests/sdklogs/test_sdklogs_reliability.py` 覆盖队列溢出/字节预算/完成记账、100005 条直方图、10003 条完整导出、晚到时间戳追尾和同时间戳上下文。

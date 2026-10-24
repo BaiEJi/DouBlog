@@ -2,7 +2,10 @@
  * 日记编辑器（全屏弹层）：日期/心情/本子 + 模板 + 引导问题 + 天气获取 +
  * Markdown 预览切换 + 停止输入自动保存（新篇首存 POST，此后 PUT）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import CodeEditor from '@/shared/CodeEditor'
+import { createSaveCoordinator } from '@/shared/saveCoordinator'
+import { getDataIdentity } from '@/shared/dataEpoch'
 import md, { renderMermaidDiagrams } from '@/shared/md'
 import { diaryCreate, diaryUpdate, diaryDelete, diaryTemplates, diaryPrompt, diaryUpsertSummary } from '../api'
 import { MOODS, Icon, Confirm } from '../kit'
@@ -12,8 +15,13 @@ const p2 = n => String(n).padStart(2, '0')
 
 export default function Editor({ entry, journals, onClose, onSaved, onDeleted }) {
   const isNew = !entry
+  const [draftKey] = useState(() => `doublog.diary.draft.${getDataIdentity()}.${entry?.id ?? 'new'}`)
+  const [availableDraft, setAvailableDraft] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(draftKey) || 'null') } catch { return null }
+  })
+  const [restoredDraft, setRestoredDraft] = useState(null)
   const [id, setId] = useState(entry?.id ?? null)
-  const [date, setDate] = useState(entry?.entry_date ?? new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(entry?.entry_date ?? new Date().toLocaleDateString('sv-SE'))
   const [content, setContent] = useState(entry?.content ?? '')
   const [mood, setMood] = useState(entry?.mood ?? '')
   const isSummary = entry?.kind === 'summary'
@@ -27,7 +35,12 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
   const [showTpl, setShowTpl] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const taRef = useRef(null)
-  const debounceRef = useRef(null)
+  const coordinatorRef = useRef(null)
+  const idRef = useRef(entry?.id ?? null)
+  const callbacks = useRef({ onSaved, onClose })
+  useLayoutEffect(() => { callbacks.current = { onSaved, onClose } }, [onSaved, onClose])
+  const [saveError, setSaveError] = useState('')
+  const [draftError, setDraftError] = useState('')
   const dirtyRef = useRef(false)
 
   useEffect(() => {
@@ -35,58 +48,58 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
     diaryPrompt(date).then(d => d.success && setPrompt(d.data.prompt))
   }, [date])
 
-  // 自动保存（停止输入 1.2s）
+  useEffect(() => {
+    const coordinator = createSaveCoordinator({
+      revision: entry?.revision ?? 1, debounceMs: 1200, idempotent: true,
+      initialDraft: restoredDraft,
+      draft: {
+        write: draft => localStorage.setItem(draftKey, JSON.stringify({ ...draft, resourceId: idRef.current })),
+        remove: () => localStorage.removeItem(draftKey),
+      },
+      save: async (snapshot, { revision, mutationId, signal }) => {
+        if (!isSummary && snapshot.journal_id == null) {
+          throw Object.assign(new Error('请选择日记本'), { status: 400 })
+        }
+        const payload = { ...snapshot, revision, mutation_id: mutationId }
+        const response = isSummary
+          ? await diaryUpsertSummary(payload, { signal })
+          : idRef.current ? await diaryUpdate(idRef.current, payload, { signal })
+            : await diaryCreate(payload, { signal })
+        if (!response.success) throw Object.assign(new Error(response.message || '保存失败'), { status: response.status })
+        const saved = isSummary ? response.data.summary : response.data
+        idRef.current = saved.id; setId(saved.id)
+        return saved
+      },
+      onState: state => {
+        dirtyRef.current = state.dirty
+        const t = new Date()
+        setStatus(state.status === 'saved' ? `已保存 ${p2(t.getHours())}:${p2(t.getMinutes())}`
+          : state.status === 'saving' ? '保存中…' : state.status === 'pending' ? '等待保存…'
+            : ['error', 'conflict'].includes(state.status) ? '保存失败' : '')
+        setSaveError(state.error?.message || '')
+        setDraftError(state.draftError?.message || '')
+      },
+      onSaved: () => callbacks.current.onSaved?.(),
+    })
+    coordinatorRef.current = coordinator
+    if (restoredDraft) coordinator.flush().catch(() => {})
+    return () => { coordinator.dispose(); coordinatorRef.current = null }
+  }, [restoredDraft]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!dirtyRef.current) return
-    setStatus('saving')
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(save, 1200)
-    return () => clearTimeout(debounceRef.current)
-  }, [content, mood, date, journalId, weather, location])
+    coordinatorRef.current?.change({ content: content || '', entry_date: date,
+      mood: mood || null, journal_id: isSummary ? null : journalId, weather, location })
+  }, [content, mood, date, journalId, weather, location, isSummary])
 
-  useEffect(() => {
-    if (preview) renderMermaidDiagrams()
-  }, [preview, content])
+  useEffect(() => { if (preview) renderMermaidDiagrams() }, [preview, content])
 
   const save = async () => {
-    if (!isSummary && journalId == null) { setStatus('fail'); return }
-    if (isSummary) {
-      const d = await diaryUpsertSummary({ entry_date: date, content: content || '', mood: mood || null })
-      if (d.success) {
-        dirtyRef.current = false
-        const t = new Date()
-        setStatus(`已保存 ${p2(t.getHours())}:${p2(t.getMinutes())}`)
-        if (!id) setId(d.data.summary.id)
-        onSaved?.()
-      } else setStatus('fail')
-      return
-    }
-    const payload = {
-      content: content || '',
-      entry_date: date,
-      mood: mood || null,
-      journal_id: journalId,
-      ...(weather ? { weather } : {}),
-      ...(location ? { location } : {}),
-    }
-    const d = id
-      ? await diaryUpdate(id, payload)
-      : await diaryCreate(payload)
-    if (d.success) {
-      dirtyRef.current = false
-      const t = new Date()
-      setStatus(`已保存 ${p2(t.getHours())}:${p2(t.getMinutes())}`)
-      if (!id) { setId(d.data.id); onSaved?.() } else onSaved?.()
-    } else {
-      setStatus('fail')
-    }
+    try { await coordinatorRef.current?.flush(); return true }
+    catch { return false }
   }
-
-  const close = () => {
-    clearTimeout(debounceRef.current)
-    if (dirtyRef.current || (isNew && content.trim())) {
-      save().then(onClose)
-    } else onClose()
+  const close = async () => {
+    if (await save()) callbacks.current.onClose?.()
   }
 
   const html = useMemo(() => ({ __html: md.render(content || '') }), [content])
@@ -104,8 +117,8 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
         {/* 头部 */}
         <div className="flex items-center gap-2 px-5 h-14 border-b border-black/[0.06] dark:border-white/[0.07]">
           <span className="text-sm font-semibold">{isSummary ? (isNew ? '写每日总结' : '编辑每日总结') : (isNew ? '写随记' : '编辑随记')}</span>
-          <span className={'text-[11px] ml-2 ' + (status === 'fail' ? 'text-red-600 dark:text-red-400' : 'text-stone-400')}>
-            {status === 'saving' ? '保存中…' : status}
+          <span className={'text-[11px] ml-2 ' + (status === '保存失败' ? 'text-red-600 dark:text-red-400' : 'text-stone-400')}>
+            {status}
           </span>
           <div className="ml-auto flex items-center gap-1.5">
             {id && (
@@ -117,8 +130,39 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
           </div>
         </div>
 
+        {availableDraft && <div role="status" className="px-5 py-3 text-sm bg-amber-500/10 space-x-3">
+          <span>发现未确认保存的本地草稿。</span>
+          <button type="button" className="underline" onClick={() => {
+            const draft = availableDraft
+            if (entry && draft.revision !== entry.revision && !draft.flight) {
+              setSaveError('草稿基于旧版本，请先下载草稿对照，避免覆盖服务器的新内容'); return
+            }
+            const snapshot = draft.snapshot
+            setContent(snapshot.content || ''); setDate(snapshot.entry_date); setMood(snapshot.mood || '')
+            setJournalId(snapshot.journal_id); setWeather(snapshot.weather); setLocation(snapshot.location)
+            idRef.current = draft.resourceId ?? entry?.id ?? null; setId(idRef.current)
+            setAvailableDraft(null); setRestoredDraft(draft)
+          }}>恢复并继续保存</button>
+          <button type="button" className="underline" onClick={() => {
+            localStorage.removeItem(draftKey); setAvailableDraft(null)
+          }}>丢弃草稿</button>
+          <button type="button" className="underline" onClick={() => {
+            const blob = new Blob([JSON.stringify(availableDraft, null, 2)], { type: 'application/json' })
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'diary-recovered-draft.json'; link.click()
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000)
+          }}>下载草稿</button>
+        </div>}
+        {(saveError || draftError) && <div role="alert" className="px-5 py-3 text-sm text-red-700 dark:text-red-300 bg-red-500/10 space-y-2">
+          <p>{saveError || `本地草稿存储不可用：${draftError}。请下载当前输入备份`}。当前输入仍在编辑器中。</p>
+          <button type="button" onClick={save} className="underline">重试保存</button>
+          <button type="button" onClick={() => {
+            const blob = new Blob([JSON.stringify({ content, entry_date: date, mood, journal_id: journalId, weather, location }, null, 2)], { type: 'application/json' })
+            const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'diary-local-draft.json'; link.click()
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000)
+          }} className="underline ml-4">下载当前输入</button>
+        </div>}
         {/* 元信息区 */}
-        <div className="px-5 py-3.5 border-b border-black/[0.05] dark:border-white/[0.06] space-y-2.5">
+        <div inert={!!availableDraft} className="px-5 py-3.5 border-b border-black/[0.05] dark:border-white/[0.06] space-y-2.5">
           <div className="flex flex-wrap items-center gap-2.5">
             <input type="date" value={date} onChange={e => { setDate(e.target.value); dirtyRef.current = true }}
               className="h-8 px-2.5 text-xs tabular-nums bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 focus:border-black/30 dark:focus:border-white/30 rounded-lg outline-none" />
@@ -184,11 +228,11 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
             <div className="diary-prose prose-content text-[14px]" dangerouslySetInnerHTML={html} />
           </div>
         ) : (
-          <textarea ref={taRef} value={content}
-            onChange={e => { setContent(e.target.value); dirtyRef.current = true }}
-            onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { save(); close() } }}
-            placeholder="写点什么…（Ctrl+Enter 保存退出）"
-            className="flex-1 resize-none outline-none bg-transparent px-6 py-5 text-[14px] leading-[1.9] diary-serif placeholder:text-stone-400" />
+          <div className="flex-1 min-h-0" onKeyDownCapture={event => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); close() }
+          }}><CodeEditor editorRef={taRef} value={content} readOnly={!!availableDraft}
+            onChange={value => { setContent(value); dirtyRef.current = true }} language="markdown" height="100%"
+            ariaLabel="日记正文" onSave={save} /></div>
         )}
       </div>
       {confirmDel && (

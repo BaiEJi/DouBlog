@@ -17,7 +17,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..models import Plan, Task
@@ -124,6 +124,8 @@ def materialize_plans(session: Session, today: date, tz_name: str = "Asia/Shangh
             continue
         if p.start_date > win_end:
             continue
+        session.execute(update(Plan).where(Plan.id == p.id).values(enabled=Plan.enabled)
+                        .execution_options(synchronize_session=False))
         lo, hi = max(p.start_date, win_start), min(p.end_date or win_end, win_end)
         existing = set(
             session.scalars(

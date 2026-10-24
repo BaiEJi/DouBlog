@@ -2,15 +2,17 @@
  * 概览视图：指标卡 / 分类支出汇总表（可排序+合计）/ 即将到期提醒 /
  * 会员支出排行榜（4 维度）/ 订阅到期日历（农历 + 法定节假日 + 当日弹层）。
  */
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { getDataIdentity } from '@/shared/dataEpoch'
 const ExpiryCalendar = lazy(() => import('./ExpiryCalendar'))
 
 import {
-  subsStatsOverview, subsStatsCategorySummary, subsRemindersUpcoming, subsRemindersAll,
-  subsMembers,
+  subsStatsOverview, subsStatsCategorySummary, subsRemindersUpcoming,
+  subsStatsRanking,
 } from '../api'
-import { fmtPrice, daysRemaining, fmtDuration, Icon, Modal, adjustForDark } from '../kit'
+import { fmtPrice, fmtDuration, Icon, adjustForDark } from '../kit'
 
 
 // ─── 指标卡 ───────────────────────────────────────────────
@@ -136,19 +138,18 @@ const RANK_DIMS = [
 
 function RankingCard({ dark, onGo }) {
   const [dim, setDim] = useState('total_spending')
-  const [members, setMembers] = useState(null)
+  const ranking = useQuery({
+    queryKey: ['subs-ranking', getDataIdentity(), dim],
+    queryFn: async ({ signal }) => {
+      const response = await subsStatsRanking(dim, { signal })
+      if (!response.success) throw new Error(response.message || '排行加载失败')
+      return response.data.items
+    },
+  })
+  const members = ranking.data
+  const load = () => ranking.refetch()
 
-  const load = useCallback(() => {
-    subsMembers({ page: 1, page_size: 1000 }).then(d => d.success && setMembers(d.data.items))
-  }, [])
-  useEffect(load, [load])
-
-  const ranked = useMemo(() => {
-    if (!members) return []
-    const withAvg = members.map(m => ({ ...m, avg_per_sub: m.subscription_count ? m.total_spending / m.subscription_count : 0 }))
-    withAvg.sort((a, b) => (b[dim] || 0) - (a[dim] || 0))
-    return withAvg.slice(0, 10)
-  }, [members, dim])
+  const ranked = members || []
 
   const maxVal = ranked.length ? Math.max(...ranked.map(m => m[dim] || 0)) || 1 : 1
 
@@ -178,7 +179,7 @@ function RankingCard({ dark, onGo }) {
           </button>
         ))}
       </div>
-      {!members ? (
+      {ranking.error ? <div role="alert" className="py-4 text-sm text-red-500">{ranking.error.message}</div> : !members ? (
         <div className="py-8 text-center text-xs text-stone-400">加载中…</div>
       ) : !ranked.length ? (
         <div className="py-8 text-center text-sm text-stone-400">暂无会员数据</div>

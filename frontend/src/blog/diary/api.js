@@ -1,20 +1,21 @@
 // 日记 API（超集）：条目/分册/视图/热力图/回忆/统计/分享/导出/模板引导
 import { apiFetch, API_BASE } from '@/shared/client'
 
-const j = r => r.json()
+const j = async r => ({ ...(await r.json()), status: r.status })
 
-export const diaryList = (params = {}) => {
+export const diaryList = (params = {}, options = {}) => {
   const qs = new URLSearchParams(
     Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null))
   ).toString()
-  return apiFetch(`/api/diary/entries?${qs}`).then(j)
+  return apiFetch(`/api/diary/entries?${qs}`, options).then(j)
 }
-export const diaryCreate = payload => apiFetch('/api/diary/entries', { method: 'POST', body: JSON.stringify(payload) }).then(j)
-export const diaryUpdate = (id, payload) => apiFetch(`/api/diary/entries/${id}`, { method: 'PUT', body: JSON.stringify(payload) }).then(j)
+export const diaryEntry = id => apiFetch(`/api/diary/entries/${id}`).then(j)
+export const diaryCreate = (payload, options = {}) => apiFetch('/api/diary/entries', { ...options, method: 'POST', body: JSON.stringify(payload) }).then(j)
+export const diaryUpdate = (id, payload, options = {}) => apiFetch(`/api/diary/entries/${id}`, { ...options, method: 'PUT', body: JSON.stringify(payload) }).then(j)
 export const diaryAction = (id, action) => apiFetch(`/api/diary/entries/${id}?action=${action}`, { method: 'PUT' }).then(j)
 export const diaryDelete = (id, hard = false) => apiFetch(`/api/diary/entries/${id}${hard ? '?hard=1' : ''}`, { method: 'DELETE' }).then(j)
 export const diaryQuick = payload => apiFetch('/api/diary/quick', { method: 'POST', body: JSON.stringify(payload) }).then(j)
-export const diaryUpsertSummary = payload => apiFetch('/api/diary/summary', { method: 'POST', body: JSON.stringify(payload) }).then(j)
+export const diaryUpsertSummary = (payload, options = {}) => apiFetch('/api/diary/summary', { ...options, method: 'POST', body: JSON.stringify(payload) }).then(j)
 
 export const diaryJournals = () => apiFetch('/api/diary/journals').then(j)
 export const diaryCreateJournal = payload => apiFetch('/api/diary/journals', { method: 'POST', body: JSON.stringify(payload) }).then(j)

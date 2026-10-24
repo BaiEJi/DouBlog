@@ -32,13 +32,18 @@ def epoch() -> int:
 
 def get(state: dict, key) -> bytes | None:
     """读缓存(state = app.state.todo_today_cache);纪元不一致视为未命中。"""
-    entry = state.get(key)
-    if entry is not None and entry[0] == epoch():
-        return entry[1]
+    with _lock:
+        entry = state.get(key)
+        if entry is not None and entry[0] == _epoch:
+            return entry[1]
     return None
 
 
-def put(state: dict, key, body: bytes) -> None:
-    if len(state) >= MAX_ENTRIES:
-        state.clear()
-    state[key] = (epoch(), body)
+def put(state: dict, key, body: bytes, read_epoch: int) -> bool:
+    with _lock:
+        if read_epoch != _epoch:
+            return False
+        if len(state) >= MAX_ENTRIES:
+            state.clear()
+        state[key] = (read_epoch, body)
+        return True

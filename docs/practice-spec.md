@@ -47,7 +47,7 @@ id(String36 PK), problem_id(FK CASCADE), cycle(int 第几轮), seq(int 累计次
 ## API 端点（22 个，全挂 require_basic，Doublog 信封）
 
 ### 题目
-- GET /problems — 多维筛选（见下方参数）+ 分页 + 每题摘要（两段式批量加载：当页 ids → 3 条聚合 IN 查询；Text 大字段 defer 不加载，摘要恒为 null）
+- GET /problems — 多维筛选（见下方参数）+ 分页 + 每题摘要（小字段Core投影后，当页ids → 3条聚合IN查询；不读取Text大字段，description_md/pitfall_md恒为null；复习队列仍用defer）
 - POST /problems — 201，可带初始 tags/solutions
 - GET /problems/{id} — 详情（题目字段扁平 + tags + solutions(含 codes) + next_review）
 - PATCH /problems/{id} — 带 revision 乐观锁 409

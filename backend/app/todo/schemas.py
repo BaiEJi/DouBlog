@@ -148,10 +148,14 @@ class TaskMoveIn(BaseModel):
     is_important: bool
     is_urgent: bool
     before_task_id: Optional[str] = None
+    revision: Optional[int] = Field(default=None, ge=1)  # 旧客户端可省略，新客户端必须传当前版本
+    mutation_id: Optional[str] = Field(default=None, min_length=8, max_length=64)
 
 
 class TaskReorderIn(BaseModel):
     before_task_id: Optional[str] = None  # None → 移到象限尾部
+    revision: Optional[int] = Field(default=None, ge=1)
+    mutation_id: Optional[str] = Field(default=None, min_length=8, max_length=64)
 
 
 class CompleteIn(BaseModel):

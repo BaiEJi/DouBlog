@@ -1,6 +1,8 @@
 /** 正则测试器：实时高亮匹配、捕获分组表、命名分组、常用正则库（纯本地） */
 import { useMemo, useState } from 'react'
-import { ToolHead, StatusLine, LBL, inputCls, areaCls, card } from '../kit'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
+import { ToolHead, StatusLine, LBL, inputCls, card } from '../kit'
 import { COMMON_REGEXES } from '../data'
 
 const SAMPLE_TEXT = `联系我：alice@example.com 或 bob@test.cn
@@ -14,28 +16,9 @@ export default function RegexTool() {
   const [flags, setFlags] = useState('g')
   const [text, setText] = useState(SAMPLE_TEXT)
 
-  const { error, segments, matches } = useMemo(() => {
-    if (!pattern) return { error: null, segments: text ? [{ text, m: false }] : [], matches: [] }
-    let re
-    try {
-      re = new RegExp(pattern, flags.includes('g') ? flags : flags + 'g')
-    } catch (e) {
-      return { error: '正则无效：' + e.message, segments: text ? [{ text, m: false }] : [], matches: [] }
-    }
-    if (!text) return { error: null, segments: [], matches: [] }
-    const segs = []
-    const found = []
-    let last = 0
-    for (const m of text.matchAll(re)) {
-      if (m.index > last) segs.push({ text: text.slice(last, m.index), m: false })
-      segs.push({ text: m[0], m: true })
-      found.push({ value: m[0], index: m.index, groups: m.slice(1), named: m.groups ? Object.entries(m.groups) : null })
-      last = m.index + m[0].length
-      if (found.length > 500) break   // 防炸渲染
-    }
-    if (last < text.length) segs.push({ text: text.slice(last), m: false })
-    return { error: null, segments: segs, matches: found }
-  }, [pattern, flags, text])
+  const computation = useComputation('regex', { pattern, flags, text }, { timeoutMs: 1500 })
+  const { segments = [], matches = [], limited = false } = computation.result || {}
+  const error = computation.error
 
   const groupNames = useMemo(() => {
     const names = [...pattern.matchAll(/\(\?<([A-Za-z_$][\w$]*)>/g)].map(m => m[1])
@@ -62,7 +45,7 @@ export default function RegexTool() {
             title={r.value} onClick={() => setPattern(r.value)}>{r.name}</button>
         ))}
       </div>
-      <div className="mt-3"><StatusLine ok={!error && !!pattern} err={error} okText={matches.length ? `匹配 ${matches.length} 处` : '无匹配'} /></div>
+      <div className="mt-3">{computation.pending && <p className="text-xs text-stone-500 dark:text-stone-400">计算中，可继续输入…<button onClick={computation.cancel} className="ml-3 underline">取消</button></p>}<StatusLine ok={!computation.pending && !error && !!pattern} err={error} okText={matches.length ? `匹配 ${matches.length} 处${limited ? "（达到显示上限，后续匹配未展示）" : ""}` : '无匹配'} /></div>
       <div className={'mt-3 p-3 rounded-lg border font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-all min-h-24 ' +
         'border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] text-stone-800 dark:text-stone-100'}>
         {segments.map((s, i) =>
@@ -71,8 +54,7 @@ export default function RegexTool() {
             : <span key={i}>{s.text}</span>)}
         {!text && <span className="text-stone-400">粘贴测试文本…</span>}
       </div>
-      <textarea className={areaCls + ' mt-3'} rows={6} value={text} spellCheck={false}
-        onChange={e => setText(e.target.value)} placeholder="测试文本" aria-label="测试文本" />
+      <div className="mt-3"><CodeEditor value={text} onChange={setText} height={180} ariaLabel="测试文本" /></div>
       {matches.length > 0 && (
         <div className={'mt-4 overflow-x-auto ' + card}>
           <p className="px-4 py-3 text-sm font-semibold border-b border-black/[0.05] dark:border-white/[0.06]">捕获明细（前 {Math.min(matches.length, 100)} 项）</p>

@@ -1,7 +1,8 @@
 /** 文本统计：字符/CJK/词/行/字节/段落 + 词频 TOP（与 diary 后端 CJK 口径一致） */
-import { useMemo, useState } from 'react'
-import { ToolHead, LBL, areaCls, card } from '../kit'
-import { textStats, wordFrequency } from '../lib/text'
+import { useState } from 'react'
+import { ToolHead, LBL, card } from '../kit'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
 
 const SAMPLE = `DouBlog 是一个前后端分离的单用户博客系统。
 FastAPI 后端 + React 前端，日志与异常统一走 lizysdk。
@@ -12,8 +13,8 @@ The quick brown fox jumps over the lazy dog again.`
 export default function TextStatsTool() {
   const [text, setText] = useState(SAMPLE)
 
-  const stats = useMemo(() => textStats(text), [text])
-  const freq = useMemo(() => text.trim() ? wordFrequency(text, 12) : [], [text])
+  const computation = useComputation('textStats', { text })
+  const { stats = {}, freq = [] } = computation.result || {}
 
   const items = [
     ['字符数', stats.chars, '含空格换行'],
@@ -31,12 +32,12 @@ export default function TextStatsTool() {
   return (
     <div>
       <ToolHead title="文本统计" desc="字符 / CJK 字数 / 单词 / 行 / 字节 / 词频（纯本地计算）" />
-      <textarea className={areaCls} rows={10} value={text} spellCheck={false}
-        onChange={e => setText(e.target.value)} placeholder="输入或粘贴文本…" aria-label="待统计文本" />
+      <CodeEditor value={text} onChange={setText} height={260} ariaLabel="待统计文本" />
+      {computation.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{computation.error}</p>}
       <div className="grid grid-cols-4 gap-3 mt-4">
         {items.map(([label, value, hint]) => (
           <div key={label} className={card + ' p-4'}>
-            <p className="text-lg font-semibold tabular-nums">{value.toLocaleString?.() ?? value}</p>
+            <p className="text-lg font-semibold tabular-nums">{value?.toLocaleString?.() ?? '…'}</p>
             <p className="text-xs text-stone-600 dark:text-stone-300 mt-0.5">{label}</p>
             {hint && <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-0.5">{hint}</p>}
           </div>

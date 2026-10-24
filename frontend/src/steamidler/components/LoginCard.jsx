@@ -3,9 +3,10 @@
  * 手机 App 确认（device confirmation）/ 令牌验证码 / 邮箱验证码 → 成功回调 onSuccess。
  * 样式换 Tailwind（ui-baseline 档位）；主按钮用模块个性色 rose 实底。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import usePolling from '../../shared/usePolling'
 import { api } from '../api.js'
-import { Field, inputCls } from '../../todo/kit'
+import { Field, inputCls } from '../../shared/ui/kit'
 
 const GUARD_DEVICE_CONFIRMATION = 4
 const GUARD_DEVICE_CODE = 3
@@ -23,32 +24,19 @@ export default function LoginCard({ onSuccess }) {
   const [attempt, setAttempt] = useState(null) // {attempt_id, allowed, ...}
   const [code, setCode] = useState('')
   const [codeMsg, setCodeMsg] = useState('')
-  const timerRef = useRef(null)
-
-  useEffect(() => () => clearInterval(timerRef.current), [])
-
-  const watchAttempt = (attemptId) => {
-    clearInterval(timerRef.current)
-    timerRef.current = setInterval(async () => {
-      try {
-        const st = await api.loginStatus(attemptId)
-        setAttempt((prev) => (prev ? { ...prev, ...st } : prev))
-        if (st.state === 'success') {
-          clearInterval(timerRef.current)
-          setBusy(false)
-          setPassword('')
-          onSuccess(st.account)
-        } else if (st.state === 'failed' || st.state === 'timeout') {
-          clearInterval(timerRef.current)
-          setBusy(false)
-          setError(st.error || '登录超时，请重试')
-          setAttempt(null)
-        }
-      } catch {
-        /* 会话过期等 */
-      }
-    }, 3000)
-  }
+  const [watchId, setWatchId] = useState(null)
+  const watchAttempt = setWatchId
+  usePolling(async ({ signal }) => {
+    const status = await api.loginStatus(watchId, { signal })
+    if (signal.aborted) return
+    setAttempt(previous => previous ? { ...previous, ...status } : previous)
+    if (status.state === 'success') {
+      setWatchId(null); setBusy(false); setPassword(''); onSuccess(status.account)
+    } else if (status.state === 'failed' || status.state === 'timeout') {
+      setWatchId(null); setBusy(false); setError(status.error || '登录超时，请重试'); setAttempt(null)
+    }
+  }, { intervalMs: 3000, enabled: !!watchId, immediate: false,
+    onError: error => setError(`状态查询失败：${error.message}`) })
 
   const handleBegin = async (e) => {
     e.preventDefault()
@@ -89,7 +77,7 @@ export default function LoginCard({ onSuccess }) {
   }
 
   const cancelAttempt = () => {
-    clearInterval(timerRef.current)
+    setWatchId(null)
     setAttempt(null); setBusy(false); setError('')
   }
 
@@ -103,6 +91,7 @@ export default function LoginCard({ onSuccess }) {
     return (
       <div className="max-w-md mx-auto rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
         <h2 className="text-sm font-semibold">登录 {username}</h2>
+        {attempt.retryable && <p role="status" className={errCls}>{attempt.error}</p>}
         <div className="mt-3 rounded-xl border border-dashed border-black/[0.15] dark:border-white/[0.15] bg-black/[0.02] dark:bg-white/[0.03] p-4 text-sm leading-relaxed space-y-2.5">
           {needDeviceConfirm && (
             <div className="flex items-start gap-2">

@@ -235,6 +235,7 @@ class MergedStateOut(BaseModel):
 
 
 class MergedBoardOut(BaseModel):
+    board_versions: dict[int, int] = {}
     chapters: list[ChapterOut]
     anchor_chapter_id: int | None = None  # 所选范围内最后一章：聚合模式下的写入目标
     nodes: list[MergedNodeOut]

@@ -10,6 +10,7 @@
 """
 
 import http.client
+import io
 import socket
 import ssl
 import threading
@@ -53,6 +54,52 @@ class UpstreamConnectError(Exception):
 
 class UpstreamProtocolError(Exception):
     pass
+
+
+class _DeadlineReader(io.RawIOBase):
+    """Check the total budget at every actual socket read, including HTTP headers.
+
+    A socket timeout alone resets after each received fragment; a slow trickle can
+    otherwise keep HTTPResponse.readline/read alive beyond the request deadline.
+    """
+    def __init__(self, raw, socket):
+        super().__init__()
+        self.raw, self.socket = raw, socket
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.socket.check_deadline()
+        return self.raw.readinto(buffer)
+
+    def close(self):
+        try:
+            self.raw.close()
+        finally:
+            super().close()
+
+
+class _DeadlineSocket:
+    def __init__(self, socket, deadline):
+        self.socket, self.deadline = socket, deadline
+
+    def __getattr__(self, name):
+        return getattr(self.socket, name)
+
+    def check_deadline(self):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise UpstreamTimeout('upstream total deadline exceeded')
+        self.socket.settimeout(remaining)
+
+    def sendall(self, data, *args):
+        self.check_deadline()
+        return self.socket.sendall(data, *args)
+
+    def makefile(self, mode='rb', buffering=None):
+        raw = self.socket.makefile(mode, buffering=0)
+        return io.BufferedReader(_DeadlineReader(raw, self))
 
 
 class FastResp:
@@ -129,7 +176,7 @@ class _Target:
         except Exception:
             pass
 
-    def _roundtrip(self, conn, method, target, headers, payload) -> FastResp:
+    def _roundtrip(self, conn, method, target, headers, payload, deadline) -> FastResp:
         hdrs = {k: v for k, v in headers.items()
                 if k.lower() not in ('host', 'content-length', 'connection',
                                      'transfer-encoding', 'accept-encoding')}
@@ -137,6 +184,15 @@ class _Target:
         hdrs['Content-Length'] = str(len(payload))
         hdrs['Connection'] = 'keep-alive'
         try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise UpstreamTimeout('request deadline exceeded')
+            if conn.sock:
+                if isinstance(conn.sock, _DeadlineSocket):
+                    conn.sock.deadline = deadline
+                else:
+                    conn.sock = _DeadlineSocket(conn.sock, deadline)
+                conn.sock.check_deadline()
             conn.request(method.upper(), target, body=payload if payload else None, headers=hdrs)
             resp = conn.getresponse()
         except socket.timeout:
@@ -145,6 +201,11 @@ class _Target:
         total = 0
         while True:
             try:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise UpstreamTimeout('response deadline exceeded')
+                if conn.sock:
+                    conn.sock.settimeout(remaining)
                 chunk = resp.read(65536)
             except socket.timeout:
                 raise UpstreamTimeout(f'upstream read timeout {self.host}:{self.port}')
@@ -164,17 +225,18 @@ class _Target:
         return FastResp(resp.status, body, out)
 
     def request(self, method, target, headers, payload, timeout_s) -> FastResp:
-        if not self.sem.acquire(timeout=max(0.05, timeout_s)):
+        deadline = time.monotonic() + max(0.001, timeout_s)
+        if not self.sem.acquire(timeout=max(0.001, timeout_s)):
             raise UpstreamTimeout(f'connection pool busy > {timeout_s}s')
         try:
             c = self._acquire_idle()
             fresh = c is None
             if fresh:
-                conn = self._connect(timeout_s)
+                conn = self._connect(max(0.001, deadline - time.monotonic()))
             else:
                 conn = c.conn
             try:
-                return self._roundtrip(conn, method, target, headers, payload)
+                return self._roundtrip(conn, method, target, headers, payload, deadline)
             except (http.client.RemoteDisconnected, http.client.BadStatusLine,
                     ConnectionError, BrokenPipeError, OSError):
                 # 连接层故障（不含超时）：关掉；空闲连接（服务端已关）换新连接重试一次
@@ -182,17 +244,19 @@ class _Target:
                     conn.close()
                 except Exception:
                     pass
-                if fresh:
+                if fresh or method.upper() not in ('GET', 'HEAD', 'OPTIONS'):
                     raise
-            except ValueError:
+            except (ValueError, UpstreamTimeout):
                 try:
                     conn.close()
                 except Exception:
                     pass
                 raise
-            conn = self._connect(timeout_s)
+            if time.monotonic() >= deadline:
+                raise UpstreamTimeout('request deadline exceeded')
+            conn = self._connect(max(0.001, deadline - time.monotonic()))
             try:
-                return self._roundtrip(conn, method, target, headers, payload)
+                return self._roundtrip(conn, method, target, headers, payload, deadline)
             except Exception:
                 try:
                     conn.close()
@@ -232,7 +296,7 @@ class UpstreamPool:
             target += '?' + u.query
         if params:
             target += ('&' if '?' in target else '?') + urllib.parse.urlencode(params)
-        return t.request(method, target, headers, payload, max(0.05, timeout_s))
+        return t.request(method, target, headers, payload, max(0.001, timeout_s))
 
     def close_all(self):
         with self._lock:
@@ -241,3 +305,57 @@ class UpstreamPool:
                     while t.idle:
                         _Target._close(t.idle.pop())
             self._targets.clear()
+
+
+class HttpxCandidatePool:
+    """Explicit A/B candidate; production keeps the stdlib pool until measured gates pass.
+
+    HTTPX exposes phase timeouts. The application also checks the overall deadline
+    between raw response chunks; unlike stdlib sockets this cannot shorten a read
+    already blocked inside HTTPX. Keep this boundary visible in the comparison.
+    """
+    def __init__(self):
+        self._clients = {}
+        self._lock = threading.Lock()
+
+    def request(self, method, url, headers, params, payload, timeout_s, verify=True):
+        import httpx
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+            raise UpstreamProtocolError('unsupported URL')
+        proxy = resolve_proxy(parsed.scheme, parsed.hostname)
+        key = (verify is not False, proxy)
+        with self._lock:
+            client = self._clients.get(key)
+            if client is None:
+                proxy_url = f'http://{proxy[0]}:{proxy[1]}' if proxy else None
+                client = httpx.Client(verify=verify is not False, proxy=proxy_url, trust_env=False,
+                    follow_redirects=False, limits=httpx.Limits(max_connections=128,
+                    max_keepalive_connections=128, keepalive_expiry=IDLE_MAX_AGE_S))
+                self._clients[key] = client
+        deadline = time.monotonic() + timeout_s
+        clean = {key: value for key, value in headers.items() if key.lower() not in
+                 ('host', 'content-length', 'connection', 'transfer-encoding', 'accept-encoding')}
+        clean['Accept-Encoding'] = 'identity'
+        try:
+            with client.stream(method, url, headers=clean, params=params, content=payload,
+                               timeout=max(0.001, timeout_s)) as response:
+                chunks, size = [], 0
+                for chunk in response.iter_raw():
+                    if time.monotonic() >= deadline:
+                        raise UpstreamTimeout('HTTPX response deadline exceeded')
+                    size += len(chunk)
+                    if size > MAX_BODY:
+                        raise ValueError('upstream response too large')
+                    chunks.append(chunk)
+                return FastResp(response.status_code, b''.join(chunks), dict(response.headers))
+        except httpx.TimeoutException as exc:
+            raise UpstreamTimeout(str(exc)) from exc
+        except httpx.TransportError as exc:
+            raise UpstreamConnectError(str(exc)) from exc
+
+    def close_all(self):
+        with self._lock:
+            clients, self._clients = list(self._clients.values()), {}
+        for client in clients:
+            client.close()

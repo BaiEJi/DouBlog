@@ -11,6 +11,8 @@
  * - 日志：内核日志尾部 + 实时日志开关（log-level）
  * 未安装 clashctl 时整页空态（门户卡片同时置灰）。个性色 sky（docs/ui-baseline.md）。
  */
+import usePolling from '../shared/usePolling'
+import useConnections from './useConnections'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PageHeader from '../shared/PageHeader'
 import {
@@ -19,7 +21,7 @@ import {
   clashUi, clashSecret, clashSecretSet, clashUpgrade,
   clashConfig, clashConfigSave, clashLog, clashLogLevel,
   clashSubs, clashSubAction, clashSubLog,
-  clashCtlConfigs, clashCtlConfigsPatch, clashCtlConnections, clashCtlProviders,
+  clashCtlConfigs, clashCtlConfigsPatch, clashCtlProviders,
   clashCtlProviderUpdate,
 } from './api'
 import { card, inputCls, btn, btnPri, btnDanger, LBL, MONO_BLOCK, Toast, StateBadge, fmtBytes } from './kit'
@@ -39,19 +41,16 @@ function RuntimeConfigCard({ toast }) {
   const [cfg, setCfg] = useState(null)
   const [busy, setBusy] = useState('')
 
-  const refresh = useCallback(async (quiet = false) => {
+  const refresh = useCallback(async (quiet = false, { signal } = {}) => {
     try {
-      setCfg(await clashCtlConfigs())
+      const result = await clashCtlConfigs({ signal })
+      if (!signal?.aborted) setCfg(result)
     } catch (e) {
       if (!quiet) toast({ msg: e.message, kind: 'error' })
     }
   }, [toast])
 
-  useEffect(() => { refresh() }, [refresh])
-  useEffect(() => {
-    const t = setInterval(() => refresh(true), 15000)
-    return () => clearInterval(t)
-  }, [refresh])
+  usePolling(options => refresh(true, options), { intervalMs: 15000 })
 
   const patch = async body => {
     setBusy('cfg')
@@ -105,33 +104,24 @@ function RuntimeConfigCard({ toast }) {
   )
 }
 
-function TrafficCard({ toast }) {
+function TrafficCard() {
   const [stat, setStat] = useState(null)
   const [speed, setSpeed] = useState({ up: 0, down: 0 })
   const prev = useRef(null)
 
-  useEffect(() => {
-    let alive = true
-    const tick = async () => {
-      try {
-        const d = await clashCtlConnections()
-        if (!alive) return
-        const now = Date.now()
-        if (prev.current) {
-          const dt = (now - prev.current.t) / 1000
-          if (dt > 0) setSpeed({
-            up: Math.max(0, (d.uploadTotal - prev.current.up) / dt),
-            down: Math.max(0, (d.downloadTotal - prev.current.down) / dt),
-          })
-        }
-        prev.current = { t: now, up: d.uploadTotal, down: d.downloadTotal }
-        setStat({ up: d.uploadTotal, down: d.downloadTotal, n: (d.connections || []).length })
-      } catch { /* 内核未运行时静默 */ }
+  const receive = useCallback(d => {
+    const now = Date.now()
+    if (prev.current) {
+      const dt = (now - prev.current.t) / 1000
+      if (dt > 0) setSpeed({
+        up: Math.max(0, (d.uploadTotal - prev.current.up) / dt),
+        down: Math.max(0, (d.downloadTotal - prev.current.down) / dt),
+      })
     }
-    tick()
-    const timer = setInterval(tick, 2000)
-    return () => { alive = false; clearInterval(timer) }
+    prev.current = { t: now, up: d.uploadTotal, down: d.downloadTotal }
+    setStat({ up: d.uploadTotal, down: d.downloadTotal, n: (d.connections || []).length })
   }, [])
+  useConnections(receive)
 
   return (
     <div className={`${card} p-5`}>
@@ -319,7 +309,7 @@ function SubsView({ toast, unavailable }) {
   const refreshProviders = useCallback(async (quiet = false) => {
     try {
       setProviders(await clashCtlProviders())
-    } catch (e) {
+    } catch {
       if (!quiet && providers == null) { /* 控制器不可达时折叠该区块，不打扰订阅管理 */ }
     }
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -583,12 +573,12 @@ function LogView({ toast, unavailable }) {
   const [busy, setBusy] = useState(false)
   const [auto, setAuto] = useState(false)
   const [levelBusy, setLevelBusy] = useState(false)
-  const timer = useRef(null)
 
-  const refresh = useCallback(async (quiet = false) => {
+  const refresh = useCallback(async (quiet = false, { signal } = {}) => {
     if (!quiet) setBusy(true)
     try {
-      setData(await clashLog(lines))
+      const result = await clashLog(lines, { signal })
+      if (!signal?.aborted) setData(result)
     } catch (e) {
       if (!quiet) toast({ msg: e.message, kind: 'error' })
     } finally {
@@ -596,11 +586,8 @@ function LogView({ toast, unavailable }) {
     }
   }, [lines, toast])
 
-  useEffect(() => { if (!unavailable) refresh() }, [unavailable])  // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (auto && !unavailable) timer.current = setInterval(() => refresh(true), 5000)
-    return () => clearInterval(timer.current)
-  }, [auto, unavailable, refresh])
+  usePolling(options => refresh(true, options), { intervalMs: 5000, enabled: auto && !unavailable })
+  useEffect(() => { if (!unavailable && !auto) refresh() }, [unavailable, auto, refresh])
 
   // 实时日志 = 内核级别非 silent（订阅配置常带 silent，日志文件不再增长）
   const level = data?.level || 'info'

@@ -59,9 +59,9 @@
 | **正文按需加载** | 列表/树接口不返回正文；详情页按 id 取全文 |
 | **系统配置** | `/config` 统一操作数据库切换、日志上报和账号；旧 `/admin` 地址重定向到 `/blog` |
 | **多知识库** | 知识库页面选择器切换/新建知识库（`/blog?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
-| **首页全量分页拉取** | `fetchAllPosts` 以 100/页循环拉完（上限 2000），保证搜索覆盖全部文章 |
-| **全文搜索（服务端）** | 输入防抖 300ms 调 `GET /api/posts?keyword=`，后端匹配 标题/摘要/英文名/**正文**，跨所有知识库；结果卡片带所属库名 chip；`Ctrl/Cmd+K` 聚焦搜索框；清空回到当前库客户端过滤视图 |
-| **路由级代码分割** | 首页关键路径仅 React/路由/API 层（主入口 gzip ≈ 61KB）；markdown 全家桶随详情/编辑页懒加载（React.lazy + Suspense） |
+| **首页服务端分页** | `HomePage` 调 `fetchPosts`，每页24条；未搜索时携带当前 `workspace_id`，按服务端返回的 `total` / 页码导航。浏览器只保留当前页，不再启动全量拉取或设置2000条客户端截断 |
+| **全文关键词匹配（服务端）** | 输入防抖300ms调 `GET /api/posts?page=&page_size=24&keyword=`，后端匹配标题/摘要/英文名/**正文**；有关键词时不传 `workspace_id`，跨库分页展示。结果带库名，`Ctrl/Cmd+K` 聚焦搜索；清空关键词回到当前库的服务端分页。换页/换库/新输入取消旧请求 |
+| **路由级代码分割** | entry 承载React/路由、QueryClient、认证与公共外壳；Markdown/Mermaid与编辑器重依赖按需加载。本轮单个entry约270.4kB / gzip86.4kB，**包含静态依赖的初始JS闭包**为gzip89,947B（基线82,302B，增加7,645B）；单chunk大小不等于首屏闭包或页面总传输 |
 
 ## 2. 文件结构
 
@@ -115,11 +115,11 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 
 ```js
 API_BASE                 // http://{hostname}:60100（全项目唯一持有处）
-apiFetch(path, options)  // 自动附加 Content-Type；JSON body 直接传对象。
+apiFetch(path, options)  // JSON body 需 JSON.stringify；自动补 Content-Type，FormData 保留浏览器边界。
                          // 认证=会话 Cookie（credentials:'include'），401 统一跳 /login
 ```
 
-业务函数在各能力包自己的 api.js（见下）；`err.status` 携带 HTTP 状态码。
+业务函数在各能力包自己的 api.js（见下）；`apiFetch` 保留 Response 契约，部分旧函数仍返回业务信封，调用方须检查 `success`。`apiJson` / `readEnvelope` 抛出的 `ApiError` 保留 `status`、业务码、详情、trace 与 cause。
 
 **文章详情 SWR 预取缓存**（提速核心，改详情加载逻辑时必读）：
 
@@ -134,7 +134,7 @@ invalidatePost(id)     // 编辑保存/删除后失效；LRU 上限 50 条
 
 **api.js 已按能力分包**（每个能力目录自己的 api.js，公共传输层唯一在 `shared/client.js`）：
 
-- `blog/api.js`：fetchAllPosts / fetchWorkspaces / createWorkspace / searchPosts / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（SWR 预取缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks；并透传 `apiFetch, API_BASE`
+- `blog/api.js`：`fetchPosts(params,{signal})` 为当前首页分页/搜索入口；fetchWorkspaces / createWorkspace / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（按账号/数据库隔离的SWR缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks；保留旧 fetchAllPosts / searchPosts helper，但首页不再调用；并透传 `apiFetch, API_BASE`
 - `blog/diary/api.js`（日记子域）：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
 - `vault/api.js`：vault*（条目/审计/备份）+ pwsvc*（项目/类型/用户/校验日志/限流）封装，透传 `API_BASE`
 - `logs/api.js`：sdklogSearch / sdklogSysnames
@@ -154,7 +154,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 | `fence` | 包装为 `.code-block`（语言标签 + 复制按钮）；`mermaid` 输出 `.mermaid` div + `data-mermaid-source` 复制源；attrs 解析 `{.line-numbers}`(行号) 与 `{data-highlight="2,4-6"}`(行高亮) |
 | `blockquote_open` | GitHub Alerts：首行 `[!NOTE|TIP|WARNING|CAUTION|IMPORTANT]` → `blockquote.github-alert-*` + emoji 图标（**同时剥离 children 首个 text token 的标记**，只改 content 无效） |
 | `image` | 非 http/blob/data 的 src 改写为后端图片接口 URL（`/api/images/` 前缀→只补主机名，`/` 开头→absolute，否则→relative）；带 title 时包 `figure.image-figure` + `figcaption` |
-| `inline: wiki_link` | `[[目标]]` / `[[目标\|显示文字]]` → `<a class="wiki-link" data-wiki-target>` 占位；目标=同库文章的 name 或标题（`buildWikiMap` 构建映射，name 优先）；`applyWikiLinks(html, map)` 二次解析出 href，未命中标记 `wiki-link-missing`（无 href 不可点）。代码块/行内代码内不生效 |
+| `inline: wiki_link` | `[[目标]]` / `[[目标\|显示文字]]` → `<a class="wiki-link" data-wiki-target>` 占位；`buildWikiMap` 收集同库全部name后补title，name优先，重复title以最小ID稳定决定；`applyWikiLinks(html, map)` 二次解析href，未命中标记 `wiki-link-missing`（无href不可点）。代码块/行内代码内不生效 |
 | render 后处理 | `==text==` → `<mark>`（先摘出 `<pre>/<code>` 再替换，避免误伤代码） |
 
 渲染能力全清单（40+ 项）见根目录 `README.md` 的"Markdown 渲染能力"一节。
@@ -164,7 +164,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ## 5. 页面组件（按能力包）
 
 ### blog/pages（博客各页）
-- `HomePage`：`fetchAllPosts` 全量拉取 → **按当前知识库过滤** → 卡片网格（骨架屏 loading）；服务端全文搜索（`searchPosts`，300ms 防抖，跨知识库，结果带库徽章；Fuse.js 已移除）；**最近浏览**横条（`fetchRecentPosts(8)`，跨库，仅非搜索态显示）
+- `HomePage`：`fetchPosts` 按当前库请求每页24条元数据并显示上一页/下一页；输入关键词后300ms防抖，改为跨知识库的服务端关键词分页，清空后回当前库，不对浏览器已加载卡片做全量搜索。旧请求由AbortController取消；列表/搜索仍不返回正文。**最近浏览**横条为 `fetchRecentPosts(8)`，跨库且仅非搜索态显示。
 - **WorkspaceSwitcher**（正文工具行，`blog/pages/HomePage.jsx` 内组件）：触发按钮（文件夹图标 + 当前库名截断 + 旋转箭头）→ 下拉面板（`animate-dropdown` 入场）：库名 + 文章数 + 选中态高亮（蓝点/蓝底）、"＋ 新建知识库"进入创建模式（面板内输入框 + 行内错误 + 取消/创建按钮，Enter 提交 Esc 取消）、点外部/Esc 关闭；选择或创建后 `history.replaceState` 更新 `?ws=` 并自动切换
 - 公共左侧栏提供知识库（含子项新建文章）/ 资产库（Prompt/Skill）导航；正文工具行保留知识库切换器、搜索与新建按钮
 - 门户“管理”卡片、知识库“内容管理”导航及旧独立管理页已移除；历史 `/admin` 地址通过 replace 重定向到 `/blog`，保存的门户分组会自动过滤旧卡片。
@@ -175,7 +175,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - **目录（TOC）**：对渲染后 HTML 的 h1~h6 注入 `heading-N` id，右侧生成锚点目录，`IntersectionObserver` 高亮当前节
 - **侧边栏树**：树形展开/折叠、右键菜单（删除等）、dnd-kit 拖拽排序（乐观更新 + `PUT /reorder`（顶级需带 workspace_id）+ 失败回滚重拉同库树）
 - **渲染**：`md.render(content)` 走模块级 `renderCache`（按正文内容 LRU 16 条，重访近期文章跳过整个渲染管线）+ `useMemo`；图片点击进入自研 lightbox（缩放/拖动）
-- **双链**：`buildWikiMap(tree)` → `applyWikiLinks(html, map)` 解析 `[[...]]`（树异步到达后自动补 href）；正文内双链点击走事件委托 → SPA 导航（不整页刷新）；文末**反向链接**区（`GET /api/posts/id/:id/backlinks`，hover 预取）
+- **双链**：`buildWikiMap(tree)` → `applyWikiLinks(html, map)` 解析 `[[...]]`（树异步到达后补href），点击事件委托走SPA导航。文末反向链接仍请求 `GET /api/posts/id/:id/backlinks`：后端从 `blog_post_links` 查询同库来源元数据，不在浏览时扫描全库正文；正文写入/修改时维护目标文本投影，content哈希避免无内容变化时重建，迁移补齐未索引文章。name优先、重复title最小ID的目标规则与前端映射保持一致，源文章链接可hover预取。
 - **单篇导出**：meta 行“导出”按钮（纯前端）——正文已在手，合成 YAML frontmatter + 图片 URL 绝对化（`/api/images/x` → `API_BASE + path`，导出文件在任意位置图片仍可访问）→ Blob 下载 `<name>.md`；全库 zip 备份通过 `GET /api/export/markdown` 下载
 - **mermaid**：见上节
 - **dangerouslySetInnerHTML 必须传稳定引用**（`proseProps = useMemo(() => ({ __html: html }), [html])`，编辑器两页同理 `previewProps`）：react-dom 的更新路径对 innerHTML 不做同值比较，行内对象字面量会让任何无关重渲染（树刷新/TOC 高亮/展开折叠）都整体重建正文 DOM——抹掉 mermaid.run 注入的 SVG 且无法自动恢复，还有整段 HTML 重新解析的性能开销
@@ -185,7 +185,7 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 - 编辑/预览左右分栏，固定高 `h-[70vh]`，两栏各自内部滚动
 
 ### CreatePost.jsx / EditPost.jsx
-- 表单字段：标题、name（英文名，前端校验格式，**同库内唯一**）、所属知识库下拉（`?ws=` 预选，切换库时清空父文章）、正文（`#md-editor` textarea + 工具栏插入语法）、摘要、父文章（**同库**树的扁平化下拉，过滤自身与子孙）、状态
+- 表单字段：标题、name（英文名，前端校验格式，**同库内唯一**）、所属知识库下拉（`?ws=` 预选，切换库时清空父文章）、正文（CodeMirror adapter，保留 `#md-editor` / editorRef 选择与滚动兼容接口及工具栏插入语法）、摘要、父文章（**同库**树的扁平化下拉，过滤自身与子孙）、状态
 - **编辑器快捷键**（`useEditorShortcuts`，两页共用）：`Ctrl/Cmd+S` 保存/发布、`Ctrl/Cmd+B` 加粗、`Ctrl/Cmd+I` 斜体、`Ctrl/Cmd+K` 插入链接、正文内 `Tab` 两格缩进；B/I/K 仅在正文区/页面空白处生效，不干扰标题等普通输入框
 - **实时预览**：`useDeferredValue(content)` 延后重渲染 + `md.render` + mermaid.run，与详情页同一管线
 - Edit 先拉详情再按库拉树（父文章选项仅同库）；提交 `PUT /api/posts/id/:id` 后跳回详情
@@ -239,11 +239,11 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 ### AssetsPage.jsx（blog/assets/，资产库 UI——知识库模块 tab）
 
 单页 `/assets`（2026-10-17 自独立模块并入 blog，module-routes 归 blog；模块侧栏「资产库」项的 children 为 Prompt/Skill 两项——「浏览」按资产类型拆分、列表按 kind 隔离，经 useModuleNavigation 仅注册 activeKey/onSelect，不覆盖 blog 静态菜单；回收站与统计视图及能力已移除，删除为直接彻底删除〔带确认〕）。资产库视图 = 页内左过滤栏（全部/★收藏 快速过滤 + 分类树含计数 + 标签 chips）+ 工具栏（Ctrl+K 搜索/排序/批量/导入导出/上传 Skill〔仅 Skill 视图〕/新建〔按视图预填 kind〕）+ 卡片网格（kind 徽标、`{{}}` 变量数、标签、版本/使用数 footer、hover 操作；批量模式行内勾选）。
-详情为右滑抽屉（ItemDetail）：操作组（复制全文/编辑/导出 md·json/复制副本/收藏/归档/回收站）+ 三 tab——预览（`shared/md.js` 渲染与原文切换）、变量填充（{{变量}} 表单 + 实时填充预览 + 复制计使用，值记忆 localStorage）、版本（列表 + 行级 LCS diff + 恢复）。编辑器为弹窗（ItemEditor：kind 分段、实时变量检测 chips、版本备注、Ctrl+S/Esc）。导入面板先预检后执行（dry_run 结果展示、分类自动创建提示）；导出走 blob 下载解析 filename*。统计视图为纯 CSS 柱图（30 天趋势零依赖）。kit.jsx 提供 Toast/Modal/diffLines/copyText/KIND_META。
+详情为右滑抽屉（ItemDetail）：操作组（复制全文/编辑/导出 md·json/复制副本/收藏/归档/回收站）+ 三 tab——预览（`shared/md.js` 渲染与原文切换）、变量填充（{{变量}} 表单 + 实时填充预览 + 复制计使用，值记忆 localStorage）、版本（分页列表 + 共享DiffViewer完整差异 + 恢复）。编辑器为弹窗（ItemEditor：kind 分段、实时变量检测 chips、版本备注、Ctrl+S/Esc）。导入面板先预检后执行（dry_run 结果展示、分类自动创建提示）；导出走 blob 下载解析 filename*。统计视图为纯 CSS 柱图（30 天趋势零依赖）。kit.jsx 提供 Toast/Modal/diffLines/copyText/KIND_META。
 
 ### DevToolboxPage.jsx（devtoolbox/，开发者工具箱 UI）
 
-单页 `/devtoolbox`（lime 个性色，门户卡片入口，`?t=<工具id>` 深链）。侧栏两级导航（8 分类 → 31 工具）经 useModuleNavigation 注册；首页为搜索 + 分组卡片网格。31 个工具组件各自 React.lazy 独立分包（registry.js 为分组/名称/描述/组件单源）。绝大多数工具纯本地计算（隐私 + 即时）；仅哈希/字符集互转/JSON⇄YAML/二维码走 `api.js`（网络错误本地化中文并保留 cause）。kit.jsx 提供 UI 原子（ToolHead 的 `right` prop 为头部动作区、TwoPane 双栏编辑器、CopyBtn/Segmented/Check/Toast）；lib/ 为纯逻辑（diff 行级 LCS+行内 token 高亮+jsonDiff、cron 解析推算、color WCAG、misc 的 UTF-8 安全 Base64 与 uuid/nanoId/密码生成）。md-preview 直接复用 `shared/md.js`。模块细节见 `docs/modules/devtoolbox.md`。
+单页 `/devtoolbox`（lime 个性色，门户卡片入口，`?t=<工具id>` 深链）。侧栏两级导航（8 分类 → 31 工具）经 useModuleNavigation 注册；首页为搜索 + 分组卡片网格。31 个工具组件各自 React.lazy 独立分包（registry.js 为分组/名称/描述/组件单源）。绝大多数工具纯本地计算（隐私 + 即时）；仅哈希/字符集互转/JSON⇄YAML/二维码走 `api.js`（网络错误本地化中文并保留 cause）。kit.jsx 提供 UI 原子（ToolHead 的 `right` prop 为头部动作区、TwoPane 双栏编辑器、CopyBtn/Segmented/Check/Toast）；lib/ 为纯逻辑（diff 共享jsdiff/Worker+行内高亮+jsonDiff、cron 解析推算、color WCAG、misc 的 UTF-8 安全 Base64 与 uuid/nanoId/密码生成）。md-preview 直接复用 `shared/md.js`。模块细节见 `docs/modules/devtoolbox.md`。
 
 ### ConfigPage.jsx（config/，系统配置总入口 UI）
 
@@ -287,13 +287,13 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 | 下拉动画 | `.animate-dropdown`（透明度 + 轻微上移缩放，0.16s），用于知识库切换器等浮层 |
 | 滚动恢复 | `ScrollToTop`：路由切换回顶部（锚点跳转除外） |
 | 动效守卫 | `prefers-reduced-motion: reduce` 时全局禁用动画/过渡 |
-| FPS 徽章 | `FPSMeter`（`App.jsx`）：右上角固定小徽章，rAF 帧间隔 500ms 滑动窗口统计实时帧率，`pointer-events-none` 不挡交互。**帧率自适应无需实现**——本应用动画全部为 CSS 合成器驱动，天然按屏幕 vsync 跑（170Hz 屏即 170fps）；浏览器对遮挡/后台窗口会把 rAF 节流到 1Hz，属预期行为 |
+| 图谱 FPS 徽章 | `FpsBadge`（`gamemap/board/shared.jsx`）：约500ms累计rAF间隔并统计观测频率。该读数受主线程工作、浏览器节流与同机负载影响，不等同实际显示刷新率或输入延迟；JavaScript 图谱几何、布局与编辑处理不能由 CSS/vsync 保证固定帧率。后台窗口可能被节流。 |
 
 ## 7. 构建与部署
 
 ```bash
 npm run dev                          # 开发（60101，热更新）
-npm run build                        # 生产构建 → dist/（主入口 ~197KB/gzip ~61KB，重依赖按路由分块）
+npm run build                        # 生产构建 → dist/；entry单chunk与初始静态闭包分别统计，重依赖按需加载
 npx vite preview --host 0.0.0.0 --port 60101   # 静态服务 dist
 bash shell/frontend/start.sh         # 一键：build + preview（生产模式）
 bash shell/frontend/start.sh dev     # 一键：dev server
@@ -315,6 +315,19 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 
 ## 8. 已知限制
 
-1. 无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
 2. 生产模式下系统配置页切换数据库后需手动重启后端（页面有提示）
 3. 开发模式下连续改动源文件后，Vite 依赖重优化窗口内 mermaid 偶发不渲染（刷新即恢复，仅 dev，生产预打包不受影响）
+4. 新增编辑器、Worker与公共恢复能力有包体成本：初始静态JS闭包gzip82,302→89,947B（**+7,645B**）；全部生产JS（含entry、所有lazy/Worker）合计gzip2,341,947→2,653,836B（**+13.3%**），后者不是首屏传输量。CodeMirror/Lezer相关懒加载chunk约201.3kB gzip。统计口径与原锁文件独立构建证据见 `docs/optimization/frontend-verification.md`；包体不等于实际加载时延。
+5. 依赖审计仍有**2条low**（Quill及父SimpleMindMap传播报告），没有通过强制降级掩盖。该次普通生产构建与审计构建逐文件SHA一致；全部rendered chunks中的Quill/RichText/Formula及旧嵌套KaTeX模块均为0，证明上述目标模块没有进入该产物，不能说依赖已删除或整体风险归零。启用插件或改变构建后须重审；证据见 `docs/optimization-dependencies.md` 和 `frontend-bundle-comparison.json`。
+6. 首页分页限制的是传输与DOM数量，不代表全文检索已建立专用索引：当前关键词匹配仍由服务端查询标题/摘要/英文名/正文。更大数据量下的查询耗时应独立验证，不能从客户端只显示24条推导固定响应时间。
+
+
+## 2026-10-21 全模块公共组件优化
+
+统一ApiError/readEnvelope/apiJson与AbortSignal，响应头到body读取期间均检查dataEpoch；身份和数据库分scope管理草稿及Query缓存。AuthGate去重认证且只有401退出，网络/503有重试状态，未知路由显示404并提供错误边界。
+
+通用UI迁往shared/ui，todo/kit保留兼容reexport。CodeMirror6取代高频大textarea路径；TanStack Virtual承载长列表；jsdiff/正则/大JSON使用可取消、有截止时间的Worker。saveCoordinator提供单资源串行确认与未知结果mutation重放；门户reset设屏障。图谱保留自绘SVG/ReactFlow，复用几何缓存与空间网格，拖动以多看板CAS批量确认；ELK仅PoC、不加入依赖。
+
+Vault Argon2派生在Worker，解锁会话以generation取消迟回填，有限并发解密和虚拟列表，HIBP仅内存缓存，默认本地图标；密码派生及加密参数不变。总配置按running_backend/pending_restart轮询切库实际状态。
+
+精确组件版本与许可见docs/optimization-dependencies.md；功能验证、性能样本及最终验收进度见docs/optimization-execution.md。整站构建/体积对照分别安装各自lockfile；几何算法隔离实验使用相同当前依赖，不能外推为整站依赖升级收益。`graph-performance.json`记录最终一轮18样本，`sourcesUnchanged=true`、`failures=[]`；早期受同机负载影响的样本另存`graph-performance-contended.json`。本轮我方未并行其他测试，已知的旧timeline基准已自然退出，但未采集全主机CPU指标，不能宣称硬件独占。1000节点拖动中位数6.418→43.113fps，仍未达到60fps；p95为rAF帧间隔，松手指标为pointerup后两个rAF的观测间隔，均不能当作端到端输入延迟。方法、完整数据与单设备验证边界详见docs/optimization/frontend-verification.md。

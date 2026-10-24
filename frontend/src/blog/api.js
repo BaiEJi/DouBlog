@@ -1,10 +1,19 @@
 import { apiFetch } from '@/shared/client'
+import { getDataIdentity } from '@/shared/dataEpoch'
 
 export { apiFetch, API_BASE } from '@/shared/client'
 
 // 博客/知识库 API（文章/知识库/图片/最近浏览/反链）。
 
-export async function fetchAllPosts({ pageSize = 100, maxPosts = 2000 } = {}) {
+export async function fetchPosts(params = {}, options = {}) {
+  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''))
+  const response = await apiFetch(`/api/posts?${query}`, options)
+  const body = await response.json()
+  if (!response.ok || !body.success) throw new Error(body.message || '加载文章失败')
+  return body.data
+}
+
+export async function fetchAllPosts({ pageSize = 100, maxPosts = Infinity } = {}) {
   const items = []
   let page = 1
   let total = Infinity
@@ -68,12 +77,13 @@ export async function fetchPostTree(workspaceId) {
  */
 const postCache = new Map()   // id -> { promise, data }（promise 去重并发；resolved 后 data 可同步读）
 const POST_CACHE_MAX = 50
+const cacheKey = id => JSON.stringify([getDataIdentity(), String(id)])
 
 export function prefetchPost(id) {
-  const key = String(id)
+  const key = cacheKey(id)
   if (!postCache.has(key)) {
     const entry = { data: undefined }
-    entry.promise = apiFetch(`/api/posts/id/${key}?no_view=1`)
+    entry.promise = apiFetch(`/api/posts/id/${encodeURIComponent(String(id))}?no_view=1`)
       .then(r => r.json())
       .then(d => { entry.data = d && d.success ? d.data : null; return entry.data })
       .catch(() => { entry.data = null })
@@ -88,18 +98,18 @@ export function prefetchPost(id) {
 /** 同步读取已解析完成的缓存（未决或不存在返回 null，不阻塞） */
 
 export function takeCachedPost(id) {
-  const e = postCache.get(String(id))
+  const e = postCache.get(cacheKey(id))
   return e && e.data !== undefined ? e.data : null
 }
 
 /** 详情页正常拉取（计浏览）后回填缓存，供后续 takeCachedPost 命中 */
 
 export function setCachedPost(id, data) {
-  postCache.set(String(id), { promise: Promise.resolve(data), data })
+  postCache.set(cacheKey(id), { promise: Promise.resolve(data), data })
 }
 
 export function invalidatePost(id) {
-  postCache.delete(String(id))
+  postCache.delete(cacheKey(id))
 }
 
 /**

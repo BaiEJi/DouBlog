@@ -14,6 +14,8 @@ import { uploadImage } from '@/blog/api'
  */
 export function useEditorEnhancements({ content, setContent, active = true }) {
   const [uploading, setUploading] = useState(0)
+  const [editorReady, setEditorReady] = useState(0)
+  const onEditorReady = useCallback(() => setEditorReady(value => value + 1), [])
   const editorRef = useRef(null)
   const previewRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -117,9 +119,9 @@ export function useEditorEnhancements({ content, setContent, active = true }) {
       pv.removeEventListener('scroll', onPreviewScroll)
       clearTimeout(pauseTimer)
     }
-  }, [hasContent, active])
+  }, [hasContent, active, editorReady])
 
-  return { editorRef, previewRef, fileInputRef, uploading, insertText, uploadAndInsert, handlePaste, handleDrop, pickImage }
+  return { onEditorReady, editorRef, previewRef, fileInputRef, uploading, insertText, uploadAndInsert, handlePaste, handleDrop, pickImage }
 }
 
 /** 常用块模板（工具栏"表格/图表/代码块"插入） */

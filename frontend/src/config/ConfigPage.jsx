@@ -6,8 +6,9 @@
  * - API Hub 出站代理：上游连接的可选正向代理（QQ 开放平台等直连不通的目标）
  * - 登录账号：用户名/密码管理（system_accounts 表，PBKDF2 哈希，改密需验旧密码）
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import PageHeader from '../shared/PageHeader'
+import { advanceDataEpoch } from '../shared/dataEpoch'
 import { apihubGetProxy, apihubSaveProxy, apihubTestProxy } from '../apihub/api'
 import {
   fetchAccount, fetchDbStatus, testDbConnection, switchDatabase, updateAccount,
@@ -36,6 +37,7 @@ function Banner({ tone, children }) {
 }
 
 function DbCard() {
+  const switching = useRef(null)
   const [status, setStatus] = useState(null)
   const [pg, setPg] = useState({ host: 'localhost', port: 5432, user: 'postgres', password: '', dbname: 'doublog' })
   const [busy, setBusy] = useState('')
@@ -52,6 +54,7 @@ function DbCard() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => () => switching.current?.abort(), [])
 
   const isPg = status?.backend === 'postgres'
 
@@ -70,18 +73,33 @@ function DbCard() {
       ? '切换到 PostgreSQL？将直接读取目标库现有数据（空库自动建表播种），两侧数据互不影响。'
       : '切换回本地 SQLite？将读取本地库现有数据。')) return
     setBusy('switch'); setMsg(null)
+    switching.current?.abort()
+    const controller = new AbortController(); switching.current = controller
     try {
       const d = await switchDatabase(target === 'postgres' ? { target: 'postgres', postgres: pg } : { target: 'sqlite' })
-      setMsg({
-        tone: 'ok',
-        text: d.restart_required
-          ? `已切换到 ${d.backend}。生产模式需手动重启后端生效。`
-          : `已切换到 ${d.backend}，后端正在自动重启（约 2-3 秒）…`,
-      })
-      setTimeout(load, 3500)
+      setMsg({ tone: 'info', text: d.restart_required ? `配置已保存为 ${d.backend}，等待后端重启生效。` : `配置已保存，正在等待 ${d.backend} 就绪…` })
+      const deadline = Date.now() + 45000
+      let confirmed = false
+      while (!controller.signal.aborted && Date.now() < deadline) {
+        try {
+          const current = await fetchDbStatus({ signal: controller.signal })
+          if (current.running_backend === target && current.identity && current.generation && !current.pending_restart) {
+            confirmed = true; setStatus(current)
+            setMsg({ tone: 'ok', text: `已确认 ${target} 连接生效。` })
+            advanceDataEpoch()
+            break
+          }
+        } catch (error) { if (error.name === 'AbortError') throw error }
+        await new Promise((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new DOMException('已取消', 'AbortError')) }
+          const timer = setTimeout(() => { controller.signal.removeEventListener('abort', abort); resolve() }, 800)
+          controller.signal.addEventListener('abort', abort, { once: true })
+        })
+      }
+      if (!confirmed && !controller.signal.aborted) setMsg({ tone: 'err', text: `配置已保存，45 秒内未确认 ${target} 连接生效。请检查或重启后端后刷新状态。` })
     } catch (e) {
-      setMsg({ tone: 'err', text: e.message })
-    } finally { setBusy('') }
+      if (!controller.signal.aborted) setMsg({ tone: 'err', text: e.message })
+    } finally { if (!controller.signal.aborted) setBusy('') }
   }
 
   return (

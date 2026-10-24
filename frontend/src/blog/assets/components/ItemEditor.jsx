@@ -2,7 +2,8 @@
  * 资产编辑器（新建/编辑共用）：kind、标题、摘要、分类、标签、正文 + 版本备注；
  * 正文实时检测 {{变量}}；Ctrl+S 保存。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import CodeEditor from '@/shared/CodeEditor'
 import { BTN_GHOST, BTN_PRIMARY, INPUT, KIND_META } from '../kit'
 
 const VAR_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_.-]*)\s*\}\}/g
@@ -17,7 +18,6 @@ export default function ItemEditor({ item, categories, defaultKind, onClose, onS
   const [content, setContent] = useState(item?.content || '')
   const [versionNote, setVersionNote] = useState('')
   const [saving, setSaving] = useState(false)
-  const contentRef = useRef(null)
 
   const variables = useMemo(() => {
     const seen = []
@@ -133,11 +133,7 @@ export default function ItemEditor({ item, categories, defaultKind, onClose, onS
 
           <div className="flex flex-col min-h-[220px]">
             <label className="block text-[12px] font-medium text-stone-500 mb-1.5" htmlFor="asset-content">正文 *（Markdown）</label>
-            <textarea id="asset-content" ref={contentRef} value={content}
-              onChange={e => setContent(e.target.value)}
-              spellCheck={false}
-              className="flex-1 min-h-[220px] w-full px-3.5 py-3 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-[13px] font-mono leading-relaxed outline-none focus:border-black/30 dark:focus:border-white/30 resize-y"
-              placeholder={'支持 Markdown。用 {{变量名}} 声明可填充变量，例如：\n\n请作为{{角色}}，审查以下{{语言}}代码：\n```\n{{代码}}\n```'} />
+            <CodeEditor value={content} onChange={setContent} language="markdown" height={300} ariaLabel="资产正文" />
           </div>
 
           {editing && (

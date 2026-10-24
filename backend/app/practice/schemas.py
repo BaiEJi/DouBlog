@@ -16,6 +16,7 @@ from app.shared.timeutil import ensure_aware
 
 
 class ProblemCreate(BaseModel):
+    mutation_id: Optional[str] = Field(default=None, min_length=8, max_length=64)
     title: str = Field(min_length=1, max_length=255)
     source: str = "other"
     source_no: Optional[str] = Field(default=None, max_length=64)
@@ -127,6 +128,7 @@ class ProblemSummaryOut(BaseModel):
 
 
 class CodeCreate(BaseModel):
+    client_id: Optional[str] = Field(default=None, max_length=128)
     language: str = Field(min_length=1, max_length=20)
     code: str = Field(min_length=1)
     note: Optional[str] = None
@@ -140,6 +142,7 @@ class CodeUpdate(BaseModel):
 
 
 class SolutionCreate(BaseModel):
+    client_id: Optional[str] = Field(default=None, max_length=128)
     name: str = Field(min_length=1, max_length=128)
     approach_md: Optional[str] = None
     time_complexity: Optional[str] = Field(default=None, max_length=32)
@@ -155,6 +158,24 @@ class SolutionUpdate(BaseModel):
     space_complexity: Optional[str] = Field(default=None, max_length=32)
     is_preferred: Optional[bool] = None
     revision: int  # 乐观锁必填
+
+
+class AggregateCode(CodeCreate):
+    id: Optional[str] = None
+    client_id: Optional[str] = Field(default=None, max_length=128)
+
+
+class AggregateSolution(SolutionCreate):
+    id: Optional[str] = None
+    client_id: Optional[str] = Field(default=None, max_length=128)
+    codes: List[AggregateCode] = Field(default_factory=list, max_length=32)
+
+
+class ProblemAggregateUpdate(ProblemUpdate):
+    """完整解法集合替换；base 版本覆盖被删除的解法，防止静默丢弃并发编辑。"""
+    mutation_id: str = Field(min_length=8, max_length=64)
+    solution_revisions: dict[str, int] = Field(default_factory=dict)
+    solutions: List[AggregateSolution] = Field(default_factory=list, max_length=200)
 
 
 # ---------------- Tag ----------------

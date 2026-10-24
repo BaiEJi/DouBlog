@@ -11,6 +11,7 @@ import json
 import re
 import threading
 import time
+import weakref
 
 import requests
 
@@ -21,38 +22,66 @@ from . import db_svc
 from .auth import AuthError, LoginAttempt, _http, decode_steam_jwt, generate_access_token
 from .worker import AccountWorker
 
-_log = mod_logger('todo')
+_log = mod_logger('steamidler')
+
+
+class _BoundDatabase:
+    def __init__(self, app):
+        self.app = app
+
+    def __getattr__(self, name):
+        target = getattr(db_svc, name)
+        def call(*args, **kwargs):
+            from app.db import database_context
+            with database_context(self.app):
+                return target(*args, **kwargs)
+        return call
 
 
 class Manager:
-    def __init__(self):
-        self.db = db_svc               # DB 服务层(源为 raw SQLite Database 实例)
+    def __init__(self, app=None):
+        self.db = _BoundDatabase(app) if app is not None else db_svc
         self.attempts = {}                 # attempt_id -> LoginAttempt
         self.workers = {}                  # steamid -> AccountWorker
         self._tokens = {}                  # steamid -> {"access_token", "exp"}
         self._lock = threading.RLock()
         self._stop_all = False
+        self._account_locks = {}
+        self._completed_attempts = {}
+        self._completion_locks = {}
+
+    def _account_lock(self, steamid, kind='worker'):
+        with self._lock:
+            return self._account_locks.setdefault((steamid, kind), threading.RLock())
 
     # ================= 启动 / 停止 =================
     def start(self):
         """服务启动: 恢复所有已保存账号"""
+        self._stop_all = False
         for acc in self.db.list_accounts():
             try:
                 self._start_worker_for(acc)
             except Exception as e:
                 _log.warning(f"恢复账号 {acc['account_name']} 失败: {e}")
 
-    def shutdown(self):
+    def shutdown(self, timeout=8):
         self._stop_all = True
+        deadline = time.monotonic() + timeout
         with self._lock:
             workers = list(self.workers.values())
+            attempts = list(self.attempts.values())
+        for attempt in attempts:
+            if getattr(attempt, 'state', '') in ('pending', 'polling'):
+                attempt.cancel()
         for w in workers:
             w.stop()
         for w in workers:
-            w.join(timeout=8)
+            w.join(timeout=max(0, deadline - time.monotonic()))
+        return all(not w.is_alive() for w in workers)
 
     # ================= 登录流程 =================
     def begin_login(self, username, password):
+        self._prune_attempts()
         with self._lock:
             # 同一账号不允许并发登录
             for a in self.attempts.values():
@@ -60,6 +89,10 @@ class Manager:
                     a.cancel()
         attempt = LoginAttempt(username.strip(), password)
         with self._lock:
+            if self._stop_all:
+                raise AuthError('服务正在停止', 0)
+            if len(self.attempts) >= 128:
+                raise AuthError('登录会话过多，请稍后重试', 0)
             self.attempts[attempt.id] = attempt
         status = attempt.begin()
 
@@ -91,6 +124,7 @@ class Manager:
         return attempt.status() if attempt else {"state": "failed", "error": "登录会话不存在或已过期"}
 
     def _get_attempt(self, attempt_id):
+        self._prune_attempts()
         with self._lock:
             a = self.attempts.get(attempt_id)
             if a and a.state in ("success", "failed", "timeout"):
@@ -99,6 +133,35 @@ class Manager:
                     self.attempts.pop(attempt_id, None)
                     return None
             return a
+
+    def _prune_attempts(self):
+        with self._lock:
+            cutoff = time.time() - 600
+            for aid, attempt in list(self.attempts.items()):
+                if attempt.created_at >= cutoff:
+                    continue
+                if attempt.state in ('pending', 'polling'):
+                    attempt.cancel()
+                self.attempts.pop(aid, None)
+                self._completed_attempts.pop(aid, None)
+                lock = self._completion_locks.get(aid)
+                if lock is not None and lock.acquire(blocking=False):
+                    lock.release()
+                    self._completion_locks.pop(aid, None)
+
+    def complete_login(self, attempt):
+        with self._lock:
+            lock = self._completion_locks.setdefault(attempt.id, threading.Lock())
+        with lock:
+            with self._lock:
+                cached = self._completed_attempts.get(attempt.id)
+            if cached is not None:
+                return cached
+            account = self.maybe_complete(attempt)
+            if account is not None:
+                with self._lock:
+                    self._completed_attempts[attempt.id] = account
+            return account
 
     def _totp_code(self, shared_secret):
         try:
@@ -152,36 +215,68 @@ class Manager:
 
     # ================= worker 生命周期 =================
     def _restart_worker_for(self, acc):
+        with self._account_lock(acc['steamid']):
+            return self._restart_worker_locked(acc)
+
+    def _restart_worker_locked(self, acc):
         steamid = acc["steamid"]
+        if self._stop_all:
+            raise AuthError('服务正在停止', 0)
         with self._lock:
-            old = self.workers.pop(steamid, None)
+            old = self.workers.get(steamid)
         if old:
             old.stop()
             old.join(timeout=6)
+            if old.is_alive():
+                raise AuthError('旧挂机进程尚未停止，请稍后重试', 0)
         idle = self.db.get_idle_appids(steamid) if acc.get("auto_resume") else []
         token_info = self._tokens.get(steamid, {})
         w = AccountWorker(self, steamid, acc["account_name"], acc["refresh_token"],
                           access_token=token_info.get("access_token", ""), idle_appids=idle)
         with self._lock:
+            if self._stop_all:
+                raise AuthError('服务正在停止', 0)
+            w.start()
             self.workers[steamid] = w
-        w.start()
 
     def _start_worker_for(self, acc):
         """启动(通常用于服务启动时恢复)"""
+        with self._account_lock(acc['steamid']):
+            with self._lock:
+                old = self.workers.get(acc['steamid'])
+                if old is not None and old.is_alive():
+                    return old
+            return self._start_worker_locked(acc)
+
+    def _start_worker_locked(self, acc):
+        if self._stop_all:
+            return
         idle = self.db.get_idle_appids(acc["steamid"]) if acc.get("auto_resume") else []
         w = AccountWorker(self, acc["steamid"], acc["account_name"], acc["refresh_token"], idle_appids=idle)
         with self._lock:
+            if self._stop_all:
+                return
+            w.start()
             self.workers[acc["steamid"]] = w
-        w.start()
 
     # ================= access token / 游戏库 =================
     def refresh_access_token(self, steamid):
+        requested = time.time()
+        with self._account_lock(steamid, 'token'):
+            with self._lock:
+                info = self._tokens.get(steamid, {})
+                if info.get('refreshed_at', 0) >= requested:
+                    return info['access_token']
+            return self._refresh_access_token_locked(steamid)
+
+    def _refresh_access_token_locked(self, steamid):
         acc = self.db.get_account(steamid)
         if not acc:
             raise AuthError("账号不存在", 0)
         token = generate_access_token(_http(), acc["refresh_token"], steamid)
         with self._lock:
-            self._tokens[steamid] = {"access_token": token, "exp": self._jwt_exp(token)}
+            self._tokens[steamid] = {"access_token": token, "exp": self._jwt_exp(token),
+                                    'refreshed_at': time.time()}
         return token
 
     def get_access_token(self, steamid, force=False):
@@ -193,6 +288,14 @@ class Manager:
 
     def fetch_games(self, steamid, force=False):
         """IPlayerService/GetOwnedGames, 带缓存"""
+        requested = time.time()
+        with self._account_lock(steamid, 'games'):
+            acc = self.db.get_account(steamid)
+            if acc and acc.get('games_cache') and (acc.get('games_cached_at') or 0) >= requested:
+                return json.loads(acc['games_cache'])
+            return self._fetch_games_locked(steamid, force)
+
+    def _fetch_games_locked(self, steamid, force=False):
         acc = self.db.get_account(steamid)
         if not acc:
             raise AuthError("账号不存在", 0)
@@ -262,12 +365,20 @@ class Manager:
         return True
 
     def remove_account(self, steamid):
+        with self._account_lock(steamid):
+            return self._remove_account_locked(steamid)
+
+    def _remove_account_locked(self, steamid):
         self.stop_idle(steamid)
         with self._lock:
             w = self.workers.pop(steamid, None)
         if w:
             w.stop(remove=True)
             w.join(timeout=6)
+            if w.is_alive():
+                with self._lock:
+                    self.workers[steamid] = w
+                raise AuthError('挂机进程尚未停止，请稍后重试删除', 0)
         self.db.delete_account(steamid)
         with self._lock:
             self._tokens.pop(steamid, None)
@@ -276,7 +387,8 @@ class Manager:
     # ================= 状态汇总 =================
     def accounts_snapshot(self):
         out = []
-        for acc in self.db.list_accounts():
+        self._prune_attempts()
+        for acc in self.db.list_accounts_public():
             steamid = acc["steamid"]
             with self._lock:
                 w = self.workers.get(steamid)
@@ -290,7 +402,7 @@ class Manager:
                 "avatar_url": acc.get("avatar_url") or "",
                 "idle_appids": idle_appids,
                 "auto_resume": bool(acc.get("auto_resume")),
-                "shared_secret_set": bool(acc.get("shared_secret")),
+                "shared_secret_set": bool(acc.get("shared_secret_set")),
                 "farmed_total": round(acc.get("farmed_seconds") or 0, 1),
                 "state": "offline",
                 "last_error": "",
@@ -313,7 +425,7 @@ class Manager:
 
 # ================= app.state 挂载与进程退出清理 =================
 
-_MANAGERS = []              # 进程内活动 Manager 引用(atexit 尽力停止;本体挂各 app.state)
+_MANAGERS = weakref.WeakSet()
 _MANAGERS_LOCK = threading.Lock()
 
 
@@ -321,22 +433,26 @@ def get_manager(app):
     """取(或懒建)该 app 的 Manager——挂 app.state.steamidler_manager,多 app 测试互不干扰。"""
     m = getattr(app.state, "steamidler_manager", None)
     if m is None:
-        m = Manager()
-        app.state.steamidler_manager = m
         with _MANAGERS_LOCK:
-            _MANAGERS.append(m)
+            m = getattr(app.state, 'steamidler_manager', None)
+            if m is None:
+                m = Manager(app)
+                app.state.steamidler_manager = m
+                _MANAGERS.add(m)
     return m
 
 
-def stop_manager(app):
+def stop_manager(app, timeout=5.0):
     """显式停止该 app 的 Manager(无 FastAPI shutdown 钩子时的手动通道)。"""
     m = getattr(app.state, "steamidler_manager", None)
     if m is None:
-        return
-    m.shutdown()
+        return True
+    ok = m.shutdown(timeout)
     with _MANAGERS_LOCK:
-        if m in _MANAGERS:
-            _MANAGERS.remove(m)
+        if ok:
+            _MANAGERS.discard(m)
+            app.state.steamidler_manager = None
+    return ok
 
 
 @atexit.register

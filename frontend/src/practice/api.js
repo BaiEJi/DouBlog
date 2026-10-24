@@ -26,6 +26,7 @@ async function json(path, options = {}) {
   const body = await r.json().catch(() => ({}))
   if (!r.ok || body.success === false) {
     const err = new Error(body.message || `请求失败(${r.status})`)
+    err.status = r.status
     if (r.status === 409) err.conflict = true
     throw err
   }
@@ -71,6 +72,9 @@ export const getProblem = id => json(`${PREFIX}/problems/${id}`).then(d => {
 /** 部分更新（带 revision 乐观锁，冲突 409） */
 export const updateProblem = (id, payload) =>
   json(`${PREFIX}/problems/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+/** 完整事务保存；同一 mutation_id 和相同正文可安全重试。 */
+export const saveProblemAggregate = (id, payload) =>
+  json(`${PREFIX}/problems/${id}/aggregate`, { method: 'PUT', body: JSON.stringify(payload) })
 /** 软删（级联解法/代码/复习行） */
 export const deleteProblem = id => json(`${PREFIX}/problems/${id}`, { method: 'DELETE' })
 /** 复习打卡 result: 'remembered' | 'fuzzy' | 'forgot'

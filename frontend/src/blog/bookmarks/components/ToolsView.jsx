@@ -4,11 +4,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { importBookmarks, exportBookmarks, checkLinks, listDuplicates, batchItems } from '../api'
-import { Card, Icon, Spinner, Empty } from '../../../todo/kit'
+import { Card, Icon, Spinner, Empty } from '@/shared/ui/kit'
 
 export default function ToolsView({ toast, onChanged }) {
   const fileRef = useRef(null)
   const [importing, setImporting] = useState(false)
+  const [importPreview, setImportPreview] = useState(null)
   const [checking, setChecking] = useState(false)
   const [exporting, setExporting] = useState('')
   const [dups, setDups] = useState(null)
@@ -23,7 +24,16 @@ export default function ToolsView({ toast, onChanged }) {
     if (!file) return
     setImporting(true)
     try {
-      const r = await importBookmarks(file)
+      const preview = await importBookmarks(file, true)
+      setImportPreview({ file, ...preview })
+    } catch (e) { toast(e.message, 'err') } finally { setImporting(false) }
+  }
+  const confirmImport = async () => {
+    if (!importPreview || importing) return
+    setImporting(true)
+    try {
+      const r = await importBookmarks(importPreview.file)
+      setImportPreview(null)
       toast(`导入 ${r.imported} 条（跳过重复 ${r.skipped}，无效 ${r.invalid}，新建分类 ${r.categories_created}）`)
       onChanged()
       reloadDups()
@@ -71,6 +81,11 @@ export default function ToolsView({ toast, onChanged }) {
           <button type="button" onClick={() => fileRef.current?.click()} disabled={importing}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50">
             {Icon.plus}{importing ? '导入中…' : '选择文件导入'}</button>
+          {importPreview && <div className="mt-4 p-3 rounded-xl border border-orange-500/25 bg-orange-500/5 text-xs space-y-2">
+            <p>{importPreview.file.name} · 预检 {importPreview.items} 条，预计新增 {importPreview.imported} 条，跳过重复 {importPreview.skipped} 条，无效 {importPreview.invalid} 条。</p>
+            <p>分类 {importPreview.categories} 个；快照 {(importPreview.snapshot_bytes / 1024).toFixed(1)} KB。尚未写入数据。</p>
+            <div className="flex gap-4"><button type="button" disabled={importing} onClick={confirmImport} className="text-orange-600 dark:text-orange-400 font-medium">确认导入</button><button type="button" onClick={() => setImportPreview(null)}>取消</button></div>
+          </div>}
         </Card>
 
         <Card title="导出备份">
@@ -91,7 +106,7 @@ export default function ToolsView({ toast, onChanged }) {
       <Card title="死链检测"
         extra={<button type="button" onClick={doCheck} disabled={checking}
           className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50">
-          {Icon.refresh}{checking ? '检测中…（最长 1 分钟）' : '检测最久未检的 50 条'}</button>}>
+          {Icon.refresh}{checking ? '检测中…（每条限时 20 秒）' : '检测最久未检的 50 条'}</button>}>
         <p className="text-xs text-stone-500 dark:text-stone-400 leading-6">
           逐条请求原链接判断可达性：HTTP 200-399 与「需登录 / 防爬」（401/403/405/429）视为可达；
           其余 4xx/5xx 记为失效，网络不通记为异常。结果标在书签上（列表与详情可见），失效项可在收藏夹按「失效」筛出后批量清理。

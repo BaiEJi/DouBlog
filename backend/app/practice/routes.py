@@ -13,15 +13,16 @@
 from __future__ import annotations
 
 from typing import Optional
+from sqlalchemy.exc import IntegrityError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.routing import APIRoute
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.response import api_response
+from app.shared.pools import run_blocking
 
 from . import fetchers, importer, services
 from .schemas import (
@@ -29,6 +30,7 @@ from .schemas import (
     CodeUpdate,
     ProblemCreate,
     ProblemUpdate,
+    ProblemAggregateUpdate,
     ReviewIn,
     SolutionCreate,
     SolutionUpdate,
@@ -108,7 +110,17 @@ async def create_problem(p: ProblemCreate):
     def _impl():
         session = db.session
         out = services.create_problem(session, p)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            session.rollback()
+            from .models import PracticeMutation
+            receipt = session.get(PracticeMutation, p.mutation_id) if p.mutation_id else None
+            if receipt is None:
+                raise
+            if receipt.fingerprint != services.create_fingerprint(p):
+                raise HTTPException(409, 'mutation_id 已被其他内容使用') from None
+            out = receipt.result
         return api_response(out, 201, "创建成功")
     return await run_db(_guard(_impl))
 
@@ -125,6 +137,16 @@ async def update_problem(pid: str, p: ProblemUpdate):
     def _impl():
         session = db.session
         out = services.update_problem(session, pid, p)
+        session.commit()
+        return api_response(out)
+    return await run_db(_guard(_impl))
+
+
+@router.put("/problems/{pid}/aggregate")
+async def save_problem_aggregate(pid: str, body: ProblemAggregateUpdate):
+    def _impl():
+        session = db.session
+        out = services.save_problem_aggregate(session, pid, body)
         session.commit()
         return api_response(out)
     return await run_db(_guard(_impl))
@@ -285,7 +307,7 @@ async def fetch_problem(request: Request):
         return api_response(None, 400, "source 应为 leetcode、luogu 或 auto")
     ident = body.get("url") or body.get("slug") or body.get("source_no") or ""
     try:
-        draft = await run_in_threadpool(fetchers.fetch_problem, source, str(ident))
+        draft = await run_blocking('practice-network', fetchers.fetch_problem, source, str(ident), workers=8)
     except fetchers.FetchError as e:
         return api_response(None, 400, str(e))
     return api_response(draft)

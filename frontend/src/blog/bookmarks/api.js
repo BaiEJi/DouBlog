@@ -16,8 +16,8 @@ function withTimeout(promise, ms = TIMEOUT_MS) {
   return Promise.race([promise, timedOut]).finally(() => clearTimeout(timer))
 }
 
-async function json(path, options = {}) {
-  const r = await withTimeout(apiFetch(path, options))
+async function json(path, options = {}, timeoutMs = TIMEOUT_MS) {
+  const r = await withTimeout(apiFetch(path, options), timeoutMs)
   const body = await r.json().catch(() => ({}))
   if (!r.ok || body.success === false) {
     throw new Error(body.message || `请求失败(${r.status})`)
@@ -95,7 +95,7 @@ export const deleteSnapshot = id =>
 
 /** 死链检测：ids 为空 = 检测全库最久未检的前 50 条 → { checked, ok, dead, error } */
 export const checkLinks = (ids = []) =>
-  json(`${PREFIX}/check`, { method: 'POST', body: JSON.stringify({ ids }) })
+  json(`${PREFIX}/check`, { method: 'POST', body: JSON.stringify({ ids }) }, 180_000)
 
 /** 统计总览 → { total, by_status, starred, dead, snapshots, snapshot_words, trash,
  *  by_category, by_tag, domains, trend } */
@@ -103,10 +103,10 @@ export const statsOverview = () => json(`${PREFIX}/stats/overview`)
 
 /** 导入书签文件（Netscape HTML / JSON 自动嗅探，multipart file）
  *  → { imported, skipped, invalid, categories_created } */
-export const importBookmarks = file => {
+export const importBookmarks = (file, dryRun = false) => {
   const fd = new FormData()
   fd.append('file', file)
-  return json(`${PREFIX}/import`, { method: 'POST', body: fd })
+  return json(`${PREFIX}/import?dry_run=${dryRun ? 1 : 0}`, { method: 'POST', body: fd })
 }
 
 /** 导出并触发浏览器下载（format: 'html' | 'json'） */

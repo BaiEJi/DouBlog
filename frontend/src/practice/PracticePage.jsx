@@ -3,7 +3,7 @@
  * PracticeView 将题库 / 复习 / 统计注册到公共 ModuleShell 侧栏。
  */
 import { useCallback, useState } from 'react'
-import { Toast } from '../todo/kit'
+import { Toast } from '@/shared/ui/kit'
 
 import PracticeView from './PracticeView'
 

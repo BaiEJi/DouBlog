@@ -44,7 +44,7 @@ def seed_if_empty(engine):
 
 
 def verify_account(username: str, password: str) -> bool:
-    """按 system_accounts 表校验；表未建/system 未注册时回退 config 凭据（中间态兼容）"""
+    """Verify the persisted account; storage failures never enable seed defaults."""
     from sqlalchemy.orm import Session
 
     from app.config import settings
@@ -54,8 +54,9 @@ def verify_account(username: str, password: str) -> bool:
     try:
         with Session(db.engine) as session:
             row = session.query(SystemAccount).order_by(SystemAccount.id).first()
-    except Exception:   # noqa: BLE001 - 表未建/库不可达：回退 config（保持登录通道可用）
-        row = None
+    except Exception as error:
+        from fastapi import HTTPException
+        raise HTTPException(503, '认证存储暂不可用，请稍后重试') from error
     if row is not None:
         return hmac.compare_digest(row.username, username) and check_password(password, row.password_hash)
-    return username == settings.auth_username and password == settings.auth_password
+    return False

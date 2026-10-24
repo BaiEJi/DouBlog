@@ -7,7 +7,7 @@ import md from '@/shared/md'
 
 import { getItem, updateItem, deleteItem, createSnapshot, deleteSnapshot, checkLinks } from '../api'
 import { statusMeta, linkMeta } from '../api'
-import { Icon, Spinner, inputCls } from '../../../todo/kit'
+import { Icon, Spinner, inputCls } from '@/shared/ui/kit'
 import { Favicon } from './ItemRow'
 
 function fmt(iso) {

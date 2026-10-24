@@ -1,7 +1,7 @@
 // Clash 代理管理能力包 API 层：统一走 shared/client.js 的 apiFetch（会话 Cookie 认证）。
 // 端点契约见 docs/modules/clash.md——与 clashctl 命令一一对应，底层完全复用其 bash 函数。
 
-import { apiFetch } from '../shared/client'
+import { apiFetch, API_BASE } from '../shared/client'
 
 async function json(path, options = {}) {
   const r = await apiFetch(path, options)
@@ -43,7 +43,7 @@ export const clashUpgrade = (channel = '') =>
   json('/api/clash/upgrade', { method: 'POST', body: JSON.stringify({ channel }) })
 
 /** 内核日志尾部：{path, tail, level, content}（level=当前生效日志级别） */
-export const clashLog = (tail = 200) => json(`/api/clash/log?tail=${tail}`)
+export const clashLog = (tail = 200, options) => json(`/api/clash/log?tail=${tail}`, options)
 
 /** 切换内核日志级别（写 mixin 的 log-level + 合并重启；silent 会让日志文件停止增长） */
 export const clashLogLevel = (level) =>
@@ -72,14 +72,14 @@ export const clashSubLog = (tail = 200) => json(`/api/clash/sub/log?tail=${tail}
 export const clashCtlVersion = () => json('/api/clash/controller/version')
 
 /** 运行时配置 {mode, allow-lan, log-level, mixed-port, ...} */
-export const clashCtlConfigs = () => json('/api/clash/controller/configs')
+export const clashCtlConfigs = options => json('/api/clash/controller/configs', options)
 
 /** 热切换运行时配置（PATCH 不重启）：{mode?, allow_lan?, log_level?} → 新配置 */
 export const clashCtlConfigsPatch = patch =>
   json('/api/clash/controller/configs', { method: 'PATCH', body: JSON.stringify(patch) })
 
 /** 策略组 + 节点明细 {groups:[{name,type,now,nodes:[{name,type,alive,delay}]}]} */
-export const clashCtlProxies = () => json('/api/clash/controller/proxies')
+export const clashCtlProxies = options => json('/api/clash/controller/proxies', options)
 
 /** 切换 Selector 组当前节点 */
 export const clashCtlSelect = (group, name) =>
@@ -94,7 +94,19 @@ export const clashCtlGroupDelay = (group, url = '', timeout = 5000) =>
   json(`/api/clash/controller/group/delay?${new URLSearchParams({ group, url, timeout })}`)
 
 /** 活跃连接 + 总量 {uploadTotal, downloadTotal, memory, connections:[...]} */
-export const clashCtlConnections = () => json('/api/clash/controller/connections')
+export const clashCtlConnections = options => json('/api/clash/controller/connections', options)
+
+export function clashConnectionsStream({ onData, onMode, onError }) {
+  const source = new EventSource(`${API_BASE}/api/clash/controller/connections/events`, { withCredentials: true })
+  source.addEventListener('connections', event => {
+    try { onData(JSON.parse(event.data)) } catch { source.close(); onError?.() }
+  })
+  source.addEventListener('mode', event => {
+    try { onMode?.(JSON.parse(event.data).mode) } catch { /* invalid metadata */ }
+  })
+  source.onerror = () => { source.close(); onError?.() }
+  return () => source.close()
+}
 
 /** 断开单条 / 全部连接 */
 export const clashCtlCloseConn = id =>

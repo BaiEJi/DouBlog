@@ -12,6 +12,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+from functools import lru_cache, wraps
 
 import yaml
 
@@ -38,6 +40,31 @@ CONFIG_FILES = {             # ?file= 参数 → 磁盘路径（base 即订阅�
 }
 
 MAX_TAIL_LINES = 5000
+_operation_lock = threading.RLock()
+
+
+def serial_operation(fn):
+    @wraps(fn)
+    def call(*args, **kwargs):
+        with _operation_lock:
+            return fn(*args, **kwargs)
+    return call
+
+
+@lru_cache(maxsize=16)
+def _read_runtime(path, signature):
+    with open(path, encoding='utf-8', errors='replace') as handle:
+        data = yaml.load(handle, Loader=YamlLoader) or {}
+    if not isinstance(data, dict):
+        raise ValueError('runtime.yaml 必须是对象')
+    return data
+
+
+def runtime_config():
+    path = os.path.join(resources_dir(), 'runtime.yaml')
+    stat = os.stat(path)
+    return _read_runtime(path, (stat.st_dev, stat.st_ino, stat.st_mtime_ns,
+                               stat.st_ctime_ns, stat.st_size))
 
 
 def base_dir() -> str:
@@ -92,6 +119,11 @@ def run_clashctl(func: str, args=None, timeout=DEFAULT_TIMEOUT, strip_proxy=Fals
     # Windows CreateProcess searches System32 before PATH for a bare "bash".
     # Resolve PATH explicitly so a configured Git Bash wins over the WSL stub.
     bash = shutil.which('bash') or 'bash'
+    if os.name == 'nt' and os.path.dirname(bash).lower().endswith('windows\\system32'):
+        git = shutil.which('git')
+        candidate = os.path.join(os.path.dirname(os.path.dirname(git)), 'bin', 'bash.exe') if git else ''
+        if candidate and os.path.isfile(candidate):
+            bash = candidate
     argv = [bash, '-c', f'. "$0"; {func} "$@"', script_path(), *(args or ())]
     env = {**os.environ, 'TERM': 'dumb'}
     if strip_proxy:
@@ -142,12 +174,14 @@ def kernel_status() -> dict:
     return {'running': rc == 0, 'output': out}
 
 
+@serial_operation
 def kernel_start() -> dict:
     rc, out = run_clashctl('clashon')
     _require_ok('clashon', out, rc)
     return {'output': out}
 
 
+@serial_operation
 def kernel_stop() -> dict:
     rc, out = run_clashctl('clashoff')
     _require_ok('clashoff', out, rc)
@@ -159,6 +193,7 @@ def system_proxy_get() -> dict:
     return {'enabled': rc == 0, 'output': out}
 
 
+@serial_operation
 def system_proxy_set(enable: bool) -> dict:
     rc, out = run_clashctl('clashproxy', ['on' if enable else 'off'])
     _require_ok('clashproxy', out, rc)
@@ -170,6 +205,7 @@ def tun_get() -> dict:
     return {'enabled': rc == 0, 'output': out}
 
 
+@serial_operation
 def tun_set(enable: bool) -> dict:
     # Tun 需 sudo 重启内核；无免密 sudo 时 clashctl 会失败，输出原样透传
     rc, out = run_clashctl('clashtun', ['on' if enable else 'off'], timeout=60)
@@ -193,6 +229,7 @@ def secret_get() -> dict:
     return {'secret': secret, 'output': out}
 
 
+@serial_operation
 def secret_set(secret: str) -> dict:
     if not secret or any(c in _SECRET_BAD for c in secret) or not _SECRET_RE.match(secret):
         raise ParamError(message='密钥不能包含空格、引号或特殊字符（1-64 位可打印字符）')
@@ -201,6 +238,7 @@ def secret_set(secret: str) -> dict:
     return {'output': out}
 
 
+@serial_operation
 def upgrade(channel: str = '') -> dict:
     if channel not in ('', 'release', 'alpha'):
         raise ParamError(message='channel 只能是 release 或 alpha')
@@ -224,16 +262,27 @@ def config_read(which: str) -> dict:
     return {'file': which, 'path': path, 'editable': which == 'mixin', 'content': content}
 
 
+@serial_operation
 def config_write_mixin(content: str) -> dict:
     path = os.path.join(resources_dir(), 'mixin.yaml')
     if not os.path.isfile(path):
         raise NotFoundError(message=f'配置文件不存在：{path}')
-    with open(path, 'w', encoding='utf-8') as f:
-        f.write(content)
+    if len(content.encode('utf-8')) > 4 * 1024 * 1024:
+        raise ParamError(message='配置上限 4 MiB')
+    try:
+        parsed = yaml.load(content, Loader=YamlLoader)
+        if parsed is not None and not isinstance(parsed, dict):
+            raise ValueError()
+    except (yaml.YAMLError, ValueError):
+        raise ParamError(message='配置必须是合法 YAML 对象') from None
+    from app.shared.files import atomic_write_text
+    atomic_write_text(path, content)
     # 与 clashmixin -e 保存后完全一致：合并配置并重启内核
     rc, out = run_clashctl('_merge_config_restart')
-    _require_ok('_merge_config_restart', out, rc)
-    return {'output': out}
+    if rc:
+        raise ParamError(message=f'配置已保存，内核应用失败：{out[:300]}',
+                         details={'file_saved': True, 'runtime_applied': False})
+    return {'output': out, 'file_saved': True, 'runtime_applied': True}
 
 
 def kernel_log_tail(n: int) -> dict:
@@ -247,15 +296,14 @@ def kernel_log_tail(n: int) -> dict:
 def kernel_log_level():
     """当前生效日志级别（runtime.yaml 的 log-level；缺省=info——mihomo 默认）。"""
     try:
-        with open(os.path.join(resources_dir(), 'runtime.yaml'), encoding='utf-8',
-                  errors='replace') as f:
-            data = yaml.load(f, Loader=YamlLoader) or {}
+        data = runtime_config()
         level = data.get('log-level') if isinstance(data, dict) else None
         return level if level in LOG_LEVELS else 'info'
-    except (OSError, yaml.YAMLError):
+    except (OSError, yaml.YAMLError, ValueError):
         return 'info'
 
 
+@serial_operation
 def kernel_log_level_set(level: str) -> dict:
     """写 mixin 的 log-level 并合并重启（等价 clashmixin -e 改一行后保存）。
 
@@ -298,6 +346,7 @@ def _check_sub_id(id_value) -> str:
     return str(id_value)
 
 
+@serial_operation
 def sub_add(url: str) -> dict:
     if not isinstance(url, str) or not _URL_RE.match(url) or len(url) > 2048:
         raise ParamError(message='订阅链接必须以 http(s):// 或 file:// 开头，且不含空格/引号')
@@ -307,18 +356,21 @@ def sub_add(url: str) -> dict:
     return {'output': out}
 
 
+@serial_operation
 def sub_del(id_value) -> dict:
     rc, out = run_clashctl('clashsub', ['del', _check_sub_id(id_value)])
     _require_ok('clashsub del', out, rc)
     return {'output': out}
 
 
+@serial_operation
 def sub_use(id_value) -> dict:
     rc, out = run_clashctl('clashsub', ['use', _check_sub_id(id_value)], timeout=SUB_TIMEOUT)
     _require_ok('clashsub use', out, rc)
     return {'output': out}
 
 
+@serial_operation
 def sub_update(id_value=None, convert: bool = False, auto: bool = False) -> dict:
     # 注意 flag 必须在 id 之前（clashctl 的 _sub_update 在 for 循环里 shift）
     args = ['update']

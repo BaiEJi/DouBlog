@@ -43,7 +43,7 @@ from app.apihub.models import (ApihubApi, ApihubCallLog, ApihubHealthLog,
 from app.apihub.pool import UpstreamConnectError, UpstreamProtocolError, UpstreamTimeout
 from app.apihub.proxy import load_proxy_config, save_proxy_config
 from app.apihub.state import get_state
-from app.db import db, run_db
+from app.db import db, run_db, current_runtime, database_context
 from app.shared.auth import require_basic
 from app.shared.pools import get_pool
 from app.shared.response import api_response
@@ -84,7 +84,20 @@ async def _run_gw(fn):
 
     网关常规路径（鉴权/限流/配额/转发/日志入队）全程不触数据库，走 DB 池会白付
     每请求 scoped_session 创建+回滚+回收的固定开销，且与其余模块抢 16 个共享 worker。"""
-    fut = get_pool('apihub-gw', workers=32).submit(fn)
+    runtime = current_runtime()
+    runtime.admit(write=True)
+    def execute():
+        with database_context(runtime):
+            try:
+                return fn()
+            finally:
+                runtime.release(write=True)
+    try:
+        fut = get_pool('apihub-gw', workers=32).submit(execute)
+    except Exception:
+        runtime.release(write=True)
+        raise
+    fut.add_done_callback(lambda future: runtime.release(write=True) if future.cancelled() else None)
     return await asyncio.wrap_future(fut)
 
 
@@ -92,7 +105,6 @@ async def _run_gw(fn):
 #: 快照 reload（任何管理端改动）后立即失效——禁用/改配令牌即时生效，不放大窗口
 _AUTH_CACHE_TTL_S = 30.0
 _AUTH_CACHE_MAX = 512
-_auth_cache: dict = {}
 
 
 def _authenticate(request: Request):
@@ -105,24 +117,25 @@ def _authenticate(request: Request):
         return None
     store = get_state(request.app).store
     now = time.monotonic()
-    hit = _auth_cache.get(plain)
-    if hit is not None and hit[0] > now and hit[1] == store.version:
-        result = hit[2]
-        if result is not None:   # 有效期仍逐次校验（不放大过期窗口）
-            exp = result['expires_at']
-            if exp is not None and exp < _utcnow():
-                return None
+    with store.lock:
+        hit = store.auth_cache.get(plain)
+        if hit is not None and hit[0] > now and hit[1] == store.version:
+            result = hit[2]
+            if result is not None:
+                exp = result['expires_at']
+                if exp is not None and exp < _utcnow():
+                    return None
+            return result
+        token = store.tokens.get(hash_token(plain))
+        result = None
+        if token is not None and token['status'] == 1:
+            exp = token['expires_at']
+            if exp is None or exp >= _utcnow():
+                result = token
+        if len(store.auth_cache) >= _AUTH_CACHE_MAX:
+            store.auth_cache.clear()
+        store.auth_cache[plain] = (now + _AUTH_CACHE_TTL_S, store.version, result)
         return result
-    token = store.tokens.get(hash_token(plain))
-    result = None
-    if token is not None and token['status'] == 1:
-        exp = token['expires_at']
-        if exp is None or exp >= _utcnow():
-            result = token
-    if len(_auth_cache) >= _AUTH_CACHE_MAX:
-        _auth_cache.clear()
-    _auth_cache[plain] = (now + _AUTH_CACHE_TTL_S, store.version, result)
-    return result
 
 
 def _client_ip(request: Request):
@@ -174,19 +187,20 @@ def _url_for(system, cred, path_tpl, path_vars):
     return base.rstrip('/') + '/' + path.lstrip('/')
 
 
-def _auth_injection(state, api):
+def _auth_injection(state, api, deadline=None):
     """鉴权注入：取 API 内联 auth_config（providers + credential）；
     qq_bot 等动态令牌 provider 绑定 state.token_exchange（走共享池/出站代理）。"""
     auth_cfg = api['auth_config'] or {}
     def _fetch(provider, cred):
-        return state.token_exchange.get(state.pool, provider, cred)
+        return state.token_exchange.get(state.pool, provider, cred, deadline=deadline)
     return apply_providers(auth_cfg.get('providers') or [], auth_cfg.get('credential') or {},
                            token_fetch=_fetch)
 
 
-def _system_default_auth(state, system_id) -> dict:
+def _system_default_auth(state, system_id, config=None) -> dict:
     """透明代理没有 API 上下文：取该系统第一个 API 的 auth_config（无 API 则空鉴权）。"""
-    apis = state.store.apis_of_system(system_id)
+    apis = (sorted((api for api in config.apis_by_id.values() if api['system_id'] == system_id),
+                   key=lambda api: api['id']) if config else state.store.apis_of_system(system_id))
     return apis[0]['auth_config'] if apis else {}
 
 
@@ -232,17 +246,18 @@ async def gw_invoke(slug: str, request: Request):
 
 def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     state = get_state(request.app)
+    config = state.store.snapshot()
     t0 = time.monotonic()
     token = _authenticate(request)
     if token is None:
         return _gw_err(401, 'unauthorized', '缺少/无效平台令牌（Authorization: Bearer sk-...）')
 
-    api = state.store.apis.get(slug)
+    api = config.apis.get(slug)
     if api is None:
         return _gw_err(404, 'not_found', f"API '{slug}' 不存在")
     if not api['enabled']:
         return _gw_err(503, 'api_disabled', f"API '{slug}' 已关闭，不可用")
-    system = state.store.systems.get(api['system_id'])
+    system = config.systems.get(api['system_id'])
     if system is None or system['status'] != 1:
         return _gw_err(503, 'system_disabled', '系统已禁用')
     if state.monitor.state_of(api['id'], api['health_status'])['status'] == 'down':
@@ -267,13 +282,9 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
             'X-RateLimit-Remaining': str(int(cr.remaining)),
         })
 
-    quota_reserved = False
-    if token['quota_total'] is not None:
-        used = state.store.quota_used.get(token['id'], 0)
-        if used >= token['quota_total']:
-            return _gw_err(429, 'quota_exceeded', f'配额已用尽: {used}/{token["quota_total"]}')
-        state.store.quota_used[token['id']] = used + 1   # 预占-退还
-        quota_reserved = True
+    quota_reserved = state.store.reserve(token) if token['quota_total'] is not None else None
+    if token['quota_total'] is not None and quota_reserved is None:
+        return _gw_err(429, 'quota_exceeded', '配额已用尽')
 
     env_path, env_query, env_header, env_body, body_type, body_cfg = _merge_request_defaults(
         api, raw.get('path') or {}, raw.get('query') or {},
@@ -281,12 +292,16 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
     cred = (api['auth_config'] or {}).get('credential') or {}
 
-    attempts = max(1, system['max_retry'] + 1)
+    attempts = max(1, system['max_retry'] + 1) if api['method'] in ('GET', 'HEAD', 'OPTIONS') else 1
+    deadline = time.monotonic() + timeout_s
     last_error = 'no_attempt'
     for _attempt in range(attempts):
+        if time.monotonic() >= deadline:
+            last_error = 'timeout'
+            break
         try:
             url = _url_for(system, cred, api['path_tpl'], env_path)
-            inj = _auth_injection(state, api)
+            inj = _auth_injection(state, api, deadline)
             headers = _build_headers(env_header, inj)
             params = {**env_query, **inj.query}
 
@@ -314,17 +329,17 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
                 headers['Cookie'] = '; '.join(f'{k}={v}' for k, v in inj.cookies.items())
 
             r = state.pool.request(api['method'], url, headers, params, payload,
-                                   timeout_s, verify=system['transport'].get('verify', True))
+                                   max(0.001, deadline - time.monotonic()), verify=system['transport'].get('verify', True))
         except TemplateError as e:
             if quota_reserved:
-                state.store.quota_used[token['id']] -= 1
+                state.store.refund(quota_reserved)
             return _gw_err(400, 'template_error', str(e))
         except UpstreamTimeout:
             last_error = 'timeout'
-            continue
+            break
         except ValueError as e:
             last_error = str(e)[:60]
-            continue
+            break
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
             last_error = f'conn_error:{type(e).__name__}'
             continue
@@ -339,12 +354,11 @@ def _gw_invoke_sync(request: Request, slug: str, raw: dict):
         ok, err_code, err_msg = _eval_response(api['response_cfg'], r.status, r.content, charset)
         _log(state, token, api, system, 'invoke', api['method'], slug, r.status, t0, ok,
              None if ok else f'upstream_code:{err_code}')
-        quota_remaining = (token['quota_total'] - state.store.quota_used.get(token['id'], 0)) \
-            if token['quota_total'] is not None else None
+        quota_remaining = state.store.remaining(token)
         return _gw_response(api['response_cfg'], r, latency, quota_remaining, ok, err_code, err_msg)
 
     if quota_reserved:
-        state.store.quota_used[token['id']] -= 1
+        state.store.refund(quota_reserved)
     _log(state, token, api, system, 'invoke', api['method'], slug, None, t0, False, last_error)
     if last_error == 'timeout':
         return _gw_err(504, 'upstream_timeout', '系统转发超时')
@@ -389,11 +403,12 @@ async def gw_passthrough(slug: str, system_path: str, request: Request):
 
 def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: bytes):
     state = get_state(request.app)
+    config = state.store.snapshot()
     t0 = time.monotonic()
     token = _authenticate(request)
     if token is None:
         return _gw_err(401, 'unauthorized', '缺少/无效平台令牌')
-    system = state.store.systems_by_slug.get(slug)
+    system = config.systems_by_slug.get(slug)
     if system is None:
         return _gw_err(404, 'not_found', f"系统 '{slug}' 不存在")
     if system['status'] != 1:
@@ -410,44 +425,45 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
             'X-RateLimit-Scope': cr.scope or '',
         })
 
-    quota_reserved = False
-    if token['quota_total'] is not None:
-        used = state.store.quota_used.get(token['id'], 0)
-        if used >= token['quota_total']:
-            return _gw_err(429, 'quota_exceeded', f'配额已用尽: {used}/{token["quota_total"]}')
-        state.store.quota_used[token['id']] = used + 1
-        quota_reserved = True
+    quota_reserved = state.store.reserve(token) if token['quota_total'] is not None else None
+    if token['quota_total'] is not None and quota_reserved is None:
+        return _gw_err(429, 'quota_exceeded', '配额已用尽')
 
     inbound = {k: v for k, v in request.headers.items() if k.lower() not in STRIP_HEADERS}
     query = dict(request.query_params)
 
     # 透明代理无 API 上下文：鉴权取该系统第一个 API 的内联配置
-    auth_cfg = _system_default_auth(state, system['id'])
+    auth_cfg = _system_default_auth(state, system['id'], config)
     cred = auth_cfg.get('credential') or {}
 
-    attempts = max(1, system['max_retry'] + 1)
+    timeout_s = system['timeout_ms'] / 1000.0
+    attempts = max(1, system['max_retry'] + 1) if request.method in ('GET', 'HEAD', 'OPTIONS') else 1
+    deadline = time.monotonic() + timeout_s
     last_error = 'no_attempt'
     for _attempt in range(attempts):
+        if time.monotonic() >= deadline:
+            last_error = 'timeout'
+            break
         try:
             url = _url_for(system, cred, '/' + system_path, {})
-            inj = _auth_injection(state, {'auth_config': auth_cfg})
+            inj = _auth_injection(state, {'auth_config': auth_cfg}, deadline)
             headers = _build_headers(inbound, inj)
             params = {**query, **inj.query}
             if inj.cookies:
                 headers['Cookie'] = '; '.join(f'{k}={v}' for k, v in inj.cookies.items())
             r = state.pool.request(request.method, url, headers, params, body,
-                                   system['timeout_ms'] / 1000.0,
+                                   max(0.001, deadline - time.monotonic()),
                                    verify=system['transport'].get('verify', True))
         except TemplateError as e:
             if quota_reserved:
-                state.store.quota_used[token['id']] -= 1
+                state.store.refund(quota_reserved)
             return _gw_err(400, 'template_error', str(e))
         except UpstreamTimeout:
             last_error = 'timeout'
-            continue
+            break
         except ValueError as e:
             last_error = str(e)[:60]
-            continue
+            break
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
             last_error = f'conn_error:{type(e).__name__}'
             continue
@@ -468,7 +484,7 @@ def _gw_passthrough_sync(request: Request, slug: str, system_path: str, body: by
         return resp
 
     if quota_reserved:
-        state.store.quota_used[token['id']] -= 1
+        state.store.refund(quota_reserved)
     _log(state, token, None, system, 'passthrough', request.method,
          f'{slug}/{system_path}'[:250], None, t0, False, last_error)
     if last_error == 'timeout':
@@ -560,11 +576,13 @@ def probe_api(app, api_id, source='manual'):
     finally:
         db.session.remove()   # 对齐旧版 app context teardown 的会话回收
     # 快照同步（列表页直读快照，探活结果不再依赖 reload 才可见）
-    snap = state.store.apis_by_id.get(api_id)
-    if snap is not None:
-        snap['health_status'] = new_status
-        snap['last_probe_at'] = probed_at
-        snap['last_latency_ms'] = outcome['latency_ms']
+    with state.store.lock:
+        snap = state.store.apis_by_id.get(api_id)
+        if snap is not None:
+            updated = {**snap, 'health_status': new_status, 'last_probe_at': probed_at,
+                       'last_latency_ms': outcome['latency_ms']}
+            state.store.apis_by_id = {**state.store.apis_by_id, api_id: updated}
+            state.store.apis = {**state.store.apis, snap['slug']: updated}
     return outcome
 
 
@@ -581,7 +599,7 @@ async def probes_run(request: Request):
         else:
             targets = list(state.store.apis_by_id.keys())
         ex = get_pool('apihub-probe', workers=10)
-        return list(ex.map(lambda aid: probe_api(app, aid, 'manual'), targets))
+        return list(ex.map(lambda aid: _bound_probe(app, aid, 'manual'), targets))
 
     results = await run_db(_run)
     return api_response(results)
@@ -619,7 +637,7 @@ async def create_system(request: Request):
         s = ApihubSystem(
             name=body.get('name') or body['slug'], slug=body['slug'],
             base_url=body.get('base_url') or '', timeout_ms=int(body.get('timeout_ms') or 30000),
-            max_retry=int(body.get('max_retry') or 2),
+            max_retry=int(body.get('max_retry') if body.get('max_retry') is not None else 2),
             transport=body.get('transport') or {},
             status=int(body.get('status') or 1))
         db.session.add(s)
@@ -836,13 +854,14 @@ async def admin_invoke_api(aid: int, request: Request):
 
 def _admin_invoke_sync(app, aid: int, raw: dict):
     state = get_state(app)
+    config = state.store.snapshot()
     t0 = time.monotonic()
-    api = state.store.apis_by_id.get(aid)
+    api = config.apis_by_id.get(aid)
     if api is None:
         return _gw_err(404, 'not_found', 'API 不存在')
     if not api['enabled']:
         return _gw_err(503, 'api_disabled', f"API '{api['slug']}' 已关闭，不可用")
-    system = state.store.systems.get(api['system_id'])
+    system = config.systems.get(api['system_id'])
     if system is None or system['status'] != 1:
         return _gw_err(503, 'system_disabled', '系统已禁用')
 
@@ -853,12 +872,16 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
     timeout_s = (api['timeout_ms'] or system['timeout_ms']) / 1000.0
     cred = (api['auth_config'] or {}).get('credential') or {}
 
-    attempts = max(1, system['max_retry'] + 1)
+    attempts = max(1, system['max_retry'] + 1) if api['method'] in ('GET', 'HEAD', 'OPTIONS') else 1
+    deadline = time.monotonic() + timeout_s
     last_error = 'no_attempt'
     for _attempt in range(attempts):
+        if time.monotonic() >= deadline:
+            last_error = 'timeout'
+            break
         try:
             url = _url_for(system, cred, api['path_tpl'], env_path)
-            inj = _auth_injection(state, api)
+            inj = _auth_injection(state, api, deadline)
             headers = _build_headers(env_header, inj)
             params = {**env_query, **inj.query}
 
@@ -885,15 +908,15 @@ def _admin_invoke_sync(app, aid: int, raw: dict):
                 headers['Cookie'] = '; '.join(f'{k}={v}' for k, v in inj.cookies.items())
 
             r = state.pool.request(api['method'], url, headers, params, payload,
-                                   timeout_s, verify=system['transport'].get('verify', True))
+                                   max(0.001, deadline - time.monotonic()), verify=system['transport'].get('verify', True))
         except TemplateError as e:
             return _gw_err(400, 'template_error', str(e))
         except UpstreamTimeout:
             last_error = 'timeout'
-            continue
+            break
         except ValueError as e:
             last_error = str(e)[:60]
-            continue
+            break
         except (UpstreamConnectError, UpstreamProtocolError, OSError) as e:
             last_error = f'conn_error:{type(e).__name__}'
             continue
@@ -1119,18 +1142,21 @@ async def update_token(tid: int, request: Request):
     app = request.app
 
     def _run():
-        t = db.session.get(ApihubToken, tid)
-        if t is None:
-            return api_response(None, 404, '令牌不存在')
-        for k in ('name', 'status', 'expires_at', 'allowed_api_ids', 'allowed_ips', 'quota_total'):
-            if body.get(k) is not None:
-                setattr(t, k, body[k])
-        if body.get('quota_used_reset'):
-            t.quota_used = 0
-            get_state(app).store.quota_used[tid] = 0
-        db.session.commit()
-        get_state(app).reload()
-        return api_response(t.to_dict())
+        state = get_state(app)
+        with state.store.lock:
+            t = db.session.get(ApihubToken, tid)
+            if t is None:
+                return api_response(None, 404, '令牌不存在')
+            for k in ('name', 'status', 'expires_at', 'allowed_api_ids', 'allowed_ips', 'quota_total'):
+                if body.get(k) is not None:
+                    setattr(t, k, body[k])
+            if body.get('quota_used_reset'):
+                t.quota_used = 0
+            db.session.commit()
+            if body.get('quota_used_reset'):
+                state.store.reset_quota(tid)
+            state.reload()
+            return api_response(t.to_dict())
     return await run_db(_run)
 
 
@@ -1318,19 +1344,61 @@ async def stats_overview(request: Request):
 
 def start_apihub_loop(app):
     """daemon 调度线程：每秒检查到期探活（TESTING 模式跳过）。"""
+    old = getattr(app.state, 'apihub_stop', None)
+    if old is not None and not old.is_set():
+        return
+    app.state.apihub_stop = threading.Event()
+    if getattr(app.state, 'testing', False):
+        return
     def _loop():
         ex = get_pool('apihub-probe', workers=10)
-        while True:
+        stop = app.state.apihub_stop
+        pending = {}
+        while not stop.is_set():
             try:
-                if getattr(app.state, 'testing', False):
-                    time.sleep(1)
-                    continue
                 state = getattr(app.state, 'apihub', None)
                 if state is not None:
                     for api_id, _probe in state.probe_due_apis():
-                        ex.submit(probe_api, app, api_id, 'scheduled')
+                        future = pending.get(api_id)
+                        if future is None or future.done():
+                            pending[api_id] = ex.submit(_bound_probe, app, api_id)
+                pending = {key: value for key, value in pending.items() if not value.done()}
             except Exception:
                 pass
-            time.sleep(1)
+            stop.wait(1)
 
-    threading.Thread(target=_loop, name='apihub-scheduler', daemon=True).start()
+    thread = threading.Thread(target=_loop, name='apihub-scheduler', daemon=True)
+    app.state.apihub_scheduler = thread
+    thread.start()
+
+
+def _bound_probe(app, api_id, source='scheduled'):
+    from app.db import database_context
+    runtime = app.state.db_runtime
+    runtime.admit(write=True)
+    try:
+        with database_context(runtime):
+            return probe_api(app, api_id, source)
+    finally:
+        runtime.release(write=True)
+
+
+def drain_background(app, timeout=5.0):
+    state = getattr(app.state, 'apihub', None)
+    return state.writer.flush(timeout) if state else True
+
+
+def stop_background(app, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    stop = getattr(app.state, 'apihub_stop', None)
+    if stop:
+        stop.set()
+    scheduler = getattr(app.state, 'apihub_scheduler', None)
+    if scheduler:
+        scheduler.join(max(0, deadline - time.monotonic()))
+    state = getattr(app.state, 'apihub', None)
+    ok = state.writer.stop(max(0, deadline - time.monotonic())) if state else True
+    if ok and state:
+        state.pool.close_all()
+        app.state.apihub = None
+    return ok and (scheduler is None or not scheduler.is_alive())

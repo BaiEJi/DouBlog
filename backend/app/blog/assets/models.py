@@ -101,7 +101,7 @@ class AssetItem(Base):
     files = relationship('AssetFile', back_populates='item', cascade='all, delete-orphan',
                          order_by='AssetFile.path')
 
-    def to_dict(self, include_content: bool = False) -> dict:
+    def to_dict(self, include_content: bool = False, *, counts=None) -> dict:
         out = {
             'id': self.id,
             'kind': self.kind,
@@ -116,8 +116,8 @@ class AssetItem(Base):
             'usage_count': self.usage_count,
             'last_used_at': _iso(self.last_used_at),
             'version': self.version,
-            'versions_count': len(self.versions) if self.versions else None,
-            'files_count': len(self.files) if self.files else 0,
+            'versions_count': (counts[0] or None) if counts is not None else (len(self.versions) if self.versions else None),
+            'files_count': counts[1] if counts is not None else (len(self.files) if self.files else 0),
             'archive_name': self.archive_name,
             'created_at': _iso(self.created_at),
             'updated_at': _iso(self.updated_at),

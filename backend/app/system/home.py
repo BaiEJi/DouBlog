@@ -16,8 +16,12 @@ key 是模块标识（如 blog / diary，前端 systems.js 单源），服务端
 （新增模块无需后端同步）；前端对未知 key 自动滤除、缺失模块自动补到末组。
 """
 import re
+from functools import cache
 
 from fastapi import APIRouter, Depends, Request
+from fastapi import HTTPException
+from sqlalchemy import select, true, update
+from app.shared.mutations import fingerprint, mutation_id, revision, resource_lock
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
@@ -94,21 +98,36 @@ def _parse_layout(body: dict) -> tuple[list[dict] | None, str | None]:
     return parsed, None
 
 
+@cache
+def _layout_statement():
+    """仅复用固定SQL表达式；不持有Engine、Session或布局数据。"""
+    from app.system.models import SystemHomeCard, SystemHomeGroup, SystemHomeState
+
+    return (select(
+        SystemHomeState.revision, SystemHomeGroup.id, SystemHomeGroup.name,
+        SystemHomeCard.key, SystemHomeCard.title, SystemHomeCard.desc,
+    ).select_from(SystemHomeState)
+        .outerjoin(SystemHomeGroup, true())
+        .outerjoin(SystemHomeCard, SystemHomeCard.group_id == SystemHomeGroup.id)
+        .where(SystemHomeState.id == 1)
+        .order_by(SystemHomeGroup.position, SystemHomeGroup.id,
+                  SystemHomeCard.position, SystemHomeCard.key))
+
+
 def _load_layout() -> dict:
     """当前布局 → {groups: [{id, name, cards: [{key,title,desc}]}]}（按 position 排序）"""
-    from app.system.models import SystemHomeCard, SystemHomeGroup
-
-    groups = (db.session.query(SystemHomeGroup)
-              .order_by(SystemHomeGroup.position, SystemHomeGroup.id).all())
-    cards = (db.session.query(SystemHomeCard)
-             .order_by(SystemHomeCard.group_id, SystemHomeCard.position, SystemHomeCard.key).all())
-    by_group: dict[int, list] = {}
-    for c in cards:
-        by_group.setdefault(c.group_id, []).append(c.to_dict())
-    return {'groups': [
-        {'id': g.id, 'name': g.name, 'cards': by_group.get(g.id, [])}
-        for g in groups
-    ]}
+    # Content and its CAS revision must come from one database snapshot. Separate
+    # SELECTs can mix two committed layouts under PostgreSQL READ COMMITTED and
+    # SQLite's legacy read-transaction mode.
+    rows = db.session.execute(_layout_statement()).all()
+    groups = {}
+    for row in rows:
+        if row.id is None:
+            continue
+        group = groups.setdefault(row.id, {'id': row.id, 'name': row.name, 'cards': []})
+        if row.key is not None:
+            group['cards'].append({'key': row.key, 'title': row.title, 'desc': row.desc})
+    return {'revision': rows[0].revision, 'groups': list(groups.values())}
 
 
 def _replace_layout(parsed: list[dict]) -> dict:
@@ -126,8 +145,36 @@ def _replace_layout(parsed: list[dict]) -> dict:
                 key=c['key'], group_id=row.id, position=ci,
                 title=c['title'], desc=c['desc'],
             ))
-    db.session.commit()
+    db.session.flush()
     return _load_layout()
+
+
+def _save_layout(parsed, body, reset=False):
+    from .models import SystemHomeState, SystemHomeMutation
+    expected = revision(body.get('revision'))
+    mid = mutation_id(body.get('mutation_id'))
+    digest = fingerprint({'groups': parsed, 'revision': expected, 'reset': reset})
+    with resource_lock('home-layout'):
+        if mid:
+            receipt = db.session.get(SystemHomeMutation, mid)
+            if receipt:
+                if receipt.request_hash != digest:
+                    raise HTTPException(409, 'mutation_id 已用于不同的布局变更')
+                return receipt.response
+        statement = update(SystemHomeState).where(SystemHomeState.id == 1)
+        if expected is not None:
+            statement = statement.where(SystemHomeState.revision == expected)
+        changed = db.session.execute(statement.values(revision=SystemHomeState.revision + 1)
+                                     .execution_options(synchronize_session=False)).rowcount
+        if changed != 1:
+            db.session.rollback()
+            raise HTTPException(409, '布局已修改，请保留草稿后读取最新布局')
+        db.session.expire_all()
+        result = _replace_layout(parsed)
+        if mid:
+            db.session.add(SystemHomeMutation(mutation_id=mid, request_hash=digest, response=result))
+        db.session.commit()
+        return result
 
 
 @router.get('/layout')
@@ -150,7 +197,7 @@ async def home_layout_put(request: Request):
         return api_response(None, 400, err)
 
     def _run():
-        result = _replace_layout(parsed)
+        result = _save_layout(parsed, body)
         logger.info('门户布局已更新: %d 组 %d 卡', len(result['groups']),
                     sum(len(g['cards']) for g in result['groups']))
         return api_response(result)
@@ -158,14 +205,17 @@ async def home_layout_put(request: Request):
 
 
 @router.delete('/layout')
-async def home_layout_reset():
+async def home_layout_reset(request: Request):
     """清空布局（恢复默认分组与默认文案）"""
-    from app.system.models import SystemHomeCard, SystemHomeGroup
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        return api_response(None, 400, '请求体必须为对象')
 
     def _run():
-        db.session.query(SystemHomeCard).delete()
-        db.session.query(SystemHomeGroup).delete()
-        db.session.commit()
+        result = _save_layout([], body, reset=True)
         logger.info('门户布局已重置为默认')
-        return api_response({'groups': []}, 200, '已恢复默认布局')
+        return api_response(result, 200, '已恢复默认布局')
     return await run_db(_run)

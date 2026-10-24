@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from app.config import settings
 from app.shared.response import api_response
+from app.shared.pools import run_blocking
 from lizysdk.errors import AuthError
 
 router = APIRouter(prefix='/api/auth', tags=['auth'])
@@ -68,7 +69,7 @@ def verify_session(token: str | None) -> str | None:
     """校验会话令牌，返回用户名；无效/过期返回 None"""
     if not token:
         return None
-    parts = token.split('.')
+    parts = token.rsplit('.', 2)
     if len(parts) != 3:
         return None
     user, exp, sig = parts
@@ -119,7 +120,7 @@ async def require_basic(request: Request) -> None:
     if _session_user(request) is not None:
         return
     creds = _parse_basic(request.headers.get('Authorization', ''))
-    if creds is None or not verify_password(*creds):
+    if creds is None or not await run_blocking('auth', verify_password, *creds, workers=4):
         raise AuthError(message='认证失败')
 
 
@@ -149,7 +150,7 @@ async def login(request: Request):
             username, password = creds
 
     if not isinstance(username, str) or not isinstance(password, str) \
-            or not verify_password(username, password):
+            or not await run_blocking('auth', verify_password, username, password, workers=4):
         raise AuthError(message='认证失败')
 
     # cookie 必须设在最终返回的 Response 上（直接返回 Response 时
@@ -160,11 +161,14 @@ async def login(request: Request):
 
 
 @router.get('/check')
-async def check_auth(_: None = Depends(require_basic)):
+async def check_auth(request: Request, _: None = Depends(require_basic)):
     """检查认证状态（Cookie 或 Basic）"""
+    runtime = request.app.state.db_runtime
     return api_response({
         'authenticated': True,
-        'username': settings.auth_username,
+        'username': request_username(request),
+        'database_identity': runtime.identity,
+        'generation': runtime.generation,
     }, 200, '已认证')
 
 

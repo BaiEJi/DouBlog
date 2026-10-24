@@ -2,8 +2,9 @@
  * 连接视图：当前活跃连接（host/规则/链路/上下行/时长）+ 实时总速率 + 单条/全部断开。
  * 2s 轮询 /connections（上传下载总量差分出速率）；关闭单条/全部即席生效。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { clashCtlConnections, clashCtlCloseConn, clashCtlCloseAll } from './api'
+import useConnections from './useConnections'
 import { card, btn, btnDanger, inputCls, fmtBytes, fmtSince, LBL } from './kit'
 
 export default function ConnectionsView({ toast, unavailable }) {
@@ -13,32 +14,24 @@ export default function ConnectionsView({ toast, unavailable }) {
   const [auto, setAuto] = useState(true)
   const [closing, setClosing] = useState('')
   const prevTotals = useRef(null)
-  const timer = useRef(null)
 
-  const refresh = useCallback(async (quiet = false) => {
-    try {
-      const d = await clashCtlConnections()
-      // 差分速率（两次轮询间总量增量 / 间隔）
-      const now = Date.now()
-      if (prevTotals.current) {
-        const dt = (now - prevTotals.current.t) / 1000
-        if (dt > 0) setSpeed({
-          up: Math.max(0, (d.uploadTotal - prevTotals.current.up) / dt),
-          down: Math.max(0, (d.downloadTotal - prevTotals.current.down) / dt),
-        })
-      }
-      prevTotals.current = { t: now, up: d.uploadTotal, down: d.downloadTotal }
-      setData(d)
-    } catch (e) {
-      if (!quiet) toast({ msg: e.message, kind: 'error' })
+  const receive = useCallback(d => {
+    const now = Date.now()
+    if (prevTotals.current) {
+      const dt = (now - prevTotals.current.t) / 1000
+      if (dt > 0) setSpeed({
+        up: Math.max(0, (d.uploadTotal - prevTotals.current.up) / dt),
+        down: Math.max(0, (d.downloadTotal - prevTotals.current.down) / dt),
+      })
     }
-  }, [toast])
-
-  useEffect(() => { if (!unavailable) refresh() }, [unavailable])  // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (auto && !unavailable) timer.current = setInterval(() => refresh(true), 2000)
-    return () => clearInterval(timer.current)
-  }, [auto, unavailable, refresh])
+    prevTotals.current = { t: now, up: d.uploadTotal, down: d.downloadTotal }
+    setData(d)
+  }, [])
+  const refresh = useCallback(async (quiet = false) => {
+    try { receive(await clashCtlConnections()) }
+    catch (error) { if (!quiet) toast({ msg: error.message, kind: 'error' }) }
+  }, [receive, toast])
+  const mode = useConnections(receive, auto && !unavailable)
 
   const closeConn = async id => {
     setClosing(id)
@@ -70,7 +63,7 @@ export default function ConnectionsView({ toast, unavailable }) {
   const kw = q.trim().toLowerCase()
   const rows = kw
     ? conns.filter(c => (c.host + c.rule + c.rulePayload + c.chains.join('›')).toLowerCase().includes(kw))
-    : conns
+    : [...conns]
   rows.sort((a, b) => (b.start || '').localeCompare(a.start || ''))
 
   return (
@@ -91,7 +84,7 @@ export default function ConnectionsView({ toast, unavailable }) {
           <label className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400 cursor-pointer">
             <input type="checkbox" className="accent-sky-600" checked={auto}
               onChange={e => setAuto(e.target.checked)} />
-            2s 自动刷新
+            {mode === 'websocket' ? '实时流' : mode === 'polling' ? '2s REST 回退' : '自动刷新'}
           </label>
           <button className={btn} onClick={() => refresh()}>刷新</button>
           <button className={btnDanger} disabled={!!closing || !rows.length} onClick={closeAll}>

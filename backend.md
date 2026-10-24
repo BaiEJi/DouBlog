@@ -32,7 +32,7 @@
 |---|---|
 | PG 默认 + SQLite 可切换 | PostgreSQL（117.72.98.99:50002/app_dev）默认；SQLite(WAL) 经配置页/API 一键切换（只换连接读目标库现有数据），配置持久化于 `data/db_config.json` |
 | 知识库（Workspace） | 文章的顶层分组：库间数据隔离、name 库内唯一、顶级排序存在 `workspaces.children_order` |
-| 无外部依赖 | 浏览计数实时写库；无限流、无 Redis、无定时任务 |
+| 核心部署 | 浏览计数实时写库；单进程 uvicorn。confcenter 可选 Redis 缓存/限流，APIHub 有模块限流；模块后台任务随 app 生命周期启动与排空 |
 | 虚拟根节点 | id=0 的特殊行统一管理顶级文章的父子关系与排序 |
 | 正文按需传输 | 列表/树接口不含 `content`，只有详情接口返回全文 |
 | 单次查询内存计算 | slug 映射、树组装、子孙判定均为"一次取 id/name/parent_id + 内存回溯"，避免 N+1 |
@@ -77,9 +77,9 @@ backend/
 └── tests/                     # 与能力包镜像：shared/ blog/（含 assets·diary·bookmarks 子域）vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
 ```
 
-**模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用）。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
+**模块包对外契约**（main.py 动态注册表按此发现模块）：`app/<mod>/__init__.py` 导出 `router`（APIRouter）、可选 `start_background(app)`（后台线程，`app.state.testing` 时空转）、可选 `ensure_migrations(engine)`（列级幂等迁移，init_db 在存量表改名后调用），以及可选 `drain_background/stop_background`。只有停止钩子的惰性资源模块也登记到app的活动资源集，参与停机与切库清理；活动登记不是后台线程计数。模块运行态挂 `app.state.<mod>`（禁止模块级单例——测试每例新建 app）。
 
-**请求执行模型**：DB 端点一律 `async def` + `return await run_db(_impl)`——同步 SQLAlchemy 逻辑提交到共享 SDK 线程池 `doublog-db` 执行，任务结束（含异常）在工作线程内 `rollback()+remove()` scoped session（清理必须在工作线程内做，等待方清理清不到工作线程的 session）。
+**请求执行模型**：DB 端点一律 `async def` + `return await run_db(_impl)`——同步 SQLAlchemy 逻辑提交到共享 SDK 线程池 `doublog-db` 执行。任务结束（含异常）先在同一工作线程检查所属 registry 是否已有 scoped session；已有时保持 `try rollback() / finally remove()`，没有时不创建空会话。纯缓存命中或仅使用 `engine.connect()` 的任务可省去 ORM 会话构造；后者的连接仍由调用函数自己的上下文关闭。清理必须在工作线程内做，等待方清理清不到工作线程的 session。
 
 ## 3. 数据库设计
 
@@ -134,7 +134,7 @@ backend/
 - `load_db_config()/save_db_config()` 负责读写；`get_database_url()` 生成 URI（PG 走 `postgresql+psycopg2://`，密码 URL 编码）
 - `rebuild_engine()`：按当前配置重建引擎 + scoped_session（测试/切换场景复用）
 - `init_db(app)`：见 3.3 顺序；引擎参数（SQLite：`check_same_thread=False`；PG：`pool_size=5/max_overflow=10`）；SQLite 专属 PRAGMA（WAL/busy_timeout/NORMAL）在无并发窗口一次设置并校验
-- 会话模型：`db.session` 为 scoped_session（线程本地）；请求侧统一 `run_db(fn)`（SDK 线程池执行 + 工作线程内 rollback/remove）；后台线程用完显式 `db.session.remove()`
+- 会话模型：`db.session` 为 scoped_session（线程本地）；请求侧统一 `run_db(fn)`（SDK 线程池执行，工作线程内以 `registry.has()` 检查后对已有会话 rollback/remove，不为缓存或 Core-only 任务创建空 Session）；后台线程用完显式 `db.session.remove()`
 
 ### 3.5 双后端切换（`app/system/routes.py`，前端 `/config` 总配置页）
 
@@ -149,6 +149,8 @@ backend/
 ### 3.6 门户工作台布局（`app/system/home.py`，前缀 `/api/home`，2026-10-17）
 
 门户 `/` 卡片布局（分组 / 顺序 / 标题描述覆盖）持久化：`system_home_groups`（name + position 组间顺序）+ `system_home_cards`（key 模块标识主键 / group_id / position / title/desc **覆盖**，null = 前端内置默认）。`GET/PUT/DELETE /api/home/layout`，PUT 整体替换（全删全插一个事务，无 DB 级 FK——SQLite 连接未开 foreign_keys，两后端行为靠应用层对齐）。契约与示例见 api.md 6.5 节，模块细节见 docs/modules/system.md。
+
+布局读取的固定Select懒初始化后复用，每次仍在当前runtime的Session执行一条SQL同时读取内容与revision，再按原逻辑拼装；表达式不绑定Engine/Session，也不缓存数据或跨库复用查询结果。
 
 ## 4. 树形结构设计
 
@@ -206,15 +208,15 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 `main.py::create_app()`：
 
 1. FastAPI 实例（`docs/redoc/openapi` 关闭——单用户内部服务不暴露 schema）；`app.state.testing`（`DOUBLOG_TESTING=1` 时后台线程空转）
-2. `CORSMiddleware`：`/api/*` 放开 `*`，方法 GET/POST/PUT/DELETE/OPTIONS，头 Content-Type/Authorization
+2. `CORSMiddleware`：明确允许前端60101凭据请求，方法GET/POST/PUT/PATCH/DELETE/OPTIONS，并暴露trace与数据库身份响应头
 3. `GZipMiddleware(minimum_size=1024, compresslevel=6)`：≥1KB 响应按 Accept-Encoding 压缩（不再限 JSON/文本）
 4. **trace 纯 ASGI 中间件**（微秒级，非 BaseHTTPMiddleware）：每请求绑 lizysdk trace_id，响应头回写 `X-Trace-Id`（请求头已带则透传延续链路）；该请求所有日志行自动携带——经 `shared/logging_setup` 的 **LogRecord 工厂注入**（SDK 队列 handler 会绕过 handler filter，勿改回）
-5. 动态模块导入（**先于 init_db**——模型先注册进 Base.metadata 建表才完整）：按 `MODULES` 顺序 `importlib` 导入 `app/<mod>`，导入失败（未迁移/依赖缺失）捕获跳过并 WARNING——中间态可启动
+5. 动态模块导入（**先于 init_db**——模型先注册进 Base.metadata 建表才完整）：按 `MODULES` 顺序 `importlib` 导入 `app/<mod>`，必需模块导入失败即终止启动，避免缺模块却显示健康
 6. `init_db(app)`（读 db_config.json → 存量改名 → 建表 + 模块迁移钩子 + 播种虚拟根 + SQLite PRAGMA）→ 逐模块挂 `router` + 调 `start_background(app)`
-7. 统一异常信封：`AppError`（lizysdk）→ `{success:false, code:http_status, message, data:{error_code, details}}`（401 附 `WWW-Authenticate`）；`StarletteHTTPException`（404→"资源不存在"）；`RequestValidationError`→400；未知异常→500 + 日志（`exc_info`）；错误日志按路径标注 `sys_name=doublog.<module>`，`/api/v1/logs` 路径带 `no_remote` 防自摄回环
+7. 统一异常信封：`AppError`（lizysdk）→ `{success:false, code:http_status, message, data:{error_code, details}}`（401不附Basic弹框头）；`StarletteHTTPException`（404→"资源不存在"）；`RequestValidationError`→400；未知异常→500 + 日志（`exc_info`）；错误日志按路径标注 `sys_name=doublog.<module>`，`/api/v1/logs` 路径带 `no_remote` 防自摄回环
 8. `/` 与 `/health` 免认证
 
-> 请求日志用 uvicorn access log，无自定义中间件重复记录。
+> trace中间件生成带模块和trace的访问日志；摄入路径no_remote防回环。
 
 ## 8. 认证
 
@@ -284,6 +286,7 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - **密码不存储**：`derive(seed, window, policy)` 确定性推导（HMAC-SHA256 流 + 确定性拒绝采样 + Fisher-Yates 洗牌）；测试含**黄金向量**（固定 seed+window → 固定密码）防算法漂移
 - 校验 `POST /api/pwsvc/validate`（X-Api-Key 认证，不走 Basic）：当前窗口命中 → valid+expires_in；未命中且**进入窗口 30s 内**（`min(30, rotation)`）→ 比对上一窗口（宽限）；`hmac.compare_digest` 常数时间比较；**限流**：进程内令牌桶（每项目 rate_limit 次/分钟，默认 120，0=不限，页面可改），超出 429 且不落日志
 - 每次校验落一条 `pwsvc_validate_logs`；`GET /projects/<id>/logs` 倒序分页 + 近 1h/24h 成败统计 + 失败 TOP5（爆破定位）
+- 项目列表只投影六个公共字段，类型 / 用户分别预聚合后 LEFT JOIN，一条 SQL 保留零关联与禁用用户计数。固定 Select 表达式在模块导入时构建一次，只含表元数据与固定常量；每次仍经 `run_db` 在当前 runtime 的 `db.session` 执行，不绑定 Engine / Session、不缓存结果。不同 app 相同 ID 不串库，写后读取获得新计数；推导 / 加密路径不变。
 - 存量库升级：`ensure_migrations`（app/pwsvc/models.py）幂等 ALTER 补 rate_limit 列（create_all 不改已有表）
 - 依赖 `cryptography` 包（已加入 requirements.txt）；无后台调度器（无状态时钟轮换，重启/多副本一致）
 - 详细设计见 `docs/pwsvc-design.md`
@@ -393,7 +396,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 10.5 双链与导出
 
 - 双链语法 `[[name]]` / `[[标题]]` / `[[name|显示文字]]` 的**渲染**在前端（`md.js` 插件 + `applyWikiLinks`）
-- 后端 `GET /api/posts/id/<id>/backlinks`：同库内扫描正文 `[[...]]` 目标（先 name 后 title 精确匹配）返回反链列表
+- 后端 `GET /api/posts/id/<id>/backlinks`：正文写入时维护 `blog_post_links` 投影，首迁移回填；同库按目标查询并返回反链列表，正常读取不扫描全库正文，保留先 name 后 title 精确匹配规则
 - 导出 `GET /api/export/markdown`（`app/blog/routes/export.py`）：全库 Markdown zip（树形嵌套 + frontmatter + images/ + 图片 URL 相对化重写）；**必须排除虚拟根 id=0**——存量库根挂在默认知识库下，否则树递归死循环（有深度 32 保护兜底）
 
 ## 10.9 SQLite PRAGMA（WAL 的静默失败坑）
@@ -407,7 +410,7 @@ daemon 线程、日志批量写线程（队列+单写者，2s/100 条 flush，�
 ## 11. 测试
 
 ```bash
-cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap 34 + practice 61 + steamidler 18；confcenter 76；clash 34；devtoolbox 37；bookmarks 50；并行 ≈2 分钟；WSL2 缺失的本机 clash 14 例环境性失败）
+cd backend && python -m pytest tests/ -q -n 8   # 2026-10-21最终930项通过，356.00秒；含3项真实临时PG集成，0跳过/失败/错误
 ```
 
 - **conftest**：每个用例独立临时 SQLite（`tmp_path` 注入 `settings.data_dir`）；`DOUBLOG_TESTING=1` → `app.state.testing`（后台线程空转）；client 为 `TestClient(app, raise_server_exceptions=False)`（对齐 Flask 测试客户端"异常出 500 响应"语义）。**完全自包含，无任何外部依赖**
@@ -415,13 +418,13 @@ cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap
 - **admin 9 例**：状态/连通性（含不可达 400）/切换校验（同后端拒绝、不可达拒绝）+ **真实 SQLite↔PostgreSQL 往返集成测试**（`pgserver` 内嵌 PG 起真实实例：切换 → 逐字段校验（parent_id 回填/level/浏览计数/虚拟根/知识库归属/序列重置）→ 未重启防护 → 切回 → 数据完整）
 - **workspaces 15 例**：CRUD、空库/末库删除保护、**库间树与列表隔离**、同名文章跨库可建/同库拒绝、跨库父子/移动拒绝、默认库自动创建与回填、顶级排序归属知识库
 - **sdklogs 23 例 + shared 日志集成 3 例**（含 sysnames 下拉数据源——lizysdk 落盘/自摄回灌/no_remote 防回环，uvicorn 线程伺服本 app 实现真实 HTTP 回灌）：摄入往返（时区换算/级别规范化/kv 剥离与转 str/trace_id 成列）、RFC3339 偏移、批量（数组+JSONL+超限 400）、坏日志进死信、token 鉴权三态、全部过滤维度、分页与 count、stats、保留策略（含 0=永久）、规范化边界
-- **pwsvc 21 例**：黄金向量防漂移、30s 宽限（含短周期封顶 min(30, rotation)）、API Key 生命周期（重置即失效/伪造 401）、全链路校验、禁用用户、重置 seed 旧密码全失效、策略变更、删除级联与 409、唯一性/参数校验、**无明文落盘断言**；**校验日志**（写入字段/倒序分页/统计与 fail_top/30 天清理/不含密码）、**限流**（额度内 200 超出 429/0=不限/参数校验/429 不落日志/页面改配置生效）
+- **pwsvc 24 例**：黄金向量防漂移、30s 宽限（含短周期封顶 min(30, rotation)）、API Key 生命周期（重置即失效/伪造 401）、全链路校验、禁用用户、重置 seed 旧密码全失效、策略变更、删除级联与 409、唯一性/参数校验、**无明文落盘断言**；**校验日志**（写入字段/倒序分页/统计与 fail_top/30 天清理/不含密码）、**限流**（额度内 200 超出 429/0=不限/参数校验/429 不落日志/页面改配置生效）；列表完整公共字段、NULL/零关联/独立计数、一条 SQL，以及固定表达式在不同库同 ID 的两个 app 并发重复读取和写后新计数
 - **subs 13 例**（CrownFlow 迁移）：分类 CRUD/重名 409/删除保护；会员 CRUD/校验/列表全维度筛选排序
   （keyword/category/status/sort+非法值 400）/首条订阅原子性；订阅 CRUD/十类校验分支（价格/周期/币种/日期/
   custom 天数含 PUT 组合校验）；会员聚合（多币种折算 total_spending/时长/最新订阅）；统计五接口
   （overview 整月口径/by-category 明细/trend 四粒度标签/参数与非法值）；提醒（reminder_days 阈值/all 不含过期）；
   每日支出摘要日志
-- **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 53 例（CRUD/计划物化/容量/通知/鉴权，docs/modules/todo.md）、gamemap 34 例（docs/modules/gamemap.md）、practice 61 例（docs/modules/practice.md）、steamidler 18 例（docs/modules/steamidler.md）
+- **迁入基线（新增优化回归以本轮统一记录为准）：apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 53 例（CRUD/计划物化/容量/通知/鉴权，docs/modules/todo.md）、gamemap 34 例（docs/modules/gamemap.md）、practice 61 例（docs/modules/practice.md）、steamidler 18 例（docs/modules/steamidler.md）
 - PG 集成测试可选依赖 venv 内 `pip install pgserver`，未安装自动跳过
 - 新增后端行为**必须**附带测试（见 AGENTS.md）
 - **mindmap 87例**：真实SQLite/API、全部鉴权、完整JSON与5000节点/128层往返、原子节点批次与失败回滚、SQL CAS并发、持久幂等/重启、版本恢复、文章/知识库同时删除与建图竞争、安全边界、默认60101→60100 PATCH预检、满10MiB文档往返与分层字节预算、概要区间/全图UID/独立1000上限、账号改名后的解除关联审计；详见模块文档。
@@ -430,9 +433,20 @@ cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap
 
 1. AuditLog 只增不删，长期运行膨胀
 2. `debug=True` + `0.0.0.0` 仅为开发配置，公网部署需收敛
-3. 移动子树时子孙的 `level` 列不重算（slug 已级联，level 仅展示用途时的既有行为）
-4. 数据库切换在生产模式下需手动重启；切换期间的并发写入可能丢失（单用户场景可忽略）
+4. 数据库切换在生产模式下需手动重启；切换先排空在途任务，屏障期间业务请求503
 5. PG 切换依赖 `psycopg2-binary`；目标库不存在会自动创建，但 PG 服务本身需自备
 6. 路径参数类型差异：非整数路径段（`/api/posts/id/abc`）返回 400「请求参数错误」（Flask 时代 404）
 7. gzip 现作用于一切 ≥1KB 响应（Flask 时代仅 JSON/文本；文件下载因 StreamingFileResponse 一般低于阈值不受影响）
 8. 思维导图版本为完整快照、删除为tombstone；版本和幂等回执无自动清理或硬删除接口，长期保存需管理共用数据库容量。
+
+
+## 2026-10-21 全模块公共架构优化
+
+- 每app持有DatabaseRuntime（engine、registry、identity/generation与在途计数），请求和后台显式绑定；run_db提交时捕获所属runtime，排队取消也释放计数，工作线程清理精确会话。新app初始化不关闭旧app引擎。
+- SDK池注册加锁，DB池16worker/512在途，通用run_blocking与各模块池隔离阻塞工作；PBKDF2走auth池4worker。满载503。模块退出不关闭其他app使用的全局SDK池。
+- lifespan可重入，模块支持drain_background/stop_background并返回耐久状态；含仅有stop钩子的惰性资源登记，成功清理后移除、失败保留供重试。切库先屏障/排空/停止再原子发布配置，失败不切换。生产仍需重启；前端以真实运行库状态确认。
+- /health为存活，认证/ready检查数据库就绪，/api/admin/runtime提供无凭据的池/任务快照。认证库故障503，不允许默认凭据回退。配置状态不回传PG密码。
+- 门户布局SQL CAS+持久mutation回执，重置递增版本；图谱坐标多章批量CAS与完整回滚，缓存按runtime隔离。知识域与平台细节以各模块文档为准。
+- 固定基线、故障测试、实际浏览器与同种子A/B的验收门槛见 docs/optimization-execution.md；依赖许可证与PoC取舍见 docs/optimization-dependencies.md。
+
+最终全量回归（2026-10-21）：`pytest tests -q -n 8`，930 passed、0 skipped、0 failures/errors，356.00秒（JUnit suite为355.949秒），包含3项真实临时PostgreSQL集成：门户布局持久化/重启、数据库切换往返，以及Practice/Assets/Pwsvc跨模块查询与书签联合索引幂等迁移及列表语义。另含6项公共生命周期惰性资源回归。源码SHA为`eb12ae5c29841ecc4d3bbe8cf56c29e6970bcd0f087fe3d37ddff0cac690cf20`，起止指纹证明见`.ui-qa/optimization/backend-full-final.source.json`。本机实际解释器为`D:/ProgramData/miniconda3/python.exe`，通过`PYTHONPATH`加载项目venv依赖，使用`PYTHONUTF8=1`及Git Bash PATH；完整命令见验收运行器。完整方法、环境诊断及性能结果见统一优化记录；功能回归通过不表示吞吐门槛已满足。

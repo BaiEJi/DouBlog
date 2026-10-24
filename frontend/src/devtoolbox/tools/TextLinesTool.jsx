@@ -1,7 +1,8 @@
 /** 文本行处理：去重 / 排序 / 去空行 / trim / 编号 / 前后缀 / 连接 */
-import { useMemo, useState } from 'react'
-import { ToolHead, TwoPane, CopyBtn, Check, LBL, selectCls, inputCls, areaCls } from '../kit'
-import { lineTransform } from '../lib/text'
+import { useState } from 'react'
+import { ToolHead, TwoPane, CopyBtn, Check, LBL, selectCls, inputCls } from '../kit'
+import useComputation from '../../shared/useComputation'
+import CodeEditor from '../../shared/CodeEditor'
 
 const SAMPLE = `banana
 apple
@@ -22,13 +23,8 @@ export default function TextLinesTool() {
   const [suffix, setSuffix] = useState('')
   const [join, setJoin] = useState('')
 
-  const output = useMemo(() => {
-    if (!text) return ''
-    return lineTransform(text, { trim, dropEmpty, dedupe, sort, number, prefix, suffix, join })
-  }, [text, trim, dropEmpty, dedupe, sort, number, prefix, suffix, join])
-
-  const linesIn = text ? text.split(/\r\n|\r|\n/).length : 0
-  const linesOut = output ? output.split(/\r\n|\r|\n/).length : 0
+  const computation = useComputation('textLines', { text, trim, dropEmpty, dedupe, sort, number, prefix, suffix, join })
+  const { output = '', linesIn = 0, linesOut = 0 } = computation.result || {}
 
   return (
     <div>
@@ -53,9 +49,10 @@ export default function TextLinesTool() {
       <TwoPane
         leftTitle={`输入 · ${linesIn} 行`}
         rightTitle={`输出 · ${linesOut} 行`}
-        left={<textarea className={areaCls} rows={14} value={text} spellCheck={false} onChange={e => setText(e.target.value)} />}
-        right={<textarea className={'font-mono text-[13px] leading-relaxed p-3 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-stone-700 dark:text-stone-200 whitespace-pre'} rows={14} readOnly value={output} />}
+        left={<CodeEditor value={text} onChange={setText} height={350} ariaLabel="行处理输入" />}
+        right={<CodeEditor readOnly value={output} height={350} ariaLabel="行处理结果" />}
         rightActions={<CopyBtn text={output} disabled={!output} />} />
+      {computation.error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{computation.error}</p>}
       <p className={'mt-2 ' + LBL}>连接符填入任意字符串（如 ", " 或 " | "）时输出单行；留空则保持每行一条。</p>
     </div>
   )

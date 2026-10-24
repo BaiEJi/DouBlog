@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { reviewToday, reviewProblem, getProblem, diffMeta, sourceLabel } from '../api'
-import { Spinner, Icon, todayStr } from '../../todo/kit'
+import { Spinner, Icon } from '@/shared/ui/kit'
+import { todayStr } from '../../todo/kit'
 import { MdBlock, CodeBlock } from './ProblemDetail'
 
 const RESULT_OF_KEY = { '1': 'forgot', '2': 'fuzzy', '3': 'remembered' }

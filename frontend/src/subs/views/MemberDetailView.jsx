@@ -368,7 +368,7 @@ export default function MemberDetailView({ dark, toast }) {
     setSubmitting(true)
     const d = editing === 'new'
       ? await subsCreateSubscription(member.id, payload)
-      : await subsUpdateSubscription(editing.id, payload)
+      : await subsUpdateSubscription(editing.id, { ...payload, revision: editing.revision })
     setSubmitting(false)
     if (d.success) { setEditing(null); toast('保存成功'); load() }
     else toast(d.message || '保存失败', 'error')

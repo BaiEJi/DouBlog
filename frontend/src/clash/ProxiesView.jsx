@@ -6,10 +6,11 @@
  * - 卡片右上 ⚡ 单节点测速；测速结果即时回填（整组并发返回 {节点: ms}）
  * - 延迟色档见 kit.delayCls（<200 绿 / <500 琥珀 / 其余红 / 0 超时）
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   clashCtlProxies, clashCtlSelect, clashCtlDelay, clashCtlGroupDelay,
 } from './api'
+import usePolling from '../shared/usePolling'
 import { card, btn, btnPri, DelayBadge } from './kit'
 
 const TYPE_BADGE = {
@@ -27,21 +28,16 @@ export default function ProxiesView({ toast, unavailable }) {
   const [testingNode, setTestingNode] = useState('')       // 单节点测速中的「组/节点」
   const [switching, setSwitching] = useState('')
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async ({ signal } = {}) => {
     try {
-      setGroups((await clashCtlProxies()).groups || [])
+      const result = await clashCtlProxies({ signal })
+      if (!signal?.aborted) setGroups(result.groups || [])
     } catch (e) {
-      toast({ msg: e.message, kind: 'error' })
+      if (e.name !== 'AbortError') toast({ msg: e.message, kind: 'error' })
     }
   }, [toast])
 
-  useEffect(() => {
-    if (!unavailable) {
-      const t = setInterval(refresh, 15000)               // 轻轮询：同步他处切换
-      refresh()
-      return () => clearInterval(t)
-    }
-  }, [unavailable, refresh])
+  usePolling(refresh, { intervalMs: 15000, enabled: !unavailable })
 
   /** 测速结果回填：{节点名: ms} 合并进对应组（null→测失败记 0） */
   const applyDelays = (groupName, map) => {

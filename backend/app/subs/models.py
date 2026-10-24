@@ -52,6 +52,7 @@ class SubsMember(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment='会员名称')
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     category_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('subs_categories.id'),
                                                     nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True, comment='备注')
@@ -67,9 +68,13 @@ class SubsMember(Base):
     subscriptions = relationship('SubsSubscription', back_populates='member',
                                  cascade='all, delete-orphan')
 
-    def to_dict(self, include_subscriptions: bool = False):
+    def to_dict(self, include_subscriptions: bool = False, today=None):
         """含聚合字段；include_subscriptions=True 时附全部订阅记录（详情页）"""
-        today = datetime.now().strftime('%Y-%m-%d')
+        if today is None:
+            from app.todo.services import get_settings
+            from app.shared.timeutil import local_today
+            from app.db import db
+            today = local_today(get_settings(db.session)['timezone']).isoformat()
         subs = sorted(self.subscriptions or [], key=lambda s: (s.created_at, s.id), reverse=True)
         active = [s for s in subs if s.end_date >= today]
 
@@ -90,6 +95,7 @@ class SubsMember(Base):
 
         result = {
             'id': self.id,
+            'revision': self.revision,
             'name': self.name,
             'category_id': self.category_id,
             'category': self.category.to_dict() if self.category else None,
@@ -113,6 +119,7 @@ class SubsSubscription(Base):
     __tablename__ = 'subs_subscriptions'
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default='1')
     member_id: Mapped[int] = mapped_column(Integer, ForeignKey('subs_members.id'), nullable=False,
                                            index=True)
     level: Mapped[str | None] = mapped_column(String(50), nullable=True,
@@ -142,6 +149,7 @@ class SubsSubscription(Base):
     def to_dict(self):
         return {
             'id': self.id,
+            'revision': self.revision,
             'member_id': self.member_id,
             'level': self.level,
             'price': float(self.price) if self.price is not None else 0,

@@ -19,6 +19,7 @@
 """
 
 import io
+import hashlib
 import json
 import re
 import secrets
@@ -28,13 +29,15 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
-from sqlalchemy import case, func
+from sqlalchemy import case, func, update
+from sqlalchemy.orm import defer
+from sqlalchemy.orm.attributes import set_committed_value
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.response import api_response
 from app.shared.timestamps import _iso, _utcnow
-from app.blog.diary.models import Diary, DiaryJournal
+from app.blog.diary.models import Diary, DiaryJournal, DiaryMutation
 from lizysdk.errors import ParamError, NotFoundError, ConflictError
 
 # 挂 Basic Auth 的路由器（模块内全部端点）；免认证的分享只读端点在 public_router
@@ -200,6 +203,52 @@ def _live_query():
     return Diary.query.filter(Diary.deleted_at.is_(None))
 
 
+def _lock_journals():
+    """在检查引用前串行化日记写入；旧客户端也必须与删本使用同一锁。"""
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+    from .models import DiaryWriteLock
+    insert = sqlite_insert if db.engine.dialect.name == 'sqlite' else pg_insert
+    db.session.execute(insert(DiaryWriteLock).values(id=1, touch=0).on_conflict_do_nothing(index_elements=['id']))
+    db.session.execute(update(DiaryWriteLock).where(DiaryWriteLock.id == 1)
+        .values(touch=DiaryWriteLock.touch).execution_options(synchronize_session=False))
+
+
+def _receipt(data, resource):
+    mutation = data.get('mutation_id')
+    if mutation is not None and (not isinstance(mutation, str) or not 8 <= len(mutation) <= 64):
+        raise ParamError(message='mutation_id 必须为 8..64 字符')
+    _lock_journals()
+    if mutation is None:
+        return None, None, None
+    fingerprint = hashlib.sha256(json.dumps({'resource': resource, 'data': data},
+        sort_keys=True, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+    old = db.session.get(DiaryMutation, mutation)
+    if old and old.fingerprint != fingerprint:
+        raise ConflictError(message='mutation_id 已被其他内容使用')
+    return old, mutation, fingerprint
+
+
+def _finish_mutation(result, status, mutation, fingerprint):
+    if mutation:
+        db.session.add(DiaryMutation(mutation_id=mutation, fingerprint=fingerprint,
+                                    result=result, status=status))
+    db.session.commit()
+    return api_response(result, status)
+
+
+def _claim_entry(entry, expected=None):
+    if expected is not None and (isinstance(expected, bool) or not isinstance(expected, int)):
+        raise ParamError(message='revision 必须为整数')
+    version = entry.revision if expected is None else expected
+    with db.session.no_autoflush:
+        changed = db.session.execute(update(Diary).where(Diary.id == entry.id, Diary.revision == version)
+            .values(revision=version + 1).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        raise ConflictError(message='日记已被修改；当前输入已保留，请对照最新版本')
+    set_committed_value(entry, 'revision', version + 1)
+
+
 def _fold_day_mood(rows):
     """(entry_date, mood, count) 分组行 → {date: {count, mood}}（心情取当天最好；SQL 聚合下推后的小集合内存折叠）"""
     days = {}
@@ -281,10 +330,27 @@ async def list_entries(request: Request):
             q = q.order_by(Diary.entry_date.desc(), Diary.id.desc())
 
         total = q.count()
-        limit = min(500, _arg_int(params, 'limit', 500))
+        limit = max(1, min(500, _arg_int(params, 'limit', 50)))
         offset = max(0, _arg_int(params, 'offset', 0))
-        items = q.offset(offset).limit(limit).all()
-        return api_response({'total': total, 'items': [e.to_dict() for e in items]})
+        include_content = params.get('include_content', '1') != '0'
+        if include_content:
+            items = [entry.to_dict() for entry in q.offset(offset).limit(limit).all()]
+        else:
+            rows = q.options(defer(Diary.content)).add_columns(func.substr(Diary.content, 1, 600)).offset(offset).limit(limit).all()
+            items = [{**entry.to_dict(False), 'content': excerpt or '', 'is_excerpt': True}
+                     for entry, excerpt in rows]
+        return api_response({'total': total, 'items': items, 'limit': limit, 'offset': offset,
+                             'has_more': offset + len(items) < total})
+    return await run_db(_impl)
+
+
+@_authed_router.get('/entries/{entry_id}')
+async def get_entry(entry_id: int):
+    def _impl():
+        entry = db.session.get(Diary, entry_id)
+        if entry is None:
+            raise NotFoundError(message='日记不存在')
+        return api_response(entry.to_dict())
     return await run_db(_impl)
 
 
@@ -293,13 +359,16 @@ async def create_entry(request: Request):
     data = await _json_body(request)
 
     def _impl():
+        old, mutation, fingerprint = _receipt(data, 'create')
+        if old:
+            return api_response(old.result, old.status)
         payload, err = _validate_payload(data)
         if err:
             raise ParamError(message=err)
         entry = Diary(**payload)   # kind 已限 note（列默认值即 note）
         db.session.add(entry)
-        db.session.commit()
-        return api_response(entry.to_dict(), 201, '创建成功')
+        db.session.flush()
+        return _finish_mutation(entry.to_dict(), 201, mutation, fingerprint)
     return await run_db(_impl)
 
 
@@ -309,6 +378,7 @@ async def quick_capture(request: Request):
     data = await _json_body(request)
 
     def _impl():
+        _lock_journals()
         content = (data.get('content') or '').strip()
         if not content:
             raise ParamError(message='content 必填')
@@ -337,9 +407,13 @@ async def update_entry(entry_id: int, request: Request):
     data = await _json_body(request)
 
     def _impl():
+        old, mutation, fingerprint = _receipt(data, f'entry:{entry_id}:{request.query_params.get("action", "")}')
+        if old:
+            return api_response(old.result, old.status)
         entry = db.session.get(Diary, entry_id)
         if not entry:
             raise NotFoundError(message='日记不存在')
+        _claim_entry(entry, data.get('revision'))
 
         action = request.query_params.get('action')
         if action:
@@ -356,16 +430,16 @@ async def update_entry(entry_id: int, request: Request):
                 entry.deleted_at = None
             else:
                 raise ParamError(message='action 可选 pin/unpin/archive/unarchive/restore')
-            db.session.commit()
-            return api_response(entry.to_dict())
+            db.session.flush()
+            return _finish_mutation(entry.to_dict(), 200, mutation, fingerprint)
 
         payload, err = _validate_payload(data, partial=True)
         if err:
             raise ParamError(message=err)
         for k, v in payload.items():
             setattr(entry, k, v)
-        db.session.commit()
-        return api_response(entry.to_dict())
+        db.session.flush()
+        return _finish_mutation(entry.to_dict(), 200, mutation, fingerprint)
     return await run_db(_impl)
 
 
@@ -376,6 +450,7 @@ async def delete_entry(entry_id: int, request: Request):
         entry = db.session.get(Diary, entry_id)
         if not entry:
             raise NotFoundError(message='日记不存在')
+        _claim_entry(entry)
         if request.query_params.get('hard'):
             if entry.deleted_at is None:
                 raise ParamError(message='彻底删除前需先移入回收站')
@@ -400,6 +475,9 @@ async def upsert_summary(request: Request):
     data = await _json_body(request)
 
     def _impl():
+        old, mutation, fingerprint = _receipt(data, 'summary')
+        if old:
+            return api_response(old.result, old.status)
         d = _parse_date(data.get('entry_date'))
         if not d:
             raise ParamError(message='entry_date 必须是合法的 YYYY-MM-DD 日期')
@@ -417,19 +495,21 @@ async def upsert_summary(request: Request):
             entry = Diary(kind='summary', entry_date=d.isoformat())
             db.session.add(entry)
             created = True
+        else:
+            _claim_entry(entry, data.get('revision'))
         entry.content = content
         entry.word_count = _count_words(content)
         entry.mood = mood
         entry.journal_id = None
-        db.session.commit()
+        db.session.flush()
         # 当天随记（挂在总结后）
         notes = (Diary.query.filter(Diary.kind == 'note', Diary.deleted_at.is_(None),
                                     Diary.archived_at.is_(None),
                                     Diary.entry_date == d.isoformat())
                  .order_by(Diary.id.desc()).all())
-        return api_response({'summary': entry.to_dict(), 'created': created,
-                             'notes': [n.to_dict() for n in notes]},
-                            201 if created else 200, '总结已生成' if created else '总结已更新')
+        return _finish_mutation({'summary': entry.to_dict(), 'created': created,
+                                 'notes': [n.to_dict() for n in notes]},
+                                201 if created else 200, mutation, fingerprint)
     return await run_db(_impl)
 
 
@@ -495,11 +575,12 @@ async def update_journal(jid: int, request: Request):
 @_authed_router.delete('/journals/{jid}')
 async def delete_journal(jid: int):
     def _impl():
+        _lock_journals()
         j = db.session.get(DiaryJournal, jid)
         if not j:
             raise NotFoundError(message='日记本不存在')
-        if _live_query().filter(Diary.journal_id == jid).count():
-            raise ConflictError(message='本子下仍有日记，先清空或迁移')
+        if Diary.query.filter(Diary.journal_id == jid).count():
+            raise ConflictError(message='本子下仍有日记（含回收站），先清空或迁移')
         db.session.delete(j)
         db.session.commit()
         return api_response({'id': jid})

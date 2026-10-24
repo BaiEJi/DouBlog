@@ -46,7 +46,11 @@ def setup_logging_for_app():
                 record.bk_fields = dict(ctx)
         return record
 
-    logging.setLogRecordFactory(_factory_with_context)
+    # Config saves may reinstall handlers repeatedly; do not build an ever
+    # growing recursive chain of factories on every save.
+    if not getattr(_orig_factory, '_doublog_context_factory', False):
+        _factory_with_context._doublog_context_factory = True
+        logging.setLogRecordFactory(_factory_with_context)
 
     class _SendGate(logging.Filter):
         """发送端唯一闸门：只放行 WARNING+ 且未标记 no_remote 的记录。

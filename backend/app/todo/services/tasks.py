@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import date
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from ..limits import DAY_TOTAL_LIMIT, QUADRANT_DAILY_LIMIT
-from ..models import Category, Task
+from ..models import Category, Task, TaskMutation, TaskDayLock
 from ..schemas import TaskCreate, TaskMoveIn, TaskOut, TaskReorderIn, TaskUpdate
 from app.shared.timeutil import ensure_aware, iso, local_today, now_utc, uuid7
 from . import get_settings, log_event
@@ -252,6 +254,35 @@ def _check_revision(t: Task, expected: int) -> None:
         raise HTTPException(409, f"任务已被修改(当前 revision={t.revision}),请刷新后重试")
 
 
+def claim_revision(session: Session, task: Task, expected: int | None = None) -> None:
+    """先 CAS 取得写入权，再修改 ORM；校验到 flush 的窗口不能丢失并发更新。"""
+    version = task.revision if expected is None else expected
+    with session.no_autoflush:
+        result = session.execute(update(Task).where(Task.id == task.id, Task.revision == version)
+            .values(revision=version + 1).execution_options(synchronize_session=False))
+    if result.rowcount != 1:
+        raise HTTPException(409, "任务已被修改，请刷新后重试")
+    set_committed_value(task, 'revision', version + 1)
+
+
+def reorder_mutation(session, task_id, body, operation, mutate):
+    if not body.mutation_id:
+        return mutate()
+    session.execute(update(Task).where(Task.id == task_id).values(revision=Task.revision)
+                    .execution_options(synchronize_session=False))
+    fingerprint = hashlib.sha256(json.dumps({'id': task_id, 'operation': operation,
+        **body.model_dump(mode='json')}, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    receipt = session.get(TaskMutation, body.mutation_id)
+    if receipt:
+        if receipt.fingerprint != fingerprint:
+            raise HTTPException(409, 'mutation_id 已被其他内容使用')
+        return receipt.result
+    result = mutate()
+    session.add(TaskMutation(mutation_id=body.mutation_id, fingerprint=fingerprint,
+                             result=result, created_at=now_utc()))
+    return result
+
+
 # ---------- 每日容量上限(见 limits.py,常量可一键调整) ----------
 
 def _native_cutoff(session: Session, day: date) -> date:
@@ -286,6 +317,7 @@ def _is_migrated_into(session: Session, t: Task, day: date) -> bool:
 def check_quadrant_capacity(session: Session, day: date, imp: bool, urg: bool, exclude_id: Optional[str] = None) -> None:
     if day is None:
         return
+    _lock_day(session, day)
     n = session.scalar(select(func.count()).select_from(Task).where(*_day_native_cond(session, day, imp, urg, exclude_id))) or 0
     if n >= QUADRANT_DAILY_LIMIT:
         raise HTTPException(
@@ -300,6 +332,7 @@ def check_day_capacity(session: Session, day: date, imp: bool, urg: bool, exclud
     计数经 COUNT 下推到 SQL,且两计数合并为一条查询(SUM(CASE) + COUNT)。"""
     if day is None:
         return
+    _lock_day(session, day)
     cond = _day_native_cond(session, day, None, None, exclude_id)
     row = session.execute(
         select(
@@ -315,6 +348,16 @@ def check_day_capacity(session: Session, day: date, imp: bool, urg: bool, exclud
         )
     if total >= DAY_TOTAL_LIMIT:
         raise HTTPException(422, f"当天四象限任务合计已达上限({DAY_TOTAL_LIMIT} 个)")
+
+
+def _lock_day(session, day):
+    if session.bind.dialect.name == 'postgresql':
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    session.execute(insert(TaskDayLock).values(day=day, touch=0).on_conflict_do_nothing(index_elements=['day']))
+    session.execute(update(TaskDayLock).where(TaskDayLock.day == day).values(touch=TaskDayLock.touch)
+                    .execution_options(synchronize_session=False))
 
 
 # ---------- CRUD ----------
@@ -363,6 +406,7 @@ def create_task(session: Session, p: TaskCreate) -> Task:
 def update_task(session: Session, task_id: str, p: TaskUpdate) -> Task:
     t = _get_or_404(session, task_id)
     _check_revision(t, p.revision)
+    claim_revision(session, t, p.revision)
     changed: dict = {}
     fields = p.model_fields_set
 
@@ -432,7 +476,6 @@ def update_task(session: Session, task_id: str, p: TaskUpdate) -> Task:
 
     if changed:
         t.updated_at = now_utc()
-        t.revision += 1
         log_event(session, t.id, "updated", changed)
     return t
 
@@ -441,13 +484,13 @@ def complete_task(session: Session, task_id: str, completed_at=None, note: Optio
     t = _get_or_404(session, task_id)
     if t.status == "done":
         return t
+    claim_revision(session, t)
     t.status = "done"
     t.completed_at = ensure_aware(completed_at) or now_utc()
     t.shelved_at = None
     # 完成备注:可选;重复完成(幂等)不覆盖已有备注
     t.completion_note = (note or "").strip() or None
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(
         session,
         t.id,
@@ -465,11 +508,11 @@ def reopen_task(session: Session, task_id: str) -> Task:
     t = _get_or_404(session, task_id)
     if t.status != "done" and t.status != "cancelled":
         return t
+    claim_revision(session, t)
     t.status = "pending"
     t.completed_at = None
     t.shelved_at = None
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(session, t.id, "reopened", {"from": "done_or_cancelled"})
     return t
 
@@ -477,6 +520,7 @@ def reopen_task(session: Session, task_id: str) -> Task:
 def move_task(session: Session, task_id: str, p: TaskMoveIn) -> Task:
     """拖拽跨象限 / 象限内排序的统一入口。"""
     t = _get_or_404(session, task_id)
+    claim_revision(session, t, p.revision)
     old_q = quadrant_of(t.is_important, t.is_urgent)
     new_q = quadrant_of(p.is_important, p.is_urgent)
     if (
@@ -489,7 +533,6 @@ def move_task(session: Session, task_id: str, p: TaskMoveIn) -> Task:
     t.is_urgent = p.is_urgent
     t.position = insert_position(session, p.is_important, p.is_urgent, p.before_task_id)
     t.updated_at = now_utc()
-    t.revision += 1
     if new_q != old_q:
         log_event(session, t.id, "quadrant_changed", {"from": old_q, "to": new_q})
     else:
@@ -499,27 +542,27 @@ def move_task(session: Session, task_id: str, p: TaskMoveIn) -> Task:
 
 def reorder_task(session: Session, task_id: str, p: TaskReorderIn) -> Task:
     t = _get_or_404(session, task_id)
+    claim_revision(session, t, p.revision)
     t.position = insert_position(session, t.is_important, t.is_urgent, p.before_task_id)
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(session, t.id, "reordered", {"quadrant": quadrant_of(t.is_important, t.is_urgent)})
     return t
 
 
 def soft_delete_task(session: Session, task_id: str) -> Task:
     t = _get_or_404(session, task_id)
+    claim_revision(session, t)
     t.deleted_at = now_utc()
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(session, t.id, "deleted", {"title": t.title})
     return t
 
 
 def restore_task(session: Session, task_id: str) -> Task:
     t = _get_or_404(session, task_id, include_deleted=True)
+    claim_revision(session, t)
     t.deleted_at = None
     t.updated_at = now_utc()
-    t.revision += 1
     log_event(session, t.id, "restored", {})
     return t
 
@@ -541,17 +584,21 @@ def list_tasks(
     sort: str = "position",
     plan_only: bool = False,
     exclude_plans: bool = False,
+    page: int | None = None,
+    page_size: int = 50,
+    today: Optional[date] = None,
 ) -> list[Task]:
     stmt = select(Task).where(Task.deleted_at.is_(None))
     if plan_only:
         stmt = stmt.where(Task.plan_id.is_not(None))
     elif exclude_plans:
         stmt = stmt.where(Task.plan_id.is_(None))
-    tz = get_settings(session)["timezone"]
-    today = local_today(tz)
+    if today is None:
+        today = local_today(get_settings(session)["timezone"])
 
     if date_str:
-        stmt = stmt.where(Task.task_date == _parse_task_date(session, date_str))
+        task_date = today if date_str == 'today' else _parse_task_date(session, date_str)
+        stmt = stmt.where(Task.task_date == task_date)
     if from_str:
         stmt = stmt.where(Task.task_date >= date.fromisoformat(from_str))
     if to_str:
@@ -581,5 +628,35 @@ def list_tasks(
         "created_at": Task.created_at,
         "migrated_count": Task.migrated_count,
     }.get(sort, Task.position)
-    stmt = stmt.order_by(order_col)
+    stmt = stmt.order_by(order_col, Task.id)
+    if page is not None:
+        if page < 1 or not 1 <= page_size <= 100:
+            raise HTTPException(422, 'page/page_size 超出范围')
+        total = session.scalar(select(func.count()).select_from(stmt.order_by(None).subquery()))
+        items = list(session.scalars(stmt.offset((page - 1) * page_size).limit(page_size)))
+        return {'items': items, 'total': total, 'page': page, 'page_size': page_size}
     return list(session.scalars(stmt))
+
+
+def calendar_summary(session, start, end, plan_only=False):
+    try:
+        start_day, end_day = date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(422, '日期必须为 YYYY-MM-DD') from None
+    if start_day > end_day or (end_day - start_day).days > 366:
+        raise HTTPException(422, '日历范围最多 367 天且开始不能晚于结束')
+    conditions = [Task.deleted_at.is_(None), Task.task_date >= start_day, Task.task_date <= end_day]
+    if plan_only:
+        conditions.append(Task.plan_id.is_not(None))
+    ranked = select(Task.id, Task.title, Task.task_date, Task.status, Task.is_important, Task.is_urgent,
+        func.row_number().over(partition_by=Task.task_date, order_by=(Task.position, Task.id)).label('rank'),
+        func.count().over(partition_by=Task.task_date).label('total'),
+        func.sum(case((Task.status == 'done', 1), else_=0)).over(partition_by=Task.task_date).label('done')
+    ).where(*conditions).subquery()
+    days = {}
+    for row in session.execute(select(ranked).where(ranked.c.rank <= 4).order_by(ranked.c.task_date, ranked.c.rank)):
+        key = iso(row.task_date)
+        day = days.setdefault(key, {'date': key, 'total': row.total, 'done': row.done, 'items': []})
+        day['items'].append({'id': row.id, 'title': row.title, 'task_date': key,
+                            'status': row.status, 'quadrant': quadrant_of(row.is_important, row.is_urgent)})
+    return {'days': list(days.values()), 'total': sum(day['total'] for day in days.values())}

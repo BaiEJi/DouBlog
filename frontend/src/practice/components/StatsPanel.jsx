@@ -6,8 +6,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { statsOverview, DIFFICULTIES, SOURCES, langMeta } from '../api'
-import { DualLine, DonutPie } from '../../todo/charts'
-import { Card, Empty, Spinner, StatTile } from '../../todo/kit'
+import { DualLine, DonutPie } from '@/shared/ui/charts'
+import { Card, Empty, Spinner, StatTile } from '@/shared/ui/kit'
 import { adjustForDark } from '../../todo/kit'
 
 const SOURCE_COLORS = {

@@ -211,42 +211,58 @@ class TokenExchanger:
     provider 可配置 token_url / app_id / app_secret 模板（默认取凭证字段）。"""
 
     def __init__(self):
-        self._cache: dict = {}      # (url, app_id) -> (token, expire_at_monotonic)
+        self._cache: dict = {}      # (url, app_id, secret fingerprint) -> token, expiry
         self._lock = threading.Lock()
+        self._fetch_locks = [threading.Lock() for _ in range(32)]
+        self._generation = 0
 
-    def get(self, pool, provider: dict, cred: dict) -> str:
+    def get(self, pool, provider: dict, cred: dict, deadline=None) -> str:
+        from app.apihub.pool import UpstreamTimeout
         ctx = {'cred': cred}
         url = render(provider.get('token_url') or QQ_TOKEN_URL, ctx)
         app_id = render(provider.get('app_id') or '{cred.app_id}', ctx)
         secret = render(provider.get('app_secret') or '{cred.app_secret}', ctx)
-        cache_key = (url, app_id)
-        now = time.monotonic()
-        with self._lock:
-            ent = self._cache.get(cache_key)
-            if ent and ent[1] > now:
-                return ent[0]
-        payload = json.dumps({'appId': app_id, 'clientSecret': secret}).encode()
-        r = pool.request('POST', url, {'Content-Type': 'application/json'},
-                         {}, payload, QQ_TOKEN_TIMEOUT_S)
+        cache_key = (url, app_id, hashlib.sha256(secret.encode()).hexdigest())
+        deadline = deadline or time.monotonic() + QQ_TOKEN_TIMEOUT_S
+        lock = self._fetch_locks[hash(cache_key) % len(self._fetch_locks)]
+        if not lock.acquire(timeout=max(0, deadline - time.monotonic())):
+            raise UpstreamTimeout('token exchange queue deadline exceeded')
         try:
-            data = json.loads(r.content)
-        except ValueError as e:
-            raise ValueError(f'qq token 响应非 JSON: {e}') from e
-        token = data.get('access_token')
-        if r.status != 200 or not token:
-            raise ValueError(f'qq token 交换失败 http {r.status}: '
-                             f'{str(data)[:120]}')
-        try:
-            expires_in = max(60, int(data.get('expires_in') or 7200))
-        except (TypeError, ValueError):
-            expires_in = 7200
-        with self._lock:
-            self._cache[cache_key] = (token, time.monotonic() + expires_in
-                                      - QQ_TOKEN_REFRESH_MARGIN_S)
-        return token
+            with self._lock:
+                generation = self._generation
+                ent = self._cache.get(cache_key)
+                if ent and ent[1] > time.monotonic():
+                    return ent[0]
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise UpstreamTimeout('token exchange deadline exceeded')
+            payload = json.dumps({'appId': app_id, 'clientSecret': secret}).encode()
+            response = pool.request('POST', url, {'Content-Type': 'application/json'},
+                                    {}, payload, min(QQ_TOKEN_TIMEOUT_S, remaining))
+            try:
+                data = json.loads(response.content)
+            except ValueError as error:
+                raise ValueError('qq token 响应非 JSON') from error
+            token = data.get('access_token') if isinstance(data, dict) else None
+            if response.status != 200 or not token:
+                raise ValueError(f'qq token 交换失败 http {response.status}')
+            try:
+                expires_in = max(60, int(data.get('expires_in') or 7200))
+            except (TypeError, ValueError):
+                expires_in = 7200
+            with self._lock:
+                if generation == self._generation:
+                    if len(self._cache) >= 256:
+                        self._cache.pop(next(iter(self._cache)))
+                    margin = min(QQ_TOKEN_REFRESH_MARGIN_S, expires_in / 2)
+                    self._cache[cache_key] = (token, time.monotonic() + expires_in - margin)
+            return token
+        finally:
+            lock.release()
 
     def clear(self):
         with self._lock:
+            self._generation += 1
             self._cache.clear()
 
 

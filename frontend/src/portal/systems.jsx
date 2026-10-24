@@ -1,10 +1,11 @@
+import { MODULES } from '../shared/modules'
 /**
  * 门户卡片定义单源：key（模块标识，持久化用）/ to（路由）/ 默认标题与描述 /
  * 配色 box / 图标。布局与标题描述覆盖持久化在服务端（system_home_cards 表，
  * key 为卡片唯一标识），此处只保留内置默认——服务端无该卡记录或覆盖为空时
  * 展示本表文案，新增模块自动追加到门户末组。
  */
-export const SYSTEMS = [
+const CARDS = [
   {
     key: 'mindmap',
     to: '/mindmap',
@@ -196,5 +197,7 @@ export const SYSTEMS = [
     ),
   },
 ]
+
+export const SYSTEMS = CARDS.filter(card => MODULES[card.key]).map(card => ({ ...card, to: '/' + card.key, title: MODULES[card.key].title }))
 
 export const SYS_BY_KEY = Object.fromEntries(SYSTEMS.map(s => [s.key, s]))

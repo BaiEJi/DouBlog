@@ -1,5 +1,6 @@
 import { useDeferredValue, useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import CodeEditor from '@/shared/CodeEditor'
 import md, { renderMermaidDiagrams, applyWikiLinks, buildWikiMap } from '@/shared/md'
 import { apiFetch, fetchWorkspaces, fetchPostTree } from '@/blog/api'
 import { useEditorShortcuts } from '../editor/useEditorShortcuts'
@@ -190,7 +191,7 @@ export default function CreatePost({ dark, setDark }) {
   }
 
   const insertAtCursor = (before, after) => {
-    const textarea = document.getElementById('md-editor')
+    const textarea = ed.editorRef.current
     if (!textarea) return
     const start = textarea.selectionStart
     const end = textarea.selectionEnd
@@ -340,17 +341,9 @@ export default function CreatePost({ dark, setDark }) {
           <div className="flex flex-row h-[70vh] min-h-[420px]">
             {/* Editor */}
             <div className="w-1/2 h-auto min-h-[280px] border-r border-black/5 dark:border-white/5">
-              <textarea
-                id="md-editor"
-                ref={ed.editorRef}
-                value={content}
-                onChange={e => setContent(e.target.value)}
-                onPaste={ed.handlePaste}
-                onDrop={ed.handleDrop}
-                onDragOver={e => e.preventDefault()}
-                placeholder="在此输入 Markdown 内容..."
-                className="w-full h-full px-5 py-4 text-[14px] font-mono leading-relaxed bg-transparent text-[#333] dark:text-[#ccc] placeholder:text-[#bbb] dark:placeholder:text-[#555] focus:outline-none resize-none border-none"
-              />
+              <CodeEditor id="md-editor" editorRef={ed.editorRef} onReady={ed.onEditorReady}
+                value={content} onChange={setContent} language="markdown" height="100%" ariaLabel="文章 Markdown 正文"
+                onPaste={ed.handlePaste} onDrop={ed.handleDrop} onDragOver={event => event.preventDefault()} />
             </div>
             {/* Preview */}
             <div ref={ed.previewRef} className="w-1/2 h-auto min-h-[280px] px-5 py-4 overflow-y-auto">

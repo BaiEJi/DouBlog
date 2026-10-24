@@ -6,13 +6,15 @@
  * 主区（时间线/日历/热力图/统计/回收站）。
  * 时间线：那年今日横幅 → 快捷录入盒 → 置顶 → 日期分组（总结卡+随记卡）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useInfiniteQuery } from '@tanstack/react-query'
+import { getDataIdentity } from '@/shared/dataEpoch'
 import { Link } from 'react-router-dom'
 import { useModuleNavigation } from '../../shared/module-navigation'
 import { useDebouncedValue } from '../../shared/useDebouncedValue'
 
 import {
-  diaryList, diaryJournals, diaryCreateJournal, diaryAction, diaryDelete,
+  diaryList, diaryEntry, diaryJournals, diaryCreateJournal, diaryAction, diaryDelete,
   diaryDates, diaryOnThisDay, diaryExportZip, diaryUpsertSummary,
 } from './api'
 import { MOODS, Icon, Confirm } from './kit'
@@ -37,11 +39,9 @@ export default function DiaryPage({ dark }) {
   const [view, setView] = useState('timeline')
   const [journals, setJournals] = useState([])
   const [activeJournal, setActiveJournal] = useState(undefined)   // undefined=全部
-  const [entries, setEntries] = useState(null)
+  const [pageError, setPageError] = useState('')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebouncedValue(search)
-  const requestId = useRef(0)
-  useEffect(() => () => { requestId.current += 1 }, [])
   const [mood, setMood] = useState('')
   const [pickDate, setPickDate] = useState('')
   const [otd, setOtd] = useState(null)
@@ -49,32 +49,33 @@ export default function DiaryPage({ dark }) {
   const [sharing, setSharing] = useState(null)
   const [newJournal, setNewJournal] = useState('')
   const [confirmPurge, setConfirmPurge] = useState(null)
-  const [trash, setTrash] = useState(null)
 
   const loadJournals = useCallback(async () => {
     const d = await diaryJournals()
     if (d.success) setJournals(d.data)
   }, [])
-  const loadEntries = useCallback(async () => {
-    if (view !== 'timeline') return
-    const currentRequest = ++requestId.current
-    const params = { view: view === 'trash' ? undefined : 'timeline' }
-    if (activeJournal !== undefined) params.journal_id = activeJournal
-    if (mood) params.mood = mood
-    if (pickDate) params.date = pickDate
-    if (debouncedSearch) params.search = debouncedSearch
-    const d = await diaryList(params)
-    if (d.success && currentRequest === requestId.current) setEntries(d.data.items)
-  }, [activeJournal, mood, pickDate, debouncedSearch, view])
+  const entryQuery = useInfiniteQuery({
+    queryKey: ['diary-entries', getDataIdentity(), view, activeJournal, mood, pickDate, debouncedSearch],
+    enabled: view === 'timeline' || view === 'trash', initialPageParam: 0,
+    queryFn: async ({ pageParam, signal }) => {
+      const params = { view: view === 'trash' ? 'trash' : 'timeline', limit: 50, offset: pageParam, include_content: 0,
+        journal_id: activeJournal, mood: mood || undefined, date: pickDate || undefined,
+        search: debouncedSearch || undefined }
+      const response = await diaryList(params, { signal })
+      if (!response.success) throw new Error(response.message || '加载日记失败')
+      return response.data
+    },
+    getNextPageParam: page => page.has_more ? page.offset + page.items.length : undefined,
+  })
+  const entries = entryQuery.data ? entryQuery.data.pages.flatMap(page => page.items) : null
+  const trash = view === 'trash' ? entries : null
+  const entryTotal = entryQuery.data?.pages[0]?.total || 0
+  const entryLoading = entryQuery.isFetchingNextPage
+  const loadEntries = entryQuery.refetch
 
-  useEffect(() => { loadJournals(); diaryOnThisDay().then(d => d.success && setOtd(d.data)) }, [])
-  useEffect(() => {
-    if (view === 'trash') {
-      diaryList({ view: 'trash' }).then(d => d.success && setTrash(d.data.items))
-    } else {
-      loadEntries()
-    }
-  }, [view, loadEntries])
+
+  useEffect(() => { loadJournals(); diaryOnThisDay().then(d => d.success && setOtd(d.data)) }, [loadJournals])
+
 
   const groups = useMemo(() => {
     const map = new Map()
@@ -107,6 +108,11 @@ export default function DiaryPage({ dark }) {
   const doDelete = async id => {
     const d = await diaryDelete(id)
     if (d.success) loadEntries()
+  }
+  const editEntry = async entry => {
+    if (!entry?.id) { setEditing(entry); return }
+    try { const result = await diaryEntry(entry.id); if (!result.success) throw new Error(result.message); setEditing(result.data) }
+    catch (error) { setPageError(error.message || '加载正文失败') }
   }
   const goDate = d => { setPickDate(d); setView('timeline') }
 
@@ -198,14 +204,14 @@ export default function DiaryPage({ dark }) {
                   {Icon.sparkle} 那年今日
                 </div>
                 {(otd.past || []).slice(0, 2).map(e => (
-                  <button key={e.id} onClick={() => setEditing(e)}
+                  <button key={e.id} onClick={() => editEntry(e)}
                     className="block w-full text-left mb-1.5 text-[12px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200">
                     <b className="tabular-nums mr-1.5">{e.entry_date}</b>
                     <span className="line-clamp-1">{(e.content || '').replace(/[#*\-\n>]/g, ' ').slice(0, 60) || '（无文字）'}</span>
                   </button>
                 ))}
                 {otd.past?.length === 0 && otd.random && (
-                  <button onClick={() => setEditing(otd.random)}
+                  <button onClick={() => editEntry(otd.random)}
                     className="block w-full text-left text-[12px] text-stone-500 hover:text-stone-800 dark:hover:text-stone-200">
                     <b className="mr-1.5">随机记忆 · {otd.random.entry_date}</b>
                     <span className="line-clamp-1">{(otd.random.content || '').replace(/[#*\-\n>]/g, ' ').slice(0, 60)}</span>
@@ -220,6 +226,7 @@ export default function DiaryPage({ dark }) {
                 onSaved={() => { loadEntries(); loadJournals() }} />
             </div>
 
+            {(pageError || entryQuery.error) && <p role="alert" className="text-sm text-red-600 dark:text-red-400 my-3">{pageError || entryQuery.error?.message}</p>}
             {/* 时间线 */}
             {!entries ? (
               <p className="text-xs text-stone-400 py-14 text-center">加载中…</p>
@@ -233,7 +240,7 @@ export default function DiaryPage({ dark }) {
                   <span className="text-[12px] font-medium text-stone-400 tabular-nums">{g.date}</span>
                   <span className="text-[11px] text-stone-300 dark:text-stone-600">{g.notes.length} 条随记{g.summary ? ' · 已总结' : ''}</span>
                   <span className="flex-1 h-px bg-black/[0.05] dark:bg-white/[0.06]" />
-                  <button onClick={() => g.summary ? setEditing(g.summary) : writeSummary(g.date)}
+                  <button onClick={() => g.summary ? editEntry(g.summary) : writeSummary(g.date)}
                     className={'px-2 h-6 rounded-full text-[11px] transition-colors shrink-0 ' +
                       (g.summary
                         ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10'
@@ -243,17 +250,20 @@ export default function DiaryPage({ dark }) {
                 </div>
                 <div className="space-y-2.5">
                   {g.summary && (
-                    <SummaryCard summary={g.summary} dateStr={g.date} onEdit={setEditing} />
+                    <SummaryCard summary={g.summary} dateStr={g.date} onEdit={editEntry} />
                   )}
                   {g.notes.map(e => (
                     <EntryCard key={e.id} entry={e} compact attached={!!g.summary}
                       journal={journalById.get(e.journal_id)}
-                      onEdit={setEditing} onAction={doAction} onDelete={doDelete}
+                      onEdit={editEntry} onAction={doAction} onDelete={doDelete}
                       onShare={setSharing} />
                   ))}
                 </div>
               </div>
             ))}
+            {entries && entries.length < entryTotal && <button type="button" disabled={entryLoading} onClick={() => entryQuery.fetchNextPage()} className="w-full py-3 text-sm text-rose-600 dark:text-rose-400 disabled:opacity-40">
+              {entryLoading ? '加载中…' : `加载更多（${entries.length}/${entryTotal}）`}
+            </button>}
           </div>
         )}
 
@@ -274,13 +284,14 @@ export default function DiaryPage({ dark }) {
                           {(e.content || '').replace(/[#*\-\n>]/g, ' ').slice(0, 120) || '（无文字）'}
                         </div>
                       </div>
-                      <button onClick={async () => { await diaryAction(e.id, 'restore'); diaryList({ view: 'trash' }).then(d => d.success && setTrash(d.data.items)); }}
+                      <button onClick={async () => { await diaryAction(e.id, 'restore'); loadEntries(); }}
                         className="px-3 h-8 rounded-lg text-xs font-medium text-stone-700 dark:text-stone-200 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14]">恢复</button>
                       <button onClick={() => setConfirmPurge(e)}
                         className="px-3 h-8 rounded-lg text-xs font-medium text-red-600 dark:text-red-400 bg-red-500/10 hover:bg-red-500/20">彻底删除</button>
                     </div>
                   ))}
                 </div>}
+            {trash && trash.length < entryTotal && <button type="button" disabled={entryLoading} onClick={() => entryQuery.fetchNextPage()} className="w-full py-3 text-sm text-rose-600 dark:text-rose-400 disabled:opacity-40">加载更多（{trash.length}/{entryTotal}）</button>}
           </div>
         )}
       </main>
@@ -301,7 +312,7 @@ export default function DiaryPage({ dark }) {
           onOk={async () => {
             await diaryDelete(confirmPurge.id, true)
             setConfirmPurge(null)
-            diaryList({ view: 'trash' }).then(d => d.success && setTrash(d.data.items))
+            loadEntries()
           }} />
       )}
     </div>

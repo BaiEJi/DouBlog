@@ -8,16 +8,15 @@ search、uploads 白名单+越界 404、鉴权 401、seed 幂等、响应缓存�
 - 响应为 {success,code,message,data} 信封:统一 .json()['data'] unwrap
 - 前缀 /api/gamemap;鉴权走 Basic(上层 conftest 的 auth_headers)
 - pydantic body 校验失败出 400(Doublog 全局处理器)
-- 已知源行为锁定:delete chapter(带板)/delete game(有子行)因 ORM 置空 NOT NULL 外键
-  报 IntegrityError → 500(逐列照搬模型,行为与源一致,见 test_chapter_delete_with_board_is_integrity_error)
-- 响应缓存为进程内模块级(单进程假设);测试用例间用 autouse fixture 清空避免跨库串台
+- 删除章节/游戏在同一事务按外键依赖清理；上传文件保留以避免破坏其他引用。
+- 响应缓存按应用数据库runtime隔离；fixture同时检验显式失效入口。
 """
 import pytest
 
 
 @pytest.fixture(autouse=True)
-def _reset_gamemap_cache():
-    """每用例前后清空 gamemap 进程内响应缓存(模块级单例,多 app 测试会串台)。"""
+def _reset_gamemap_cache(app):
+    """每用例前后调用当前 app 的缓存失效入口。"""
     from app.gamemap import cache
     cache.invalidate_all()
     yield
@@ -118,13 +117,14 @@ def test_games_crud(client):
     assert client.delete(f"/api/gamemap/games/{g['id']}").status_code == 404
 
 
-def test_game_delete_with_children_is_integrity_error(client, app):
-    """源行为锁定:游戏有章节/人物时,ORM 置空 NOT NULL 外键 → 500(与源一致,不修)。"""
+def test_game_delete_with_children_is_atomic(client, app):
+    """有章节/人物时也能删除，不再将子行外键置空。"""
     g = make_game(client)
     make_chapter(client, g["id"])
     make_character(client, g["id"], "甲")
     r = client.delete(f"/api/gamemap/games/{g['id']}")
-    assert r.status_code == 500
+    assert r.status_code == 200
+    assert client.get(f"/api/gamemap/games/{g['id']}").status_code == 404
 
 
 def test_game_stats(client):
@@ -279,12 +279,13 @@ def test_chapters_crud(client, app):
     assert client.delete(f"/api/gamemap/games/{g['id']}/chapters/{ch3_id}").status_code == 404
 
 
-def test_chapter_delete_with_board_is_integrity_error(client):
-    """源行为锁定:章节带板删除 → IntegrityError → 500(API 建章必带板,与源一致)。"""
+def test_chapter_delete_with_board_is_atomic(client):
+    """建章必带板，删除章节应连同从属板正常提交。"""
     g = make_game(client)
     ch = make_chapter(client, g["id"])
     r = client.delete(f"/api/gamemap/games/{g['id']}/chapters/{ch['id']}")
-    assert r.status_code == 500
+    assert r.status_code == 200
+    assert client.get(f"/api/gamemap/games/{g['id']}/chapters").json()['data'] == []
 
 
 def test_chapter_copy_from_previous(client):
@@ -560,7 +561,7 @@ def test_merged_board(client):
     assert st["alias"] == "甲二" and st["alive"] is False and st["faction"] == "叛军"
     # 空选集
     r = client.get(f"/api/gamemap/games/{g['id']}/boards/merged", params={"chapter_ids": "99998,99999"})
-    assert r.json()["data"] == {"chapters": [], "anchor_chapter_id": None, "nodes": [],
+    assert r.json()["data"] == {"board_versions": {}, "chapters": [], "anchor_chapter_id": None, "nodes": [],
                                 "relations": [], "characters": [], "states": []}
     # 非法参数 → 400
     r = client.get(f"/api/gamemap/games/{g['id']}/boards/merged", params={"chapter_ids": "1,abc"})
@@ -574,7 +575,7 @@ def test_node_position_patch(client):
     add_node(client, g["id"], ch["id"], c["id"])
     url = f"/api/gamemap/games/{g['id']}/boards/chapters/{ch['id']}/nodes/{c['id']}"
     r = client.patch(url, json={"x": 111, "y": 222})
-    assert r.status_code == 200 and r.json()["data"] == {"ok": True, "version": 2}
+    assert r.status_code == 200 and r.json()["data"] == {"ok": True, "version": 3}
     node = {n["character_id"]: n for n in get_board(client, g["id"], ch["id"])["nodes"]}[c["id"]]
     assert (node["x"], node["y"]) == (111.0, 222.0)
 

@@ -8,6 +8,8 @@ FastAPI 应用入口
 import importlib
 import logging
 import os
+from contextlib import asynccontextmanager
+import threading
 
 # uvicorn --reload 的重启戳文件（数据库切换时 touch 它），
 # 必须被 import 才会进入 reload 监听列表
@@ -26,7 +28,7 @@ from fastapi.responses import JSONResponse  # noqa: E402
 from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
 from app.config import settings  # noqa: E402
-from app.db import init_db  # noqa: E402
+from app.db import init_db, database_context, run_db  # noqa: E402
 from app.shared import auth_router  # noqa: E402
 from app.shared.logging_setup import setup_logging_for_app  # noqa: E402
 from app.shared.modules import module_for_path, sys_name_for  # noqa: E402
@@ -41,6 +43,127 @@ MODULES = ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
 
 setup_logging_for_app()
 logger = logging.getLogger('doublog.main')
+
+
+def start_background(app):
+    """Start hooks and register lazy stop-only resources for lifecycle cleanup."""
+    with database_context(app):
+        for name, mod in app.state.loaded_modules:
+            if name in app.state.active_background:
+                continue
+            hook = getattr(mod, 'start_background', None)
+            if callable(hook):
+                hook(app)
+            elif not callable(getattr(mod, 'stop_background', None)):
+                continue
+            # Lazy resources still need shutdown/switch cleanup. Register only
+            # after a start hook succeeds, and only once until stop succeeds.
+            app.state.active_background.add(name)
+    app.state.background_started = True
+
+
+def drain_background(app, timeout=5.0):
+    """A failed durability drain prevents publishing a database switch."""
+    import time
+    deadline = time.monotonic() + timeout
+    with database_context(app):
+        for name, mod in app.state.loaded_modules:
+            hook = getattr(mod, 'drain_background', None)
+            if callable(hook) and hook(app, timeout=max(0, deadline - time.monotonic())) is False:
+                return False
+    return True
+
+
+def stop_background(app, timeout=5.0):
+    import time
+    deadline = time.monotonic() + timeout
+    success = True
+    with database_context(app):
+        for name, mod in reversed(app.state.loaded_modules):
+            hook = getattr(mod, 'stop_background', None)
+            if callable(hook) and name in app.state.active_background:
+                result = hook(app, timeout=max(0, deadline - time.monotonic()))
+                success = result is not False and success
+                if result is not False:
+                    app.state.active_background.discard(name)
+    app.state.background_started = bool(app.state.active_background)
+    return success
+
+
+@asynccontextmanager
+async def app_lifespan(app):
+    from app.shared.pools import run_blocking
+    await run_blocking('lifecycle', _enter_lifespan, app, workers=2)
+    try:
+        yield
+    finally:
+        await run_blocking('lifecycle', _leave_lifespan, app, workers=2)
+
+
+def _stop_app_resources(app, timeout=5.0):
+    """Seal producers before the durability watermark or any consumer is stopped."""
+    import time
+    runtime = app.state.db_runtime
+    app.state.ready = False
+    with runtime.condition:
+        runtime.admissions_paused = True
+    deadline = time.monotonic() + timeout
+    remaining = lambda: max(0.0, deadline - time.monotonic())
+    phase = 'inflight'
+    try:
+        if not runtime.drain(timeout=remaining(), include_controls=True):
+            raise RuntimeError('in-flight producers did not finish before the deadline')
+        phase = 'durability'
+        if not drain_background(app, timeout=remaining()):
+            raise RuntimeError('background durability drain did not complete')
+        phase = 'background'
+        if not stop_background(app, timeout=remaining()):
+            raise RuntimeError('background resources did not stop')
+        phase = 'dispose'
+        with runtime.condition:
+            runtime.closed = True
+        runtime.engine.dispose()
+    except Exception as error:
+        # In particular, an in-flight timeout must not stop its writer or dispose
+        # its engine. The same app can retry cleanup on a later lifespan entry.
+        app.state.shutdown_error = f'{phase}: {error}'
+        logger.error('Shutdown remains fenced: %s', app.state.shutdown_error)
+        return False
+    app.state.shutdown_error = None
+    return True
+
+
+def _enter_lifespan(app):
+    # Serialize the complete transition in SDK workers, never block the event loop
+    # on a lock held by another lifespan's bounded drain.
+    with app.state.lifecycle_lock:
+        if app.state.lifespan_users:
+            app.state.lifespan_users += 1
+            return
+        runtime = app.state.db_runtime
+        if app.state.shutdown_error and not _stop_app_resources(app):
+            raise RuntimeError('Previous shutdown is still draining; retry after producers finish')
+        with runtime.condition:
+            runtime.admissions_paused = True
+            runtime.closed = False
+        try:
+            if not runtime.writes_paused:
+                start_background(app)
+        except Exception as error:
+            app.state.shutdown_error = f'startup: {error}'
+            app.state.ready = False
+            raise
+        with runtime.condition:
+            runtime.admissions_paused = False
+        app.state.ready = not runtime.writes_paused
+        app.state.lifespan_users = 1
+
+
+def _leave_lifespan(app):
+    with app.state.lifecycle_lock:
+        app.state.lifespan_users -= 1
+        if app.state.lifespan_users == 0:
+            _stop_app_resources(app)
 
 
 def _log_extra(request: Request) -> dict:
@@ -58,8 +181,15 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         docs_url=None, redoc_url=None, openapi_url=None,   # 单用户内部服务，不暴露 schema
+        lifespan=app_lifespan,
     )
     app.state.testing = bool(os.environ.get('DOUBLOG_TESTING'))
+    app.state.lifecycle_lock = threading.RLock()
+    app.state.lifespan_users = 0
+    app.state.background_started = False
+    app.state.active_background = set()
+    app.state.ready = False
+    app.state.shutdown_error = None
 
     # CORS：凭据模式（会话 Cookie 跨端口携带）必须显式来源 + allow_credentials，
     # 不能再用通配 *；来源收敛为前端端口 60101（dev/preview 同端口）
@@ -68,7 +198,8 @@ def create_app() -> FastAPI:
         allow_origin_regex=r'^https?://.*:60101$',
         allow_credentials=True,
         allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allow_headers=['Content-Type', 'Authorization'],
+        allow_headers=['Content-Type', 'Authorization', 'X-Expected-Database-Identity'],
+        expose_headers=['X-Trace-Id', 'X-Database-Identity', 'X-Database-Generation'],
     )
     # gzip：≥1KB 响应压缩传输（level 6 为体积/CPU 权衡——starlette 默认 9，
     # 压测显示 9 在大响应上每请求多耗 ~3-4ms CPU，全模块读吞吐受损）
@@ -120,6 +251,59 @@ def create_app() -> FastAPI:
 
     app.add_middleware(trace_middleware)
 
+    def database_middleware(app_to_wrap):
+        async def middleware(scope, receive, send):
+            if scope['type'] != 'http':
+                return await app_to_wrap(scope, receive, send)
+            runtime = app.state.db_runtime
+            async def send_scoped(message):
+                if message['type'] == 'http.response.start':
+                    message.setdefault('headers', []).extend([
+                        (b'x-database-identity', runtime.identity.encode()),
+                        (b'x-database-generation', runtime.generation.encode()),
+                    ])
+                await send(message)
+            write = scope.get('method') not in ('GET', 'HEAD', 'OPTIONS')
+            with database_context(runtime, write=write):
+                path = scope.get('path', '')
+                expected = next((value.decode('latin-1') for name, value in scope.get('headers', [])
+                                 if name == b'x-expected-database-identity'), None)
+                recovery = (path.startswith('/api/auth/') or path in ('/', '/health', '/ready')
+                            or (not write and path in ('/api/admin/database', '/api/admin/runtime')))
+                if expected and expected != runtime.identity and not recovery:
+                    response = api_response({'error_code': 'DATABASE_CHANGED',
+                        'details': {'identity': runtime.identity, 'generation': runtime.generation}},
+                        409, '数据源已变化，请先备份未保存内容后重新加载')
+                    await response(scope, receive, send_scoped)
+                    return
+                allowed = (path.startswith('/api/admin/database') or path == '/api/admin/runtime'
+                           or path.startswith('/api/auth/') or path in ('/health', '/ready', '/'))
+                if runtime.writes_paused and not allowed and scope.get('method') != 'OPTIONS':
+                    response = api_response(None, 503, '数据库切换待重启，服务就绪后再继续操作')
+                    await response(scope, receive, send_scoped)
+                    return
+                # Cover async body reads and non-DB producers, not only run_db's
+                # submitted workers. Switch is a controller and must not wait on
+                # its own request; SSE has its own bounded stop lifecycle.
+                tracked = path not in ('/api/admin/database/switch',
+                                       '/api/clash/controller/connections/events')
+                ticket_write = write and not allowed
+                if tracked:
+                    try:
+                        runtime.admit(write=ticket_write)
+                    except StarletteHTTPException as error:
+                        response = api_response(None, error.status_code, str(error.detail))
+                        await response(scope, receive, send_scoped)
+                        return
+                try:
+                    await app_to_wrap(scope, receive, send_scoped)
+                finally:
+                    if tracked:
+                        runtime.release(write=ticket_write)
+        return middleware
+
+    app.add_middleware(database_middleware)
+
     # ── 统一异常信封（与 Flask 时代行为一致）──────────────
     async def handle_app_error(request: Request, err: AppError) -> JSONResponse:
         logger.info(f"AppError {err.code}: {err.message} [{request.method} {request.url.path}]",
@@ -163,24 +347,22 @@ def create_app() -> FastAPI:
     # ── 动态模块导入（先注册模型，建表才能看到全部表）────
     loaded = []
     for name in MODULES:
-        try:
-            mod = importlib.import_module(f'app.{name}')
-        except Exception as e:  # noqa: BLE001 - 未迁移模块（Flask 残码）跳过不致命
-            logger.warning(f'模块 app.{name} 未注册（未迁移或依赖缺失）: {e}')
-            continue
+        # All modules have migrated. Missing dependencies are a startup failure,
+        # never a healthy service that quietly omitted part of the application.
+        mod = importlib.import_module(f'app.{name}')
         loaded.append((name, mod))
 
     # ── 数据库（建表 → 存量改名 → 模块迁移钩子 → 播种）───
     init_db(app)
+    app.state.loaded_modules = loaded
 
     # ── 路由挂载 + 后台线程钩子 ─────────────────────────
     for name, mod in loaded:
         router = getattr(mod, 'router', None)
         if router is not None:
             app.include_router(router)
-        starter = getattr(mod, 'start_background', None)
-        if callable(starter):
-            starter(app)
+    start_background(app)
+    app.state.ready = True
 
     app.include_router(auth_router)
 
@@ -191,6 +373,23 @@ def create_app() -> FastAPI:
     @app.get('/health')
     async def health_check():
         return {'status': 'healthy'}
+
+    from app.shared.auth import require_basic
+    from fastapi import Depends
+    from sqlalchemy import text
+
+    @app.get('/ready', dependencies=[Depends(require_basic)])
+    async def readiness():
+        def check():
+            from app.db import db
+            with db.engine.connect() as connection:
+                connection.execute(text('SELECT 1'))
+            return app.state.db_runtime.snapshot()
+        status = await run_db(check)
+        ready = app.state.ready and not status['pending_restart']
+        return api_response({**status, 'ready': ready,
+                             'modules': [name for name, _ in loaded]},
+                            200 if ready else 503)
 
     logger.info(f"{settings.app_name} v{settings.app_version} initialized "
                 f"(fastapi, backend={app.state.engine.url.get_backend_name()})")

@@ -1,6 +1,6 @@
 # blog 模块（博客 / 知识库）
 
-> 模块文档，**2026-10-10 生成**，来源：`backend/app/blog/**`、`backend/tests/blog/`、`frontend/src/blog/**`（api.md 第 3/4/5/7/8 节为接口契约正本，本文与其交叉验证、不重复抄示例）。
+> 模块文档，**2026-10-21 更新**，来源：`backend/app/blog/**`、`backend/tests/blog/`、`frontend/src/blog/**`（api.md 第 3/4/5/7/8 节为接口契约正本，本文与其交叉验证、不重复抄示例）。
 > 骨架契约（`run_db` / `api_response` / `require_basic` / 模块三契约）见 `docs/fastapi-migration.md` 与 `backend.md` 第 2 节。
 
 ---
@@ -13,20 +13,20 @@
 |---|---|
 | 知识库（Workspace）隔离 | 文章按库分组：库间树/列表互不可见；`name` 库内唯一；不支持跨库移动/父子；删除保护（非空库、最后一个库不可删） |
 | 3 层树形结构 | 虚拟根 id=0；顶级顺序存 `blog_workspaces.children_order`，子级顺序存父文章 `children_order`；拖拽排序（dnd-kit） |
-| 双链 | `[[name]]` / `[[标题]]` / `[[名\|显示文字]]`；**渲染在前端**（`md.js` wiki_link + `applyWikiLinks`），**反链在后端**（同库扫描正文） |
+| 双链 | `[[name]]` / `[[标题]]` / `[[名\|显示文字]]`；**渲染在前端**（`md.js` wiki_link + `applyWikiLinks`），**反链在后端**（同库 PostLink 投影查询） |
 | 图片 | 粘贴/拖拽/按钮上传（uuid 文件名落盘 `data/images/`）+ 目录围栏下载；上传白名单不含 svg、下载白名单含 svg |
 | 导出 | 全库 Markdown zip 备份（`GET /api/export/markdown`）+ 单篇 .md 纯前端导出（详情页） |
 | 最近浏览 | `last_viewed_at` 倒序跨库横条（首页）；仅真实浏览计入，预取不计 |
 | SWR 预取 | 链接 hover/focus → `prefetchPost(?no_view=1)`；详情页命中缓存即渲染、后台重拉覆盖；保存/删除后 `invalidatePost` |
 | 其他 | 浏览计数实时写库、操作审计（AuditLog）、keyword 全文搜索（标题/摘要/英文名/正文，跨库）、gzip（全局中间件 ≥1KB） |
 
-模块包契约：`app/blog/__init__.py` 导出 `router`（挂 posts/images/workspaces/export + 子域 assets/diary/bookmarks 七个子 router）+ `ensure_migrations(engine)`（链式调用知识库/资产库/日记三组迁移）；无 `start_background`（本模块无后台线程）。
+模块包契约：`app/blog/__init__.py` 导出 `router`（挂 posts/images/workspaces/export + 子域 assets/diary/bookmarks 七个子 router）+ `ensure_migrations(engine)`（链式调用知识库/资产库/日记/书签四组迁移）；无 `start_background`（本模块无后台线程）。
 
 ---
 
 ## 2. 数据模型（`app/blog/models.py`）
 
-三表均在共享库，表名规则 `模块名_表名`（存量旧表由 `db.py` 启动 RENAME 幂等改名，见 backend.md 3.3）。
+业务表均在共享库，表名规则 `模块名_表名`（存量旧表由 `db.py` 启动 RENAME 幂等改名，见 backend.md 3.3）。
 
 ### 2.1 `blog_workspaces`（知识库）
 
@@ -36,6 +36,7 @@
 | `name` | String(100) NOT NULL, **unique** | 库名，DB 级全局唯一 |
 | `description` | String(500) | 描述 |
 | `children_order` | Text | **该库顶级文章顺序** JSON 数组（子级顺序在 Post 上） |
+| `revision` | Integer, default 1 | 根排序的乐观版本 |
 | `created_at` / `updated_at` | DateTime(timezone=True) | `server_default=now()`，updated_at 带 `onupdate` |
 
 `to_dict(post_count=None)`：post_count 由路由层聚合查询传入。
@@ -46,9 +47,10 @@
 |---|---|---|
 | `id` | Integer PK | 自增；**id=0 保留给虚拟根**（建库时 `db.py` 播种） |
 | `title` | String(200) NOT NULL | 标题 |
-| `name` | String(100) NOT NULL, **index** | 英文名/URL 路径段；**应用层校验库内唯一**（DB 无唯一约束） |
+| `name` | String(100) NOT NULL, **index** | 英文名/URL 路径段；应用层校验 + 干净存量库的部分唯一索引 |
 | `slug` | String(500), index | 完整路径（`/a/b/c`），持久化列，改名/移动时级联维护 |
 | `content` / `summary` | Text | Markdown 正文 / 摘要 |
+| `revision` / `links_hash` | Integer / String(64) | 编辑/子级排序版本；反链正文投影哈希 |
 | `workspace_id` | FK→blog_workspaces.id, index | 所属知识库（迁移补列） |
 | `parent_id` | FK→blog_posts.id ON DELETE SET NULL, index | 父文章；顶级 = 0（虚拟根） |
 | `level` | Integer, default 0 | 0~2（`MAX_LEVEL = 2`，共 3 层） |
@@ -70,15 +72,17 @@
 ### 2.4 树与 slug 设计
 
 - **虚拟根**：id=0 的 Post 行，所有查询 `Post.id != ROOT_ID`（`services/tree_order.ROOT_ID`）；树接口组树时 `parent_id in (0, None)` 视为顶级。
-- **层级上限**：`MAX_LEVEL = 2`（level 0/1/2 共 3 层）；创建时父文章**单次查询**复用于层级/归属校验与 children_order 追加（父 level+1 超限 → 400），移动时校验新父 `level >= MAX_LEVEL` → 400。
+- **层级上限**：`MAX_LEVEL = 2`（level 0/1/2 共 3 层）；创建时父文章**单次查询**复用于层级/归属校验与 children_order 追加（父 level+1 超限 → 400），移动时校验新父与整个子树组合后的最大深度，超出3层 → 400。
 - **slug**：根到本节点 `name` 路径。创建时由父文章已存 slug 直推（空 slug 存量行回退 `build_full_slug` 逐级回溯兜底）；列表/详情用 `_fetch_ancestors`+`_slug_from_rows` **按需祖先链**（≤3 层 IN 小查询，页内全为顶级时零额外查询）；`build_slug_map`（全表一次查询 + 内存回溯缓存）保留为批量工具，热路径不再使用。
-- **级联**：改名或移动后 `update_slug_for_subtree`——单次查询全表 → 收集受影响子树 → 内存算新 slug → 逐行写回（改名/移动会改整棵子树路径前缀，受影响行必然全变）。`/path/<slug>` 按 slug 列查询，不级联则失效。
-- **排序归属**：顶级顺序写 `workspaces.children_order`（`PUT /reorder` 带 `parent_id=0` + `workspace_id`）；子级写父文章 `children_order`。`children_order` 里的悬挂 id（已删文章）不影响树渲染（按 id 过滤缺失项）。
+- **级联**：改名或移动后 `update_slug_for_subtree`——单次查询同库文章 → 收集受影响子树 → 内存算新 slug/level → 逐行写回（改名/移动会改整棵子树路径前缀，受影响行必然全变）。`/path/<slug>` 按 slug 列查询，不级联则失效。
+- **排序归属**：顶级顺序写 `workspaces.children_order`（`PUT /reorder` 带 `parent_id=0` + `workspace_id`）；子级写父文章 `children_order`。读取旧 `children_order` 时过滤悬挂ID、补齐未列出的实际兄弟；新排序写入必须提交完整、无重复的当前兄弟ID集。
 - **name 校验**：`validate_slug` = 英文字母开头 + 仅字母/数字/连字符 + 总长 3-100（`^[a-zA-Z][a-zA-Z0-9-]*$` + len 检查；前端 `NAME_RE = /^[a-zA-Z][a-zA-Z0-9-]{2,99}$/` 与之等价）。
 
 ### 2.5 幂等迁移（`services/migrations.py::ensure_migrations`）
 
-由骨架 `init_db` 在存量表 RENAME 之后、create_all 之后调用：① `blog_posts` 缺 `workspace_id` → ALTER 补列 + 建索引 `ix_blog_posts_workspace_id`（sqlite/pg 同语法）；② 缺 `last_viewed_at` → 补列；③ 无任何知识库 → 建"默认知识库"，**并把虚拟根(id=0)的 children_order 拷贝为初始顶级顺序**；④ `workspace_id IS NULL` 的存量文章全部回填默认库。
+由骨架 `init_db` 在存量表 RENAME 之后、create_all 之后调用：① `blog_posts` 缺 `workspace_id` → ALTER 补列 + 建索引 `ix_blog_posts_workspace_id`（sqlite/pg 同语法）；② 缺 `last_viewed_at` → 补列；③ 无任何知识库 → 建"默认知识库"，**并把虚拟根(id=0)的 children_order 拷贝为初始顶级顺序**；④ `workspace_id IS NULL` 的存量文章全部回填默认库；⑤ 补Post/Workspace的revision及links_hash；⑥ 检查旧英文名重复后决定是否建库内部分唯一索引，并补齐缺失的PostLink投影。
+
+另有 `blog_post_links`（来源ID+目标文本的反链投影）和 `blog_mutations`（排序请求指纹/成功结果收据），由create_all建表。
 
 ---
 
@@ -91,17 +95,17 @@
 | 方法/路径 | 参数 | 响应要点 | 错误 |
 |---|---|---|---|
 | `GET /api/posts` | query: `page`(1)/`page_size`(20, 上限 `settings.max_page_size`=100)/`workspace_id`/`parent_id`/`status`/`keyword`（LIKE 匹配 title/summary/name/**content**；不带 workspace_id 跨库） | `items`（**无 content**，含 `slug`、`children_count`、实时 `view_count`）+ `total/page/page_size/total_pages`；排序 `is_top DESC, id ASC` | — |
-| `GET /api/posts/tree` | query: `workspace_id`（缺省 = id 最小库） | 该库整树（**无 content**；节点含 `children_order`、`children` 递归）；顶级按库 children_order、子级按父 children_order 排序；库空返回 `[]` | 404 知识库不存在 |
+| `GET /api/posts/tree` | query: `workspace_id`（缺省 = id 最小库） | 该库整树（**无 content**；节点含 `revision`、`children_order`、`children` 递归；响应头 `X-Tree-Revision` 为根版本）；顶级按库 children_order、子级按父 children_order 排序；库空返回 `[]` | 404 知识库不存在 |
 | `GET /api/posts/id/{id}` | query: `no_view=1`（不计浏览、不进最近浏览；前端预取专用） | 详情（含 `content`）+ `parent`（顶级无此键）+ `children`（按 children_order 排序，`{id,title,name,slug,level}`）+ `slug`/`view_count` | 404 文章不存在 |
 | `GET /api/posts/slug/{name}` | path: name（**按 name 匹配，无库过滤**） | 同详情（计浏览；不支持 no_view） | 404 |
 | `GET /api/posts/path/{slug}` | path: 完整路径（兼容旧版；先按 slug 列查，miss 后逐级按 name+parent 解析） | 同详情（计浏览） | 404 |
 | `POST /api/posts` | body: `title`✅、`name`✅（或从 `slug` 末段解析）、`content`/`summary`/`workspace_id`（缺省默认库）/`parent_id`（缺省/0=顶级）/`status`/`is_top`/`tags`；坏/非 dict body 按空处理 | 201 + `{id,title,name,slug,workspace_id,level,created_at}`；创建即算 slug 并追加到父（或库）children_order | 400 标题不能为空 / 知识库不存在 / 英文名不能为空 / 英文名格式无效 / 该英文名已被使用（库内）/ 父文章已达最大层级限制（最多3层）/ 父文章不属于该知识库 |
-| `PUT /api/posts/id/{id}`、`PUT /api/posts/slug/{name}` | body 部分更新：`title/content/summary/status/is_top/tags/name/parent_id`（共用 `_update_post`） | 200 + `{id,title,name,slug,level,parent_id,updated_at}`；改 name 级联子孙 slug；改 parent_id 从旧父（或库）order 移除、追加新父、级联子树 slug | 404；400 格式无效 / 已被使用 / 不能将自己设为父文章 / 父文章不存在 / 父文章已达最大层级限制 / 不能跨知识库移动文章 / 不能选择自己的子孙文章作为父文章 |
+| `PUT /api/posts/id/{id}`、`PUT /api/posts/slug/{name}` | body 部分更新：`title/content/summary/status/is_top/tags/name/parent_id`；可选 `revision`（过期409，共用 `_update_post`） | 200 + `{id,title,name,slug,level,parent_id,revision,updated_at}`；改 name 级联子孙 slug；改 parent_id 从旧父（或库）order 移除、追加新父、级联子树 slug | 404；400 格式无效 / 已被使用 / 不能将自己设为父文章 / 父文章不存在 / 父文章已达最大层级限制 / 不能跨知识库移动文章 / 不能选择自己的子孙文章作为父文章 |
 | `DELETE /api/posts/id/{id}?recursive=1`、`DELETE /api/posts/slug/{name}?recursive=1` | recursive 缺省 = 子文章提升为顶级（parent_id=0、level=0、追加库 order）；`=1` 递归删子孙 | 200 删除成功；同时从父（或库）children_order 移除 | 404 |
-| `PUT /api/posts/reorder` | body: `parent_id`（0=库顶级）、`workspace_id`（parent_id=0 时用，缺省 id 最小库）、`children_order`（id 数组） | 200 排序更新成功（乐观写整组，悬挂 id 不校验） | 404 知识库不存在 / 父节点不存在 |
+| `PUT /api/posts/reorder` | body: `parent_id`（0=库顶级）、`workspace_id`（parent_id=0 时用，缺省 id 最小库）、`children_order`（完整且不重复的兄弟id数组）、可选 `revision/mutation_id` | 200 + `{revision,children_order}`，同请求可幂等重放 | 404 知识库不存在 / 父节点不存在；409 兄弟集或版本冲突 |
 | `GET /api/posts/audit-logs` | query: `page`/`page_size` | `items`（action/resource_type/resource_id/detail/ip_address/created_at）倒序分页 | — |
 | `GET /api/posts/recent?limit=` | limit 默认 10、上限 50 | `last_viewed_at` 倒序、跨库、仅 published、**无 content**，附 `workspace_name` | — |
-| `GET /api/posts/id/{id}/backlinks` | — | 同库内正文 `[[...]]` 指向该文章的列表 `{items:[{id,title,name,summary}], total}`；寻址 = `[[name]]`/`[[标题]]`/`[[x\|alias]]`，先 name 后 title 精确匹配（与前端渲染规则一致） | 404 |
+| `GET /api/posts/id/{id}/backlinks` | — | 同库PostLink投影 `[[...]]` 指向该文章的列表（不扫描全库正文） `{items:[{id,title,name,summary}], total}`；寻址 = `[[name]]`/`[[标题]]`/`[[x\|alias]]`，先 name 后 title 精确匹配（与前端渲染规则一致） | 404 |
 
 ### 3.2 知识库 `routes/workspaces.py`（prefix `/api/workspaces`）
 
@@ -154,15 +158,15 @@
 
 ### 5.1 HomePage（`/blog`，pages/HomePage.jsx）
 
-- **数据**：挂载 `fetchAllPosts()`（分页循环拉全量，上限 2000）+ `fetchWorkspaces()` + `fetchRecentPosts(8)`；当前库 `?ws=` URL 记忆（`history.replaceState`，不刷新），未匹配回退第一个库；卡片网格按当前库过滤。
+- **数据**：挂载 `fetchWorkspaces()` + `fetchRecentPosts(8)`，文章通过 `fetchPosts({page,page_size:24,workspace_id,keyword})` 按页请求；服务端total驱动页码，无2000条总量上限。当前库 `?ws=` URL 记忆（`history.replaceState`，不刷新），未匹配回退第一个库。
 - **WorkspaceSwitcher**（本文件内组件）：触发按钮 + 下拉面板（库名/文章数/选中态蓝点、新建库内嵌表单 Enter/Esc、点外关闭）；创建成功自动切到新库。
-- **搜索**：300ms 防抖走后端 `searchPosts`（**服务端全文、跨库**，命中显示所属库徽章）；`Ctrl/Cmd+K` 聚焦。非搜索态显示最近浏览横条（hover 预取）。
+- **搜索**：300ms 防抖通过 `fetchPosts` 的keyword参数搜索（**服务端全文、跨库**，命中显示所属库徽章）；`Ctrl/Cmd+K` 聚焦。非搜索态显示最近浏览横条（hover 预取）。
 - 卡片 hover/focus `prefetchPost`；骨架屏 stagger、空态引导新建。
 - 公共侧栏入口为知识库（子项：新建文章）/ 资产库（子项：Prompt/Skill）；独立管理页和门户管理卡片已移除，旧 `/admin` 地址重定向到 `/blog`。数据库与日志设置统一从 `/config` 操作。
 
 ### 5.2 PostDetail（`/post/:id`，pages/PostDetail.jsx，最重页面）
 
-- **三栏**：左文档树（dnd-kit 拖拽排序乐观更新 + 失败重拉、展开状态 localStorage 记忆、右键菜单建子/同级/删除）+ 中正文 + 右 TOC（IntersectionObserver 高亮）；左右栏宽可拖（localStorage）。切库隔离：先取文章得知 workspace_id，再按库取树。
+- **三栏**：左文档树（dnd-kit 拖拽排序携带版本/幂等ID、单笔串行确认、乐观更新 + 失败重拉、展开状态 localStorage 记忆、右键菜单建子/同级/删除）+ 中正文 + 右 TOC（IntersectionObserver 高亮）；左右栏宽可拖（localStorage）。切库隔离：先取文章得知 workspace_id，再按库取树。
 - **SWR**：挂载先 `takeCachedPost` 命中即渲染，后台重拉覆盖并 `setCachedPost`；同路由切文章只重建内容区（`key={post.id}`），外壳不动、`articleRef.scrollTo(0)` 复位。
 - **渲染**：`renderPostContent` 模块级 LRU 16 按正文缓存 `md.render` + 抽 h1-h6 生成 TOC；`buildWikiMap(tree)` → `applyWikiLinks` 解析双链（树后到自动补 href，未命中置灰不可点）；`MermaidRunner`（key 绑定 html）延迟 100ms 渲染图表；`dangerouslySetInnerHTML` 传 useMemo 稳定引用（防无关重渲染抹掉 mermaid SVG）。
 - **lightbox**（自研）：事件委托捕获 `.prose-content img` 点击；`+/-/=` 缩放、滚轮缩放、Esc 关闭。
@@ -173,8 +177,8 @@
 ### 5.3 CreatePost / EditPost（`/create`、`/post/:id/edit`）
 
 - **表单**：标题/slug（`NAME_RE` 前端校验）/所属知识库下拉（`?ws=` 预选，切库清空父文章）/父文章（同库树扁平化下拉，`└ ` 缩进）/状态/摘要；EditPost 的 slug/父文章/状态为只读展示（编辑入口不改 name 与挂载）。
-- **编辑器**（两页同构）：工具栏 9 个语法按钮（insertAtCursor 包选区）+ 图片/表格/mermaid/代码块模板；分栏 `h-[70vh]` 双栏内部滚动；实时预览（同渲染管线 + 双链解析 + mermaid）。
-- **提交流程**：Create `POST /api/posts` → 跳 `/post/:id`；Edit `PUT /api/posts/id/:id`（title/content/summary）→ `invalidatePost` → 跳回详情。
+- **编辑器**（两页同构）：共享CodeMirror6及textarea兼容桥；工具栏 9 个语法按钮（insertAtCursor 包选区）+ 图片/表格/mermaid/代码块模板；分栏 `h-[70vh]` 双栏内部滚动；实时预览（同渲染管线 + 双链解析 + mermaid）。
+- **提交流程**：Create `POST /api/posts` → 跳 `/post/:id`；Edit `PUT /api/posts/id/:id`（title/content/summary/revision）→ `invalidatePost` → 跳回详情。
 - EditPost 先拉详情再按库拉树；loading/loadError 两个独立整页分支。
 
 ### 5.4 editor hooks（共用）
@@ -184,28 +188,25 @@
 
 ---
 
-## 6. 测试（`backend/tests/blog/`，57 用例，全部自包含临时 SQLite）
+## 6. 测试（知识库原核心57例；子域和新增专项另列，均自包含临时SQLite）
 
 | 文件 | 数量 | 覆盖点 |
 |---|---|---|
 | `test_posts.py` | 31 | 创建（201/401/缺 name/非法格式/库内重名/3 层上限）；列表与树**不含 content**（含 5000 字正文条目断言）+ 树嵌套 slug；分页 total/total_pages；keyword 命中正文 + 跨库/带库过滤；详情（id 含正文/slug/children 排序 slug/path 按路径与 404）；浏览计数实时自增（1→2→3，列表读到同值）+ `no_view=1` 不计；改名/移动 **slug 级联**（子孙路径更新、level 更新）；自父/子孙父 400；内容更新；删除（默认提升子级为顶级/recursive 级联 404）；图片围栏（正常 200/白名单外 404/绝对越界+URL 编码穿越+相对穿越三类 404）；gzip（大列表 Content-Encoding=gzip/`/health` 不压）；拖拽 reorder 生效 |
-| `test_workspaces.py` | 15 | 默认库自动创建（名/计数）+ 树缺省库；CRUD/重命名/重名 400/空名 400；删空库 200/非空 400（含篇数文案）/末库 400/未认证 401；库间隔离（树/列表/post_count 三视角）；同名文章跨库可建、同库拒；跨库父子 400/跨库移动 400；顶级排序写库（reorder parent_id=0 + 悬挂 id 不影响渲染） |
+| `test_workspaces.py` | 15 | 默认库自动创建（名/计数）+ 树缺省库；CRUD/重命名/重名 400/空名 400；删空库 200/非空 400（含篇数文案）/末库 400/未认证 401；库间隔离（树/列表/post_count 三视角）；同名文章跨库可建、同库拒；跨库父子 400/跨库移动 400；顶级排序写库（reorder parent_id=0；当前写接口的完整兄弟集约束另由优化专项覆盖） |
 | `test_kb_features.py` | 11 | 上传（1px PNG 成功且 URL 可取回/svg 400/未认证 401/空文件 400）；recent（浏览顺序倒序 + no_view 不进列表/limit）；backlinks（name 与 title 双寻址 + alias/同库隔离跨库不互链/404）；导出 zip（结构 index.md+子文件+独立文章+images/、frontmatter、`../images/` 深度重写、双链原样、图片字节一致）；导出未认证 401 |
 
 ---
 
-## 7. 已知边界（对照 AGENTS.md"已知未修复问题"）
+## 7. 已知边界
 
-1. **移动子树不重算子孙 `level` 列**：slug 已级联、level 陈旧仅影响展示（AGENTS #3）
-2. **AuditLog 只增不删**，无清理策略，长期膨胀（AGENTS #1）
-3. 前端 `/archive` 死链、无 404 兜底页（应用壳层问题，导航里 blog 相关，AGENTS #4）
-4. 生产模式数据库切换需手动重启；切换期间并发写入可能丢失（AGENTS #5，系统配置页提示）
-5. `/api/posts/slug/{name}` 与 `/path/{slug}` **无库过滤**：跨库同名文章时命中 id 最小的那条（前端一律 `/id` 寻址不受影响，API 直用需注意）
-6. `name` 库内唯一是**应用层**校验（DB 无唯一约束），并发极端下可能突破（单用户可忽略）
-7. `keyword` 搜索走 `content LIKE` 全表扫，数据量大时 O(N)
-8. 上传只校验扩展名 + 大小，不嗅探文件内容是否真为图片；下载白名单含 svg（历史文件可取回），上传侧已封死
-9. 图片 GET 免认证——uuid 随机文件名是主要防线（公开 URL 可被知道文件名者获取）
-10. 导出 depth 32 兜底：数据成环时静默跳过该子树（仅 WARNING 日志）
+1. **AuditLog 只增不删**，无清理策略，长期膨胀。
+2. `/api/posts/slug/{name}` 与 `/path/{slug}` **无库过滤**：跨库同名文章时命中 id 最小的那条（前端一律 `/id` 寻址，API直用需注意）。
+3. `keyword` 搜索走 `content LIKE`，数据量大时为O(N)扫描；分页解决响应与渲染规模，不等于全文索引。
+4. 上传只校验扩展名与大小，不嗅探文件内容是否真为图片；下载白名单含历史svg，上传不接受svg。
+5. 图片GET免认证，公开URL可被知道文件名者获取。
+6. Markdown导出depth32兜底：旧数据成环时跳过该子树并写WARNING。
+7. 旧库若已有同库英文名重复，会报告并暂缓建唯一索引，不自动合并用户数据；应用校验和库写锁仍生效。
 
 ## 公共 UI 外壳（2026-10-13）
 
@@ -232,7 +233,7 @@ sys_name 并入 `doublog.blog`；表名保留 `assets_` 前缀（免数据迁移
 - **双类型资产**：`kind=prompt`/`skill` 统一 CRUD；标题无唯一约束（复制/导入可重名，撞名复制自动加「（副本）」）
 - **组织维度**：分类（emoji + hex 颜色 + 适用类型，删除前校验关联）；标签（≤20 个/条目，禁引号与反斜杠——JSON 列 LIKE 匹配的转义边界）；收藏；归档
 - **变量体系**：正文 `{{name}}` 声明变量，**服务端保存时提取去重**（别信任前端）；详情抽屉「变量填充台」+ 填充值 localStorage 记忆（`doublog_assets_fill_<id>`）
-- **版本管理**：title/summary/content 变更即快照（元数据变更不产生版本；当前版本在链）；行级 LCS diff（前端，>1500 行退化整体替换）；恢复 = 产生新版本
+- **版本管理**：title/summary/content 变更即快照（元数据变更不产生版本；当前版本在链）；共享Worker/jsdiff与虚拟行对比（完整结果可复制；超计算预算明确提示，可取消）；恢复 = 产生新版本
 - **使用统计**：copy/fill/export 计数、30 天趋势、TOP5、最近使用
 - **回收站**：软删 → 恢复/彻底删除（级联版本与日志）；回收站内禁编辑/使用/恢复版本
 - **批量操作**：favorite/unfavorite/archive/unarchive/trash/restore/hard_delete/move（≤500 条）
@@ -266,7 +267,7 @@ JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量
   「上传 Skill」仅 Skill 视图展示，新建资产按当前视图预填 kind；回收站/统计视图已移除，
   删除（卡片/详情/批量）均为直接彻底删除（window.confirm 确认）
 - `ItemDetail.jsx` 右滑抽屉（预览/变量填充/版本 diff 三 tab）、`ItemEditor.jsx`（实时变量检测、Ctrl+S）、
-  `CategoryManager.jsx` / `ImportPanel.jsx`、`kit.jsx`（diffLines/copyText/Toast/KIND_META）
+  `CategoryManager.jsx` / `ImportPanel.jsx`、`kit.jsx`（copyText/Toast/KIND_META等兼容小件）；版本对比使用共享DiffViewer
 
 ### 测试（`tests/blog/assets/test_assets.py`，36 例）
 
@@ -317,23 +318,24 @@ JSON 列过滤走 `cast(String).like('%"tag"%')`；`ensure_migrations` 为存量
 `diary_diaries`（随记与总结同表）：content(Text ≤20 万) / **entry_date(String10 index，日记日期 `YYYY-MM-DD` 字符串，同一天可多篇)** /
 mood(great~bad) / tags(遗留列，API 不写入不检索，仅导出读旧数据) / word_count(**保存时服务端计算**) /
 journal_id(FK，随记必填、总结恒 NULL) / kind(note/summary，每天一篇由 upsert 保证) / pinned / archived_at / deleted_at(软删) /
-weather / location(JSON 白名单) / share_token(UNIQUE) / share_expires(naive UTC) / created_at / updated_at。
+weather / location(JSON 白名单) / share_token(UNIQUE) / share_expires(naive UTC) / revision / created_at / updated_at。
+另有 `diary_mutations` 幂等收据和 `diary_write_locks` 稳定写锚点，后者在全部日记本删空后仍有效。
 
 **日期一律 `YYYY-MM-DD` 字符串**：SQLite 与 PG 对 DATE/DATETIME 返回与时区处理不一致，字符串形式让两后端
 JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `LIKE 'YYYY-MM%'` 前缀匹配）。
 
-### API 契约（22 端点，`app/blog/diary/routes.py`，正本见 api.md 第 9 节）
+### API 契约（`app/blog/diary/routes.py`，正本见 api.md 第 9 节）
 
 统一信封；错误抛 lizysdk ParamError(400)/NotFoundError(404)/ConflictError(409)；鉴权=路由器级
 `Depends(require_basic)`，仅公开分享在独立 public_router：
 
 - **条目**：GET entries（`?view=timeline|archive|trash|pinned`、`?date=`/`?start=&end=`、`?search=` 仅正文 LIKE、
-  `?mood=`、`?journal_id=`、limit≤500；**日记列表带正文**，与文章列表不含正文的约定不同；排序=置顶→日期倒序→
+  `?mood=`、`?journal_id=`、limit默认50/最大500及offset；默认带完整正文，`include_content=0`仅返回600字投影供列表；编辑前GET entries/{id}取全文。返回total/limit/offset/has_more。排序=置顶→日期倒序→
   当天总结在随记前→id 倒序）；POST entries（entry_date/content 必填，kind=note 时 journal_id 必填；
   **传 kind=summary 得 400**——总结只能走 summary upsert）；PUT `?action=pin|unpin|archive|unarchive|restore`
   或 body 部分更新（kind 不可改）；DELETE 软删 / `?hard=1` 彻底删除（必须先软删，硬删前清分享字段）；
   POST quick（一句话打卡，entry_date 取服务端当天）；POST summary（每天一篇 upsert，返回 created 与当天随记列表）
-- **日记本**：GET journals（带 entry_count 未删除计数含归档）；POST（重名 409）；PUT；DELETE（仍有未删除条目 409）
+- **日记本**：GET journals（带 entry_count 未删除计数含归档）；POST（重名 409）；PUT；DELETE（仍有条目，包括回收站，409；与条目写入共用稳定写锚点）
 - **日历/热力图/回忆**：GET dates?year=&month=（排除归档与回收站，mood 取当天最好）；GET heatmap?year=
   （**含归档**、排除回收站，返回 max 供色阶归一）；GET onthisday（往年今日 ≤20 条 + 不足 3 条补 1 条确定性随机）
 - **统计/趋势/年度**：GET stats（排除归档+回收站，streak 口径同）；GET trends?months=1-36（缺月补零）；
@@ -347,7 +349,7 @@ JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `
 
 - **字数后端计算**（`_count_words`）：CJK 逐字 + 西文按词；create/update/quick/summary 保存时重算，不信任前端
 - **ensure_migrations**（由 blog 链式调用）：幂等四件事——缺列补列（journal_id/kind/pinned/archived_at/deleted_at/
-  weather/location/share_token/share_expires）；确保预置三本存在；存量无本随记归入「日常」；缺索引补建
+  weather/location/share_token/share_expires/revision）；确保预置三本存在；存量无本随记归入「日常」；缺索引补建
 - 路由内不 try/except，直接 raise lizysdk 错误由全局处理器转信封；DB 操作包 `run_db`
 - `_json_body` 坏 JSON 一律 `{}`；`_clean_meta` weather/location 白名单清洗（数值 round5、字符串 ≤80）
 - 与文章体系零耦合：不经过 posts/workspaces，任何 diary 接口都不写 blog 文章表
@@ -360,7 +362,7 @@ JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `
   时间线 = 搜索/心情过滤行 → 那年今日横幅 → 快捷录入盒 →
   按日期分组（粘性日期头 + 总结卡在前、随记卡缩进挂线在后）；回收站 = 恢复/彻底删除
 - `components/`：QuickCapture（Memos 式录入盒：本子必选/心情/天气/模板/引导问题/Ctrl+Enter）、
-  EntryCard、SummaryCard、Editor（右滑抽屉，1.2s 停输入自动保存）、CalendarView（月历跳时间线）、
+  EntryCard、SummaryCard、Editor（CodeMirror右滑抽屉，1.2s停输入串行自动保存，失败保留输入，完成需等待成功，可恢复/下载本地草稿）、CalendarView（月历跳时间线）、
   HeatmapView（GitHub 式热力图）、StatsView（指标卡+纯 SVG 柱状/折线+年度回顾）、ShareDialog、kit.jsx
 - `PublicShare.jsx`（`/diary/s/:token`）：免登录只读页，裸 fetch 直连不走 apiFetch
 - `api.js` 全走 apiFetch；例外 `diaryPublicShare`（裸 fetch）与 `diaryExportZip`（blob 下载）
@@ -374,34 +376,34 @@ JSON 输出与比较语义完全一致（字典序即时间序，月/年过滤 `
 
 ### 已知边界
 
-1. 列表上限 500（total 全量计数，无分页 UI）；search 只搜正文（无 ?tag=）
+1. 单次最多500条，时间线/回收站有继续加载；search仍只搜正文（无 ?tag=）。
 2. trash 视图忽略 journal_id/mood 过滤；hard=1 必须先软删（硬删连带撤销分享）
-3. 删本守卫只数未删除条目——回收站内条目在 PG 有 FK 约束下删本会 500（先彻底删除回收站条目再删本）
-4. quick 的 entry_date 取服务端本地日期（与浏览器时区可能差一天）
-5. PUT 部分更新无 kind 联动校验（可给总结设本/随记清本，接口层未拦，前端不会这么发）
-6. 导出不含回收站；总结与无本条目落 `默认/` 目录；分享过期比较用 naive UTC
-7. word_count 按 Markdown 源文本计；日历排除归档、热力图含归档（口径刻意不同）
+3. quick 的 entry_date 取服务端本地日期（与浏览器时区可能差一天）
+4. PUT 部分更新无 kind 联动校验（可给总结设本/随记清本，接口层未拦，前端不会这么发）
+5. 导出不含回收站；总结与无本条目落 `默认/` 目录；分享过期比较用 naive UTC
+6. word_count 按 Markdown 源文本计；日历排除归档、热力图含归档（口径刻意不同）
 
 ## 书签子域（`app/blog/bookmarks/`，2026-10-17 自独立模块迁入）
 
 书签与稍后阅读原为独立模块 `app/bookmarks/` + `src/bookmarks/`，现并入 blog 能力包：
 **后端** `app/blog/bookmarks/` 子包（路由前缀 `/api/bookmarks` 不变，router 由 blog `__init__` 挂载；
-无 ensure_migrations——全新表由 create_all 建）；**前端** `src/blog/bookmarks/`（知识库模块侧栏
+新表由 create_all 建，存量表由 blog 转发 ensure_migrations 补联合索引）；**前端** `src/blog/bookmarks/`（知识库模块侧栏
 「书签 · 稍后阅读」项，五子视图为其 children）；sys_name 并入 `doublog.blog`（fetcher 的
 `mod_logger('blog')`）；表名保留 `bookmarks_` 前缀；门户独立卡片已移除。
 
 ### 模块契约（`app/blog/bookmarks/__init__.py`）
 
-仅导出 `router`（~23 端点）；无 start_background、无 ensure_migrations（死链检测是手动触发的批量任务）；
+导出 `router`（~23 端点）和 `ensure_migrations(engine)`；无 start_background（死链检测是手动触发的批量任务）；
 无跨模块依赖；网络抓取（元信息/快照/死链）在 `fetcher.py` 纯函数不落库；导入导出（Netscape HTML + JSON）
 在 `transfer.py`。
 
 ### 数据模型（4 表 `bookmarks_` 前缀）
 
-- `bookmarks_categories`：分类树 ≤3 层（与文章树同口径），sort_order 浮点中点插入；删除时子孙与条目上提一级
+- `bookmarks_categories`：交互创建/移动分类树≤3层；浏览器文件导入允许≤32层，sort_order 浮点中点插入；删除时子孙与条目上提一级
 - `bookmarks_items`：`normalized_url` 查重统一口径（host 小写/去默认端口与 fragment/剥 utm_*；裸域名补 https）；
   status ∈ unread/reading/read/archived（read_at 随状态机）；starred 独立维度；link_status ∈ unknown/ok/dead/error
-  （死链检测）；snapshot_md/words/at（离线快照大字段，**列表查询必须 defer**）；软删 deleted_at → 回收站
+  （死链检测）；snapshot_md/words/at（离线快照大字段，**列表查询必须 defer**）；软删 deleted_at → 回收站。
+  `ix_bmitem_deleted_created_id(deleted_at,created_at,id)` 配合软删过滤与默认创建时间/ID倒序；保留既有单列等索引
 - `bookmarks_tags` + `bookmarks_item_tags`：标签 M2M（同 practice 模式，name 唯一色板轮询）
 
 ### API 要点（正本见 api.md 第 22 节）
@@ -417,9 +419,50 @@ link_status、trash、6 排序、分页）；状态机 →read 记 read_at、离
 
 `BookmarksPage` 壳 → `BookmarksView` 五子视图（收藏夹/稍后阅读/统计/工具/回收站）注册到 blog 模块侧栏
 （children 即五视图；**待读徽标经 useModuleNavigation 的 badges 合并到「稍后阅读」子项**）；详情与收录/编辑为
-覆盖层（state 切换，同 practice 先例）；kit/charts 跨模块引自 `src/todo/`；快照正文经 shared/md.js 渲染。
+覆盖层（state 切换，同 practice 先例）；通用kit/charts直接复用 `src/shared/ui/`；颜色调整仍使用Todo兼容工具；快照正文经 shared/md.js 渲染。
 
 ### 测试（`backend/tests/blog/bookmarks/test_bookmarks.py`，50 例）
 
 URL 规范化/正文抽取单元参数化；网络端点 meta/snapshot/check 全 monkeypatch 不连外网；
 Netscape/JSON 导入导出往返含快照/分类/标签/已读状态还原。
+
+
+## 2026-10-21 全站优化契约
+
+### 知识库
+
+- 首页直接消费 `GET /api/posts?page=&page_size=&workspace_id=&keyword=`，每页24条，翻页以服务端 total 为准，不再依赖一次下载2000条。跨库搜索仍不受当前库限制。页码最小为1；同时间戳列表有ID次序。
+- 文章分页计数使用移除ORDER BY的COUNT(id)，不把Markdown正文与排序带进COUNT子查询；列表顺序、正文关键词过滤与分页总数保持一致。
+- 文章列表也不载入未消费的children_order与links_hash，revision及完整列表DTO保留；祖先路径与子级计数不变，根/子/孙独立筛选测试页分别仍为3/4/5条文章SQL，不触发这两列的惰性回查。大体积有效顺序JSON与64字符哈希的回归见tests/blog/test_post_list_projection.py。
+- Post/Workspace 增加 `revision`；文章 PUT 可携带 revision，SQL比较并交换失败返回409。存量调用省略revision仍兼容，但无法表达旧编辑版本。树 `GET /api/posts/tree` 在 `X-Tree-Revision` 响应头返回根排序版本；树节点含文章revision。
+- `PUT /api/posts/reorder` 支持 `revision,mutation_id`，必须提交该父节点下完整、不重复的当前兄弟ID；返回 `{revision,children_order}`。相同mutation_id及相同负载返回原成功结果，负载变化或过期版本409。前端一笔排序确认后再开放下一笔，失败回读服务器树。
+- 改父节点会先检查整个子树深度（最多3层）和环，之后同事务更新slug/level。删除父节点并提升子节点时也修复所有后代路径和层级。
+- `blog_post_links` 保存来源与wiki目标文本，content哈希跳过无内容变更的重建；启动仅补未索引旧文章。反链查询不读取全库正文。解析顺序与前端一致：同库英文名优先、其次标题；重复标题以最小ID稳定解析。空白/别名显示文本不影响目标。
+- 库内英文名部分唯一索引只在旧数据无冲突时创建；发现旧重复会报告，不自动合并或删除用户数据。应用层检查和库写锁仍有效。
+- 文章编辑/新建接共享CodeMirror6编辑器，保留工具栏、选区、快捷键、粘贴/拖入图片和双栏滚动同步。文章预取缓存按账号及database_identity分区。
+
+### 资产库
+
+- 列表SQL排除content/archive，分类join + 当前页版本/文件聚合计数；查询次数不随当前页条目数线性增长。统计也不读取大正文/压缩包。
+- `GET /api/assets/items/{id}/versions?page=1&page_size=20` 返回 `{items,total,page,page_size}`；每项仍为 `{id,item_id,version,title,note,created_at}`，不含正文、摘要或文件。不带page保留原数组契约。page最小为1，page_size默认20、限制1–100，按version/id倒序。详细版本仍由原 `GET /api/assets/versions/{id}` 读取。分页总数以独立COUNT scalar subquery附在资产ID存在性查询上，再读取版本页；非空、零版本及越界空页均两条SQL。不带page也为两条SQL且不额外COUNT，不存在仍404且只执行存在性查询。完整历史DTO及文件策略不变；test_history_projection.py覆盖这些查询数和字段语义。
+- 版本对比使用共享Worker/jsdiff与虚拟行，无旧400行截断；600行完整结果/末行/复制补丁已验，4000+4000完全不同的行触及计算预算时明确提示且支持取消。正文编辑复用CodeMirror。
+- JSON备份逐50条读取、写入4MiB阈值的SpooledTemporaryFile，随后64KiB分块输出；网络发送阶段不持有DB Session，断开时关闭临时文件。完整备份仍包含正文、历史（请求开启时）、文件和原archive。
+
+### 日记
+
+- `GET /api/diary/entries` 默认50、最大500，offset分页，返回 `items,total,limit,offset,has_more`；`include_content=0` 只投影前600字符并标记 `is_excerpt`，编辑前通过新增 `GET /api/diary/entries/{id}` 取全量正文。时间线/回收站均支持继续加载，不再500条截断。
+- Diary新增revision；创建、更新、总结upsert支持mutation_id持久幂等收据，更新支持SQL CAS。重放同请求返回原结果；同ID不同负载409。前端保存串行、在途编辑排队，结果不确定仅重放原ID，409保留本地输入。
+- 自动保存/完成/快捷键共用保存协调器。保存失败不关闭编辑器；账号+DB+资源隔离的localStorage草稿由用户显式恢复，可下载或丢弃。配额失败单独提示且提供下载，不能阻断服务器保存。草稿包含尚未确认请求，恢复后先确认原请求再继续最新输入；过期草稿不直接覆盖服务器内容。
+- 删除日记本检查包含回收站在内的全部引用，冲突409；创建、更新、快捷录入、总结upsert及删本共用diary_write_locks稳定锚点，在检查引用前获取写锁，避免SQLite孤儿/PG外键失败，也保护无mutation_id客户端的首次总结并发（所有日记本删空后仍有效）。前端新建条目的日期来自浏览器本地日期，旧quick接口仍取服务端当天；服务端保存YYYY-MM-DD业务日期。
+
+### 书签
+
+- 新库模型声明联合索引 `ix_bmitem_deleted_created_id(deleted_at,created_at,id)`；存量表由 blog 链式调用书签迁移，在 `engine.begin()` 中执行 SQLAlchemy `CreateIndex(if_not_exists=True)`，不改正文、DTO、过滤、分页或既有索引。`test_bookmark_index.py` 覆盖旧表重复迁移、重启、SQLite并发初始化、排序并列、软删过滤及完整DTO/大正文一致性；真实 PostgreSQL 跨模块专项验证列顺序与重复迁移，不据此宣称 PostgreSQL 吞吐收益。
+- 上传每次64KiB读取，文件16MiB，最多10000条/2000分类/32层，单快照20万字符、总快照8MiB；超限在写事务前明确拒绝。
+- `POST /api/bookmarks/import?dry_run=true` 返回 `{imported,skipped,invalid,...}` 预检，无条目/分类/标签写入；不带参数保留原实际导入。JSON形状、分类引用/环、快照及文本类型在写前校验，非法请求不部分落库。
+- metadata/snapshot/check走SDK有限池；请求/重定向/流读取共享每条20秒预算，最多5次重定向，超大响应明确失败，不悄悄截断文章。批量检测仍50条，前端180秒请求预算覆盖8并发的最坏等待。
+- 正文适配器为BeautifulSoup语义article/main选择+markdownify1.2.3（MIT），保留CJK/英文、嵌套列表、表格、代码围栏、实体及相对链接；拒绝脚本/事件属性/危险URL。旧正则适配器保留 `adapter='legacy'` 供对照。网络抓取与转换解耦，固定合成语料不访问外网。
+
+### 验证材料
+
+新增专项位于 `tests/blog/test_blog_optimization.py`、`tests/blog/bookmarks/test_bookmark_optimization.py`；覆盖子树/CAS、排序重放、反链投影、505篇日记、资产查询上界/大字段排除、导入预算与固定HTML语料。全模块最终测试和统一A/B结果以 `docs/optimization-execution.md` 的冻结版本报告为准，初步测试不替代最终全量回归。

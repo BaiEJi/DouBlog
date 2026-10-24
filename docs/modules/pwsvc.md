@@ -1,6 +1,6 @@
 # Pwsvc 模块文档（密码服务 / Password Service）
 
-> 生成日期：**2026-10-10**（依据当时代码生成：`backend/app/pwsvc/**`、`backend/tests/pwsvc/test_pwsvc.py`、`frontend/src/vault/components/PwsvcView.jsx` 只读参考）。
+> 更新日期：**2026-10-21**（依据 `backend/app/pwsvc/**`、`backend/tests/pwsvc/test_pwsvc.py`、`frontend/src/vault/components/PwsvcView.jsx`）。
 > 上游文档：算法规范与威胁模型见 `docs/pwsvc-design.md`；接口契约总表见根目录 `api.md` 第 11 章；架构条目见 `backend.md` 10.47；全局红线见 `AGENTS.md` 第 13a 条。
 > UI 无独立前端目录——视图在 `frontend/src/vault/components/PwsvcView.jsx`，由 **vault 模块**负责（见 vault 模块文档）。
 
@@ -187,6 +187,12 @@ Body:    {"username": "user001", "password": "..."}
 
 `app/pwsvc/__init__.py` 导出 `router` + `ensure_migrations`，**无 `start_background`**（模块无后台线程）。`routes.py` 内部为两个子路由器：`validate_router`（无认证依赖）+ `admin_router`（`dependencies=[Depends(require_basic)]`），合并为 `router` 挂入 `main.py` 的 MODULES 注册表。DB 访问统一走 `run_db` 包装（scoped session）。
 
+### 4.10 项目列表查询
+
+`GET /projects` 只投影六个公共项目字段（id、name、description、api_key_prefix、rate_limit、created_at），类型数与用户数分别按 project_id 聚合，再 LEFT JOIN 回项目，整个列表一条 SQL。先聚合避免直接连接两张明细表造成计数相乘；无关联项目保留且计数为 0，启用和禁用用户均计数。结果仍按 id 升序，description 空值回退为空串，时间经原 `_iso` 处理。不读取 api_key_hash、用户 seed 或项目 updated_at，不调用解密或密码推导；不缓存查询结果或改变 API 字段。
+
+`_PROJECT_LIST_QUERY` 在模块导入时构建一次，只持有表元数据、SQL 表达式及 `coalesce` 的固定 0 常量，不持有 Engine、Session、请求值、秘密或结果。每次请求仍在 `run_db` 捕获的当前 runtime 中读取 `db.session` 并执行；不同 app / 数据库共享表达式结构，各自查询自己的数据，写入后下一次 GET 重新计算计数。SQL 往返由三次减为一次，固定表达式另省去逐请求构建和 cache-key 工作；落地前隔离诊断见 `.ui-qa/optimization/pwsvc-select-poc.json`，不能据此宣称 HTTP 吞吐改善。
+
 ## 5. 前端（vault 内子视图 PwsvcView）
 
 页面归属 **vault 模块**（结构、路由与视觉体系见 vault 模块文档）；入口：`frontend/src/vault/VaultPage.jsx` 侧栏「密码服务」分区（`section === 'pwsvc'`）→ `frontend/src/vault/components/PwsvcView.jsx`。全部请求经 `frontend/src/vault/api.js` 的 `pwsvc*` 封装（底层 `shared/client.js` apiFetch，自动带统一登录凭据）。
@@ -196,11 +202,12 @@ Body:    {"username": "user001", "password": "..."}
 - **项目详情页**（四段）：
   1. **API 集成**：validate 端点地址 + curl 示例 + 「重置 API Key」；**校验限流**输入框（0-10000 次/分钟，保存即生效，错误前端拦截提示）。
   2. **用户类型**：策略行（名称 · N 位 · 每 Xs 轮换），编辑/删除（删除被拒 409 时 alert 后端消息）；TypeEditor 弹层：类型名、长度滑杆 8-64、轮换周期五档（30s/60s/2min/5min/10min）、四类字符集 + 排除易混淆复选。
-  3. **用户表**：UserRow = 用户名/显示名/类型 + **当前密码明文**（等宽 select-all + 复制按钮）+ **倒计时圆环**（每秒递减，归零自动调 `/current` 刷新本行）+ 启用/禁用切换、重置密码链（refresh 图标）、删除（confirm）。「添加用户」弹层：用户名 + 显示名 + 类型下拉。
-  4. **校验日志**（LogsPanel）：统计胶囊（近 1h / 24h ✓✗ 计数、失败 TOP 用户×次数）、**疑似爆破警示**（近 1 小时失败 ≥50 标红）、总数与「保留 30 天」标注、时间线表格（时间[naive UTC 转本地显示]/用户名/结果/IP）、「加载更多」分页。
+  3. **用户表**：共享 `VirtualList` 只挂载可视 UserRow，包含用户名 / 类型、当前密码、复制、倒计时、启用 / 禁用、重置密码链与删除。全表共用一个时钟；有效期内只本地更新倒计时，**不会每秒重复请求后端**。单飞轮询在过期或用户 / 类型策略变化时才取 `/current`；隐藏页面暂停，卸载 / 隐藏取消请求。已过期或策略不一致的旧密码不显示、不提供复制；失败后显示等待，下一轮重试。「添加用户」表单不变。
+  4. **校验日志**：初始折叠，点击「查询校验日志」才创建 LogsPanel 并发请求。每页 50，追加按 ID 去重，虚拟显示；重新查询 / 换项目 / 卸载取消旧请求。保留近 1h / 24h 统计、失败 TOP、≥50 次失败警示、总数和加载更多。
+- **项目切换**：中止上一项目的 users / types 查询，按活动项目 ID 和组件存活标记拒绝旧结果；ProjectDetail 按项目 ID 重挂本地状态，防止慢响应串到另一项目。管理请求仍经统一客户端的取消、认证与数据库 identity 边界。
 - 注意：密码行**不做打码**（与设计文档早期"复用 SecretField"的设想不同）——轮换密码明文直显 + 倒计时，是本模块的产品形态。
 
-## 6. 测试（`backend/tests/pwsvc/test_pwsvc.py`，21 用例，自包含）
+## 6. 测试（`backend/tests/pwsvc/`，24 个参数化用例，自包含）
 
 conftest 提供隔离临时 SQLite + `client` / `auth_headers`（Basic admin）fixture；限流桶是进程级状态，辅助函数建项目后 `_reset_bucket` 清零防跨用例串味。
 
@@ -227,6 +234,12 @@ conftest 提供隔离临时 SQLite + `client` / `auth_headers`（Basic admin）f
 | | `test_rate_limit_zero_means_unlimited` | 0 = 不限，连发 30 次全 200 |
 | | `test_rate_limit_validation` | -1/'abc'/10001 → 400；创建时可指定；默认 120 |
 | 迁移（1） | `test_ensure_migrations_adds_logs_composite_index` | 存量库缺日志复合索引时幂等补建 |
+| 项目列表投影（2） | `test_project_listing_public_projection_and_single_query` | 空库与多项目：按 id 升序、公共字段与时间语义、空描述、零关联、禁用用户计数；2 类型 / 3 用户不相乘，查询恒为一条且不读 hash / seed / updated_at，不调用解密或派生 |
+| 表达式跨库复用（1） | `test_shared_project_query_uses_each_app_database_and_reads_new_counts` | 两个 app 不同 SQLite 库、相同项目 / 类型 ID 并发重复读取完整 DTO；仅写 B 后其计数更新而 A 不变，每请求一条业务 SQL；关闭 B 后 A 仍正确 |
+
+新增列表专项位于 `test_project_listing.py`。首次投影 / 拼接优化与 Vault 合跑共 48 项通过（当时 Pwsvc 23 项、Vault 25 项，日志 `.ui-qa/optimization/vault-pwsvc-final-tests.log`）。固定表达式复用后，Pwsvc 全域 24 项通过，含新增并发跨库与写后更新回归、原推导黄金向量（日志 `.ui-qa/optimization/pwsvc-fixed-query-tests.log`）。两轮均使用隔离 SQLite；没有用 SQL 条数或局部 CPU 诊断替代 HTTP 吞吐与延迟复测。
+
+2026-10 前端优化不改 `derive`、随机采样次序、seed 格式或轮换窗口，现有黄金向量继续适用。隔离 Chromium 创建真实项目 / 类型 / 用户，验证有效期内连续多个时钟 tick 不重复获取密码、日志展开前请求数为 0、展开后查询一次，并走查明暗截图。结果见 `docs/optimization/frontend-verification.md` 与 `.ui-qa/optimization/frontend-faults.json`。
 
 ## 7. 已知边界
 
@@ -238,6 +251,7 @@ conftest 提供隔离临时 SQLite + `client` / `auth_headers`（Basic admin）f
 6. **30s 轮换时宽限覆盖整个窗口**（`min(30,30)=30`）：上一窗口密码在整个当前窗口有效，实际有效期 60s；为宽限机制的既定行为，非缺陷。
 7. **限流桶 / 日志清理均为进程内、写入时机制**：无后台线程；长期零写入的项目其过期日志会留存到下一次写入才清理。
 8. 密码本体永不落库 / 落日志（测试断言锁死）；但校验请求 body 中的密码明文会短暂存在于进程内存——HTTP 传输需依赖部署层 TLS（本仓单用户内网定位）。
+9. 长列表仍一次获取项目 users / types 元数据，虚拟化仅限制 DOM 与活动行；重新滚入的行可以重新获取当前密码。密码只存在当前页面内存，不做 localStorage 缓存。共享时钟和隐藏暂停减少请求，不能保证在浏览器被节流或服务离线时秒级更新；旧密码到期后停止显示，等待成功取到新值。
 
 ## 公共 UI 外壳（2026-10-13）
 

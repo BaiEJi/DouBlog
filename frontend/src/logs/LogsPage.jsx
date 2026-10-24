@@ -9,6 +9,8 @@
  * - P2：模式分组（本地模板过滤）、键盘导航（j/k/Enter//）、无限滚动、日志告警、trace 时间线
  * 过滤全部下推后端；直方图/模式/导出与列表共用同一组查询参数。
  */
+import VirtualList from '../shared/VirtualList'
+import usePolling from '../shared/usePolling'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   sdklogSearch, sdklogSysnames, sdklogHistogram, sdklogContext, sdklogPatterns,
@@ -725,6 +727,10 @@ export default function LogsPage() {
     setKv(Array.isArray(snap.kv) ? snap.kv : [])
     return snap
   }
+  const listRef = useRef(null)
+  const cursorRef = useRef(0)
+  const queryGeneration = useRef(0)
+  const queryAbort = useRef(null)
   const searchRef = useRef({})                          // 最近一次实际执行的参数（供 liveTick 复用）
   /** 从快照直接构造查询参数（URL 恢复/保存的查询应用时 state 尚未 flush）；extra 附加分页/桶数 */
   const paramsFromSnap = (snap, extra = {}) => {
@@ -740,15 +746,20 @@ export default function LogsPage() {
     return p
   }
   const runQuery = useCallback(async (snap) => {
+    const generation = ++queryGeneration.current
+    queryAbort.current?.abort()
+    const controller = new AbortController()
+    queryAbort.current = controller
     const useSnap = snap || snapshotFilters()
     const params = snap ? paramsFromSnap(snap, { limit: PAGE, offset: 0 }) : buildParams({ limit: PAGE, offset: 0 })
     searchRef.current = { params, snap: useSnap }
     setLoading(true); setPatternSel(null)
     const [d, h] = await Promise.all([
-      sdklogSearch(params).catch(() => null),
-      sdklogHistogram(snap ? paramsFromSnap(snap, { buckets: 60 }) : buildParams({ buckets: 60 })).catch(() => null),
+      sdklogSearch(params, { signal: controller.signal }).catch(() => null),
+      sdklogHistogram(snap ? paramsFromSnap(snap, { buckets: 60 }) : buildParams({ buckets: 60 }), { signal: controller.signal }).catch(() => null),
     ])
-    if (d?.success) { setItems(d.data.items); setTotal(d.data.total) }
+    if (generation !== queryGeneration.current || controller.signal.aborted) return
+    if (d?.success) { setItems(d.data.items); setTotal(d.data.total); cursorRef.current = d.data.next_after_id || 0; setSelIdx(-1); setExpandedId(null) }
     if (h?.success) setHist(h.data)
     setLoading(false)
     if (showPatternsRef.current) {
@@ -779,48 +790,40 @@ export default function LogsPage() {
     if (d?.success) setSysNames(d.data)
   }, [])
 
-  // Live Tail：3s 轮询第一页 + 增量高亮；相对窗口随时间滑动
-  useEffect(() => {
-    if (!liveTail) { setNewIds(new Set()); return }
-    let inFlight = false
-    let alive = true
-    const timer = setInterval(async () => {
-      if (document.hidden || inFlight) return
-      inFlight = true
-      // 相对窗口滑动：先更新 state（下个 tick buildParams 取到新窗口），
-      // 并同步刷新 filtersRef，使本 tick 就用新窗口查询
-      const snap = searchRef.current.snap
-      if (snap && snap.rangeKey && snap.rangeKey !== 'custom') {
-        const r = RANGES.find(x => x.key === snap.rangeKey)
-        if (r) {
-          const ns = toLocalInput(new Date(Date.now() - r.ms))
-          const ne = toLocalInput(new Date())
-          setStart(ns); setEnd(ne)
-          filtersRef.current = { ...filtersRef.current, start: ns, end: ne }
-        }
+  // ID 游标按到达顺序追尾，晚到的旧时间戳不漏收；每次追平有限页，下一轮继续。
+  const liveTick = useCallback(async ({ signal }) => {
+    const generation = queryGeneration.current
+    const snap = searchRef.current.snap
+    if (snap?.rangeKey && snap.rangeKey !== 'custom') {
+      const range = RANGES.find(value => value.key === snap.rangeKey)
+      if (range) {
+        const start = toLocalInput(new Date(Date.now() - range.ms))
+        const end = toLocalInput(new Date())
+        setStart(start); setEnd(end)
+        filtersRef.current = { ...filtersRef.current, start, end }
       }
-      const params = buildParams({ limit: PAGE, offset: 0 })   // 每 tick 现算（窗口/过滤都是最新）
-      const [d, h] = await Promise.all([
-        sdklogSearch(params).catch(() => null),
-        sdklogHistogram(buildParams({ buckets: 60 })).catch(() => null),
-      ])
-      inFlight = false
-      if (!alive) return
-      if (d?.success) {
-        setItems(prev => {
-          if (!prev) return d.data.items
-          const prevIds = new Set(prev.map(x => x.id))
-          const incomingIds = new Set(d.data.items.map(x => x.id))
-          const fresh = d.data.items.filter(x => !prevIds.has(x.id))
-          if (fresh.length) setNewIds(s => new Set([...s, ...fresh.map(x => x.id)]))
-          return [...d.data.items, ...prev.filter(x => !incomingIds.has(x.id))].slice(0, Math.max(prev.length, 500))
+    }
+    for (let page = 0; page < 10; page++) {
+      const result = await sdklogSearch(buildParams({ after_id: cursorRef.current, limit: 1000 }), { signal })
+      if (signal.aborted || generation !== queryGeneration.current || !result?.success) return
+      cursorRef.current = result.data.next_after_id
+      const fresh = result.data.items
+      if (fresh.length) {
+        setNewIds(previous => new Set([...previous, ...fresh.map(item => item.id)].slice(-5000)))
+        setItems(previous => {
+          const ids = new Set(fresh.map(item => item.id))
+          return [...fresh.reverse(), ...(previous || []).filter(item => !ids.has(item.id))].slice(0, 5000)
         })
-        setTotal(d.data.total)
+        setTotal(previous => previous + fresh.length)
       }
-      if (h?.success) setHist(h.data)
-    }, 3000)
-    return () => { alive = false; clearInterval(timer) }
-  }, [liveTail, buildParams])
+      if (!result.data.has_more) break
+    }
+    const histogram = await sdklogHistogram(buildParams({ buckets: 60 }), { signal })
+    if (!signal.aborted && generation === queryGeneration.current && histogram?.success) setHist(histogram.data)
+  }, [buildParams])
+  usePolling(liveTick, { intervalMs: 3000, enabled: liveTail, immediate: false })
+  useEffect(() => { if (!liveTail) setNewIds(new Set()) }, [liveTail])
+  useEffect(() => () => { queryGeneration.current++; queryAbort.current?.abort() }, [])
 
   // 无限滚动：滚动到哨兵附近 → 追加下一页（scroll 事件 + getBoundingClientRect，
   // 不用 IntersectionObserver——隐藏标签页不派发回调）；哨兵区另有"加载更多"按钮兜底。
@@ -832,10 +835,11 @@ export default function LogsPage() {
     busyRef.current = true
     ;(async () => {
       setLoading(true)
+      const generation = queryGeneration.current
       const offset = prev.length
       const params = { ...(searchRef.current.params || { limit: PAGE, offset: 0 }), offset }
       const d = await sdklogSearch(params).catch(() => null)
-      if (d?.success) {
+      if (generation === queryGeneration.current && d?.success) {
         setItems(cur => {
           const ids = new Set(cur.map(x => x.id))
           return [...cur, ...d.data.items.filter(x => !ids.has(x.id))]
@@ -856,6 +860,22 @@ export default function LogsPage() {
     return () => window.removeEventListener('scroll', onScroll)
   }, [loadMore, liveTail])
 
+  const patternRegex = useMemo(() => {
+    if (!patternSel) return null
+    const esc = patternSel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp('^' + esc
+      .replace(/<uuid>/g, '[0-9a-fA-F-]{36}')
+      .replace(/<ip>/g, '(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d+)?')
+      .replace(/<path>/g, '[\\w\\-./\\\\]+\\.[A-Za-z0-9]{1,5}')
+      .replace(/<hex>/g, '[0-9a-fA-F]{16,}')
+      .replace(/<str>/g, '"[^"\\n]{1,120}"')
+      .replace(/<num>/g, '\\d+(?:\\.\\d+)?') + '$')
+  }, [patternSel])
+  const displayItems = useMemo(() => {
+    if (!patternRegex || !items) return items
+    return items.filter(l => patternRegex.test(l.message))
+  }, [items, patternRegex])
+
   // 键盘导航：j/k 选行、Enter 展开、/ 聚焦搜索
   useEffect(() => {
     const onKey = e => {
@@ -863,21 +883,21 @@ export default function LogsPage() {
       const inInput = tag === 'input' || tag === 'textarea' || tag === 'select'
       if (e.key === '/' && !inInput) { e.preventDefault(); qInputRef.current?.focus(); return }
       if (inInput || contextLog || traceFor) return
-      if (!items || !items.length) return
+      if (!displayItems?.length) return
       if (e.key === 'j' || e.key === 'k') {
         e.preventDefault()
         setSelIdx(i => {
-          const next = e.key === 'j' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1)
-          document.querySelectorAll('[data-logrow]')[next]?.scrollIntoView({ block: 'nearest' })
+          const next = e.key === 'j' ? Math.min(displayItems.length - 1, i + 1) : Math.max(0, i - 1)
+          listRef.current?.scrollToIndex(next, { align: 'auto' })
           return next
         })
       } else if (e.key === 'Enter' && selIdx >= 0) {
-        setExpandedId(cur => cur === items[selIdx].id ? null : items[selIdx].id)
+        setExpandedId(cur => cur === displayItems[selIdx]?.id ? null : displayItems[selIdx]?.id)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [items, selIdx, contextLog, traceFor])
+  }, [displayItems, selIdx, contextLog, traceFor])
 
   // 相对时间 chips
   const applyRange = key => {
@@ -945,22 +965,6 @@ export default function LogsPage() {
   }
 
   // 模式分组本地过滤：模板 → 正则
-  const patternRegex = useMemo(() => {
-    if (!patternSel) return null
-    const esc = patternSel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    return new RegExp('^' + esc
-      .replace(/<uuid>/g, '[0-9a-fA-F-]{36}')
-      .replace(/<ip>/g, '(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d+)?')
-      .replace(/<path>/g, '[\\w\\-./\\\\]+\\.[A-Za-z0-9]{1,5}')
-      .replace(/<hex>/g, '[0-9a-fA-F]{16,}')
-      .replace(/<str>/g, '"[^"\\n]{1,120}"')
-      .replace(/<num>/g, '\\d+(?:\\.\\d+)?') + '$')
-  }, [patternSel])
-  const displayItems = useMemo(() => {
-    if (!patternRegex || !items) return items
-    return items.filter(l => patternRegex.test(l.message))
-  }, [items, patternRegex])
-
   const levelTotals = hist?.totals ?? {}
 
   return (
@@ -1175,7 +1179,7 @@ export default function LogsPage() {
               没有匹配的日志 —— 试试放宽时间范围或减少过滤条件
               <span className="block mt-1.5 text-[11px] text-stone-400/70">SDK 接入：lizysdk setup_logging(..., send_json=True, send_url="http://&lt;host&gt;:60100/api/v1/logs")</span>
             </p>
-          ) : (displayItems || []).map((l, i) => (
+          ) : <VirtualList items={displayItems || []} getKey={item => item.id} estimateSize={40} windowScroll listRef={listRef} renderItem={(l, i) => (
             <div key={l.id} data-logrow>
               <LogRow log={l} term={q.trim()} selected={i === selIdx}
                 newFlash={newIds.has(l.id)}
@@ -1184,7 +1188,7 @@ export default function LogsPage() {
                 onKvFilter={addKvFilter} onSysFilter={setSysFilter} onLevelFilter={setLevelFilterChip} onTraceFilter={setTraceFilter}
                 onContext={setContextLog} onOpenTrace={setTraceFor} />
             </div>
-          ))}
+          )} />}
           {loading && !displayItems && (
             <div className="py-16 space-y-2.5 px-3">
               {[...Array(6)].map((_, i) => <div key={i} className="h-4 rounded bg-black/[0.04] dark:bg-white/[0.05] animate-pulse" />)}
@@ -1193,10 +1197,10 @@ export default function LogsPage() {
         </div>
         {/* 无限滚动哨兵 */}
         <div ref={sentinelRef} className="h-10 flex items-center justify-center gap-3">
-          {displayItems && displayItems.length < total && !liveTail && (
+          {items && items.length < total && !liveTail && (
             <button onClick={loadMore} disabled={loading}
               className="px-3 h-7 rounded-lg text-[12px] text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] disabled:opacity-40">
-              {loading ? '加载中…' : `加载更多（${displayItems.length}/${total}）`}
+              {loading ? '加载中…' : `加载更多（${items.length}/${total}）`}
             </button>
           )}
           {liveTail && <span className="text-[11.5px] text-stone-400">实时模式下新日志自动置顶</span>}

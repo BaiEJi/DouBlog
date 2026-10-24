@@ -308,13 +308,15 @@ export default function QuadrantBoard({ data, focusedId, cardHandlers, onAddFirs
 
     const index = list.findIndex(t => t.id === activeTaskId)
     const beforeTaskId = index >= 0 && index + 1 < list.length ? list[index + 1].id : null
+    const activeTask = list[index]
+    if (!activeTask) return
 
     try {
       if (startQ != null && startQ !== targetQ) {
-        await onMove(activeTaskId, { ...flagsForQuadrant(targetQ), before_task_id: beforeTaskId })
+        await onMove(activeTaskId, { ...flagsForQuadrant(targetQ), before_task_id: beforeTaskId, revision: activeTask.revision, mutation_id: crypto.randomUUID() })
         await onRefresh()
       } else if (list !== current[targetQ]) {
-        await onReorder(activeTaskId, { before_task_id: beforeTaskId })
+        await onReorder(activeTaskId, { before_task_id: beforeTaskId, revision: activeTask.revision, mutation_id: crypto.randomUUID() })
         await onRefresh()
       }
     } catch (err) {

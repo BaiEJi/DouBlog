@@ -3,8 +3,8 @@
 > 模块：`backend/app/subs/`（`__init__.py` + `models.py` + `routes.py` + `currency.py`）
 > ＋ 前端 `frontend/src/subs/`（`SubsPage.jsx` + `api.js` + `kit.jsx` + `charts.jsx` + `useHolidays.js` + `views/×5`）
 > 契约入口：`app/subs/__init__.py` 导出 `router` + `start_background(app)`（`app.state.testing` 时空转）；
-> **无 `ensure_migrations`**（三表均为新建，`create_all` 直接覆盖，无存量改名需求）
-> 生成日期：**2026-10-10**（依据当日代码；含 `tests/subs/test_subs.py` 13 用例）
+> `ensure_migrations(engine)` 为会员/订阅补revision；另导出stop_background/drain_background供统一生命周期调用
+> 更新日期：**2026-10-21**（原核心用例见第6节，新增专项见末节）
 
 ---
 
@@ -17,7 +17,7 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
   `end_date ≥ 今天` ⇒ `active`
 - **分类**：名称唯一，emoji 图标 + hex 颜色；删除前查会员关联（有会员 → 400 拒绝）
 - **支出统计**（跨币种静态汇率折 CNY）：概览（总数/活跃/本月/年度）、日期范围支出（总额/日均/按币种/按分类占比）、
-  分类明细、趋势（day/week/month/quarter 四粒度、含分类/订阅明细）
+  分类明细、趋势（day/week/month/quarter四粒度，默认轻汇总；明细按需分页或显式include_details=1）
 - **到期提醒**：`reminders/upcoming`（剩余天数 ≤ 会员 `reminder_days` 阈值）与 `reminders/all`（到期日历数据源）
 - **前端可视化全家桶**：概览（指标卡 + 分类汇总表 + 提醒列表 + 会员支出排行榜 4 维度 + **农历/法定节假日到期日历**）、
   会员列表（表格/卡片双视图 + 筛选分页）、会员详情（订阅表 + **时间轴视图** 3m/6m/12m/全部）、
@@ -44,6 +44,7 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 |---|---|---|
 | id | Integer PK | 自增 |
 | name | String(100), index | 会员名称 |
+| revision | Integer, default 1 | 编辑SQL CAS版本 |
 | category_id | FK→subs_categories.id, nullable, index | 分类 |
 | notes | Text, nullable | 备注 |
 | reminder_days | Integer, default=7 | 提前 N 天提醒续费 |
@@ -57,6 +58,7 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 |---|---|---|
 | id | Integer PK | 自增 |
 | member_id | FK→subs_members.id, index | 所属会员 |
+| revision | Integer, default 1 | 编辑SQL CAS版本 |
 | level | String(50), nullable | 会员级别（豪华版/家庭版…） |
 | price | Numeric(10,2), 必填 | 价格 |
 | currency | String(3), default='CNY' | CNY/USD/EUR/GBP/JPY |
@@ -99,7 +101,7 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 | `GET /api/subs/members` | 分页列表（列表项即带聚合字段）→ `{items, total}`。参数：`page`(≥1)、`page_size`(1..`settings.max_page_size`=100，默认 10)、`keyword`(name ilike %kw%)、`category_id`、`status=active\|expired`(非法值 400)、`sort_by=created_at\|name`(默认 created_at，非法 400)、`order=asc\|desc`(默认 desc)；次级排序 id desc |
 | `GET /api/subs/members/{id}` | 详情（含 `subscriptions` 全量数组）→ 404 会员不存在 |
 | `POST /api/subs/members` | `{name(必填,≤100), category_id?(须存在,否则 400), notes?, reminder_days?(默认 `subs_default_reminder_days`=7), subscription?: {首条订阅，同下述订阅字段}}` → 201；**JSON 体缺失/解析失败 → 400「请求体不能为空」**；附带非法首条订阅时整体失败、会员不落库（run_db 兜底回滚） |
-| `PUT /api/subs/members/{id}` | `{name?, category_id?, notes?, reminder_days?}` → 200；name 空/超长 400；category_id 非空须存在（传 `null` 可清空分类）；404 |
+| `PUT /api/subs/members/{id}` | `{name?, category_id?, notes?, reminder_days?, revision?}` → 200；过期revision 409；name 空/超长 400；category_id 非空须存在（传 `null` 可清空分类）；404 |
 | `DELETE /api/subs/members/{id}` | → 200；**级联删除其订阅记录**（delete-orphan）；404 |
 
 ### 订阅记录
@@ -109,12 +111,12 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 | `GET /api/subs/members/{id}/subscriptions` | 会员的订阅列表（**不分页，全量**）→ `{items, total}`。参数：`status=active\|expired`(非法 400)、`start_date`+`end_date`（**成对给出**时筛选与区间有重叠的订阅；start>end → 400）、`sort_by=created_at\|start_date\|end_date\|price`、`order` |
 | `POST /api/subs/members/{id}/subscriptions` | 新建订阅 → 201；字段校验见下；会员不存在 404 |
 | `GET /api/subs/subscriptions/{id}` | 单条详情（**附 `member_name`**）；404 |
-| `PUT /api/subs/subscriptions/{id}` | 部分更新 → 200；**组合校验**见下；404 |
+| `PUT /api/subs/subscriptions/{id}` | 部分更新（可选revision）→ 200；版本冲突409；**组合校验**见下；404 |
 | `DELETE /api/subs/subscriptions/{id}` | → 200 `{deleted: true}`；404 |
 
 **订阅字段校验**（`_validate_subscription_payload`，POST 全量 / PUT 仅校验出现字段）：
 
-- `price`：必填，有效数字且 ≥0（负数/非数字 → 400）
+- `price`：必填，有限数字且0..99999999.99（负数/非数字/NaN/Infinity/超范围 → 400）
 - `currency`：白名单 `CNY/USD/EUR/GBP/JPY`，缺省 CNY（非法 → 400）
 - `billing_cycle`：白名单 `monthly/quarterly/yearly/custom`，必填（非法/空 → 400）
 - `custom_days`：可空；给出则必须整数 >0（`custom_days=0` → 400）
@@ -130,8 +132,10 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
 | `GET /api/subs/stats/overview` | `{total_members, active_members, monthly_spending, yearly_spending}`（本月=当月 1 日~月末、本年=1-01~12-31 **整月/整年口径**，折基准币） |
 | `GET /api/subs/stats/category-summary` | 各分类本月+年度支出（按年度降序）+ `{total_monthly, total_yearly}`（Dashboard 表格） |
 | `GET /api/subs/stats/spending?start_date=&end_date=` | `{total, daily_average, by_currency(原币种口径), categories[{category_id, category_name, category_icon, category_color, total, count, percentage}]}`（分类按金额降序）；start/end 必填且 start≤end，否则 400 |
-| `GET /api/subs/stats/by-category?start_date=&end_date=` | `{categories[{..., details: [{subscription_id, member_name, level, amount}]}], total}`（明细按金额降序） |
-| `GET /api/subs/stats/trend?start_date=&end_date=&granularity=` | `{trend: [{date: 标签, amount, details: 按分类明细（含 subscriptions 明细）}]}`；`granularity` ∈ `day(标签=日期)/week(mm/dd-mm/dd, 周一起)/month(YYYY-MM)/quarter(YYYY-Qn)`，默认 month，非法 → 400 |
+| `GET /api/subs/stats/by-category?start_date=&end_date=` | `{categories[{..., details: [{subscription_id, member_name, level, amount}]}], total}`（明细按金额降序，含未分类桶） |
+| `GET /api/subs/stats/trend?start_date=&end_date=&granularity=` | `{trend: [{date: 标签, amount, details: []}]}`；默认汇总附start_date/end_date，`include_details=1`才返回旧按分类/订阅嵌套明细；`granularity` ∈ `day(标签=日期)/week(mm/dd-mm/dd, 周一起)/month(YYYY-MM)/quarter(YYYY-Qn)`，默认 month，非法 → 400；最多10年、day最多500点 |
+| `GET /api/subs/stats/ranking?metric=&limit=10` | 全量会员TopN，metric为total_spending/avg_per_sub/subscription_count/total_duration_days，limit1..100；返回 `{items,total,metric}` |
+| `GET /api/subs/stats/details?start_date=&end_date=&page=1&page_size=20&category_id=` | 所选范围订阅支出明细，page_size1..100；返回 `{items,total,page,page_size}`，category_id=0筛选未分类 |
 
 ### 提醒
 
@@ -156,7 +160,7 @@ routes.py 模块注释的口径表述：
 实现落点：
 
 - `_spend_rows(subs)`：把订阅列表**预计算**成 `_SpendRow`（namedtuple：日期序数 / 原币与基准币日均
-  `Decimal` / 分类引用等），统计五接口共用，避免逐期 × 逐订阅重复解析与 ORM 访问
+  `Decimal` / 分类引用等），相关支出统计接口共用，避免逐期 × 逐订阅重复解析与 ORM 访问
 - `_overlap_ord(s, e, qs, qe)`：序数版整数重叠天数 `min(终点) − max(起点) + 1`（**闭区间 +1**，
   ≤0 即无重叠）；各统计接口输出统一 `quantize('0.01')` 转 float
 - overview / category-summary 的"本月/年度"分别取**整月（1 日~月末）与整年（1-01~12-31）**区间
@@ -166,12 +170,11 @@ routes.py 模块注释的口径表述：
 ### 4.2 每日后台线程（`routes.py::start_daily_loop`）
 
 - `app.state.testing=True`（测试模式）→ **直接 return，不启动线程**
-- 线程 `subs-daily`（daemon，随进程）：先 sleep 10s，主循环每 60s 检查——
+- 线程 `subs-daily`（daemon、挂app.state）：启动等待10秒，之后每60秒检查；使用stopEvent等待，可及时停止并重新启动——
   - `now.hour ≥ 10` 且当天未执行过 → `run_daily_spending_log(app)`
-- 当日去重：`_DAILY_LOCK` + `_DAILY_DONE`（进程内存，'YYYY-MM-DD' 字符串）；**启动即补跑当天未执行的任务**
-  （进程重启后同一天会再跑一次，属设计内）；循环体异常吞掉，后台任务永不中断
+- 当日去重记录在每app运行时的 `done` 日期，执行体投递SDK的subs有限池并确认成功后才标记；异常记录日志并在下轮重试。启动后若已过业务时区10点且未执行会补跑；进程重启会重新补跑当天任务。
 - `run_daily_spending_log(app)`：当日活跃订阅（start ≤ 今天 ≤ end）按分类汇总日均支出，多行 info 写模块日志
-  （sys_name=`doublog.subs`），末尾 `db.session.remove()` 还连接
+  （sys_name=`doublog.subs`）；在 `database_context(app)` 内绑定正确数据库，末尾 `db.session.remove()` 还连接
 - **测试直接调 `run_daily_spending_log`，不要 sleep 等线程**
 
 ### 4.3 currency.py
@@ -197,7 +200,7 @@ routes.py 模块注释的口径表述：
 ### 5.1 SubsPage.jsx（壳）
 
 公共 220px 侧栏（返回入口 `/`、模块标题、四项导航：概览/会员/统计/设置——概览带**即将到期计数橙色徽标**、
-会员带 `活跃/总数` 计数、主题切换按钮）+ `max-w-[1700px] px-10` 主区内嵌
+会员带 `活跃/总数` 计数、主题切换按钮）+ 公共ModuleShell内容画布内嵌
 `<Routes>`（`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）+ 全局 Toast。
 页面底色全站统一 `bg-stone-50 dark:bg-[#100f0e]`。
 
@@ -205,7 +208,7 @@ routes.py 模块注释的口径表述：
 
 - **OverviewView**：4 指标卡（总数/活跃/本月/年度支出，月年口径=整月整年，卡片带口径提示 icon）+
   分类汇总表（列排序 + sticky 合计行）+ 即将到期提醒列表（点击进详情）+ 会员支出排行榜（4 维度切换：
-  累计花费/平均订阅/订阅次数/累计时长，前 3 名奖杯+火焰、条形按名次配色）+ **订阅到期日历**
+  累计花费/平均订阅/订阅次数/累计时长，通过服务端全量TopN接口取数，前3名奖杯+火焰、条形按名次配色）+ **订阅到期日历**
   （月历：农历节日/日期红字、法定节假日（timor.tech）红底/补班标注/休息日蓝底、当日到期数徽标
   （橙=7 天内/绿=更远）、点有订阅日期弹当日列表、今天高亮、图例）
 - **MembersView**：搜索（300ms 防抖）/分类/状态筛选 + 表格/卡片双视图（localStorage `subs-members-view`）+
@@ -215,7 +218,7 @@ routes.py 模块注释的口径表述：
   绿=有效/橙=提醒窗口内/灰=过期 + 条形详情弹层含日均）+ 添加/编辑订阅弹窗
   （改开始日期按周期自动推算结束日期 = 整周期 − 1 天、custom 显自定义天数输入、前端预校验与后端同规则）
 - **StatsView**：日期范围 + 快速选择（本周/本月/本季度/本年）+ 粒度（跨度 ≥90 天禁用按天并自动回落按周）+
-  面积趋势图与环形饼图（hover 提示，"支出明细"开关展开分类/订阅明细）
+  面积趋势图与环形饼图（hover提示）；“支出明细”开关按需请求整个所选范围的分页订阅明细，不重复嵌入每个趋势点
 - **SettingsView**：分类管理（CRUD / 16 色预设 + 任意 hex / emoji / 搜索）
 - **DateInput**（kit.jsx）：原生 `type="date"` 封装的受控组件；**捕获阶段**调 `showPicker()`——
   点击日期文本（原生仅图标可弹）也弹选择器，且先于原生图标处理器执行，两处「已打开则跳过」守卫
@@ -237,14 +240,14 @@ routes.py 模块注释的口径表述：
 
 ### 5.4 依赖与 @source 红线
 
-- **唯一新增前端依赖 `lunar-javascript`**（仅 ExpiryCalendar 到期日历农历显示）：在独立懒加载 ExpiryCalendar 顶部
+- **本模块特有依赖 `lunar-javascript`**（仅 ExpiryCalendar 到期日历农历显示）：在独立懒加载 ExpiryCalendar 顶部
   `import { Solar } from 'lunar-javascript'`，随 `App.jsx` 路由级 `lazy(() => import('@/subs/SubsPage'))`
   由 `OverviewView` 的 Suspense 单独加载（不进入订阅壳初始 chunk）——**勿在别处引入**
 - **新增前端目录必须在 `index.css` 补 `@source "./目录";`**（本仓 `source(none)` 显式白名单模式，漏加则该目录
   独有工具类含 `dark:` 变体全部静默不生成）——`@source "./subs";` 已在（index.css 第 11 行）；
   **subs 首版暗色表头白底即漏加此行所致**，改动后需自查明暗两态
 
-## 6. 测试（`backend/tests/subs/test_subs.py`，15 用例，自包含临时 SQLite）
+## 6. 测试（`backend/tests/subs/test_subs.py`，原核心13例，自包含临时 SQLite）
 
 | 分组 | 用例 |
 |---|---|
@@ -258,21 +261,28 @@ routes.py 模块注释的口径表述：
 
 ## 7. 已知边界
 
-1. **排行榜被分页上限截断**：前端 RankingCard 请求 `page_size: 1000`，
-   服务端被 `settings.max_page_size`(=100) 封顶——会员超 100 时榜单不完整
-2. `total_duration_days` = Σ`(end−start).days`，**不含闭区间 +1**（与支出重叠口径 +1 是两套约定）
-3. 汇率为**静态配置表**，不联网更新；未知币种按原值折算（不报错）
-4. monthly 日均分母固定为**订阅起始月**的实际天数（跨月不变）；custom 周期若绕过 API 直接入库缺
-   `custom_days`，按 30 天兜底
-5. `reminders/upcoming` 中 `reminder_days=null` 的会员按 0 处理（仅当天到期才提醒）
-6. "今天"/状态判定基于**服务器本地时间**（`datetime.now()`，未用 UTC）
-7. `stats/spending`、`stats/by-category` 的分类明细**只含有分类**的会员订阅（未分类订阅计入总额但不出现
-   在分类列表）；`stats/trend` 则有"未分类"桶（cat_id=0，灰 `#a8a29e`）——两处口径不一致
-8. `useHolidays` 依赖外部 timor.tech 公网接口，失败静默降级仅按周末着色（无重试提示）
-9. 每日线程当日去重是进程内存级（`_DAILY_DONE`），进程重启当天已跑过的任务会再补跑一次
+1. `total_duration_days` = Σ`(end−start).days`，不含闭区间+1；支出重叠天数仍含+1，两者是不同指标约定。
+2. 汇率是静态配置，不联网更新；未知币种按原值折算。
+3. monthly日均分母固定为订阅起始月的实际天数，跨月不变；绕过API直接入库的custom缺custom_days时按30天兜底。
+4. `reminders/upcoming` 的reminder_days=null按0处理，仅当天到期提醒。
+5. useHolidays依赖timor.tech公网，失败静默降级为周末着色。
+6. 每日去重日期保存在每app运行时内存，进程重启后当天任务可能补跑；数据库与执行状态不会跨app共享。
+7. 趋势最多10年、day粒度最多500点；大范围明细采用独立分页接口。排行榜已覆盖全量会员，未分类支出也参与分类汇总，今天/活跃状态按应用配置业务时区判定。
 
 ## 公共 UI 外壳（2026-10-13）
 
 前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 到期日历独立懒加载，会员 / 统计 / 设置视图无需加载农历实现；通用弹窗正文滚动，页头与操作栏保持可见。
+
+
+## 2026-10-21 全量统计与并发生命周期
+
+- 会员及订阅增加revision，编辑PUT可携带revision，SQL CAS冲突409。省略revision保留旧客户端兼容；前端编辑提交已读版本，失败保留弹层输入。
+- 新增 `GET /api/subs/stats/ranking?metric=total_spending|avg_per_sub|subscription_count|total_duration_days&limit=10`，limit1..100。覆盖全部会员（包含零订阅），不再只取列表第一页100人后客户端排序。服务端用小字段聚合和heap topN，返回 `{items,total,metric}`。排名Query key含账号、数据库与metric，切维度取消旧请求。
+- `/stats/trend` 默认仅汇总点，兼容保留每点 `details:[]`；显式 `include_details=1` 才返回旧嵌套明细。趋势最多10年、day粒度最多500点；周桶从周一开始，首尾桶只计请求闭区间交集，不出现未重叠负金额。
+- 新增 `GET /api/subs/stats/details?start_date=&end_date=&page=1&page_size=20&category_id=`：当前请求区间订阅支出明细分页。图表使用轻汇总，用户展开明细后才请求；前端按整个查询区间展示明细，不重复嵌进每个趋势点。
+- 未分类订阅也计入spending、by-category、category-summary，分类合计与总支出一致。金额保持Decimal计算后输出两位；NaN/Infinity/负数及大于99999999.99的价格拒绝。
+- 今天/活跃状态/每日10点日志统一读取应用配置的业务时区（与todo时区共用），不依赖操作系统本地时区。会员列表无status过滤时，COUNT去掉排序/关联加载，并在同次SQL通过scalar subquery读取原始Todo配置；共用settings_from_raw解析后只计算一次today，不增加配置查询或把配置写入响应。有status过滤时也只求一次today供过滤与DTO复用。原YYYY-MM-DD存储保持跨SQLite/PG兼容。
+- 每日调度器挂app.state，stopEvent可停止且可重启，工作投递SDK有限池，并在 `database_context(app)` 内绑定对应数据库；停止/切库等待在途工作，避免多app串库。只有工作确认成功才记录已执行日期。
+- 新专项 `tests/subs/test_subs_optimization.py` 覆盖第101名以后的最高支出、轻趋势/分页明细、版本冲突、未分类汇总与非有限价格；最终测试、明暗截图和统一A/B见执行报告。

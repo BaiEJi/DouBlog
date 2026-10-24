@@ -4,7 +4,7 @@
  * 完成（可填备注）/重开、改期、待迁移弹窗。
  * URL：?v=today（固定今日）或 ?v=today&view=day&date=YYYY-MM-DD（特定日期）。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import {
@@ -39,6 +39,7 @@ export default function TodayView({ toast, dark }) {
     return p && isValidDateStr(p) ? parseDate(p) : new Date()
   })
   const [data, setData] = useState(null)
+  const requestRef = useRef({ sequence: 0, controller: null })
   const [loading, setLoading] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
@@ -56,18 +57,23 @@ export default function TodayView({ toast, dark }) {
   const dateStr = viewMode === 'today' ? today : fmtDate(date)
 
   const load = useCallback(async (silent = false) => {
+    requestRef.current.controller?.abort()
+    const controller = new AbortController()
+    const sequence = ++requestRef.current.sequence
+    requestRef.current.controller = controller
     if (!silent) setLoading(true)
     try {
-      const result = await todoDay(dateStr)
+      const result = await todoDay(dateStr, { signal: controller.signal })
+      if (sequence !== requestRef.current.sequence || controller.signal.aborted) return
       setData(prev => (prev && todayFingerprint(prev) === todayFingerprint(result) ? prev : result))
     } catch (err) {
-      if (!silent) toast(err instanceof Error ? err.message : '加载今日数据失败', 'error')
+      if (!silent && !controller.signal.aborted) toast(err instanceof Error ? err.message : '加载今日数据失败', 'error')
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent && sequence === requestRef.current.sequence) setLoading(false)
     }
   }, [dateStr, toast])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { const request = requestRef.current; load(); return () => { request.sequence += 1; request.controller?.abort() } }, [load])
 
   // 自动同步：页面可见时定时静默刷新；窗口重新聚焦/切回时立即刷新
   useEffect(() => {
@@ -123,6 +129,7 @@ export default function TodayView({ toast, dark }) {
     const q = Number(quadrant)
     try {
       await todoMoveTask(task.id, {
+        revision: task.revision, mutation_id: crypto.randomUUID(),
         is_important: q === 1 || q === 2,
         is_urgent: q === 1 || q === 3,
       })

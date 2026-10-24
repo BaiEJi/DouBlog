@@ -4,7 +4,7 @@
  *
  * - 先创建独立 namespace；左侧选择空间，右侧只管理当前空间的 KV
  * - 新建/编辑 Modal：type 切换 str|json——str=多行文本原样；json=JSON 编辑器
- *   （highlight.js 着色 + 格式化/压缩 + 失焦校验非法标红禁止保存）；值预览弹窗 json 同款着色
+ *   （CodeMirror 着色 + Worker 格式化/压缩 + 校验非法标红禁止保存）；值预览弹窗 json 同款着色
  * - 删除两步确认（第一步入列就位，3.5s 自动撤销）；搜索框 q（防抖）；分页
  * - 顶部 Redis 缓存状态条（cache/status）+ 缓存配置 Modal（测试连接/保存/清空缓存）
  * - 限流状态条（ratelimit/status：Redis 滑动窗口/本地降级/未启用 + 放行/拒绝计数，
@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
 import JsonEditor, { JsonHighlightedView } from './JsonEditor'
-import { jsonValidate } from './jsonTools'
+import useJsonValue from './useJsonValue'
 import {
   confNamespaces, confCreateNamespace, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
   confRenameEntry, confCacheStatus, confCacheConfig, confCacheSave, confCacheTest, confCacheFlush,
@@ -563,17 +563,24 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
     if (!isEdit || init.entry.data === undefined) return ''
     return valueText(init.entry, true)
   })
+  const [revision, setRevision] = useState(init.entry?.updated_at)
   const [jsonErr, setJsonErr] = useState(null)
   const [busy, setBusy] = useState(false)
-  // 列表行不含 data 时（防御）才回源读单条
-  const [fetching, setFetching] = useState(isEdit && init.entry.data === undefined)
+  // 编辑必须取得值与版本，读取失败不能变成一次无条件覆盖。
+  const needsFetch = isEdit && (init.entry.data === undefined || !init.entry.updated_at)
+  const [fetching, setFetching] = useState(needsFetch)
+  const [formatting, setFormatting] = useState(false)
+  const validation = useJsonValue(data, type === 'json')
+  const latestData = useRef(data)
+  useEffect(() => { latestData.current = data }, [data])
 
   useEffect(() => {
-    if (!isEdit || init.entry.data !== undefined) return
+    if (!needsFetch) return
     let alive = true
     confGetEntry(init.entry.namespace, init.entry.key)
       .then(d => {
         if (!alive) return
+        setRevision(d.updated_at)
         setType(d.type || 'str')
         setData(valueText(d, true))
       })
@@ -586,36 +593,36 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
   /** json 失焦校验：非法 → 标红 + 禁存（保存前 canSave 兜底再校一次） */
   function checkJson() {
     if (type !== 'json') return
-    setJsonErr(jsonValidate(data))
+    setJsonErr(validation.error)
   }
 
   /** 格式化 / 压缩（devtoolbox JsonFormatTool 同款语义；非法时提示不改动） */
-  function reformat(minify) {
-    if (type !== 'json') return
+  async function reformat(minify) {
+    if (type !== 'json' || formatting) return
+    const source = data
+    setFormatting(true)
     try {
-      const v = JSON.parse(data)
-      setData(JSON.stringify(v, null, minify ? undefined : 2))
-      setJsonErr(null)
-    } catch {
-      setJsonErr(jsonValidate(data))
-    }
+      const formatted = await validation.format(source, minify)
+      if (latestData.current === source) { setData(formatted); setJsonErr(null) }
+    } catch (error) {
+      if (latestData.current === source) setJsonErr(error.message)
+    } finally { setFormatting(false) }
   }
 
   const nsOk = ns.length <= 100 && NAME_RE.test(ns)
   const keyOk = key.length <= 200 && NAME_RE.test(key)
-  const dataOk = type === 'str' ||
-    (() => { try { JSON.parse(data); return true } catch { return false } })()
-  const canSave = !busy && !fetching && nsOk && keyOk && dataOk
+  const canSave = !busy && !fetching && !formatting && (!isEdit || !!revision) && nsOk && keyOk && validation.valid
+  const visibleJsonErr = jsonErr || validation.error
 
   async function onSave() {
     if (!canSave) return
     setBusy(true)
     try {
-      // key 变更：先原子重命名（值/时间戳原样迁移），再整体覆盖本次编辑的值
-      if (isEdit && key !== init.entry.key) {
-        await confRenameEntry(ns, init.entry.key, key)
+      if (isEdit) {
+        await confRenameEntry(ns, init.entry.key, key, { type, data, if_updated_at: revision })
+      } else {
+        await confPutEntry(ns, key, { type, data, if_absent: true })
       }
-      await confPutEntry(ns, key, { type, data })
       if (isEdit && key !== init.entry.key) say(`已重命名并更新 ${ns}/${key}`)
       else say(isEdit ? `已更新 ${ns}/${key}` : `已创建 ${ns}/${key}`)
       onSaved()
@@ -681,17 +688,17 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
           <label htmlFor="conf-entry-value" className={LBL}>值</label>
           {type === 'json' && (
             <span className="flex items-center gap-1.5">
-              <button type="button" onClick={() => reformat(false)}
+              <button type="button" disabled={formatting} onClick={() => reformat(false)}
                 className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">格式化</button>
-              <button type="button" onClick={() => reformat(true)}
+              <button type="button" disabled={formatting} onClick={() => reformat(true)}
                 className="px-2 h-6 rounded-md text-[13px] text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">压缩</button>
             </span>
           )}
         </div>
         {/* str 与 json 编辑器同高（16 行 × leading-6 + p-3，与 JsonEditor 度量一致），切换类型弹窗尺寸不变 */}
         {type === 'json' ? (
-          <JsonEditor id="conf-entry-value" value={data} onChange={setData} onBlur={checkJson}
-            rows={16} invalid={!!jsonErr} />
+          <JsonEditor id="conf-entry-value" value={data} onChange={value => { setData(value); setJsonErr(null) }} onBlur={checkJson} onSave={onSave}
+            rows={16} invalid={!!visibleJsonErr} />
         ) : (
           <textarea id="conf-entry-value" value={data} onChange={e => setData(e.target.value)} rows={16}
             spellCheck={false}
@@ -700,9 +707,10 @@ function EntryModal({ init, defaultNs, onClose, onSaved, say }) {
               'focus:border-black/30 dark:focus:border-white/30 transition-colors ' +
               (jsonErr ? '!border-red-400 dark:!border-red-500' : '')} />
         )}
-        {jsonErr && (
-          <div className="mt-1 text-sm text-red-600 dark:text-red-400">{jsonErr}——修正后再保存</div>
+        {visibleJsonErr && (
+          <div className="mt-1 text-sm text-red-600 dark:text-red-400">{visibleJsonErr}——修正后再保存</div>
         )}
+        {(validation.pending || formatting) && <div className="mt-1 text-sm text-stone-500">{formatting ? '正在格式化…' : '正在校验 JSON…'}</div>}
       </div>
 
       <div className="flex justify-end gap-2.5 mt-5">
@@ -820,10 +828,12 @@ export default function ConfCenterPage() {
     setDelTarget(id)
     delTimer.current = setTimeout(() => setDelTarget(null), 3500)
   }
-  async function onDel(namespace, key) {
+  async function onDel(namespace, key, updatedAt) {
     disarmDel()
     try {
-      await confDeleteEntry(namespace, key)
+      const revision = updatedAt || (await confGetEntry(namespace, key)).updated_at
+      if (!revision) throw new Error('未取得配置版本，请刷新后重试')
+      await confDeleteEntry(namespace, key, revision)
       say(`已删除 ${namespace}/${key}`)
       if (visibleList?.rows.length === 1 && page > 1) setPage(page - 1)
       else refreshEntries()
@@ -913,7 +923,7 @@ export default function ConfCenterPage() {
                         <td className="px-2 py-2.5 whitespace-nowrap text-sm text-stone-500 dark:text-stone-400">{fmtTime(e.updated_at)}</td>
                         <td className="pl-2 pr-4 py-2.5 text-right whitespace-nowrap">
                           {delTarget === id ? <span className="inline-flex items-center gap-1.5">
-                            <button type="button" onClick={() => onDel(e.namespace, e.key)} className="px-2 h-7 rounded-md text-sm bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认删除</button>
+                            <button type="button" onClick={() => onDel(e.namespace, e.key, e.updated_at)} className="px-2 h-7 rounded-md text-sm bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 transition-colors">确认删除</button>
                             <button type="button" onClick={disarmDel} className="px-2 h-7 rounded-md text-sm text-stone-400 dark:text-stone-500 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">取消</button>
                           </span> : <span className="inline-flex items-center gap-1.5">
                             <button type="button" onClick={() => setEditing({ mode: 'edit', entry: e })} className="px-2.5 h-7 rounded-md text-sm text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">编辑</button>

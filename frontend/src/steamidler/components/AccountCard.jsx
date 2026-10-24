@@ -5,7 +5,7 @@
  */
 import { useState } from 'react'
 import { api, fmtDuration } from '../api.js'
-import { Confirm, inputCls } from '../../todo/kit'
+import { Confirm, inputCls } from '../../shared/ui/kit'
 
 const STATE_LABEL = {
   online: { cls: 'online', text: '在线' },
@@ -128,7 +128,7 @@ export default function AccountCard({ account, gamesMeta, onOpenPicker, onOpenLo
             {isIdling ? '挂机中' : '未挂机'}
           </div>
           <div className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 truncate">
-            {isIdling ? `已连续 ${fmtDuration(account.idle_since ? (Date.now() / 1000 - account.idle_since) : account.farmed_session)}` : '选择游戏开始刷时长'}
+            {isIdling ? `已连续 ${fmtDuration(account.farmed_session)}` : '选择游戏开始刷时长'}
           </div>
         </div>
         <div className="flex-1 min-w-0 rounded-xl bg-black/[0.04] dark:bg-white/[0.05] px-3 py-2.5">

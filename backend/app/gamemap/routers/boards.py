@@ -5,7 +5,8 @@
 commit 后显式 invalidate_game(粒度一致);源版 SDK 参数错误改为 HTTPException(400)。
 """
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
+from app.shared.mutations import resource_lock
 from sqlalchemy.orm import Session
 
 from app.db import db, run_db
@@ -23,6 +24,13 @@ from ._base import _dump, _guard, envelope_body
 
 router = APIRouter(prefix="/api/gamemap/games/{game_id}/boards", tags=["gamemap-boards"],
                    dependencies=[Depends(require_basic)])
+
+
+def _guard_write(fn, game_id):
+    def invoke():
+        with resource_lock(('gamemap-board', game_id)):
+            return fn()
+    return _guard(invoke)
 
 
 def get_board(db: Session, game_id: int, chapter_id: int) -> Board:
@@ -91,11 +99,12 @@ async def add_node(game_id: int, chapter_id: int, character_id: int):
                     ChapterCharacter.chapter_id == chapter_id,
                     ChapterCharacter.character_id == character_id)).first():
                 session.add(ChapterCharacter(chapter_id=chapter_id, character_id=character_id))
+            _bump(board)
             session.commit()
             session.refresh(board)
             response_cache.invalidate_game(game_id)
         return get_chapter_board(session, game_id, chapter_id)
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.delete("/chapters/{chapter_id}/nodes/{character_id}")
@@ -109,10 +118,11 @@ async def remove_node(game_id: int, chapter_id: int, character_id: int):
             ChapterRelation.board_id == board.id,
             ((ChapterRelation.from_character_id == character_id) | (ChapterRelation.to_character_id == character_id)),
         ).delete(synchronize_session=False)
+        _bump(board)
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.put("/chapters/{chapter_id}")
@@ -123,12 +133,20 @@ async def save_board(game_id: int, chapter_id: int, data: BoardSave):
     def _impl():
         session = db.session
         board = get_board(session, game_id, chapter_id)
-        if data.version != board.version:
+        changed = session.execute(update(Board).where(
+            Board.id == board.id, Board.version == data.version).values(
+                version=Board.version + 1).execution_options(synchronize_session=False)).rowcount
+        if changed != 1:
+            session.rollback()
             raise HTTPException(409, f"看板已被其他页面修改（当前版本 {board.version}），请刷新后重试")
 
         board_char_ids = {n.character_id for n in data.nodes}
         if len(board_char_ids) != len(data.nodes):
             raise HTTPException(400, "同一看板内一个人物只能有一个节点")
+        allowed_characters = set(session.scalars(select(Character.id).where(
+            Character.game_id == game_id, Character.id.in_(board_char_ids))).all())
+        if allowed_characters != board_char_ids:
+            raise HTTPException(400, '节点人物必须属于当前游戏')
         for rel in data.relations:
             if rel.from_character_id not in board_char_ids or rel.to_character_id not in board_char_ids:
                 raise HTTPException(400, "关系两端人物必须存在于当前看板")
@@ -154,12 +172,11 @@ async def save_board(game_id: int, chapter_id: int, data: BoardSave):
                 {"board_id": board.id, "from_character_id": r.from_character_id,
                  "to_character_id": r.to_character_id, "relation_type_id": r.relation_type_id,
                  "description": r.description, "event_ids": r.event_ids} for r in data.relations])
-        board.version += 1
         session.commit()
         session.refresh(board)
         response_cache.invalidate_game(game_id)
         return get_chapter_board(session, game_id, chapter_id)
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.get("/merged")
@@ -239,6 +256,7 @@ async def merged_board(game_id: int, chapter_ids: str):
             return s
 
         out = MergedBoardOut(
+            board_versions={b.chapter_id: b.version for b in boards},
             chapters=[ChapterOut.model_validate(c) for c in chapters],
             anchor_chapter_id=chapters[-1].id,
             nodes=list(node_map.values()),
@@ -255,7 +273,9 @@ async def merged_board(game_id: int, chapter_ids: str):
 # ---- 聚合模式下的增量写入端点（单章模式仍走整板 PUT） ----
 
 def _bump(board: Board) -> None:
-    board.version += 1
+    db.session.execute(update(Board).where(Board.id == board.id).values(
+        version=Board.version + 1).execution_options(synchronize_session=False))
+    db.session.expire(board, ['version'])
 
 
 @router.patch("/chapters/{chapter_id}/nodes/{character_id}")
@@ -274,7 +294,7 @@ async def update_node_position(game_id: int, chapter_id: int, character_id: int,
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True, "version": board.version})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.post("/chapters/{chapter_id}/relations")
@@ -320,7 +340,7 @@ async def create_relation(game_id: int, chapter_id: int, data: RelationCreate):
             id=rel.id, board_id=rel.board_id, from_character_id=rel.from_character_id,
             to_character_id=rel.to_character_id, relation_type_id=rel.relation_type_id,
             description=rel.description, event_ids=list(rel.event_ids or []))))
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.patch("/chapters/{chapter_id}/relations/{relation_id}")
@@ -338,7 +358,7 @@ async def update_relation(game_id: int, chapter_id: int, relation_id: int,
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))
 
 
 @router.delete("/chapters/{chapter_id}/relations/{relation_id}")
@@ -354,4 +374,4 @@ async def delete_relation(game_id: int, chapter_id: int, relation_id: int):
         session.commit()
         response_cache.invalidate_game(game_id)
         return api_response({"ok": True})
-    return await run_db(_guard(_impl))
+    return await run_db(_guard_write(_impl, game_id))

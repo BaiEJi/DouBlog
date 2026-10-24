@@ -10,7 +10,7 @@ import {
   listProblems,
   SOURCES, STATUSES, LANGUAGES, DIFFICULTIES, diffMeta, statusMeta, sourceLabel, langMeta,
 } from '../api'
-import { Empty, Spinner, Switch, btn, Icon } from '../../todo/kit'
+import { Empty, Spinner, Switch, btn, Icon } from '@/shared/ui/kit'
 import { todayStr, mdhmOf } from '../../todo/kit'
 import TagSelect from './TagSelect'
 

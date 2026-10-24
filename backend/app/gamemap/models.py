@@ -21,6 +21,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db import Base
 
 
+class PositionMutation(Base):
+    __tablename__ = 'gamemap_position_mutations'
+    game_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mutation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 class Game(Base):
     __tablename__ = "gamemap_games"
     id: Mapped[int] = mapped_column(primary_key=True)

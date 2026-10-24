@@ -4,7 +4,7 @@
  */
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchAllPosts, fetchWorkspaces, createWorkspace, searchPosts, prefetchPost, fetchRecentPosts } from '../api'
+import { fetchPosts, fetchWorkspaces, createWorkspace, prefetchPost, fetchRecentPosts } from '../api'
 
 const Icons = {
   search: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>,
@@ -258,11 +258,13 @@ export default function HomePage({ dark, setDark }) {
   })
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    Promise.all([fetchAllPosts(), fetchWorkspaces(), fetchRecentPosts(8)])
-      .then(([items, wsRes, rcRes]) => {
-        setPosts(items)
+    Promise.all([fetchWorkspaces(), fetchRecentPosts(8)])
+      .then(([wsRes, rcRes]) => {
         if (wsRes.success) setWorkspaces(wsRes.data)
         if (rcRes.success) setRecent(rcRes.data)
       })
@@ -278,6 +280,7 @@ export default function HomePage({ dark, setDark }) {
   // 切库：更新 URL（不刷新页面）
   const switchWs = (id) => {
     setCurrentWs(id)
+    setPage(1)
     const url = new URL(window.location)
     url.searchParams.set('ws', id)
     window.history.replaceState(null, '', url)
@@ -299,23 +302,20 @@ export default function HomePage({ dark, setDark }) {
   }
 
   // 全文搜索：防抖走后端（标题/摘要/英文名/正文，跨所有知识库）
-  const [remoteResults, setRemoteResults] = useState(null)   // null = 非搜索态
   const searchRef = useRef(null)
-
+  const workspaceId = ws?.id
   useEffect(() => {
-    const q = search.trim()
-    if (!q) { setRemoteResults(null); return }
-    let stale = false
-    const t = setTimeout(async () => {
-      try {
-        const d = await searchPosts(q)
-        if (!stale) setRemoteResults(d.success ? d.data.items : [])
-      } catch {
-        if (!stale) setRemoteResults([])
-      }
-    }, 300)
-    return () => { stale = true; clearTimeout(t) }
-  }, [search])
+    if (!workspaceId && !search.trim()) return
+    const controller = new AbortController()
+    const timer = setTimeout(() => {
+      setLoading(true); setLoadError('')
+      fetchPosts({ page, page_size: 24, keyword: search.trim(), workspace_id: search.trim() ? undefined : workspaceId }, { signal: controller.signal })
+        .then(data => { setPosts(data.items); setTotal(data.total) })
+        .catch(error => { if (!controller.signal.aborted) setLoadError(error.message) })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    }, search.trim() ? 300 : 0)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [workspaceId, search, page])
 
   // Ctrl/Cmd+K 聚焦搜索框
   useEffect(() => {
@@ -330,8 +330,8 @@ export default function HomePage({ dark, setDark }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const searching = !!search.trim() && remoteResults !== null
-  const filtered = searching ? remoteResults : (ws ? posts.filter(p => p.workspace_id === ws.id) : posts)
+  const searching = !!search.trim()
+  const filtered = posts
 
   // 搜索结果需要显示所属库名
   const wsNameById = useMemo(() => {
@@ -340,7 +340,7 @@ export default function HomePage({ dark, setDark }) {
     return m
   }, [workspaces])
 
-  const wsCount = ws ? posts.filter(p => p.workspace_id === ws.id).length : posts.length
+  const wsCount = ws?.post_count ?? total
 
   return (
     <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 animate-fade-in">
@@ -349,7 +349,7 @@ export default function HomePage({ dark, setDark }) {
         <h2 className="text-base font-semibold">知识库</h2>
         <WorkspaceSwitcher workspaces={workspaces} current={ws} onSelect={switchWs} onCreate={handleCreateWs} />
         <div className="relative flex-1 min-w-[180px] max-w-sm ml-auto">
-          <input ref={searchRef} type="search" placeholder="搜索全部内容 ⌘K" value={search} onChange={e => setSearch(e.target.value)} className="w-full h-9 px-3 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] outline-none" />
+          <input ref={searchRef} type="search" placeholder="搜索全部内容 ⌘K" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} className="w-full h-9 px-3 rounded-lg text-sm border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] outline-none" />
         </div>
         <Link to={ws ? `/create?ws=${ws.id}` : '/create'} className="inline-flex items-center gap-1.5 px-4 h-9 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium rounded-lg">{Icons.plus}新建文章</Link>
       </div>
@@ -394,13 +394,14 @@ export default function HomePage({ dark, setDark }) {
 
         <div className="flex items-center gap-3 mb-6">
           <h2 className="text-lg font-semibold text-[#111] dark:text-[#eee]">
-            {searching ? `搜索“${search.trim()}” · ${filtered.length} 条` : (ws ? ws.name : '全部文章')}
+            {searching ? `搜索“${search.trim()}” · ${total} 条` : (ws ? ws.name : '全部文章')}
           </h2>
           {!loading && (
-            <span className="text-base text-[#999] dark:text-[#666] tabular-nums">{filtered.length} 篇</span>
+            <span className="text-base text-[#999] dark:text-[#666] tabular-nums">{total} 篇</span>
           )}
         </div>
 
+        {loadError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{loadError}</p>}
         {loading ? (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4 stagger">
             {[1, 2, 3, 4, 5, 6].map(i => <PostSkeleton key={i} />)}
@@ -414,6 +415,11 @@ export default function HomePage({ dark, setDark }) {
             ))}
           </div>
         )}
+        {total > 24 && <nav aria-label="文章分页" className="flex items-center justify-center gap-5 my-8 text-sm">
+          <button type="button" disabled={page <= 1 || loading} onClick={() => setPage(value => value - 1)} className="disabled:opacity-30">上一页</button>
+          <span>{page} / {Math.ceil(total / 24)} · {total} 篇</span>
+          <button type="button" disabled={page * 24 >= total || loading} onClick={() => setPage(value => value + 1)} className="disabled:opacity-30">下一页</button>
+        </nav>}
       </main>
 
       {/* Footer */}

@@ -19,12 +19,14 @@ favorite/kind 为元数据变更不快照。使用统计：copy/fill/export 动�
 import base64
 import json
 import orjson
+import tempfile
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
-from sqlalchemy import String, or_
+from fastapi.responses import Response, StreamingResponse
+from sqlalchemy import String, or_, func, select
+from sqlalchemy.orm import defer, joinedload
 
 from app.config import settings
 from app.db import db, run_db
@@ -93,7 +95,7 @@ def _like_escape(s: str) -> str:
 
 
 def _require_item(item_id) -> AssetItem:
-    item = db.session.get(AssetItem, item_id)
+    item = AssetItem.query.options(defer(AssetItem.archive)).filter(AssetItem.id == item_id).first()
     if not item:
         raise NotFoundError(message='资产不存在')
     return item
@@ -142,11 +144,11 @@ def _category_counts() -> dict[int | None, dict]:
     """非回收站资产按分类聚合 {category_id|None: {count, prompt, skill}}"""
     counts: dict[int | None, dict] = {}
     rows = AssetItem.query.filter(AssetItem.status != 'trash').with_entities(
-        AssetItem.category_id, AssetItem.kind).all()
-    for cat_id, kind in rows:
+        AssetItem.category_id, AssetItem.kind, func.count()).group_by(AssetItem.category_id, AssetItem.kind).all()
+    for cat_id, kind, count in rows:
         c = counts.setdefault(cat_id, {'count': 0, 'prompt': 0, 'skill': 0})
-        c['count'] += 1
-        c[kind] = c.get(kind, 0) + 1
+        c['count'] += count
+        c[kind] = c.get(kind, 0) + count
     return counts
 
 
@@ -309,7 +311,7 @@ async def list_items(request: Request):
                              AssetItem.summary.like(pat, escape='\\'),
                              AssetItem.content.like(pat, escape='\\')))
 
-        total = q.count()
+        total = q.with_entities(func.count(AssetItem.id)).scalar()
         sort = params.get('sort') or 'updated_desc'
         order = SORTS.get(sort)
         if order is None:
@@ -317,10 +319,15 @@ async def list_items(request: Request):
         page = max(_query_int(params, 'page', 1) or 1, 1)
         page_size = _query_int(params, 'page_size', 20) or 20
         page_size = max(1, min(page_size, settings.max_page_size))
-        items = (q.order_by(*order)
+        items = (q.options(defer(AssetItem.content), defer(AssetItem.archive), joinedload(AssetItem.category)).order_by(*order)
                   .offset((page - 1) * page_size).limit(page_size).all())
+        ids = [item.id for item in items]
+        version_counts = dict(db.session.query(AssetVersion.item_id, func.count()).filter(
+            AssetVersion.item_id.in_(ids)).group_by(AssetVersion.item_id).all()) if ids else {}
+        file_counts = dict(db.session.query(AssetFile.item_id, func.count()).filter(
+            AssetFile.item_id.in_(ids)).group_by(AssetFile.item_id).all()) if ids else {}
         return api_response({
-            'items': [i.to_dict() for i in items],
+            'items': [i.to_dict(counts=(version_counts.get(i.id, 0), file_counts.get(i.id, 0))) for i in items],
             'total': total, 'page': page, 'page_size': page_size,
         })
     return await run_db(_impl)
@@ -563,7 +570,8 @@ async def import_skill(request: Request):
 @router.get('/items/{item_id}/files')
 async def list_item_files(item_id: int):
     def _impl():
-        _require_item(item_id)
+        if not db.session.query(AssetItem.id).filter(AssetItem.id == item_id).scalar():
+            raise NotFoundError(message='资产不存在')
         rows = AssetFile.query.filter(AssetFile.item_id == item_id) \
             .order_by(AssetFile.path).all()
         return api_response([f.to_dict() for f in rows])
@@ -595,12 +603,28 @@ async def download_archive(item_id: int):
 # ─── 版本 ─────────────────────────────────────────────
 
 @router.get('/items/{item_id}/versions')
-async def list_versions(item_id: int):
+async def list_versions(item_id: int, request: Request):
     def _impl():
-        _require_item(item_id)
-        return api_response([v.to_dict() for v in
-                             AssetVersion.query.filter(AssetVersion.item_id == item_id)
-                             .order_by(AssetVersion.version.desc()).all()])
+        paged = 'page' in request.query_params
+        identity_query = db.session.query(AssetItem.id).filter(AssetItem.id == item_id)
+        if paged:
+            version_count = select(func.count()).select_from(AssetVersion).where(
+                AssetVersion.item_id == item_id).correlate(None).scalar_subquery()
+            identity = identity_query.add_columns(version_count).one_or_none()
+            exists = identity[0] if identity else None
+            total = identity[1] if identity else 0
+        else:
+            exists = identity_query.scalar()
+        if not exists:
+            raise NotFoundError(message='资产不存在')
+        q = AssetVersion.query.options(defer(AssetVersion.content), defer(AssetVersion.summary)).filter(
+            AssetVersion.item_id == item_id).order_by(AssetVersion.version.desc(), AssetVersion.id.desc())
+        if not paged:
+            return api_response([v.to_dict() for v in q.all()])
+        page = max(1, _query_int(request.query_params, 'page', 1) or 1)
+        size = max(1, min(100, _query_int(request.query_params, 'page_size', 20) or 20))
+        return api_response({'items': [v.to_dict() for v in q.offset((page - 1) * size).limit(size)],
+                             'page': page, 'page_size': size, 'total': total})
     return await run_db(_impl)
 
 
@@ -657,7 +681,7 @@ async def list_tags():
 @router.get('/stats')
 async def stats():
     def _impl():
-        items = AssetItem.query.all()
+        items = AssetItem.query.options(defer(AssetItem.content), defer(AssetItem.archive)).all()
         live = [i for i in items if i.status != 'trash']
         active = [i for i in live if i.status == 'active']
         archived = [i for i in live if i.status == 'archived']
@@ -721,7 +745,7 @@ async def stats():
 
 # ─── 导出 / 导入 ─────────────────────────────────────
 
-def _export_items(params) -> list[dict]:
+def _export_items(params):
     """按过滤条件取要导出的资产（含正文；可选含历史版本）"""
     q = AssetItem.query
     kind = params.get('kind')
@@ -744,29 +768,34 @@ def _export_items(params) -> list[dict]:
     if not include_trash:
         q = q.filter(AssetItem.status != 'trash')
     include_versions = params.get('include_versions') in ('1', 'true')
-    out = []
-    for item in q.order_by(AssetItem.kind, AssetItem.title).all():
-        d = {
-            'kind': item.kind, 'title': item.title, 'summary': item.summary,
-            'content': item.content, 'tags': item.tags or [],
-            'favorite': bool(item.favorite), 'status': item.status,
-            'usage_count': item.usage_count,
-            'category': item.category.name if item.category else None,
-        }
+    offset = 0
+    while True:
+        items = q.options(joinedload(AssetItem.category)).order_by(AssetItem.id).offset(offset).limit(50).all()
+        if not items:
+            break
+        ids = [item.id for item in items]
+        versions_by_item, files_by_item = {}, {}
         if include_versions:
-            d['versions'] = [v.to_dict(include_content=True) for v in
-                             AssetVersion.query.filter(AssetVersion.item_id == item.id)
-                             .order_by(AssetVersion.version).all()]
-        # Skill 包：文件清单（含文本内容）+ 原始 zip（base64），保证导出导入往返无损
-        files = AssetFile.query.filter(AssetFile.item_id == item.id) \
-            .order_by(AssetFile.path).all()
-        if files:
-            d['files'] = [f.to_dict(include_content=True) for f in files]
-        if item.archive:
-            d['archive_name'] = item.archive_name
-            d['archive_b64'] = base64.b64encode(item.archive).decode('ascii')
-        out.append(d)
-    return out
+            for version in AssetVersion.query.filter(AssetVersion.item_id.in_(ids)).order_by(AssetVersion.version):
+                versions_by_item.setdefault(version.item_id, []).append(version.to_dict(include_content=True))
+        for file in AssetFile.query.filter(AssetFile.item_id.in_(ids)).order_by(AssetFile.path):
+            files_by_item.setdefault(file.item_id, []).append(file.to_dict(include_content=True))
+        for item in items:
+            result = {
+                'kind': item.kind, 'title': item.title, 'summary': item.summary,
+                'content': item.content, 'tags': item.tags or [], 'favorite': bool(item.favorite),
+                'status': item.status, 'usage_count': item.usage_count,
+                'category': item.category.name if item.category else None,
+            }
+            if include_versions:
+                result['versions'] = versions_by_item.get(item.id, [])
+            if item.id in files_by_item:
+                result['files'] = files_by_item[item.id]
+            if item.archive:
+                result['archive_name'] = item.archive_name
+                result['archive_b64'] = base64.b64encode(item.archive).decode('ascii')
+            yield result
+        offset += len(items)
 
 
 @router.get('/export')
@@ -774,15 +803,31 @@ async def export_assets(request: Request):
     params = request.query_params
 
     def _impl():
-        items = _export_items(params)
-        body = orjson.dumps({
-            'generator': 'doulog-assets', 'version': 1,
-            'exported_at': _utcnow().isoformat(), 'count': len(items),
-            'items': items,
-        }, option=orjson.OPT_INDENT_2).decode('utf-8')
+        spool = tempfile.SpooledTemporaryFile(max_size=4 * 1024 * 1024, mode='w+b')
+        try:
+            spool.write(b'{"items":[')
+            count = 0
+            for item in _export_items(params):
+                if count:
+                    spool.write(b',')
+                spool.write(orjson.dumps(item))
+                count += 1
+            metadata = orjson.dumps({'generator': 'doulog-assets', 'version': 1,
+                'exported_at': _utcnow().isoformat(), 'count': count})
+            spool.write(b'],' + metadata[1:])
+            spool.seek(0)
+        except BaseException:
+            spool.close()
+            raise
+        def chunks():
+            try:
+                while chunk := spool.read(64 * 1024):
+                    yield chunk
+            finally:
+                spool.close()
         stamp = datetime.now().strftime('%Y%m%d-%H%M%S')
-        return Response(body, media_type='application/json',
-                        headers=_attachment(f'doulog-assets-{stamp}.json'))
+        return StreamingResponse(chunks(), media_type='application/json',
+            headers=_attachment(f'doulog-assets-{stamp}.json'))
     return await run_db(_impl)
 
 

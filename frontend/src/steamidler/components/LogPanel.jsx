@@ -2,29 +2,22 @@
  * 运行日志弹窗（源版逻辑照搬）：每 2s 轮询账号日志并自动滚到底。
  * 弹窗改用 Doublog kit Modal；日志面板为终端风深底（明暗两态一致可读）。
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import usePolling from '../../shared/usePolling'
 import { api } from '../api.js'
-import { Modal } from '../../todo/kit'
+import { Modal } from '../../shared/ui/kit'
 
 export default function LogPanel({ account, onClose }) {
   const [lines, setLines] = useState([])
   const boxRef = useRef(null)
 
-  useEffect(() => {
-    let alive = true
-    const fetchLog = async () => {
-      try {
-        const resp = await api.accountLog(account.steamid)
-        if (alive) {
-          setLines(resp.lines || [])
-          if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight
-        }
-      } catch { /* ignore */ }
-    }
-    fetchLog()
-    const t = setInterval(fetchLog, 2000)
-    return () => { alive = false; clearInterval(t) }
+  const load = useCallback(async ({ signal }) => {
+    const response = await api.accountLog(account.steamid, { signal })
+    if (signal.aborted) return
+    setLines(response.lines || [])
+    requestAnimationFrame(() => { if (boxRef.current) boxRef.current.scrollTop = boxRef.current.scrollHeight })
   }, [account.steamid])
+  usePolling(load, { intervalMs: 2000 })
 
   return (
     <Modal open title={`运行日志 — ${account.account_name}`} onClose={onClose} width="max-w-2xl">

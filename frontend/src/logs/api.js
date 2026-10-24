@@ -2,9 +2,9 @@ import { apiFetch } from '@/shared/client'
 
 // 日志查询 API（sdklogs 模块）。
 
-export async function sdklogSearch(params) {
+export async function sdklogSearch(params, options = {}) {
   const qs = new URLSearchParams(params).toString()
-  const res = await apiFetch(`/api/v1/logs?${qs}`)
+  const res = await apiFetch(`/api/v1/logs?${qs}`, options)
   return res.json()
 }
 
@@ -14,9 +14,9 @@ export async function sdklogSysnames() {
 }
 
 /** 时间直方图（桶 × 级别计数） */
-export async function sdklogHistogram(params) {
+export async function sdklogHistogram(params, options = {}) {
   const qs = new URLSearchParams(params).toString()
-  const res = await apiFetch(`/api/v1/logs/histogram?${qs}`)
+  const res = await apiFetch(`/api/v1/logs/histogram?${qs}`, options)
   return res.json()
 }
 

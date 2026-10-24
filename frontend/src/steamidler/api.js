@@ -26,12 +26,12 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ attempt_id: attemptId, code, code_type: codeType }),
     }),
-  loginStatus: (attemptId) =>
-    request(`/login/status?attempt_id=${encodeURIComponent(attemptId)}`),
-  accounts: () => request('/accounts'),
-  accountGames: (steamid, force = false) =>
-    request(`/accounts/${steamid}/games${force ? '?force=true' : ''}`),
-  accountLog: (steamid) => request(`/accounts/${steamid}/log`),
+  loginStatus: (attemptId, options) =>
+    request(`/login/status?attempt_id=${encodeURIComponent(attemptId)}`, options),
+  accounts: options => request('/accounts', options),
+  accountGames: (steamid, force = false, options) =>
+    request(`/accounts/${steamid}/games${force ? '?force=true' : ''}`, options),
+  accountLog: (steamid, options) => request(`/accounts/${steamid}/log`, options),
   startIdle: (steamid, appids) =>
     request(`/accounts/${steamid}/idle`, {
       method: 'POST',

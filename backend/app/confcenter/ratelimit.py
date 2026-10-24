@@ -53,6 +53,12 @@ _NAME_RE = re.compile(r'^[A-Za-z0-9_.:-]+$')
 
 #: 进程级"只 warn 一次"开关（跨 app 共享是刻意的——降级不刷日志）
 _WARNED = False
+_STATE_LOCK = threading.RLock()
+
+
+def key_prefix():
+    from app.db import current_runtime
+    return f'{RL_KEY_PREFIX}:{current_runtime().identity}'
 
 
 # ─── 配置读写（data/ratelimit_config.json）──────────────
@@ -62,7 +68,8 @@ def default_config() -> dict:
 
 
 def config_path() -> str:
-    return os.path.join(settings.data_dir, RATELIMIT_CONFIG_FILE)
+    from app.db import current_runtime
+    return os.path.join(current_runtime().data_dir, RATELIMIT_CONFIG_FILE)
 
 
 def load_config() -> dict:
@@ -83,9 +90,8 @@ def load_config() -> dict:
 
 
 def save_config(cfg: dict) -> None:
-    os.makedirs(settings.data_dir, exist_ok=True)
-    with open(config_path(), 'w', encoding='utf-8') as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    from app.shared.files import atomic_write_json
+    atomic_write_json(config_path(), cfg)
 
 
 def _int_field(value, name: str, lo: int, hi: int) -> int:
@@ -157,6 +163,7 @@ class RateLimitState:
     def __init__(self):
         self.lock = threading.RLock()
         self.config = load_config()
+        self.prefix = key_prefix()
         self.local_windows: dict[str, deque] = {}   # namespace -> 窗口内事件时间戳
         self.allowed = 0
         self.rejected = 0
@@ -174,8 +181,11 @@ def get_state(app) -> RateLimitState:
     """取/建该 app 的限流运行态（挂 app.state.confcenter_ratelimit）。"""
     state = getattr(app.state, 'confcenter_ratelimit', None)
     if state is None:
-        state = RateLimitState()
-        app.state.confcenter_ratelimit = state
+        with _STATE_LOCK:
+            state = getattr(app.state, 'confcenter_ratelimit', None)
+            if state is None:
+                state = RateLimitState()
+                app.state.confcenter_ratelimit = state
     return state
 
 
@@ -211,7 +221,7 @@ def _redis_check(state, cache_state, namespace: str, limit: int, window: int) ->
     client = cache_mod._usable_client(cache_state)
     if client is None:
         return None
-    counter = SlidingWindowCounter(client, window=window, prefix=RL_KEY_PREFIX)
+    counter = SlidingWindowCounter(client, window=window, prefix=state.prefix)
     try:
         return counter.allow(namespace, limit)
     except Exception:  # noqa: BLE001 - 任何连接异常都降级本地，不阻断请求
@@ -219,14 +229,14 @@ def _redis_check(state, cache_state, namespace: str, limit: int, window: int) ->
         return None
 
 
-def _redis_retry_after(client, namespace: str, window: int) -> int:
+def _redis_retry_after(client, namespace: str, window: int, prefix=None) -> int:
     """Redis 路径的重试等待：窥视窗口内最老事件的 score 估算剩余等待。
 
     键结构与 SlidingWindowCounter 的 {prefix}:{key} 一致（公开构造参数决定，
     非私有内部）；窥探失败退回整窗上限（保守值）。
     """
     try:
-        oldest = client.zrange(f'{RL_KEY_PREFIX}:{namespace}', 0, 0, withscores=True)
+        oldest = client.zrange(f'{prefix or key_prefix()}:{namespace}', 0, 0, withscores=True)
         if oldest:
             wait = window - (time.time() - oldest[0][1])
             return max(1, math.ceil(wait))
@@ -275,7 +285,7 @@ def check(app, namespace: str) -> None:
     if verdict is not None:
         mode = 'redis'
         ok = verdict
-        retry_after = 0 if ok else _redis_retry_after(cache_state.client, namespace, window)
+        retry_after = 0 if ok else _redis_retry_after(cache_state.client, namespace, window, state.prefix)
         with state.lock:
             if ok:
                 state.allowed += 1
@@ -299,8 +309,9 @@ def _redis_tracked(cache_state) -> dict[str, int] | None:
     from app.confcenter import cache as cache_mod
     client = cache_mod._probe_client(cache_state)
     tracked = {}
-    prefix_len = len(RL_KEY_PREFIX) + 1
-    for key in client.scan_iter(match=f'{RL_KEY_PREFIX}:*'):
+    prefix = f'{RL_KEY_PREFIX}:{cache_state.identity}'
+    prefix_len = len(prefix) + 1
+    for key in client.scan_iter(match=f'{prefix}:*'):
         tracked[key[prefix_len:]] = int(client.zcard(key))
     return tracked
 
@@ -361,7 +372,7 @@ def reset(app, namespace: str) -> dict:
     if cache_mod.REDIS_AVAILABLE and cache_mod.get_cache_state(app).config.get('enabled'):
         try:
             client = cache_mod._probe_client(cache_mod.get_cache_state(app))
-            SlidingWindowCounter(client, prefix=RL_KEY_PREFIX).reset(namespace)
+            SlidingWindowCounter(client, prefix=state.prefix).reset(namespace)
             cleared_redis = True
         except Exception:  # noqa: BLE001
             _mark_redis_failed(state)

@@ -7,6 +7,7 @@
 import queue
 import threading
 import time
+from types import SimpleNamespace
 
 from sqlalchemy import select
 
@@ -31,15 +32,19 @@ class Store:
         self.tokens: dict = {}          # key_hash -> dict
         self.rules: list = []
         self.quota_used: dict = {}      # token_id -> 内存计数（writer 线程落库）
+        self.quota_pending: dict = {}   # 与调用日志队列解耦，日志满时配额仍会持久化
+        self.quota_epoch: dict = {}
+        self._token_hashes: dict = {}
+        self.auth_cache = {}
         self._levels_cache: dict = {}   # (version, api_id, token_id) -> [LevelSpec]
 
     def reload(self):
         from app.db import db
+        systems = db.session.execute(select(ApihubSystem)).scalars().all()
+        apis = db.session.execute(select(ApihubApi)).scalars().all()
+        toks = db.session.execute(select(ApihubToken)).scalars().all()
+        rules = db.session.execute(select(ApihubRule)).scalars().all()
         with self.lock:
-            systems = db.session.execute(select(ApihubSystem)).scalars().all()
-            apis = db.session.execute(select(ApihubApi)).scalars().all()
-            toks = db.session.execute(select(ApihubToken)).scalars().all()
-            rules = db.session.execute(select(ApihubRule)).scalars().all()
 
             self.systems = {s.id: {
                 'id': s.id, 'slug': s.slug, 'name': s.name, 'base_url': s.base_url,
@@ -71,13 +76,18 @@ class Store:
 
             self.tokens = {}
             for t in toks:
+                if self._token_hashes.get(t.id) != t.key_hash:
+                    self.quota_epoch[t.id] = self.quota_epoch.get(t.id, 0) + 1
+                    self.quota_used[t.id] = t.quota_used
+                    self.quota_pending[t.id] = 0
+                    self._token_hashes[t.id] = t.key_hash
                 self.tokens[t.key_hash] = {
                     'id': t.id, 'name': t.name, 'key_hash': t.key_hash,
                     'expires_at': t.expires_at, 'allowed_api_ids': t.allowed_api_ids,
                     'allowed_ips': t.allowed_ips, 'quota_total': t.quota_total,
                     'quota_used': t.quota_used, 'status': t.status,
                 }
-                self.quota_used[t.id] = t.quota_used
+                self.quota_used.setdefault(t.id, t.quota_used)
 
             self.rules = [{
                 'id': r.id, 'scope': r.scope, 'api_id': r.api_id, 'token_id': r.token_id,
@@ -86,6 +96,44 @@ class Store:
             } for r in rules if r.enabled]
             self.version += 1
             self._levels_cache = {}
+            self.auth_cache.clear()
+
+    def snapshot(self):
+        """一次捕获完整配置代次；发布后配置 dict 不原地修改。"""
+        with self.lock:
+            return SimpleNamespace(apis=self.apis, apis_by_id=self.apis_by_id,
+                                   systems=self.systems, systems_by_slug=self.systems_by_slug,
+                                   tokens=self.tokens, rules=self.rules, version=self.version)
+
+    def reserve(self, token):
+        with self.lock:
+            tid = token['id']
+            used = self.quota_used.get(tid, token.get('quota_used', 0))
+            if token['quota_total'] is not None and used >= token['quota_total']:
+                return None
+            self.quota_used[tid] = used + 1
+            self.quota_pending[tid] = self.quota_pending.get(tid, 0) + 1
+            return tid, self.quota_epoch.get(tid, 0)
+
+    def refund(self, ticket):
+        if ticket is None:
+            return
+        tid, epoch = ticket
+        with self.lock:
+            if self.quota_epoch.get(tid, 0) != epoch:
+                return
+            self.quota_used[tid] = max(0, self.quota_used.get(tid, 0) - 1)
+            self.quota_pending[tid] = self.quota_pending.get(tid, 0) - 1
+
+    def remaining(self, token):
+        with self.lock:
+            return (max(0, token['quota_total'] - self.quota_used.get(token['id'], 0))
+                    if token['quota_total'] is not None else None)
+
+    def reset_quota(self, tid):
+        # 调用者在同一 RLock 内提交 DB reset，使 writer 与 reset 不会交错。
+        self.quota_epoch[tid] = self.quota_epoch.get(tid, 0) + 1
+        self.quota_used[tid] = self.quota_pending[tid] = 0
 
     def apis_of_system(self, system_id) -> list:
         """某系统下的全部 API 快照（按 id 升序）——管理端系统详情页用。"""
@@ -143,16 +191,22 @@ class LogWriter:
 
     def __init__(self, app):
         self.app = app
-        self.q: queue.Queue = queue.Queue()
+        self.q: queue.Queue = queue.Queue(maxsize=10000)
         self._stop = threading.Event()
         self._started = False
         self._lock = threading.Lock()
+        self._thread = None
+        self.dropped = self.failed = self.persisted = 0
+        self._registry = None
 
     def ensure_started(self):
         with self._lock:
             if not self._started:
                 self._started = True
-                threading.Thread(target=self._run, name='apihub-writer', daemon=True).start()
+                from app.db import db
+                self._registry = db.session
+                self._thread = threading.Thread(target=self._run, name='apihub-writer', daemon=True)
+                self._thread.start()
 
     def log(self, **entry):
         if not self._started:
@@ -160,12 +214,12 @@ class LogWriter:
         try:
             self.q.put_nowait(entry)
         except queue.Full:
-            pass
+            with self._lock:
+                self.dropped += 1
 
     def _run(self):
-        from sqlalchemy import insert
-        from app.db import db
-        while not self._stop.is_set():
+        from sqlalchemy import insert, update, case
+        while not self._stop.is_set() or not self.q.empty():
             batch = []
             try:
                 batch.append(self.q.get(timeout=self.FLUSH_INTERVAL_S))
@@ -175,30 +229,59 @@ class LogWriter:
                     batch.append(self.q.get_nowait())
             except queue.Empty:
                 pass
-            if batch:
+            state = getattr(self.app.state, 'apihub', None)
+            if batch or self._has_pending(state):
+                sess = self._registry
                 try:
                     # Core 批量插入（较 ORM add_all 免实例化/级联开销，高压落库更省）
                     now = _utcnow()
-                    db.session.execute(insert(ApihubCallLog),
-                                       [{**e, 'created_at': now} for e in batch])
-                    token_ids = {e.get('token_id') for e in batch if e.get('token_id')}
-                    state = self.app.state.apihub
-                    for tid in token_ids:
-                        row = db.session.get(ApihubToken, tid)
-                        if row is not None:
-                            row.quota_used = state.store.quota_used.get(tid, row.quota_used)
-                            row.last_used_at = now
-                    db.session.commit()
+                    with state.store.lock:
+                        if batch:
+                            sess.execute(insert(ApihubCallLog), [{**e, 'created_at': now} for e in batch])
+                        pending = {tid: n for tid, n in state.store.quota_pending.items() if n}
+                        for tid, delta in pending.items():
+                            value = ApihubToken.quota_used + delta
+                            sess.execute(update(ApihubToken).where(ApihubToken.id == tid).values(
+                                quota_used=case((value < 0, 0), else_=value), last_used_at=now))
+                        sess.commit()
+                        for tid, delta in pending.items():
+                            state.store.quota_pending[tid] -= delta
+                    self.persisted += len(batch)
                 except Exception:
+                    self.failed += len(batch)
                     try:
-                        db.session.rollback()
+                        sess.rollback()
                     except Exception:
                         pass
                 finally:
-                    db.session.remove()
+                    sess.remove()
+                    for _ in batch:
+                        self.q.task_done()
 
-    def stop(self):
+    @staticmethod
+    def _has_pending(state):
+        if state is None:
+            return False
+        with state.store.lock:
+            return any(state.store.quota_pending.values())
+
+    def flush(self, timeout=5.0):
+        self.ensure_started()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            state = getattr(self.app.state, 'apihub', None)
+            if self.q.unfinished_tasks == 0 and not self._has_pending(state):
+                return True
+            self._stop.wait(0.01)
+        return False
+
+    def stop(self, timeout=5.0):
+        deadline = time.monotonic() + timeout
+        drained = self.flush(timeout)
         self._stop.set()
+        if self._thread:
+            self._thread.join(max(0, deadline - time.monotonic()))
+        return drained and (self._thread is None or not self._thread.is_alive())
 
 
 class ApiHubState:
@@ -233,10 +316,20 @@ class ApiHubState:
         return due
 
 
+_STATE_LOCK = threading.RLock()
+
+
 def get_state(app) -> ApiHubState:
     # state 持真实 app 对象（FastAPI 无代理问题，writer/探活等后台线程直接用引用）
     state = getattr(app.state, 'apihub', None)
     if state is None:
-        state = ApiHubState(app)
-        app.state.apihub = state
+        with _STATE_LOCK:
+            state = getattr(app.state, 'apihub', None)
+            if state is None:
+                from app.db import db
+                try:
+                    state = ApiHubState(app)
+                    app.state.apihub = state
+                finally:
+                    db.session.remove()
     return state

@@ -5,6 +5,8 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { getDataIdentity } from '@/shared/dataEpoch'
 
 import {
   todoTasks, todoDeleteTask, todoUpdateTask, todoMigrateTask,
@@ -84,7 +86,7 @@ function ShelvedList({ items, onChanged, toast }) {
 export default function BacklogView({ toast }) {
   const [sp] = useSearchParams()
   const tab = ['inbox', 'migrate', 'shelved'].includes(sp.get('bsub')) ? sp.get('bsub') : 'inbox'
-  const [tasks, setTasks] = useState(null)
+  const [page, setPage] = useState(1)
   const [migrations, setMigrations] = useState([])
   const [shelved, setShelved] = useState([])
   const [formOpen, setFormOpen] = useState(false)
@@ -95,13 +97,18 @@ export default function BacklogView({ toast }) {
   const { categories } = useTodoCategories()
   const { labels } = useQuadrantText()
 
-  const load = useCallback(async () => {
-    try {
-      setTasks(await todoTasks({ inbox: true }))
-    } catch (err) {
-      toast(err instanceof Error ? err.message : '加载待办池失败', 'error')
-    }
-  }, [toast])
+  const taskQuery = useQuery({
+    queryKey: ['todo-inbox', getDataIdentity(), page],
+    queryFn: ({ signal }) => todoTasks({ inbox: true, page, page_size: 50 }, { signal }),
+    enabled: tab === 'inbox',
+  })
+  const tasks = taskQuery.data?.items || (taskQuery.isPending ? null : [])
+  const total = taskQuery.data?.total || 0
+  const load = async () => {
+    const result = await taskQuery.refetch()
+    if (result.data && result.data.items.length === 0 && page > 1) setPage(value => value - 1)
+    return result
+  }
 
   // 迁移池/搁置计划计数与内容共用一份数据，供标签展示
   const loadMigrations = useCallback(() => {
@@ -112,10 +119,9 @@ export default function BacklogView({ toast }) {
   }, [])
 
   useEffect(() => {
-    load()
     loadMigrations()
     loadShelved()
-  }, [load, loadMigrations, loadShelved])
+  }, [loadMigrations, loadShelved])
 
   const removeTask = async task => {
     try {
@@ -140,13 +146,14 @@ export default function BacklogView({ toast }) {
   }
 
   const TABS = [
-    { key: 'inbox', label: `待办池（${tasks?.length ?? 0}）` },
+    { key: 'inbox', label: `待办池（${total}）` },
     { key: 'migrate', label: `迁移池（${migrations.length}）` },
     { key: 'shelved', label: `搁置计划（${shelved.length}）` },
   ]
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
+      {taskQuery.error && <div role="alert" className="mb-3 text-sm text-red-500">{taskQuery.error.message}</div>}
       {/* Tab 行 + 快速添加 */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <h2 className="text-sm font-medium">{TABS.find(t => t.key === tab)?.label}</h2>
@@ -188,6 +195,11 @@ export default function BacklogView({ toast }) {
               </div>
             </div>
           )}
+          {total > 50 && <nav aria-label="待办池分页" className="flex gap-4 justify-center text-sm my-4">
+            <button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="disabled:opacity-30">上一页</button>
+            <span>{page} / {Math.ceil(total / 50)} · {total} 条</span>
+            <button type="button" disabled={page * 50 >= total} onClick={() => setPage(value => value + 1)} className="disabled:opacity-30">下一页</button>
+          </nav>}
         </>
       )}
 

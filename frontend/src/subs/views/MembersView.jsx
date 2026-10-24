@@ -109,7 +109,7 @@ export default function MembersView({ dark, toast }) {
     }
     const d = editing === 'new'
       ? await subsCreateMember(payload)
-      : await subsUpdateMember(editing.id, payload)
+      : await subsUpdateMember(editing.id, { ...payload, revision: editing.revision })
     setSubmitting(false)
     if (d.success) { setEditing(null); toast(editing === 'new' ? '创建成功' : '更新成功'); load() }
     else toast(d.message || '操作失败', 'error')

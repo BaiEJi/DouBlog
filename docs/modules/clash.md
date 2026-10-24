@@ -5,7 +5,7 @@
 
 ## 1. 模块契约（app/clash/__init__.py）
 
-- 导出 `router`（17 端点，/api/clash/*，router 级 require_basic + 信封，处理器全部 sync def——subprocess 阻塞数秒，FastAPI 自动扔线程池不占事件循环）；无表、无后台线程（不需要 start_background / ensure_migrations，不进 MODULES_WITH_DB）
+- 导出 `router`（/api/clash/*，router 级 require_basic + 信封）；短 REST/命令通过异步包装交给 `clash-api` SDK 池（16 workers），完整操作计入 runtime write admission，取消 HTTP 等待也要等待底层操作结束后才释放；SSE 采用独立有界订阅，不占该池。无表、不进 MODULES_WITH_DB；start/stop_background 管理按需实时流停止事件，无常驻调度线程。
 
 ## 2. 安装检测与置灰
 
@@ -99,7 +99,20 @@ Windows 执行本模块测试或启动服务前，应将已安装 Git 的 `bin` 
 - 系统代理开关写的是 mixin `_custom.system-proxy.enable` + 子进程环境变量；**对已开终端的 env 不生效**（与 clashctl `clashproxy` 在新 shell 生效的语义一致）
 - `clashsub update --auto` 依赖 crontab；`--convert` 依赖本地 subconverter
 - **订阅下载强制直连**（strip_proxy）：若订阅域名必须经代理才可达，Web 端会下载失败（与终端手动 `clashsub add` 行为可能不同——后者跟随会话 env）；当前环境直连可达性优于本机代理出口
-- 控制器层为 REST 轮询（非 zashboard 的 WebSocket 流）：连接/流量 2s、代理组 15s 粒度刷新；PATCH configs 为运行时态（重启内核后回落到配置文件值）
+- 连接/流量优先认证 SSE 桥接 mihomo 原生 WebSocket，能力或传输失败可回退 2s REST；代理组 15s 单次在途轮询；隐藏页面停止流及轮询。PATCH configs 为运行时态（重启内核后回落到配置文件值）
 - 单用户本机工具：接口未做频率限制，认证与其他模块一致（require_basic）
 
 > 2026-10-16 性能：runtime.yaml 解析改走 libyaml C（shared/yamlfast.CSafeLoader）——此前连接页 2s 轮询每次纯 Python 解析 40-147KB 耗 0.3-1.2s CPU（持 GIL 拖累全进程），现 ~8.4×；控制器响应解析同步换 orjson。
+
+
+## 2026-10-21 配置与实时流优化
+
+- runtime.yaml 以路径、文件 id、mtime/ctime 纳秒和大小缓存（最多 16 个版本），原子替换或修改即失效；缓存只保留后端。GET 控制器连接不再重复解析大 YAML。全局操作锁面向同一外部安装，串行启停、配置/日志级别、订阅及升级，避免多命令交错。
+- mixin 先检查 4 MiB 与 YAML 对象，再原子替换，随后调用原 clashctl 合并重启。成功返回 `file_saved:true/runtime_applied:true`；应用失败明确报“配置已保存，内核应用失败”，错误 details 区分两个阶段，文件不会被半写。
+- 新增认证 GET `/api/clash/controller/connections/events`，Content-Type=text/event-stream。先以 Bearer secret 在后端尝试 `/connections?interval=2000` 原生 WebSocket，首个合法快照才发送 `event:mode {mode:websocket}`；能力缺失/失败发送 polling 并回退 2s REST。数据事件为 `connections`，采用现有 REST 裁剪形状；控制器不可达发送 status。secret 不放 URL、不回传浏览器。
+- 每 app 最多 8 个订阅、WebSocket 缓冲 2 帧/单帧 8 MiB、握手 3s/读 5s/关闭 1s；取消/停止在 finally 归还订阅槽。使用 uvicorn[standard] 已有 websockets，缺失或版本能力不足时回退，不新增外部服务。
+- 浏览器 EventSource 中断可回退公共 usePolling；隐藏、卸载、数据库切换关闭订阅。代理、运行配置、日志轮询传 AbortSignal，单次在途且后台暂停。
+- Windows 已有 Git Bash 回退：如果 PATH 解析到 System32 的 WSL stub，依据已找到 git.exe 的安装位置查现有 bin/bash.exe，不写死某台机器路径。
+- `tests/clash/test_reliability.py` 覆盖文件替换缓存失效、配置已保存但应用失败、命令串行、HTTP 取消仍保留操作 admission、真正本机 WebSocket 鉴权/数据/关闭及 REST 回退/停止。沙箱外隔离假 clashctl 与本机控制器专项 **41 项通过**，无真实代理操作。
+- `frontend/tools/test-platform-optimization.mjs` 在隔离浏览器中验证两条回退路径并截图明暗主题：浏览器 SSE 断流，以及控制器缺少原生 WebSocket；两者均继续展示真实本机 mock 的 300 条连接。
+- 原生协议依据：[mihomo connections 官方实现](https://github.com/MetaCubeX/mihomo/blob/Meta/hub/route/connections.go)；Python 客户端遵循 [websockets 官方接口](https://websockets.readthedocs.io/en/stable/reference/asyncio/client.html)。

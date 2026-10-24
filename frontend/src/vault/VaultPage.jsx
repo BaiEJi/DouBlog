@@ -1,10 +1,15 @@
+import { clearVaultClipboard } from './components/clipboard'
 /**
  * Digital Vault 主页面 /vault
  * 状态机：loading → setup（初始化）/ locked（锁屏）→ unlocked（三面板主界面）
  * 零知识：VEK 仅存内存（不可导出 CryptoKey）；锁定即清除；重载/关浏览器自动锁定。
  */
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from 'react'
 import { useModuleNavigation } from '../shared/module-navigation'
+import VirtualList from '../shared/VirtualList'
+import { subscribeDataEpoch } from '../shared/dataEpoch'
+import { createVaultSession, decryptBatches } from './components/session'
+import { clearPwnedCache } from './components/hibp'
 import {
   vaultGetAccount, vaultInitAccount, vaultRotateKeys,
   vaultListItems, vaultCreateItem, vaultUpdateItem, vaultMarkUsed,
@@ -12,7 +17,7 @@ import {
 } from './api'
 import {
   createVaultMaterial, unlockVault, rewrapVaultKey, encryptBlob, decryptBlob,
-  generateRecoveryKey,
+  generateRecoveryKey, cancelVaultCrypto,
 } from './components/crypto'
 import {
   itemMatches, domainOf, extractIdentities, analyzeSecurity, daysAgo, expiryInfo,
@@ -25,7 +30,7 @@ import ItemEditor from './components/ItemEditor'
 import Generator from './components/Generator'
 import SecurityCenter from './components/SecurityCenter'
 import CategoriesView from './components/CategoriesView'
-import PwsvcView from './components/PwsvcView'
+const PwsvcView = lazy(() => import('./components/PwsvcView'))
 
 const LOCK_OPTIONS = [
   { key: '5m', label: '5 分钟', ms: 5 * 60000 },
@@ -46,6 +51,7 @@ function loadPrefs() {
     return {
       lock: localStorage.getItem('vault_lock') || '15m',
       clipboard: localStorage.getItem('vault_clipboard') || '30s',
+      externalIcons: localStorage.getItem('vault_external_icons') === 'true',
     }
   } catch { return { lock: '15m', clipboard: '30s' } }
 }
@@ -61,6 +67,9 @@ export default function VaultPage() {
   const [phase, setPhase] = useState('loading')
   const [account, setAccount] = useState(null)
   const vekRef = useRef(null)
+  const [session] = useState(createVaultSession)
+  const reloadGeneration = useRef(0)
+  const [syncError, setSyncError] = useState('')
   const [items, setItems] = useState([])
 
   const [section, setSection] = useState('overview')
@@ -84,23 +93,37 @@ export default function VaultPage() {
 
   // ─── 初始化检查 ────────────────────────────────────────
   useEffect(() => {
+    let alive = true
     vaultGetAccount().then(({ status, data }) => {
+      if (!alive) return
       if (status === 200 && data.success) {
         setAccount(data.data)
         setPhase('locked')
-      } else {
+      } else if (status === 404) {
         setPhase('setup')
+      } else {
+        setSyncError(data.message || '读取密码库失败'); setPhase('error')
       }
-    }).catch(() => setPhase('setup'))
+    }).catch(error => { if (alive) { setSyncError(error.message); setPhase('error') } })
+    return () => { alive = false }
   }, [])
 
   // ─── 自动锁定 ──────────────────────────────────────────
   const lockNow = useCallback(() => {
+    session.invalidate(); reloadGeneration.current += 1
+    cancelVaultCrypto(); clearPwnedCache(); clearVaultClipboard()
     vekRef.current = null      // 清除内存中的 VEK
     setItems([]); setSelectedId(null); setEditing(null)
-    setGenOpen(false); setSettingsOpen(false)
+    setGenOpen(false); setSettingsOpen(false); setPaletteOpen(false); setConfirmPurge(null)
+    setQuery(''); setBusy(false); setSyncError('')
     setPhase('locked')
-  }, [])
+  }, [session])
+
+  useEffect(() => {
+    const activeSession = session
+    const unsubscribe = subscribeDataEpoch(lockNow)
+    return () => { unsubscribe(); activeSession.invalidate(); reloadGeneration.current += 1; vekRef.current = null; cancelVaultCrypto(); clearPwnedCache() }
+  }, [lockNow, session])
 
   useEffect(() => {
     if (phase !== 'unlocked') return
@@ -124,61 +147,71 @@ export default function VaultPage() {
   const reloadItems = useCallback(async (vek) => {
     const key = vek || vekRef.current
     if (!key) return
-    const decryptAll = async (list) => {
-      const out = []
-      for (const it of list) {
-        try {
-          out.push({ ...it, data: await decryptBlob(key, it.blob) })
-        } catch (e) { console.error('条目解密失败 id=' + it.id) }
-      }
-      return out
-    }
+    const token = session.current(), load = ++reloadGeneration.current
+    const current = () => session.isCurrent(token) && load === reloadGeneration.current && vekRef.current === key
     const liveRes = await vaultListItems(false)
-    if (liveRes.success) setItems(await decryptAll(liveRes.data.items))
-  }, [])
+    if (!current()) return
+    if (!liveRes.success) throw new Error(liveRes.message || '读取条目失败')
+    const result = await decryptBatches(liveRes.data.items, async it => ({ ...it, data: await decryptBlob(key, it.blob) }), {
+      isCurrent: current, onBatch: batch => { if (current()) setItems(batch) },
+    })
+    if (current() && result) { setItems(result); setSyncError(result.length < liveRes.data.items.length ? `${liveRes.data.items.length - result.length} 个条目解密失败；密文仍保留，请检查备份。` : '') }
+  }, [session])
 
   const unlock = async (secret, isRecovery) => {
+    const token = session.begin()
     const vek = await unlockVault(account, secret, isRecovery)  // 密码错误会抛错
+    session.assert(token)
     vekRef.current = vek
-    await reloadItems(vek)
     setPhase('unlocked')
+    try { await reloadItems(vek) }
+    catch (error) { if (session.isCurrent(token)) setSyncError('读取条目失败：' + error.message) }
+    session.assert(token)
   }
 
   // ─── 条目操作 ──────────────────────────────────────────
   const saveItem = async (data, existing) => {
+    const token = session.current(), key = vekRef.current
+    if (!key) return
     setBusy(true)
     try {
-      const blob = await encryptBlob(vekRef.current, data)
+      const blob = await encryptBlob(key, data)
+      session.assert(token)
       const meta = { blob, favorite: !!existing?.favorite, password_updated_at: data.password_updated_at }
       const res = existing ? await vaultUpdateItem(existing.id, meta) : await vaultCreateItem(meta)
+      session.assert(token)
+      if (!res.success) throw new Error(res.message || '保存失败')
       if (res.success) await reloadItems()
       setEditing(null)
       // 类别页新建后回到类别表（其余场景选中新条目进详情）
       if (res.success) setSelectedId(section === 'categories' ? null : res.data.id)
-    } finally { setBusy(false) }
+    } finally { if (session.isCurrent(token)) setBusy(false) }
   }
 
   const toggleFavorite = async (item) => {
+    const token = session.current()
     const res = await vaultUpdateItem(item.id, { blob: item.blob, favorite: !item.favorite })
-    if (res.success) {
+    if (res.success && session.isCurrent(token)) {
       setItems(prev => prev.map(x => x.id === item.id ? { ...x, favorite: !item.favorite } : x))
     }
   }
 
   const selectItem = (item) => {
+    const token = session.current()
     setSelectedId(item.id)
     vaultMarkUsed(item.id).then(res => {
-      if (res.success) setItems(prev => prev.map(x => x.id === item.id ? { ...x, last_used_at: res.data.last_used_at } : x))
+      if (res.success && session.isCurrent(token)) setItems(prev => prev.map(x => x.id === item.id ? { ...x, last_used_at: res.data.last_used_at } : x))
     }).catch(() => {})
   }
 
   // 回收站已移除：删除即永久删除（密文一并销毁），先弹确认
   const requestDelete = (item) => setConfirmPurge(item)
   const doPurge = async () => {
+    const token = session.current()
     const item = confirmPurge
     setConfirmPurge(null)
     const res = await vaultPurgeItem(item.id)
-    if (res.success) { setSelectedId(null); await reloadItems() }
+    if (res.success && session.isCurrent(token)) { setSelectedId(null); await reloadItems() }
   }
 
   // ─── Command Palette (Ctrl/Cmd+K) ─────────────────────
@@ -250,6 +283,7 @@ export default function VaultPage() {
   // ═══════════ 渲染 ═══════════
   return (
     <div className="min-h-[60vh] bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100">
+      {syncError && <div role="alert" className="mb-3 rounded-lg p-3 bg-red-500/10 text-sm text-red-700 dark:text-red-300">{syncError}{phase === 'error' && <button onClick={() => window.location.reload()} className="ml-3 underline">重试</button>}</div>}
       {phase === 'loading' && (
         <div className="min-h-[60vh] flex items-center justify-center text-sm text-stone-400">加载中…</div>
       )}
@@ -309,8 +343,8 @@ export default function VaultPage() {
                 {section === 'identities' && (
                   <IdentitiesView identities={identities} onPick={(idv) => { setSection('identity'); setFilterValue(`${idv.type}||${idv.value}`) }} />
                 )}
-                {section === 'security' && <SecurityCenter items={items} onSelect={selectItem} />}
-                {section === 'pwsvc' && <PwsvcView copier={copier} />}
+                {section === 'security' && <SecurityCenter items={items} onSelect={selectItem} vaultSession={session} />}
+                {section === 'pwsvc' && <Suspense fallback={<p className="text-sm text-stone-500 dark:text-stone-400">加载密码服务…</p>}><PwsvcView copier={copier} /></Suspense>}
               </main>
             ) : (
               <>
@@ -330,7 +364,7 @@ export default function VaultPage() {
                       <p className="py-16 text-center text-[12px] text-stone-400">
                         {query ? '没有匹配的条目' : '还没有条目'}
                       </p>
-                    ) : listItems.map(item => (
+                    ) : <VirtualList items={listItems} getKey={item => item.id} estimateSize={60} height="100%" renderItem={item => (
                       <button key={item.id} onClick={() => selectItem(item)}
                         className={'w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ' + (selectedId === item.id
                           ? 'bg-black/[0.045] dark:bg-white/[0.06]'
@@ -351,7 +385,7 @@ export default function VaultPage() {
                           {(item.data.urls?.[0]?.value ? domainOf(item.data.urls[0].value) : '')}
                         </span>
                       </button>
-                    ))}
+                    )} />}
                   </div>
                 </section>
 
@@ -371,6 +405,7 @@ export default function VaultPage() {
                       item={selectedItem}
                       copier={copier}
                       vek={vekRef.current}
+                      vaultSession={session}
                       categoryLabel={labelOf}
                       onEdit={() => setEditing(selectedItem)}
                       onDelete={requestDelete}
@@ -823,11 +858,13 @@ function GeneralTab({ prefs, setPrefs, account }) {
   const set = (k, v) => {
     setPrefs(p => ({ ...p, [k]: v }))
     try {
-      localStorage.setItem(k === 'lock' ? 'vault_lock' : 'vault_clipboard', v)
+      localStorage.setItem(k === 'lock' ? 'vault_lock' : k === 'externalIcons' ? 'vault_external_icons' : 'vault_clipboard', v)
+      if (k === 'externalIcons') window.dispatchEvent(new Event('vault-icon-preference'))
     } catch {}
   }
   return (
     <div className="space-y-6">
+      <label className="flex items-start gap-2 text-sm text-stone-700 dark:text-stone-200"><input type="checkbox" checked={!!prefs.externalIcons} onChange={event => set('externalIcons', event.target.checked)} className="mt-1" /><span>加载外部站点图标<span className="block mt-1 text-xs text-stone-500 dark:text-stone-400">开启后会向 DuckDuckGo 图标服务发送条目域名；默认关闭。</span></span></label>
       <div>
         <label className="block text-[12px] font-medium text-stone-500 mb-1.5">自动锁定</label>
         <Select value={prefs.lock} onChange={v => set('lock', v)}

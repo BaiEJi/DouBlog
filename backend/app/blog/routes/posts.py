@@ -14,12 +14,14 @@ URL设计：
 """
 
 import json
+import hashlib
 import re
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, update
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.orm import defer
 from app.db import db, run_db
-from app.blog.models import Post, Workspace, AuditLog
+from app.blog.models import Post, Workspace, AuditLog, PostLink, BlogMutation
 from app.shared.timestamps import _iso
 from app.config import settings
 from app.shared.auth import require_basic
@@ -32,6 +34,11 @@ router = APIRouter(prefix='/api/posts', dependencies=[Depends(require_basic)])
 
 
 MAX_LEVEL = 2
+
+
+def _lock_workspace(session, workspace_id):
+    session.execute(update(Workspace).where(Workspace.id == workspace_id)
+                    .values(revision=Workspace.revision).execution_options(synchronize_session=False))
 
 
 async def _json_body(request: Request) -> dict:
@@ -154,7 +161,9 @@ def update_slug_for_subtree(post_id, session):
         post_id: 文章ID
         session: 数据库会话
     """
-    rows = session.query(Post.id, Post.name, Post.parent_id).filter(Post.id != ROOT_ID).all()
+    workspace = session.query(Post.workspace_id).filter(Post.id == post_id).scalar()
+    rows = session.query(Post.id, Post.name, Post.parent_id).filter(
+        Post.id != ROOT_ID, Post.workspace_id == workspace).all()
     by_id = {row.id: row for row in rows}
 
     # 收集受影响子树（栈遍历，等价收集整棵子树）
@@ -180,7 +189,7 @@ def update_slug_for_subtree(post_id, session):
             parts.insert(0, parent.name)
             current_id = parent.parent_id
         new_slug = '/' + '/'.join(parts)
-        session.query(Post).filter(Post.id == pid).update({'slug': new_slug})
+        session.query(Post).filter(Post.id == pid).update({'slug': new_slug, 'level': len(parts) - 1})
 
 
 def validate_slug(slug: str) -> bool:
@@ -223,8 +232,8 @@ async def get_posts(request: Request):
     def _impl():
         session = db.session
 
-        page = _query_int(request, 'page', 1)
-        page_size = min(_query_int(request, 'page_size', 20), settings.max_page_size)
+        page = max(1, _query_int(request, 'page', 1))
+        page_size = max(1, min(_query_int(request, 'page_size', 20), settings.max_page_size))
         workspace_id = _query_int(request, 'workspace_id')
         parent_id = _query_int(request, 'parent_id')
         status = request.query_params.get('status')
@@ -253,10 +262,12 @@ async def get_posts(request: Request):
 
         query = query.order_by(Post.is_top.desc(), Post.id.asc())
 
-        total = query.count()
+        # COUNT has no ordering. Counting the full ordered Post subquery would
+        # sort large deferred Markdown bodies just to calculate pagination.
+        total = query.order_by(None).with_entities(func.count(Post.id)).scalar()
         total_pages = (total + page_size - 1) // page_size
         # 列表不返回正文：defer 掉最大的 content 列，避免每页白白搬运 20 段 Markdown
-        items = query.options(defer(Post.content)).offset((page - 1) * page_size).limit(page_size).all()
+        items = query.options(defer(Post.content), defer(Post.children_order), defer(Post.links_hash)).offset((page - 1) * page_size).limit(page_size).all()
 
         post_ids = [item.id for item in items]
 
@@ -362,20 +373,22 @@ async def get_post_tree(request: Request):
         root_order = workspace._parse_children_order()
         if root_order:
             id_to_root = {r['id']: r for r in tree}
-            tree = [id_to_root[i] for i in root_order if i in id_to_root]
+            tree = [id_to_root[i] for i in root_order if i in id_to_root] + [node for node in tree if node['id'] not in root_order]
 
         def sort_children(node):
             order = node.get('children_order', [])
             if order and node.get('children'):
                 id_to_child = {c['id']: c for c in node['children']}
-                node['children'] = [id_to_child[i] for i in order if i in id_to_child]
+                node['children'] = [id_to_child[i] for i in order if i in id_to_child] + [child for child in node['children'] if child['id'] not in order]
             for child in node.get('children', []):
                 sort_children(child)
 
         for root in tree:
             sort_children(root)
 
-        return api_response(tree)
+        response = api_response(tree)
+        response.headers['X-Tree-Revision'] = str(workspace.revision)
+        return response
     return await run_db(_impl)
 
 
@@ -558,6 +571,8 @@ async def create_post(request: Request):
             if not workspace:
                 return api_response(None, 400, '知识库不存在')
 
+        _lock_workspace(session, workspace.id)
+        session.refresh(workspace)
         # name 字段：优先使用传入的 name，否则从 slug 解析
         name = data.get('name') or (data.get('slug', '').strip('/') or '').split('/')[-1]
 
@@ -646,6 +661,41 @@ async def create_post(request: Request):
 
 def _update_post(session, post, data, ip):
     """更新文章公共逻辑（ID 与 slug 两个入口共用）"""
+    _lock_workspace(session, post.workspace_id)
+    session.refresh(post)
+    expected = data.get('revision', post.revision)
+    if isinstance(expected, bool) or not isinstance(expected, int):
+        return api_response(None, 400, 'revision 必须为整数')
+    claimed = session.execute(update(Post).where(Post.id == post.id, Post.revision == expected)
+        .values(revision=expected + 1).execution_options(synchronize_session=False))
+    if claimed.rowcount != 1:
+        return api_response(None, 409, '文章已被修改，当前输入已保留，请读取最新版本后重试')
+    set_committed_value(post, 'revision', expected + 1)
+    if 'parent_id' in data:
+        parent_id = data['parent_id'] or ROOT_ID
+        target_level = 0
+        if parent_id != ROOT_ID:
+            parent = session.get(Post, parent_id)
+            if not parent:
+                return api_response(None, 400, '父文章不存在')
+            if parent.workspace_id != post.workspace_id:
+                return api_response(None, 400, '不能跨知识库移动文章')
+            target_level = parent.level + 1
+        tree = session.query(Post.id, Post.parent_id).filter(Post.workspace_id == post.workspace_id, Post.id != 0).all()
+        child_ids = {}
+        for row in tree:
+            child_ids.setdefault(row.parent_id, []).append(row.id)
+        stack, seen, deepest = [(post.id, 0)], set(), 0
+        while stack:
+            node_id, depth = stack.pop()
+            if node_id in seen:
+                return api_response(None, 400, '文章树存在循环')
+            seen.add(node_id); deepest = max(deepest, depth)
+            stack.extend((child, depth + 1) for child in child_ids.get(node_id, []))
+        if parent_id in seen:
+            return api_response(None, 400, '不能选择自己的子孙文章作为父文章')
+        if target_level + deepest > MAX_LEVEL:
+            return api_response(None, 400, '移动后子孙文章超过最大层级限制')
     if 'title' in data:
         post.title = data['title']
 
@@ -720,7 +770,7 @@ def _update_post(session, post, data, ip):
 
                 def is_descendant(post_id, potential_parent_id):
                     # 内存父链回溯（一次查询构建映射，替代逐级查库）
-                    rows = session.query(Post.id, Post.parent_id).filter(Post.id != ROOT_ID).all()
+                    rows = session.query(Post.id, Post.parent_id).filter(Post.id != ROOT_ID, Post.workspace_id == post.workspace_id).all()
                     parent_of = {row.id: row.parent_id for row in rows}
                     current_id = potential_parent_id
                     while current_id and current_id != ROOT_ID:
@@ -756,6 +806,7 @@ def _update_post(session, post, data, ip):
 
     return api_response({
         'id': post.id,
+        'revision': post.revision,
         'title': post.title,
         'name': post.name,
         'slug': post.slug,
@@ -832,6 +883,12 @@ async def update_post_by_slug(slug: str, request: Request):
 
 def _delete_post(session, post, recursive, ip, actor):
     """删除文章公共逻辑（ID 与 slug 两个入口共用）"""
+    from app.mindmap.services import lock_resource_deletion, unlink_post_maps
+    # 在任何 UPDATE 前与图谱关联取得同一资源锁；SQLite 先保留 writer，
+    # PostgreSQL 依照普通文章写入的 Workspace → Post 顺序锁行，避免反序。
+    lock_resource_deletion(Workspace, [post.workspace_id])
+    _lock_workspace(session, post.workspace_id)
+    session.refresh(post)
     # Detach links before any PostgreSQL ON DELETE SET NULL runs, preserving a
     # revision and audit entry for every affected active map in this transaction.
     deleted_post_ids = [post.id]
@@ -844,7 +901,6 @@ def _delete_post(session, post, recursive, ip, actor):
             child_ids = [child.id for child in children_to_delete]
             deleted_post_ids.extend(child_ids)
             pending.extend(child_ids)
-    from app.mindmap.services import lock_resource_deletion, unlink_post_maps
     lock_resource_deletion(Post, deleted_post_ids)
     unlink_post_maps(deleted_post_ids, actor=actor, ip=ip)
     # 从父节点（或知识库顶级）的 children_order 中移除
@@ -874,6 +930,7 @@ def _delete_post(session, post, recursive, ip, actor):
         for child in children:
             child.parent_id = ROOT_ID
             child.level = 0
+            update_slug_for_subtree(child.id, session)
             if ws:
                 order = ws._parse_children_order()
                 if child.id not in order:
@@ -964,23 +1021,47 @@ async def reorder_children(request: Request):
 
         parent_id = data.get('parent_id', ROOT_ID)
         new_order = data.get('children_order', [])
-
+        if not isinstance(new_order, list) or any(isinstance(item, bool) or not isinstance(item, int) for item in new_order) or len(set(new_order)) != len(new_order):
+            return api_response(None, 400, 'children_order 必须为不重复的整数数组')
         if parent_id == ROOT_ID:
             workspace_id = data.get('workspace_id')
-            ws = session.query(Workspace).filter(Workspace.id == workspace_id).first() if workspace_id \
-                else session.query(Workspace).order_by(Workspace.id.asc()).first()
-            if not ws:
+            owner = session.get(Workspace, workspace_id) if workspace_id else session.query(Workspace).order_by(Workspace.id).first()
+            if owner is None:
                 return api_response(None, 404, '知识库不存在')
-            ws.children_order = json.dumps(new_order)
+            workspace_id = owner.id
         else:
-            parent = session.query(Post).filter(Post.id == parent_id).first()
-            if not parent:
+            owner = session.get(Post, parent_id)
+            if owner is None or owner.id == 0:
                 return api_response(None, 404, '父节点不存在')
-            set_children_order(parent, new_order)
-
+            workspace_id = owner.workspace_id
+        _lock_workspace(session, workspace_id)
+        session.refresh(owner)
+        mutation_id = data.get('mutation_id')
+        fingerprint = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        if mutation_id is not None:
+            if not isinstance(mutation_id, str) or not 8 <= len(mutation_id) <= 64:
+                return api_response(None, 400, 'mutation_id 必须为8..64字符')
+            receipt = session.get(BlogMutation, mutation_id)
+            if receipt:
+                return api_response(receipt.result, 200, '排序更新成功') if receipt.fingerprint == fingerprint else api_response(None, 409, 'mutation_id 已被其他内容使用')
+        siblings = session.query(Post.id).filter(Post.workspace_id == workspace_id, Post.id != 0)
+        siblings = siblings.filter(or_(Post.parent_id == 0, Post.parent_id.is_(None))) if parent_id == 0 else siblings.filter(Post.parent_id == parent_id)
+        if {row.id for row in siblings} != set(new_order):
+            return api_response(None, 409, '同级文章已变化，请刷新树后重试排序')
+        expected = data.get('revision', owner.revision)
+        if isinstance(expected, bool) or not isinstance(expected, int):
+            return api_response(None, 400, 'revision 必须为整数')
+        model = type(owner)
+        changed = session.execute(update(model).where(model.id == owner.id, model.revision == expected)
+            .values(revision=expected + 1, children_order=json.dumps(new_order))
+            .execution_options(synchronize_session=False))
+        if changed.rowcount != 1:
+            return api_response(None, 409, '排序已被修改，请刷新树后重试')
+        result = {'revision': expected + 1, 'children_order': new_order}
+        if mutation_id:
+            session.add(BlogMutation(mutation_id=mutation_id, fingerprint=fingerprint, result=result))
         session.commit()
-
-        return api_response(None, 200, '排序更新成功')
+        return api_response(result, 200, '排序更新成功')
     return await run_db(_impl)
 
 
@@ -1061,26 +1142,19 @@ async def get_post_backlinks(post_id: int):
         先按英文名(name)精确匹配，再按标题(title)精确匹配
     """
     def _impl():
-        target = db.session.query(Post).filter(Post.id == post_id).first()
+        target = db.session.query(Post).options(defer(Post.content)).filter(Post.id == post_id).first()
         if not target:
             return api_response(None, 404, '文章不存在')
 
-        candidates = (db.session.query(Post)
-                      .filter(Post.workspace_id == target.workspace_id,
-                              Post.id != target.id,
-                              Post.content.like('%[[%'))
-                      .all())
-
-        items = []
-        for cand in candidates:
-            targets = [m.group(1) for m in WIKI_LINK_RE.finditer(cand.content or '')]
-            linked = any(t.split('|')[0].strip() in (target.name, target.title) for t in targets)
-            if linked:
-                items.append({
-                    'id': cand.id,
-                    'title': cand.title,
-                    'name': cand.name,
-                    'summary': cand.summary or '',
-                })
+        keys = [target.name]
+        named = db.session.query(Post.id).filter(Post.workspace_id == target.workspace_id, Post.name == target.title, Post.id != 0).first()
+        first_title = db.session.query(func.min(Post.id)).filter(Post.workspace_id == target.workspace_id, Post.title == target.title, Post.id != 0).scalar()
+        if not named and first_title == target.id:
+            keys.append(target.title)
+        candidates = db.session.query(Post.id, Post.title, Post.name, Post.summary).join(
+            PostLink, PostLink.source_id == Post.id).filter(
+            PostLink.workspace_id == target.workspace_id, PostLink.target_text.in_(keys), Post.id != target.id
+        ).distinct().order_by(Post.id).all()
+        items = [{'id': row.id, 'title': row.title, 'name': row.name, 'summary': row.summary or ''} for row in candidates]
         return api_response({'items': items, 'total': len(items)})
     return await run_db(_impl)
