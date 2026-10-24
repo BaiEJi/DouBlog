@@ -1,5 +1,36 @@
 # DouBlog 前端架构文档
 
+## 思维导图模块（2026-10-20）
+
+`/mindmap` 是与 Todo/Vault 平级的独立模块，`/mindmap/:id` 为编辑器；门户、公共侧栏、
+路由识别及 Tailwind 显式扫描均已登记。继续使用统一 Cookie、`shared/client.js` 和公共桌面外壳。
+具体契约见 `docs/modules/mindmap.md`，选型与上游边界见 `docs/mindmap-selection.md`。
+
+- `mindmap/api.js` 是业务 HTTP 唯一入口；列表仅加载元数据，知识库文章关联按分页获取。
+- `Library.jsx` 管理创建/筛选/排序/分页/重命名/复制/删除及文件导入。
+- `Editor.jsx` 持有一次初始化的 imperative adapter；普通编辑调用原生命令，主题/面板变化不重建画布。
+- `Inspector.jsx` 提供节点格式、备注、标签、链接、图片、标记、九种布局、主题、大纲与历史。
+- `adapter.js` 隔离 `simple-mind-map@0.14.0-fix.3`，注册所需插件；高级导出按需加载。
+  采用基础文本格式，不接收 HTML 富文本；纯文本原样显示。`commit()` 在手动保存/导出/离开前
+  结束当前文字输入，避免未失焦的最后字符遗漏。聚焦分支编辑合并回完整文档后保存。
+- `core-text-measure.js` 针对锁定版本的逐字符 SVG 测量增加实例级 Canvas 换行缓存，最终仍
+  使用 SVG 实测尺寸；布局居中使用同一规范内容尺寸，避免极小缩放下SVG bbox失真造成框外文字。
+  节点全部渲染，未启用视窗裁剪。升级核心时须复核私有方法签名并重跑基准。
+- `clipboard.js` 在复制/多目标粘贴时重建节点和概要UID、映射内部关联线；保存快照清理失效
+  外链，核心原始数据保留以便撤销恢复。粘贴先验证完整文档，避免先修改后报错。
+- `data.js` 定义版本化 JSON 信封及入站校验；`saveController.js` 负责 900ms 防抖、单飞排队、
+  超时/网络重试复用 mutation_id、CAS 冲突停写、明确保存状态及浏览器草稿。保存期间的新修改
+  留在下一批；只有已确认版本才能清除对应草稿。旧基准版本的草稿只能另存新图，不能静默覆盖。
+
+只读模式允许导航/缩放/搜索/导出，禁止工具栏、快捷键与关联线修改；它是当前登录用户的查看模式，
+没有新增公开分享或第二套认证。明暗主题跟随系统，普通节点底色随主题调整；用户明确设置的颜色保留。
+小地图缓存布局坐标绘制 Canvas，平移时只更新视口框。卸载清理画布插件、事件、observer、计时器和 tooltip。
+
+`npm run test:mindmap` 使用 Node 内置测试器验证数据转换和保存状态机；真实浏览器脚本
+`test:mindmap:e2e` / `test:mindmap:core` 与 `bench:mindmap` 的环境和结果见模块文档及性能报告。
+最终功能证据和复现命令见 `docs/mindmap-verification.md`；5000节点全展开仍有明显布局与绘制瓶颈，
+不能声称达到100ms/60FPS，具体数值见 `docs/mindmap-performance.md`。
+
 > **技术栈**: React 19 + React Router 7 + Vite 8 + Tailwind CSS 4
 > **端口**: 60101（dev 与 preview 同端口）　**入口**: `frontend/src/main.jsx`
 > **本文档描述当前代码的真实架构；修改代码时必须同步更新本文档**（见 `AGENTS.md` 文档同步规则）
@@ -274,7 +305,7 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 - **vite 代理键必须用正则（2026-10-17 修复）**：`server.proxy` 的 `/api` 纯字符串前缀会把
   `/apihub` 页面路由也吞进代理（浏览器打开 /apihub 直接显示后端 404 JSON）——已改为
   `'^/api(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
-- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`），侧栏整体纵向滚动；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
+- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`），侧栏整体纵向滚动；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px；带 children 的激活分区菜单项右侧配折叠/展开按钮（SVG 雪佛龙图标，viewBox 0 0 20 20、stroke 1.5、w-4 h-4，收起态 rotate -90°，按钮 w-8 h-8 rounded-lg 图标档位，遵循 ui-baseline.md；2026-10-18 前为文本字符 `⌄`/`›`，渲染游离且档位不符，已修）。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；注册的 subtitle 不在公共侧栏显示；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
 - **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报

@@ -10,6 +10,7 @@ clashctl 复用层：所有能力经 bash source 真实的 clashctl 脚本执行
 """
 import os
 import re
+import shutil
 import subprocess
 
 import yaml
@@ -88,7 +89,10 @@ def run_clashctl(func: str, args=None, timeout=DEFAULT_TIMEOUT, strip_proxy=Fals
     strip_proxy=True 时从子进程环境移除 *_proxy（订阅下载用：不跟随会话代理，
     避免本机 clash 出口故障拖垮订阅更新；no_proxy=* 双保险）。
     """
-    argv = ['bash', '-c', f'. "$0"; {func} "$@"', script_path(), *(args or ())]
+    # Windows CreateProcess searches System32 before PATH for a bare "bash".
+    # Resolve PATH explicitly so a configured Git Bash wins over the WSL stub.
+    bash = shutil.which('bash') or 'bash'
+    argv = [bash, '-c', f'. "$0"; {func} "$@"', script_path(), *(args or ())]
     env = {**os.environ, 'TERM': 'dumb'}
     if strip_proxy:
         for key in _PROXY_ENV_KEYS:

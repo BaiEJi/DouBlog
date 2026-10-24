@@ -1,0 +1,20 @@
+{
+  "recordedAt": "2026-10-19T17:12:57.920Z",
+  "browser": "124.0.6367.91",
+  "checks": [
+    "uniform login and unauthorized API protection",
+    "create and open the real canvas",
+    "Inspector Ctrl S commits focused input before reporting saved",
+    "Inspector focused input survives reload through recovery draft",
+    "node edit autosaves and persists the actual document",
+    "reload recovers server-persisted content",
+    "read-only mode blocks editing and produces no saves",
+    "network failure is visible and does not claim saved",
+    "unsaved draft survives page exit and can be restored",
+    "revision conflict preserves both server and local versions",
+    "API JSON export/import is lossless and creates a distinct map",
+    "history restore creates a new version",
+    "no uncaught browser errors"
+  ],
+  "browserErrors": []
+}

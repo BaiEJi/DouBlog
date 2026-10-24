@@ -27,7 +27,7 @@
 | `backend.md` | 后端架构（模型/树设计/双数据库/中间件/测试） | 后端结构或行为变更 |
 | `frontend.md` | 前端架构（API 层/渲染管线/页面/构建） | 前端结构或渲染行为变更 |
 | `docs/fastapi-migration.md` | FastAPI 迁移规范：骨架契约/移植对照/表名映射/验收门槛 | 改骨架契约、模块包对外契约（router/start_background/ensure_migrations）、表名时 |
-| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog vault pwsvc sdklogs subs apihub system todo gamemap practice steamidler confcenter clash devtoolbox（assets / diary / bookmarks 已于 2026-10-17 并入 blog，分别见其「资产库子域」「日记子域」「书签子域」节） | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
+| `docs/modules/<模块>.md` | **每模块权威文档**（功能/模型/API 契约/要点/前端/测试/边界，2026-10 按代码生成）：blog vault pwsvc sdklogs subs apihub system todo gamemap mindmap practice steamidler confcenter clash devtoolbox（assets / diary / bookmarks 已于 2026-10-17 并入 blog，分别见其「资产库子域」「日记子域」「书签子域」节） | 模块行为变更时；根文档只保留全局架构，模块细节改这里 |
 | `docs/ui-baseline.md` | UI 一致性基线（字体/卡片/按钮/输入档位 + 暗色硬性检查） | 前端页面改动时对齐档位 |
 | `backend-prompt.md` | ⚠️ 历史存档（开发期 AI 提示词，**不更新**） | 永不（已标注历史） |
 | `frontend/README.md` | 前端子目录入口，指向根文档 | 仅当命令变化 |
@@ -89,7 +89,7 @@
 ```bash
 cd backend
 ./venv/Scripts/python.exe run.py            # 启动（60100，uvicorn 单进程，dev 自动 --reload）—— Windows Git Bash
-./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（653 用例，含 clash 34；并行 ≈2 分钟；xdist 已装入 venv）
+./venv/Scripts/python.exe -m pytest tests/ -q -n 8   # 测试（2026-10-20 实测772项通过，含mindmap87；本机约4.5分钟；xdist已装入venv）
 ./venv/Scripts/pip.exe install -r requirements.txt
 ```
 
@@ -171,6 +171,27 @@ bash shell/frontend/start.sh dev      # 开发模式
 4. **示例优先**：API 文档的示例应来自真实响应（curl 实测），不要手编
 
 ---
+
+## 思维导图模块（2026-10-20 新增，长期约定）
+
+- `app/mindmap/` + `src/mindmap/` 是与 todo/vault 平级的独立模块，路由 `/mindmap`、
+  `/mindmap/:id`，接口 `/api/mindmap`；模块文档 `docs/modules/mindmap.md`，选型依据
+  `docs/mindmap-selection.md`，实测记录 `docs/mindmap-performance.json`。
+- 三表 `mindmap_maps / mindmap_versions / mindmap_mutations`，统一数据库、登录、日志与
+  `run_db`；完整 JSON 文档保存，写入带 mutation_id，既有导图更新带 revision，SQL CAS 防旧版本覆盖。
+  每次成功更新保留完整历史；删除是不可见 tombstone，保留历史/审计/幂等回执，无自动清理。
+- 导入校验先于提交；文档 10 MiB、10000 树节点、128 层、1000 概要，JSON 信封与 HTTP 包装各另留 16 KiB；禁止重复 UID、循环/非法引用、原型键、
+  HTML 富文本及危险链接/图片。保真格式是 DouBlog JSON；Markdown/XMind 是有损交换格式。
+- 前端新增依赖锁定 `simple-mind-map@0.14.0-fix.3`（MIT，已进入低维护），只能通过
+  `mindmap/adapter.js` 访问。高级导出懒加载，不引入上游 Vue 示例或 Quill 富文本。
+  `core-text-measure.js` 使用锁定版本的私有文本测量扩展，升级必须核对并重跑浏览器基准。
+- 保存状态机只允许单次网络请求在途，超时重试复用 mutation_id；冲突停止自动写入。
+  浏览器 localStorage 只存未确认草稿，服务端数据库是持久化真源；离开前必须 commit 当前输入。
+- 固定 100/1000/5000 节点的基准必须全部展开，记录真实渲染节点数，不能开启视窗裁剪或
+  隐藏节点来声称通过。性能指标以实际报告为准，不把工具输出或组件宣传当作 60 FPS 保证。
+- 运行新增用例：`cd frontend && npm run test:mindmap`；浏览器测试及 QA 服务器命令见模块文档。
+- `AuthGate` 公开路由必须同步放行，避免上一次 401 状态把 `/login?next=/mindmap/...`
+  改写成 `next=/login`，丢失深链。
 
 ## 已知未修复问题（接手时注意，避免误判为新 bug）
 

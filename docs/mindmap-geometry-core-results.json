@@ -1,0 +1,848 @@
+{
+  "cases": [
+    {
+      "layout": "mindMap",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1398,
+        "top": 334,
+        "width": 128,
+        "height": 53,
+        "dir": "right",
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -742,
+          "translateY": 89.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -742,
+          "f": 89.5
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 150,
+          "height": 57
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "logicalStructure",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1398,
+        "top": 21,
+        "width": 128,
+        "height": 53,
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -742,
+          "translateY": 402.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -742,
+          "f": 402.5
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 150,
+          "height": 57
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "logicalStructureLeft",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 142,
+        "top": 21,
+        "width": 128,
+        "height": 53,
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": 514,
+          "translateY": 402.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": 514,
+          "f": 402.5
+        },
+        "group": {
+          "x": 636,
+          "y": 421.5,
+          "width": 150,
+          "height": 57
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "organizationStructure",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": -458,
+        "top": 735,
+        "width": 128,
+        "height": 53,
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": 1114,
+          "translateY": -311.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": 1114,
+          "f": -311.5
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 132,
+          "height": 75
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "catalogOrganization",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 291.25,
+        "top": 865,
+        "width": 128,
+        "height": 53,
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": 364.75,
+          "translateY": -441.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": 364.75,
+          "f": -441.5
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 132,
+          "height": 75
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "fishbone",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1507.2,
+        "top": 281,
+        "width": 128,
+        "height": 53,
+        "dir": "top",
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -851.2,
+          "translateY": 142.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -851.2,
+          "f": 142.5
+        },
+        "group": {
+          "x": 653.9999389648438,
+          "y": 421.5,
+          "width": 132,
+          "height": 75
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.4999389648438,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.4999389648438,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "timeline",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1161,
+        "top": 752.5,
+        "width": 128,
+        "height": 53,
+        "dir": "",
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -505.0000000000001,
+          "translateY": -329,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -505.0000000000001,
+          "f": -329
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 132,
+          "height": 75
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "timeline2",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1161,
+        "top": 752.5,
+        "width": 128,
+        "height": 53,
+        "dir": "bottom",
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -505.0000000000001,
+          "translateY": -329,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -505.0000000000001,
+          "f": -329
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 132,
+          "height": 75
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    },
+    {
+      "layout": "verticalTimeline",
+      "nodes": 25,
+      "failed": [],
+      "passed": true,
+      "sample": {
+        "uid": "bench-24",
+        "left": 1140.5,
+        "top": 675,
+        "width": 128,
+        "height": 53,
+        "dir": "right",
+        "transform": {
+          "scaleX": 1,
+          "scaleY": 1,
+          "shear": 0,
+          "rotate": 0,
+          "translateX": -484.5,
+          "translateY": -251.5,
+          "originX": 0,
+          "originY": 0,
+          "a": 1,
+          "b": 0,
+          "c": 0,
+          "d": 1,
+          "e": -484.5,
+          "f": -251.5
+        },
+        "group": {
+          "x": 654,
+          "y": 421.5,
+          "width": 150,
+          "height": 57
+        },
+        "textLocal": {
+          "width": 99,
+          "height": 36,
+          "rectInfo": {
+            "textContentWidth": 99,
+            "textContentHeight": 36,
+            "textContentWidthWithoutTag": 0
+          },
+          "bbox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentBBox": {
+            "x": 0,
+            "y": 0,
+            "w": 99,
+            "width": 99,
+            "h": 35.80000305175781,
+            "height": 35.80000305175781,
+            "x2": 99,
+            "y2": 35.80000305175781,
+            "cx": 49.5,
+            "cy": 17.900001525878906
+          },
+          "contentTransform": "matrix(1,0,0,1,14.5,8.5)"
+        },
+        "shape": {
+          "x": 656.5,
+          "y": 424,
+          "width": 127,
+          "height": 52
+        },
+        "text": {
+          "x": 670.5,
+          "y": 432,
+          "width": 99,
+          "height": 19
+        }
+      },
+      "metrics": {
+        "nodeCount": 25,
+        "renderedNodeCount": 25,
+        "scale": 1,
+        "textMeasure": {
+          "canvasMeasurements": 31,
+          "svgMeasurements": 51,
+          "cacheHits": 25,
+          "fallbacks": 0,
+          "layoutCorrections": 51
+        }
+      }
+    }
+  ],
+  "errors": [],
+  "passed": true
+}

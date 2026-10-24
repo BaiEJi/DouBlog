@@ -81,9 +81,17 @@
 - api.js：31 个函数走 apiFetch 信封 unwrap；门户 PortalPage 引其 `clashAvailability` 做卡片置灰
 - 提示统一 Toast（猫叫行）；删除两步确认（3.5s 自动撤销）
 
-## 7. 测试（tests/clash/，34 例）
+## 7. 测试（tests/clash/，35 例）
 
 conftest 搭**假 clashctl**（tmp 目录最小 bash 函数集：函数名/参数/退出码语义/ANSI 输出与真实一致，调用落 calls.log 供断言透传；BIN_YQ 为指向极简假脚本的变量路径，与真实 common.sh 形态一致；每次调用记录 proxy=yes|no 供直连断言）+ **假 mihomo 控制器**（线程 http.server：Bearer 鉴权、请求日志、emoji 组名路径编码、408 透传）；覆盖安装检测两态、未装 404、鉴权 401、启停往返、rc→enabled 语义、ANSI 剥离、失败透传、URL/id/secret/channel/log-level 校验（含注入尝试）、配置三读一写（写触发 merge-restart marker）、日志 tail 与 level 读、**订阅 add/update 剥离代理 env**、日志级别切换往返、订阅动作 flag 顺序；controller 层：形状裁剪（proxies/connections/rules/providers）、切换路径编码、单/整组延迟、configs PATCH 白名单、连接断开单条/全部、控制器不可达 503。
+
+### Windows 的 Bash 解析（2026-10-20）
+
+`run_clashctl` 先用 `shutil.which('bash')` 获取 PATH 中的完整可执行路径，再交给 subprocess；参数仍按 argv 传递，不拼接用户输入。Windows 的裸 `CreateProcess('bash')` 会先查 System32，可能命中仅提示安装 WSL 的 `C:\Windows\System32\bash.exe`，即使 PATH 已把 Git Bash 放在前面。完整路径消除了这次系统目录抢占；Linux 仍选择 PATH 中的 bash。
+
+Windows 执行本模块测试或启动服务前，应将已安装 Git 的 `bin` 和 `usr/bin` 加到当前进程 PATH 前部；本机位置为 `D:\Program Files\Git`，其他机器按实际安装目录调整。`PYTHONUTF8=1` 使测试脚本的中文/emoji 写入 UTF-8。该修复只负责选择已有 bash，不安装 WSL、Git 或 clashctl，也不表示 Tun/sudo 等 Linux 系统能力在原生 Windows 上可用。
+
+新增回归用例验证含空格的完整 shell 路径及参数边界；既有假 clashctl 的真实 bash 启停、状态、配置、订阅、代理环境用例继续覆盖执行行为。
 
 ## 8. 已知边界
 

@@ -1,0 +1,131 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import {pathToFileURL} from 'node:url'
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE_PATH?pathToFileURL(process.env.PLAYWRIGHT_MODULE_PATH).href:'playwright')
+const base=process.env.MINDMAP_TEST_BASE || 'http://127.0.0.1:60111'
+const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_PATH || undefined})
+const context=await browser.newContext({viewport:{width:1600,height:1000},acceptDownloads:true,permissions:['clipboard-read','clipboard-write']})
+const page=await context.newPage()
+page.setDefaultTimeout(15000)
+page.on('dialog',dialog=>dialog.accept())
+const errors=[],checks=[],created=[]
+page.on('pageerror',error=>errors.push(error.message))
+const mark=name=>{checks.push(name);console.log(`PASS ${name}`)}
+async function api(method,url,data) {
+  const response=await context.request.fetch(`${base}${url}`,{method,data})
+  const body=await response.json()
+  assert.ok(response.ok(),`${method} ${url}: ${JSON.stringify(body)}`)
+  return body.data
+}
+async function currentMap() {return api('GET',`/api/mindmap/maps/${page.url().split('/mindmap/')[1].split('?')[0]}`)}
+async function waitSaved(text) {
+  await page.waitForFunction(()=>document.querySelector('.mm-save-state')?.textContent.includes('已保存'))
+  if(text) assert.equal((await currentMap()).document.root.data.text,text)
+}
+async function editRoot(text) {
+  await page.locator('.smm-node').first().click()
+  await page.getByLabel('节点内容',{exact:true}).fill(text)
+  await page.getByLabel('节点内容',{exact:true}).press('Tab')
+}
+try {
+  assert.equal((await context.request.get(`${base}/api/mindmap/maps`)).status(),401)
+  await page.goto(`${base}/mindmap`)
+  await page.waitForURL('**/login?next=**')
+  await page.getByPlaceholder('用户名',{exact:true}).fill(process.env.MINDMAP_QA_USERNAME || 'mindmap-qa')
+  await page.getByPlaceholder('密码',{exact:true}).fill(process.env.MINDMAP_QA_PASSWORD || 'qa-only-isolated-db')
+  await page.getByRole('button',{name:'登 录',exact:true}).click()
+  await page.waitForURL('**/mindmap')
+  mark('uniform login and unauthorized API protection')
+  await page.getByRole('button',{name:'新建导图',exact:false}).click()
+  const name=`E2E 思维导图 ${Date.now()}`
+  await page.getByLabel('导图名称',{exact:true}).fill(name)
+  await page.getByRole('button',{name:'创建并开始编辑',exact:true}).click()
+  await page.waitForURL('**/mindmap/*')
+  await page.locator('.smm-node').first().waitFor()
+  const originalId=(await currentMap()).id
+  created.push(originalId)
+  mark('create and open the real canvas')
+  await page.locator('.smm-node').first().click()
+  const inspectorText=page.getByLabel('节点内容',{exact:true})
+  await inspectorText.fill('属性栏尚未失焦 · 快捷保存')
+  const shortcutSave=page.waitForResponse(response=>response.url().includes(`/api/mindmap/maps/${originalId}/document`)&&response.request().method()==='PUT'&&response.ok())
+  await inspectorText.press('Control+s')
+  await shortcutSave
+  await waitSaved('属性栏尚未失焦 · 快捷保存')
+  await page.reload()
+  await page.locator('.smm-node').first().waitFor()
+  assert.ok((await page.locator('.smm-node').first().textContent()).includes('属性栏尚未失焦 · 快捷保存'))
+  mark('Inspector Ctrl S commits focused input before reporting saved')
+  await page.locator('.smm-node').first().click()
+  await page.getByLabel('节点内容',{exact:true}).fill('属性栏尚未失焦 · 离页恢复')
+  await page.reload()
+  await page.getByRole('button',{name:'恢复草稿',exact:true}).waitFor()
+  await page.getByRole('button',{name:'恢复草稿',exact:true}).click()
+  await page.waitForTimeout(1300)
+  await waitSaved('属性栏尚未失焦 · 离页恢复')
+  mark('Inspector focused input survives reload through recovery draft')
+  await editRoot('自动保存测试')
+  await page.waitForTimeout(1300)
+  await waitSaved('自动保存测试')
+  assert.ok((await currentMap()).revision>1)
+  mark('node edit autosaves and persists the actual document')
+  await page.reload()
+  await page.locator('.smm-node').first().waitFor()
+  assert.ok((await page.locator('.smm-node').first().textContent()).includes('自动保存测试'))
+  mark('reload recovers server-persisted content')
+  await page.getByRole('button',{name:'只读查看',exact:true}).click()
+  assert.equal(await page.getByRole('button',{name:'子节点',exact:true}).isDisabled(),true)
+  const readVersion=(await currentMap()).revision
+  await page.locator('.smm-node').first().dblclick()
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(1100)
+  assert.equal((await currentMap()).revision,readVersion)
+  mark('read-only mode blocks editing and produces no saves')
+  await page.getByRole('button',{name:'进入编辑',exact:true}).click()
+  const saveRoute='**/api/mindmap/maps/*/document'
+  await page.route(saveRoute,route=>route.abort('internetdisconnected'))
+  await editRoot('网络中断草稿')
+  await page.getByText('离线 · 修改保留在本机',{exact:false}).first().waitFor()
+  assert.notEqual((await currentMap()).document.root.data.text,'网络中断草稿')
+  mark('network failure is visible and does not claim saved')
+  await page.reload()
+  await page.getByRole('button',{name:'恢复草稿',exact:true}).waitFor()
+  await page.unroute(saveRoute)
+  await page.getByRole('button',{name:'恢复草稿',exact:true}).click()
+  await page.waitForTimeout(1300)
+  await waitSaved('网络中断草稿')
+  mark('unsaved draft survives page exit and can be restored')
+  const remote=await currentMap()
+  remote.document.root.data.text='另一个编辑器写入'
+  await api('PUT',`/api/mindmap/maps/${remote.id}/document`,{document:remote.document,revision:remote.revision,mutation_id:crypto.randomUUID()})
+  await editRoot('版本冲突本机内容')
+  await page.getByText('服务器上已有新版本。本机修改仍保留，自动保存已暂停。',{exact:true}).waitFor()
+  assert.equal((await currentMap()).document.root.data.text,'另一个编辑器写入')
+  await page.getByRole('button',{name:'将本机修改另存为新图',exact:true}).click()
+  await page.waitForURL(url=>url.pathname!==`/mindmap/${originalId}`)
+  await page.locator('.smm-node').first().waitFor()
+  const copy=await currentMap()
+  created.push(copy.id)
+  assert.equal(copy.document.root.data.text,'版本冲突本机内容')
+  mark('revision conflict preserves both server and local versions')
+  const exported=await api('GET',`/api/mindmap/maps/${copy.id}/export`)
+  const imported=await api('POST','/api/mindmap/import',{payload:exported,mutation_id:crypto.randomUUID()})
+  created.push(imported.id)
+  assert.notEqual(imported.id,copy.id)
+  assert.deepEqual(imported.document,copy.document)
+  mark('API JSON export/import is lossless and creates a distinct map')
+  const history=await api('GET',`/api/mindmap/maps/${originalId}/versions`)
+  const current=await api('GET',`/api/mindmap/maps/${originalId}`)
+  const restored=await api('POST',`/api/mindmap/maps/${originalId}/restore`,{version:history.items.at(-1).revision,revision:current.revision,mutation_id:crypto.randomUUID()})
+  assert.ok(restored.revision>current.revision)
+  mark('history restore creates a new version')
+  assert.deepEqual(errors,[])
+  mark('no uncaught browser errors')
+} finally {
+  await fs.mkdir('../docs/shots-mindmap',{recursive:true})
+  await page.screenshot({path:'../docs/shots-mindmap/e2e-final.png',fullPage:true}).catch(()=>{})
+  await fs.writeFile('../docs/mindmap-e2e-results.json',JSON.stringify({recordedAt:new Date().toISOString(),browser:await browser.version(),checks,browserErrors:errors},null,2))
+  for(const id of created) {try {const map=await api('GET',`/api/mindmap/maps/${id}`);await api('DELETE',`/api/mindmap/maps/${id}`,{revision:map.revision,mutation_id:crypto.randomUUID()})}catch{/* preserve failing test evidence */}}
+  await browser.close()
+}

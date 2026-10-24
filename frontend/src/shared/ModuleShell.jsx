@@ -26,6 +26,7 @@ const MODULES = {
   practice: { title: '刷题', subtitle: '题解 · 代码 · 艾宾浩斯复习', accent: 'blue' },
   steamidler: { title: 'Steam 挂机', subtitle: '账号 · 挂机时长 · 日志', accent: 'slate', items: [{ key: 'accounts', label: '账号管理' }] },
   gamemap: { title: '剧情图谱', subtitle: '游戏 · 人物 · 关系', accent: 'violet' },
+  mindmap: { title: '思维导图', accent: 'teal', items: [{ key: 'library', label: '我的导图', to: '/mindmap' }] },
   vault: { title: '密码库', subtitle: '条目 · 安全中心 · 密码服务', accent: 'emerald' },
   apihub: { title: 'API Hub', subtitle: '系统 · API · 平台令牌', accent: 'amber' },
   logs: { title: '日志查询', subtitle: '检索 · 统计 · 告警', accent: 'sky', items: [{ key: 'search', label: '日志检索' }] },
@@ -108,7 +109,7 @@ function NavItem({ item, activeKey, onSelect, accent, depth = 0, keyMatch = true
       <div className="flex items-center gap-0.5">
         {item.to ? <Link to={item.to} className={cls} aria-current={selected ? 'page' : undefined}>{content}</Link>
           : <button type="button" className={cls} aria-current={selected ? 'page' : undefined} onClick={select}>{content}</button>}
-        {showChildren && <button type="button" className="shrink-0 w-7 h-8 rounded-lg text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5" aria-label={`${expanded ? '收起' : '展开'}${item.label}`} aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>{expanded ? '⌄' : '›'}</button>}
+        {showChildren && <button type="button" className="shrink-0 w-8 h-8 grid place-items-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors" aria-label={`${expanded ? '收起' : '展开'}${item.label}`} aria-expanded={expanded} onClick={() => setExpanded(v => !v)}><svg className={`w-4 h-4 transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`} viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 8l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></button>}
       </div>
       {showChildren && expanded && <div className="ml-4 pl-2 mt-1 border-l border-black/[0.07] dark:border-white/[0.08] space-y-1">{item.children.map(child => <NavItem key={child.key} {...{ item: child, activeKey, onSelect, accent, activeSection }} depth={depth + 1} keyMatch={childKeyMatch} />)}</div>}
     </div>

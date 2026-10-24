@@ -1,0 +1,237 @@
+{
+  "recordedAt": "2026-10-19T17:12:40.452Z",
+  "browser": "124.0.6367.91",
+  "device": {
+    "platform": "win32",
+    "arch": "x64",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11400 @ 2.60GHz"
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "headless": true,
+  "fixtureNodes": 25,
+  "cases": [
+    {
+      "name": "initial-render-and-root-delete-key-protection",
+      "passed": true,
+      "elapsedMs": 746.0393999999999,
+      "evidence": {
+        "nodeCount": 25,
+        "rendered": 25,
+        "errors": [
+          "不能删除或剪切根主题"
+        ]
+      }
+    },
+    {
+      "name": "keyboard-tab-adds-child-and-edit-commit",
+      "passed": true,
+      "elapsedMs": 736.4786999999999,
+      "evidence": {
+        "nodeCount": 26
+      }
+    },
+    {
+      "name": "double-click-F2-and-unfinished-input-commit",
+      "passed": true,
+      "elapsedMs": 977.6392000000001,
+      "evidence": {
+        "finalText": "F2未结束的最后字符✓"
+      }
+    },
+    {
+      "name": "copy-cut-paste-and-unique-ids",
+      "passed": true,
+      "elapsedMs": 1890.8551000000002,
+      "evidence": {
+        "nodeCount": 26,
+        "errors": []
+      }
+    },
+    {
+      "name": "related-subtree-copied-twice-remaps-edges-and-summaries",
+      "passed": true,
+      "elapsedMs": 1618.6283000000003,
+      "evidence": {
+        "normalIds": 13,
+        "summaryIds": 3,
+        "copiedRoots": [
+          "c2c9023b-4aa1-40c6-919b-56967685fed1",
+          "1f5ad104-416c-477e-9dc0-055a13795cb3"
+        ],
+        "errors": []
+      }
+    },
+    {
+      "name": "multi-target-native-paste-is-atomic-for-undo-and-redo",
+      "passed": true,
+      "elapsedMs": 1778.0830000000005,
+      "evidence": {
+        "normalIds": 13,
+        "summaryIds": 3
+      }
+    },
+    {
+      "name": "delete-cut-and-focused-undo-clean-dangling-snapshot-relations",
+      "passed": true,
+      "elapsedMs": 2349.855300000001,
+      "evidence": {
+        "focusedUndoRestoredExternalReference": true,
+        "cutPastePreservedInternalReference": true
+      }
+    },
+    {
+      "name": "cross-map-paste-drops-external-edges-and-rejects-invalid-content-before-mutation",
+      "passed": true,
+      "elapsedMs": 1899.607899999999,
+      "evidence": {
+        "crossMapExternalTargetsDropped": true,
+        "rejectedBeforeMutation": true
+      }
+    },
+    {
+      "name": "real-ctrl-multiselect-and-batch-style",
+      "passed": true,
+      "elapsedMs": 755.9709000000003,
+      "evidence": {
+        "selected": [
+          "check-21",
+          "check-22"
+        ]
+      }
+    },
+    {
+      "name": "reparent-order-and-cycle-rejection",
+      "passed": true,
+      "elapsedMs": 621.8503999999994,
+      "evidence": {
+        "destinationChildren": [
+          "check-24",
+          "check-9",
+          "check-10",
+          "check-11",
+          "check-12"
+        ],
+        "cycleRejected": true
+      }
+    },
+    {
+      "name": "undo-redo-retains-edited-data",
+      "passed": true,
+      "elapsedMs": 1070.6828999999998,
+      "evidence": {
+        "text": "撤销重做主题"
+      }
+    },
+    {
+      "name": "focus-edits-merge-full-tree-and-save-callback",
+      "passed": true,
+      "elapsedMs": 1156.9221000000016,
+      "evidence": {
+        "fullNodes": 25,
+        "callbackRoot": "check-0"
+      }
+    },
+    {
+      "name": "dark-pan-zoom-do-not-autosave",
+      "passed": true,
+      "elapsedMs": 943.0460999999996,
+      "evidence": {
+        "changesBefore": 0,
+        "changesAfter": 0,
+        "scale": 1
+      }
+    },
+    {
+      "name": "readonly-blocks-api-shortcuts-and-doubleclick",
+      "passed": true,
+      "elapsedMs": 716.3100000000013,
+      "evidence": {
+        "rejectedCalls": 2,
+        "nodeCount": 25,
+        "contentChanges": 0
+      }
+    },
+    {
+      "name": "markdown-multiple-headings-and-lists-preserved",
+      "passed": true,
+      "elapsedMs": 306.266599999999,
+      "evidence": {
+        "topHeadings": [
+          "第一部分",
+          "第二部分"
+        ]
+      }
+    },
+    {
+      "name": "svg-png-xmind-markdown-real-downloads-and-roundtrip",
+      "passed": true,
+      "elapsedMs": 1143.6471999999994,
+      "evidence": {
+        "downloads": [
+          {
+            "type": "svg",
+            "filename": "mindmap-core-25.svg",
+            "bytes": 30643
+          },
+          {
+            "type": "png",
+            "filename": "mindmap-core-25.png",
+            "bytes": 141871
+          },
+          {
+            "type": "xmind",
+            "filename": "mindmap-core-25.xmind",
+            "bytes": 9996,
+            "roundtripNodes": 25
+          },
+          {
+            "type": "markdown",
+            "filename": "mindmap-core-25.md",
+            "bytes": 338,
+            "roundtripNodes": 25
+          }
+        ],
+        "boundary": "Compare topic tree only; XMind/Markdown do not preserve complete styles, identity, relationships, or revision metadata."
+      }
+    },
+    {
+      "name": "destroy-rebuild-cleans-tooltip-editor-and-events",
+      "passed": true,
+      "elapsedMs": 2637.6261000000013,
+      "evidence": {
+        "cycles": [
+          {
+            "svg": 0,
+            "editBoxes": 0,
+            "tooltips": 0,
+            "styles": 0
+          },
+          {
+            "svg": 0,
+            "editBoxes": 0,
+            "tooltips": 0,
+            "styles": 0
+          },
+          {
+            "svg": 0,
+            "editBoxes": 0,
+            "tooltips": 0,
+            "styles": 0
+          },
+          {
+            "svg": 0,
+            "editBoxes": 0,
+            "tooltips": 0,
+            "styles": 0
+          }
+        ],
+        "finalNodes": 26
+      }
+    }
+  ],
+  "browserErrors": [],
+  "passed": true
+}

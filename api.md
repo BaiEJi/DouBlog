@@ -32,6 +32,7 @@
 - [22. Bookmarks API](#22-bookmarks-api书签与稍后阅读blog-子域23-端点4-表-bookmarks_)
 - [23. 错误码与数据模型](#23-错误码与数据模型)
 - [24. 开发者工具箱 API](#24-开发者工具箱devtoolboxapidevtoolbox)
+- [25. 思维导图 API](#25-思维导图-apimindmap)
 
 ---
 
@@ -1479,3 +1480,70 @@ curl -u admin:*** -X POST .../charset/convert -d '{"text":"ä½ å¥½","from_ch
 - content ≤2000 字符且非空白；ecc ∈ l(7%)/m(15%)/q(25%)/h(30%)；scale∈[1,32]、border∈[0,10] 越界钳制不报错
 - `svg` 为矢量字符串（可直接内嵌），`png_data_url` 为 data:image/png;base64
 - 错误：空内容 400「内容不能为空」；超长 400「内容超过 2000 字符…」；容量超限 400「内容超出二维码容量…」
+
+## 25. 思维导图 API（mindmap）
+
+独立顶级模块，所有接口统一登录 Cookie / Basic 鉴权，前缀 `/api/mindmap`，返回标准 `{success,code,message,data}`。完整 JSON、事务与生命周期细节见 [模块文档](docs/modules/mindmap.md)。每次写入都必需唯一 `mutation_id`；已有资源的写入还必需当前 `revision`。同标识、同路径语义、同请求内容重试返回原结果；重复标识用于不同内容返回 409。
+
+### 25.1 接口表
+
+| 方法/相对路径 | 参数与响应 |
+|---|---|
+| `GET /maps` | `page=1&page_size=20`（最多100）；`keyword`（兼容q）、workspace_id、post_id；sort=updated_desc/created_desc/name_asc。data={items,total,page,page_size,total_pages}，items 不含 document |
+| `POST /maps` | `{name,workspace_id?,post_id?,document?,mutation_id}`；201 + 完整图；缺省 workspace 取首个知识库，缺省 document 生成 UUID 根 |
+| `GET /maps/{id}` | 完整图：id/name/workspace_id/post_id/revision/schema_version/node_count/created_by/updated_by/created_at/updated_at/document |
+| `PATCH /maps/{id}` | `{name?,workspace_id?,post_id?,revision,mutation_id}`，至少一项元数据；post_id:null 解除关联 |
+| `PUT /maps/{id}/document` | `{document,revision,mutation_id}`，全量校验后保存完整 JSON，返回新 revision 和完整图 |
+| `DELETE /maps/{id}` | **JSON body** `{revision,mutation_id}`；返回 `{id,revision,deleted:true}`；普通 API 不再可见，历史/回执仍保留 |
+| `POST /maps/{id}/duplicate` | `{revision,mutation_id,name?}`；201 + 新图完整数据，节点 UID 按每图范围保留 |
+| `POST /maps/{id}/nodes/batch` | `{operations,revision,mutation_id}`；1–500 个 add/update/delete/move 操作，成功整批一个新 revision；兼容 `/operations` 别名 |
+| `POST /maps/{id}/nodes` | `{node,parent_id,index?,revision,mutation_id}`；parent_id 为节点 UID，返回完整图 |
+| `PATCH /maps/{id}/nodes/{uid}` | `{data,revision,mutation_id}`；浅合并节点 data，禁止改变 uid |
+| `DELETE /maps/{id}/nodes/{uid}` | JSON body `{revision,mutation_id}`；删除子树并清理悬挂关联线，禁止删根 |
+| `GET /maps/{id}/export` | data={format:'doublog.mindmap',schema_version:1,id,name,workspace_id,post_id,revision,document}，非附件响应 |
+| `POST /import` | `{payload:envelope,mutation_id,workspace_id?,post_id?,target_id?,revision?}`；无 target_id 新建（201），显式 target_id+revision 才覆盖（200）；兼容 envelope 字段别名 |
+| `GET /maps/{id}/versions` | page/page_size；按 revision 倒序分页；每项含 revision/name/workspace_id/post_id/node_count/action/actor/ip_address/created_at |
+| `GET /maps/{id}/versions/{revision}` | 完整历史快照和审计字段 |
+| `POST /maps/{id}/restore` | `{version,revision,mutation_id}`；历史 version 恢复为新 revision，不倒退版本计数 |
+
+活动图必须属于有效知识库，文章关联必须在同库且非 id=0；跨库更改须同时解除或替换不匹配文章。删除知识库前保护活动图；文章删除/递归删除在同一事务解除关联并新增 post_unlinked 版本。SQLite 对资源关联/删除使用写事务围栏，PG 删除资源先行锁定；不改变全站现有数据库开关。
+
+节点批次 `add={op,parent_id,node,index?}`、`update={op,uid,data}`、`delete={op,uid}`、`move={op,uid,parent_id,index?}`；index 是从原位置移除后的目标数组位置，省略追加。失败整批回滚，不允许根移动/删除、重复 UID 或移入自身/后代。全局布局/主题等用 PUT document；节点批次不是 JSON Merge Patch。
+
+### 25.2 实测请求与响应
+
+以下来自隔离 QA 的真实创建和批操作。完整 export data 见 [模块 JSON 示例](docs/modules/mindmap.md#3-完整-json-格式)，含原始 UID、备注、标签和顺序。
+
+```http
+POST /api/mindmap/maps/14/nodes/batch
+Content-Type: application/json
+```
+
+```json
+{"revision":1,"mutation_id":"b2be5ca1-a286-4a13-889f-64c695c684d6","operations":[
+  {"op":"add","parent_id":"sample-root","index":1,"node":{"data":{"uid":"sample-second","text":"实现","expand":true},"children":[]}},
+  {"op":"update","uid":"sample-first","data":{"note":"先核对现有架构","tag":["准备"]}}
+]}
+```
+
+200 响应节选（省略的 document 是完整原生文档，不是空对象）：
+
+```json
+{"success":true,"code":200,"message":"操作成功","data":{
+  "id":14,"name":"接口契约示例","workspace_id":1,"post_id":null,
+  "revision":2,"schema_version":1,"node_count":3,
+  "created_by":"mindmap-qa","updated_by":"mindmap-qa",
+  "created_at":"2026-10-19T16:03:59.191046","updated_at":"2026-10-19T16:03:59.255702"
+}}
+```
+
+### 25.3 错误、校验与重试
+
+- 400 / `PARAM_INVALID`：非法 JSON、必填字段、格式版本、布局、类型、URL、重复 ID、超限、无效关联或节点操作。
+- 401：未登录；只读模式也不豁免登录。404：导图/历史不存在或图已删除。
+- 409 / `RESOURCE_ALREADY_EXISTS`：`details.reason=revision_conflict` 时带 map_id/current_revision；不得静默覆盖。`mutation_reused` 表示同标识不同请求；`concurrent_write` 可带 retryable:true。
+- 超时或连接中断后用**原 mutation_id、原 revision、原 document**重试，不能因超时就重新创建请求标识。当前图已继续更新时，相同旧请求仍返回第一次结果。
+
+document 的紧凑UTF-8 JSON上限保持10MiB；导出envelope另给≤16KiB元数据预算（合计≤10MiB+16KiB）；HTTP包装另给≤16KiB（原始请求体≤10MiB+32KiB）。信封/请求附加字段各按紧凑JSON的载荷差额受限，不允许用外层额度扩大document。错误分别指出document、导入信封元数据、请求封装元数据或HTTP请求体；满10MiB合法正文仍可完整导出、重新导入。正式节点≤10000、概要独立≤1000、深度≤128（根算1）、批次≤500，名称1–200字符。树节点UID及已提供的概要UID须为1–128字符的非空字符串，且全图互不重复；旧概要可省略UID。概要range缺省或null表示单节点概要，其他值必须为两个非布尔整数的数组，满足0≤start≤end<所属节点children.length。节点text可为空；JSON必须保存root/layout/theme，插件样式/链接/备注/标签/图片/概要/关联线与可选view完整保留。
+
+本版采用基础文本格式，禁止 richText HTML、原型键、危险 URL、SVG 节点图片与 SVG title 注入；theme背景和imgMap映射一并校验。只读模式、自动保存、未保存草稿和多格式转换归前端业务层；服务端 API 的正式备份格式为上述标准 JSON。

@@ -37,7 +37,7 @@ from lizysdk.errors import AppError  # noqa: E402
 #: diary / bookmarks 已并入 blog 子域（app/blog/diary、app/blog/bookmarks）
 MODULES = ('blog', 'vault', 'pwsvc', 'sdklogs', 'subs', 'apihub', 'system',
            'todo', 'gamemap', 'practice', 'steamidler', 'confcenter', 'clash',
-           'devtoolbox')
+           'devtoolbox', 'mindmap')
 
 setup_logging_for_app()
 logger = logging.getLogger('doublog.main')
@@ -67,7 +67,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origin_regex=r'^https?://.*:60101$',
         allow_credentials=True,
-        allow_methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allow_methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
         allow_headers=['Content-Type', 'Authorization'],
     )
     # gzip：≥1KB 响应压缩传输（level 6 为体积/CPU 权衡——starlette 默认 9，

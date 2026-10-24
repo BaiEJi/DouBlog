@@ -6,6 +6,21 @@
  */
 export const SYSTEMS = [
   {
+    key: 'mindmap',
+    to: '/mindmap',
+    title: '思维导图',
+    desc: '知识结构 · 自由编辑 · 自动保存 · 版本恢复',
+    box: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <rect x="1.8" y="7.3" width="5.8" height="5.4" rx="1.6" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M7.6 10h3.2m0 0V4.5h2.4m-2.4 5.5v5.5h2.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="13.2" y="2.5" width="5" height="4" rx="1.1" stroke="currentColor" strokeWidth="1.4" />
+        <rect x="13.2" y="13.5" width="5" height="4" rx="1.1" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+    ),
+  },
+  {
     key: 'blog',
     to: '/blog',
     title: '博客 · 知识库',

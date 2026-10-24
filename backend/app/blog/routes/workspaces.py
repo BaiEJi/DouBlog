@@ -118,6 +118,8 @@ async def delete_workspace(workspace_id: int, request: Request):
     ip = request_ip(request)
 
     def _impl():
+        from app.mindmap.services import lock_resource_deletion
+        lock_resource_deletion(Workspace, [workspace_id])
         ws = _get_workspace(workspace_id)
         if not ws:
             return api_response(None, 404, '知识库不存在')
@@ -128,10 +130,21 @@ async def delete_workspace(workspace_id: int, request: Request):
         if post_count > 0:
             return api_response(None, 400, f'知识库下仍有 {post_count} 篇文章，请先删除或移动后再删除')
 
+        from app.mindmap.models import MindMap
+        map_count = db.session.query(func.count(MindMap.id)).filter(
+            MindMap.workspace_id == workspace_id, MindMap.deleted.is_(False)
+        ).scalar() or 0
+        if map_count:
+            return api_response(None, 400, f'知识库下仍有 {map_count} 张思维导图，请先删除或移动后再删除')
+
         total = db.session.query(func.count(Workspace.id)).scalar() or 0
         if total <= 1:
             return api_response(None, 400, '至少保留一个知识库')
 
+        # Deleted maps retain history, but must not retain a live workspace FK.
+        db.session.query(MindMap).filter(
+            MindMap.workspace_id == workspace_id, MindMap.deleted.is_(True)
+        ).update({'workspace_id': None}, synchronize_session=False)
         db.session.delete(ws)
         log_action('delete', 'workspace', workspace_id, {'name': ws.name}, ip_address=ip)
         db.session.commit()

@@ -72,6 +72,7 @@ backend/
 │   ├── confcenter/            # 配置中心：独立 namespace + KV + 幂等回填 + Redis 读穿缓存 + namespace 限流（lizysdk 优先/本地降级）
 │   ├── clash/                 # Clash 代理管理：clashctl 全能力 Web 迁移（service 复用 bash 函数 + routes；无表）
 │   ├── devtoolbox/            # 开发者工具箱：纯计算端点（哈希/字符集互转/JSON⇄YAML/二维码；无表无后台）
+│   ├── mindmap/               # 思维导图：完整JSON/SQL乐观锁/持久幂等/历史与审计（mindmap_*三表）
 │   └── system/                # 系统管理：routes（数据库后端切换 /api/admin/*）
 └── tests/                     # 与能力包镜像：shared/ blog/（含 assets·diary·bookmarks 子域）vault/ pwsvc/ sdklogs/ subs/ system/ confcenter/ clash/ devtoolbox/ todo/ gamemap/ practice/ steamidler/ + test_apihub_*.py
 ```
@@ -341,6 +342,16 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - confcenter json 类型值入库文本改 orjson 紧凑格式（`{"a":1}`，旧 `{"a": 1}`）；语义不变，前端 JsonArea 显示的存储原文会少空格
 - 一致性守护测试：`tests/shared/test_response_orjson.py` 16 例（信封 parse 等价/中文不转义/NaN→null/default=str 兜底/C loader 生效断言与语义对拍）
 
+## 10.55 思维导图（mindmap，app/mindmap/）
+
+独立顶级模块，`/api/mindmap`，三表 `mindmap_maps` / `mindmap_versions` / `mindmap_mutations` 共用 SQLite/PostgreSQL。`document` 保存经验证的完整 SimpleMindMap JSON；节点不拆表，前端通过适配层封装核心。列表 defer 正文，版本摘要用 JSON 路径提取；节点便捷 CRUD 和批次均在内存副本上验证后一次事务落库。
+
+所有写入都有 mutation_id 回执；资源更新经 SQL `WHERE id AND revision AND deleted=false` 比较交换，旧版本409，成功新快照与回执同事务提交。同请求并发/超时重试返回原版本结果；不同请求复用标识409。恢复产生新版本。删除采用 tombstone，保留版本、审计和回执，尚无自动清理策略，存储随完整快照增长。
+
+关联必须是有效 Workspace 与同库非虚拟 Post；库有活动图时禁止删除，删除文章/子孙会解除关联并产生 post_unlinked 版本。SQLite 在资源关联及资源删除前使用 BEGIN IMMEDIATE；PG 删除前 FOR UPDATE，消除与并发外键插入的检查间隙。普通画布保存不新增模块锁或工作线程。认证、run_db 与模块日志复用现有骨架；全站 CORS 方法白名单新增 PATCH，允许默认前端跨端口元数据/节点更新。
+
+边界：document保持10MiB、信封元数据另16KiB、HTTP封装再16KiB；10000树节点、独立1000概要、128层、单批500。概要区间验证直接子节点下标，概要UID若提供则与树节点共用全图唯一命名空间，兼容无UID旧概要及null单节点区间。满容量正文导出后可重新导入，不能用外层预算保存超限正文。支持基础文本格式，拒绝富HTML、原型键、危险URL/SVG、imgMap与SVG标题绕过。极深合法文档的响应使用相同信封的严格JSON回退，避免orjson嵌套限制。删除文章解除导图关联时，经shared.auth.request_username透传实际Cookie/Basic认证账号，不固定写admin。详细模型/API/真实JSON/测试见 [docs/modules/mindmap.md](docs/modules/mindmap.md)；接口索引为 api.md 第25章。
+
 ## 10.51 API Hub（统一 API 调用平台，app/apihub/）
 
 聚合异构系统 API 的能力包（**2026-10-17 重构：分类收敛为 system → api 两维，原
@@ -413,6 +424,7 @@ cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap
 - **apihub 40 例**（core 22 + api 18）、vault 18 例、diary 27 例、todo 53 例（CRUD/计划物化/容量/通知/鉴权，docs/modules/todo.md）、gamemap 34 例（docs/modules/gamemap.md）、practice 61 例（docs/modules/practice.md）、steamidler 18 例（docs/modules/steamidler.md）
 - PG 集成测试可选依赖 venv 内 `pip install pgserver`，未安装自动跳过
 - 新增后端行为**必须**附带测试（见 AGENTS.md）
+- **mindmap 87例**：真实SQLite/API、全部鉴权、完整JSON与5000节点/128层往返、原子节点批次与失败回滚、SQL CAS并发、持久幂等/重启、版本恢复、文章/知识库同时删除与建图竞争、安全边界、默认60101→60100 PATCH预检、满10MiB文档往返与分层字节预算、概要区间/全图UID/独立1000上限、账号改名后的解除关联审计；详见模块文档。
 
 ## 12. 已知限制
 
@@ -423,3 +435,4 @@ cd backend && python -m pytest tests/ -q -n 8   # 696 用例（todo 53 + gamemap
 5. PG 切换依赖 `psycopg2-binary`；目标库不存在会自动创建，但 PG 服务本身需自备
 6. 路径参数类型差异：非整数路径段（`/api/posts/id/abc`）返回 400「请求参数错误」（Flask 时代 404）
 7. gzip 现作用于一切 ≥1KB 响应（Flask 时代仅 JSON/文本；文件下载因 StreamingFileResponse 一般低于阈值不受影响）
+8. 思维导图版本为完整快照、删除为tombstone；版本和幂等回执无自动清理或硬删除接口，长期保存需管理共用数据库容量。

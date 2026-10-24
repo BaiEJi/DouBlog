@@ -21,8 +21,9 @@
 
 > **⚠️ 前端不适配移动端**（2026-10-17 起）：已移除全部移动端适配（侧栏抽屉、响应式断点、触屏拖拽分支、viewport meta），所有页面按桌面宽屏单态布局渲染，手机访问得到的是缩放的桌面视图。新增前端页面禁止引入 `sm:/md:/lg:/xl:` 断点类或移动端专属 UI。
 
-DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，13 卡可拖拽分组，卡片标题/描述可编辑，布局与文案覆盖持久化在库 system_home_* 表）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`（Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、**日记** tab `/diary` 与**书签·稍后阅读** tab `/bookmarks`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`，system→api 两维聚合异构系统 + QQ 官方机器人消息推送 `qq/send-c2c`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）。
+DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，14 卡可拖拽分组，卡片标题/描述可编辑，布局与文案覆盖持久化在库 system_home_* 表）**：卡片点进对应系统——博客/知识库（`/blog`，含**资产库** tab `/assets`（Prompt 与 Skill、变量填充 `{{name}}`、版本快照与恢复、行级 diff、分类标签、使用统计、导入导出、Skill 包上传）、**日记** tab `/diary` 与**书签·稍后阅读** tab `/bookmarks`）、剧情图谱（`/gamemap`）、待办四象限（`/todo`，MyTodo 迁入）、刷题·算法练习（`/practice`）、Steam 挂机（`/steamidler`）、订阅管理（`/subs`）、密码库（`/vault`）、API Hub（`/apihub`，system→api 两维聚合异构系统 + QQ 官方机器人消息推送 `qq/send-c2c`）、日志查询（`/logs`）、系统配置（`/config`）、**配置中心**（`/confcenter`，namespace→key→value + Redis 缓存）、**Clash 代理**（`/clash`，clashctl + Web 控制台全能力迁移：内核启停/系统代理/Tun/订阅/Mixin/密钥/升级 + 代理组切换/延迟测速/连接管理/规则/运行时配置——zashboard 同源；未安装 clashctl 时门户卡片置灰）、**开发者工具箱**（`/devtoolbox`，31 工具 8 分类：JSON 格式化/Diff/⇄YAML/⇄CSV/转代码/转义、文本对比/统计/命名转换/行处理/占位文本、Base64/URL/HTML实体/Unicode/字符集互转（乱码修复）、哈希（MD5/SHA 全家/HMAC）/JWT 解码/密码生成、时间戳/Cron、UUID/进制/单位/颜色/二维码、URL 解析/IPv4 子网、正则测试/Markdown 预览/速查表；除 4 类后端计算外全部浏览器本地完成）。
 - **后端** FastAPI（uvicorn 单进程），提供文章 CRUD、树形结构、图片服务、浏览计数、操作审计；日志与并发池统一走 [LizySDK](https://github.com/BaiEJi/LizySDK)；**SQLite / PostgreSQL 双数据库一键切换**（`/config` 总配置页，只换连接读新数据，不迁移，随时可切回）；所有模块同库存储，表名规则 `模块名_表名`（如 `blog_posts`，存量库启动时自动改名）
+- **思维导图**（独立模块 `/mindmap`）：SimpleMindMap 核心、知识库/文章关联、完整JSON持久化、自动保存/冲突识别/草稿恢复、节点与布局编辑、版本查看与恢复；标准JSON可经页面和API导入导出。入口、接口与边界见 [模块文档](docs/modules/mindmap.md)，[选型依据](docs/mindmap-selection.md)。
 - **前端** React 19 + Vite 8 + Tailwind CSS 4，集成 markdown-it 全家桶渲染、KaTeX 数学公式、Mermaid 图表、代码高亮
 - **多知识库**：文章按知识库分组隔离（首页切换器一键新建/切换，`/?ws=<id>` 记忆当前库）
 - **全文搜索**：关键词匹配标题/摘要/英文名/正文，跨知识库，`Ctrl+K` 快速聚焦
@@ -251,6 +252,7 @@ bash shell/backend/stop.sh           # 停止
 | `GET/POST` | `/api/devtoolbox/*` | **开发者工具箱计算端**（哈希/HMAC、字符集互转乱码修复、JSON⇄YAML、二维码），见 api.md 第 24 节 |
 | `GET/POST/PUT/DELETE` | `/api/assets/*` | **资产库**（blog 模块子域：Prompt/Skill CRUD、版本恢复、批量、标签、统计、导入导出），见 api.md 第 21 节 |
 | `GET/POST/PATCH/DELETE` | `/api/bookmarks/*` | **书签与稍后阅读**（blog 模块子域）：分类树/条目 CRUD 与状态机/标签/查重/快照/死链检测/队列/统计/导入导出（Netscape HTML + JSON），见 api.md 第 22 节 |
+| `GET/POST/PUT/PATCH/DELETE` | `/api/mindmap/*` | **思维导图**：图与节点CRUD、原子批操作、版本并发控制/持久幂等、JSON导入导出、历史与恢复，见 api.md 第25章 |
 
 ### 图片服务规则
 
@@ -290,6 +292,8 @@ python -m pytest tests/ -q
 - 无 404 兜底页（`/archive` 死链的导航入口已移除，路由仍未注册）
 - 路径参数类型差异：非整数路径段（如 `/api/posts/id/abc`）返回 400「请求参数错误」（Flask 时代为 404）
 - gzip 现作用于一切 ≥1KB 响应（按 Accept-Encoding；Flask 时代仅 JSON/文本）
+- 思维导图使用完整版本快照；删除保留tombstone/审计/幂等回执，无自动清理或硬删除API，需管理数据库容量。基础文本格式与多格式有损转换边界见 [模块文档](docs/modules/mindmap.md)。
+- 思维导图5000节点全展开属于压力场景：本机初始化约17.8s，展开/编辑/放手仍有明显延迟，未达到100ms/60FPS目标；1000节点也有部分反馈超过100ms。完整实数与方法见 [性能报告](docs/mindmap-performance.md)，[功能验收](docs/mindmap-verification.md)。
 
 ### 前端本地验收配置
 

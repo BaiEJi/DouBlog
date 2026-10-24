@@ -5,6 +5,23 @@
 from tests.clash.conftest import AUTH
 
 
+def test_bash_resolution_uses_explicit_path(monkeypatch):
+    """Avoid Windows System32's WSL stub overriding the configured PATH shell."""
+    import subprocess
+    from app.clash import service
+    selected = 'D:/Program Files/Git/bin/bash.exe'
+    captured = []
+    monkeypatch.setattr(service.shutil, 'which', lambda name: selected if name == 'bash' else None)
+
+    def run(argv, **kwargs):
+        captured.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout=b'ok')
+    monkeypatch.setattr(service.subprocess, 'run', run)
+    assert service.run_clashctl('clashsub', ['add', 'https://example.org/sub?q=1']) == (0, 'ok')
+    assert captured[0][0] == selected
+    assert captured[0][-2:] == ['add', 'https://example.org/sub?q=1']
+
+
 def _get(client, path, expect=200):
     r = client.get(f'/api/clash{path}', headers=AUTH)
     assert r.status_code == expect, r.json()

@@ -88,6 +88,19 @@ def _session_user(request: Request) -> str | None:
     return verify_session(request.cookies.get(SESSION_COOKIE))
 
 
+def request_username(request: Request) -> str:
+    """Audit identity after require_basic has authenticated this request.
+
+    Follow the same Cookie-first precedence; never substitute the initial config
+    account for a renamed account or a real session user.
+    """
+    user = _session_user(request)
+    if user is not None:
+        return user
+    credentials = _parse_basic(request.headers.get('Authorization', ''))
+    return credentials[0] if credentials else settings.auth_username
+
+
 def _set_session_cookie(response: Response, token: str):
     response.set_cookie(
         SESSION_COOKIE, token,

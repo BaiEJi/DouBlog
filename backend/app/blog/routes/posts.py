@@ -830,8 +830,23 @@ async def update_post_by_slug(slug: str, request: Request):
     return await run_db(_impl)
 
 
-def _delete_post(session, post, recursive, ip):
+def _delete_post(session, post, recursive, ip, actor):
     """删除文章公共逻辑（ID 与 slug 两个入口共用）"""
+    # Detach links before any PostgreSQL ON DELETE SET NULL runs, preserving a
+    # revision and audit entry for every affected active map in this transaction.
+    deleted_post_ids = [post.id]
+    if recursive:
+        pending = [post.id]
+        while pending:
+            parent_to_delete = pending.pop()
+            children_to_delete = session.query(Post.id).filter(
+                Post.parent_id == parent_to_delete).all()
+            child_ids = [child.id for child in children_to_delete]
+            deleted_post_ids.extend(child_ids)
+            pending.extend(child_ids)
+    from app.mindmap.services import lock_resource_deletion, unlink_post_maps
+    lock_resource_deletion(Post, deleted_post_ids)
+    unlink_post_maps(deleted_post_ids, actor=actor, ip=ip)
     # 从父节点（或知识库顶级）的 children_order 中移除
     parent_id = post.parent_id if post.parent_id is not None else ROOT_ID
     if parent_id == ROOT_ID:
@@ -886,6 +901,8 @@ async def delete_post_by_id(post_id: int, request: Request):
     """
     recursive = request.query_params.get('recursive') == '1'
     ip = request_ip(request)
+    from app.shared.auth import request_username
+    actor = request_username(request)
 
     def _impl():
         session = db.session
@@ -895,7 +912,7 @@ async def delete_post_by_id(post_id: int, request: Request):
         if not post:
             return api_response(None, 404, '文章不存在')
 
-        return _delete_post(session, post, recursive, ip)
+        return _delete_post(session, post, recursive, ip, actor)
     return await run_db(_impl)
 
 
@@ -912,6 +929,8 @@ async def delete_post_by_slug(slug: str, request: Request):
     """
     recursive = request.query_params.get('recursive') == '1'
     ip = request_ip(request)
+    from app.shared.auth import request_username
+    actor = request_username(request)
 
     def _impl():
         session = db.session
@@ -921,7 +940,7 @@ async def delete_post_by_slug(slug: str, request: Request):
         if not post:
             return api_response(None, 404, '文章不存在')
 
-        return _delete_post(session, post, recursive, ip)
+        return _delete_post(session, post, recursive, ip, actor)
     return await run_db(_impl)
 
 

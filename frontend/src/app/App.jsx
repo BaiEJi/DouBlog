@@ -25,6 +25,7 @@ const ConfigPage = lazy(() => import('@/config/ConfigPage'))
 const ConfCenterPage = lazy(() => import('@/confcenter/ConfCenterPage'))
 const TodoPage = lazy(() => import('@/todo/TodoPage'))
 const GamemapShell = lazy(() => import('@/gamemap/GamemapShell'))
+const MindmapPage = lazy(() => import('@/mindmap/MindmapPage'))
 const PracticePage = lazy(() => import('@/practice/PracticePage'))
 const SteamIdlerPage = lazy(() => import('@/steamidler/SteamIdlerPage'))
 const ClashPage = lazy(() => import('@/clash/ClashPage'))
@@ -44,20 +45,24 @@ function isPublicPath(pathname) {
  * 未登录跳 /login?next=<原路径>；后端不可达时放行（由 apiFetch 的 401 兜底重定向）。
  */
 function AuthGate({ children }) {
-  const { pathname } = useLocation()
-  const [state, setState] = useState('checking')
+  const { pathname, key } = useLocation()
+  const [state, setState] = useState({ pathname: null, key: null, status: 'checking' })
 
   useEffect(() => {
-    if (isPublicPath(pathname)) { setState('ok'); return }
+    if (isPublicPath(pathname)) return
     let alive = true
     fetch(`${API_BASE}/api/auth/check`, { credentials: 'include' })
-      .then(r => { if (alive) setState(r.ok ? 'ok' : 'out') })
-      .catch(() => { if (alive) setState('ok') })
+      .then(r => { if (alive) setState({ pathname, key, status: r.ok ? 'ok' : 'out' }) })
+      .catch(() => { if (alive) setState({ pathname, key, status: 'ok' }) })
     return () => { alive = false }
-  }, [pathname])
+  }, [pathname, key])
 
-  if (state === 'checking') return <PageFallback />
-  if (state === 'out') {
+  // Public routes must render immediately: an earlier rejected check must not
+  // rewrite /login?next=/mindmap/... to /login?next=/login during navigation.
+  if (isPublicPath(pathname)) return children
+  if (state.pathname !== pathname || state.status === 'checking'
+      || (state.status === 'out' && state.key !== key)) return <PageFallback />
+  if (state.status === 'out') {
     return <Navigate to={`/login?next=${encodeURIComponent(pathname)}`} replace />
   }
   return children
@@ -162,6 +167,7 @@ export default function App() {
             <Route path="/confcenter" element={<ConfCenterPage dark={dark} setDark={toggleDark} />} />
             <Route path="/todo/*" element={<TodoPage dark={dark} setDark={toggleDark} />} />
             <Route path="/gamemap/*" element={<GamemapShell dark={dark} setDark={toggleDark} />} />
+            <Route path="/mindmap/*" element={<MindmapPage dark={dark} />} />
             <Route path="/practice" element={<PracticePage dark={dark} setDark={toggleDark} />} />
             <Route path="/steamidler" element={<SteamIdlerPage dark={dark} setDark={toggleDark} />} />
             <Route path="/clash" element={<ClashPage dark={dark} setDark={toggleDark} />} />
