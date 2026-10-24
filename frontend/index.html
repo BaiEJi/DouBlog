@@ -22,10 +22,69 @@
       /* 关键内联样式：JS/CSS 加载完成前保证背景色正确，无样式闪烁 */
       html { background: #fafafa; }
       html.dark { background: #0a0a0a; }
+      /* 启动首帧：入口 JS 完成前的轻量可读占位（不依赖 Tailwind 工具类） */
+      #boot-placeholder { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #57534e; }
+      html.dark #boot-placeholder { color: #a8a29e; }
+      #boot-placeholder .boot-bar { width: 160px; height: 8px; border-radius: 999px; background: rgba(0,0,0,0.06); overflow: hidden; }
+      html.dark #boot-placeholder .boot-bar { background: rgba(255,255,255,0.1); }
+      #boot-placeholder .boot-bar-fill { width: 50%; height: 100%; border-radius: 999px; background: rgba(0,0,0,0.16); animation: boot-pulse 1.4s ease-in-out infinite; }
+      html.dark #boot-placeholder .boot-bar-fill { background: rgba(255,255,255,0.22); }
+      #boot-placeholder p { font-size: 14px; margin: 0; }
+      @keyframes boot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      @media (prefers-reduced-motion: reduce) { #boot-placeholder .boot-bar-fill { animation: none; } }
+      /* 启动失败卡片（看门狗替换占位时使用，与主题一致） */
+      #boot-failure { min-height: 100vh; display: none; align-items: center; justify-content: center; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+      #boot-failure > div { max-width: 420px; margin: 24px; padding: 28px; border-radius: 18px; border: 1px solid rgba(0,0,0,0.1); background: #ffffff; color: #292524; }
+      html.dark #boot-failure > div { border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #f5f5f4; }
+      #boot-failure h1 { font-size: 16px; font-weight: 600; margin: 0 0 10px; }
+      #boot-failure p { font-size: 13px; line-height: 1.7; margin: 0 0 8px; color: #78716c; }
+      html.dark #boot-failure p { color: #a8a29e; }
+      #boot-failure button, #boot-failure a { font-size: 14px; margin: 14px 10px 0 0; padding: 8px 16px; border-radius: 10px; border: none; cursor: pointer; text-decoration: none; display: inline-block; }
+      #boot-failure button { background: #1c1917; color: #fafafa; }
+      html.dark #boot-failure button { background: #f5f5f4; color: #1c1917; }
+      #boot-failure a { background: rgba(0,0,0,0.06); color: inherit; }
+      html.dark #boot-failure a { background: rgba(255,255,255,0.1); }
+      .boot-noscript { padding: 24px; text-align: center; font-family: system-ui, sans-serif; font-size: 15px; }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-placeholder" role="status" aria-live="polite">
+        <div class="boot-bar" aria-hidden="true"><div class="boot-bar-fill"></div></div>
+        <p>正在打开 DouBlog…</p>
+      </div>
+    </div>
+    <noscript>
+      <div class="boot-noscript">DouBlog 需要 JavaScript 才能运行。请在浏览器设置中启用 JavaScript 后重新加载本页。</div>
+    </noscript>
+    <script>
+      // 启动看门狗：入口模块脚本加载失败或引导超时（20s）时，把占位替换为
+      // 可见失败卡片（手动重试 / 返回工作台），不允许 root 长期只有背景色。
+      ;(function () {
+        var deadline = 20000
+        var timer = setTimeout(function () {
+          window.__doublogBootFailed = true
+          var placeholder = document.getElementById('boot-placeholder')
+          if (placeholder) placeholder.style.display = 'none'
+          var failure = document.getElementById('boot-failure')
+          if (failure) failure.style.display = 'flex'
+        }, deadline)
+        window.__doublogBootClear = function () {
+          clearTimeout(timer)
+          delete window.__doublogBootClear
+        }
+      })()
+    </script>
+    <div id="boot-failure" role="alert">
+      <div>
+        <h1>DouBlog 加载时间过长</h1>
+        <p>页面资源加载失败或耗时过长，可能是网络问题或版本已更新。</p>
+        <p>若此前有未保存的输入，本页面尚未打开，不会丢失已有内容。</p>
+        <p data-reason></p>
+        <button type="button" onclick="window.location.reload()">重新加载</button>
+        <a href="/">返回工作台</a>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

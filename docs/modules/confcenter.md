@@ -54,7 +54,7 @@ namespace 创建/重名/校验/重启保留/最后 KV 删除/空间隔离/历史
 
 ## 公共 UI 外壳（2026-10-13）
 
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+前端由 `shared/ModuleShell.jsx` 提供统一侧栏（默认 220px，可拖动/键盘调整 180–420px，可折叠为 56px 图标窄轨；见 docs/modules/frontend.md）、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 > 2026-10-16 行为微调：json 类型值入库文本改 orjson 紧凑格式（`{"a":1}`，旧 `{"a": 1}`，空格消失）；语义不变，JsonArea 显示的存储原文随之变化。读路径与 Redis 缓存解析同步换 orjson（大 JSON 值 1.5-8×）。
 

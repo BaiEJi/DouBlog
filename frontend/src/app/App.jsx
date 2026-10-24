@@ -4,6 +4,11 @@
  * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash)；
  * diary 与 bookmarks 已并入 blog 模块（src/blog/ 下，侧栏 tab 展示）。
  * 公开页：/login 与 /diary/s/:token（分享）。
+ *
+ * 结构约定（公共前端专项，2026-10-24）：
+ * - Suspense 位于 ModuleFrame 内容区：路由懒加载挂起时公共壳（侧栏/菜单）保持可见；
+ * - AuthGate 对已确认会话的路由切换做乐观放行，不再整页替换 fallback；
+ * - 认证超时/网络失败/5xx/坏 JSON 归为 unavailable（重试路径），仅 401 视为未登录。
  */
 import { lazy, Suspense, useState, useEffect, useCallback, useSyncExternalStore } from 'react'
 import { BrowserRouter, Routes, Route, useLocation, Navigate, Link } from 'react-router-dom'
@@ -13,6 +18,7 @@ import { checkSession } from '../shared/authSession'
 import { getDataEpoch, subscribeDataEpoch, isDataContextStale, subscribeDataContext } from '../shared/dataEpoch'
 import ModuleErrorBoundary from '../shared/ModuleErrorBoundary'
 import ModuleShell from '../shared/ModuleShell'
+import RouteLoading from '../shared/RouteLoading'
 import { moduleForPath } from '../shared/module-routes'
 
 const HomePage = lazy(() => import('@/blog/pages/HomePage'))
@@ -44,40 +50,75 @@ function isPublicPath(pathname) {
   return pathname === '/login' || pathname.startsWith('/diary/s/')
 }
 
+function FullPageLoading({ label }) {
+  return (
+    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] flex flex-col items-center justify-center gap-4">
+      <div className="w-40 h-2 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden" aria-hidden="true">
+        <div className="h-full w-1/2 rounded-full bg-black/15 dark:bg-white/20 animate-pulse" />
+      </div>
+      <p className="text-sm text-stone-500 dark:text-stone-400" role="status">{label}</p>
+    </div>
+  )
+}
+
+function ServiceUnavailable({ blocking, onRetry }) {
+  if (blocking) {
+    return <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 flex items-center justify-center"><div role="alert" className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] p-6"><p className="text-base font-semibold">暂时无法确认服务状态</p><p className="mt-2 text-sm text-stone-500 dark:text-stone-400">服务恢复后重试，登录状态未被清除。</p><button type="button" className="mt-4 px-4 py-2 rounded-lg bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-sm" onClick={onRetry}>重试</button></div></div>
+  }
+  return <div role="alert" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10000] rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950 text-amber-950 dark:text-amber-100 shadow-xl px-4 py-2.5 text-sm flex items-center gap-3"><span>服务状态暂不可确认，未保存内容不受影响。</span><button type="button" className="shrink-0 rounded-lg border border-amber-400 dark:border-amber-600 px-3 py-1 font-medium" onClick={onRetry}>重试</button></div>
+}
+
 /**
- * 统一登录守卫：挂载时查会话（/api/auth/check，带 Cookie），
- * 未登录跳 /login?next=<原路径>；后端不可达时放行（由 apiFetch 的 401 兜底重定向）。
+ * 统一登录守卫：挂载时查会话（/api/auth/check，带 Cookie，10s 总截止时间）。
+ * - 401 → 跳 /login?next=<原路径含 query/hash>；
+ * - 超时/网络失败/5xx/坏 JSON → unavailable（可见提示 + 重试），不清登录态；
+ * - 本 dataEpoch 内曾确认成功的会话，路由切换乐观放行（后台复查），
+ *   不再为每次 pathname 变化整页替换 fallback；之后的业务 401 仍由 client 兜底。
  */
 function AuthGate({ children }) {
   const { pathname, search, hash, key } = useLocation()
   const [state, setState] = useState({ pathname: null, key: null, status: 'checking' })
+  // 本 dataEpoch 内是否确认过成功会话（'out' 会清除；unavailable 保留）
+  const [confirmed, setConfirmed] = useState(false)
 
   useEffect(() => {
     if (isPublicPath(pathname)) return
     let alive = true
-    checkSession({ force: pathname === '/' }).then(status => { if (alive) setState({ pathname, key, status }) })
+    checkSession({ force: pathname === '/' }).then(status => {
+      if (!alive) return
+      setConfirmed(prev => (status === 'ok' ? true : status === 'out' ? false : prev))
+      setState({ pathname, key, status })
+    })
     return () => { alive = false }
+  }, [pathname, key])
+
+  const retry = useCallback(() => {
+    setState({ pathname: null, key: null, status: 'checking' })
+    checkSession({ force: true }).then(status => {
+      setConfirmed(prev => (status === 'ok' ? true : status === 'out' ? false : prev))
+      setState({ pathname, key, status })
+    })
   }, [pathname, key])
 
   // Public routes must render immediately: an earlier rejected check must not
   // rewrite /login?next=/mindmap/... to /login?next=/login during navigation.
   if (isPublicPath(pathname)) return children
-  if (state.pathname !== pathname || state.status === 'checking'
-      || (state.status === 'out' && state.key !== key)) return <PageFallback />
-  if (state.status === 'out') {
+
+  const settled = state.pathname === pathname && state.key === key && state.status !== 'checking'
+  if (settled && state.status === 'out') {
     return <Navigate to={`/login?next=${encodeURIComponent(pathname + search + hash)}`} replace />
   }
-  if (state.status === 'unavailable') return <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 flex items-center justify-center"><div role="alert" className="rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] p-6"><p className="text-base font-semibold">暂时无法确认服务状态</p><p className="mt-2 text-sm text-stone-500 dark:text-stone-400">服务恢复后重试，登录状态未被清除。</p><button className="mt-4 px-4 py-2 rounded-lg bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-sm" onClick={() => window.location.reload()}>重试</button></div></div>
-  return children
-}
-
-function PageFallback() {
+  // 从未确认过会话：整页等待/错误（首开的正常路径）
+  if (!settled && !confirmed) return <FullPageLoading label="正在确认登录状态…" />
+  if (settled && state.status === 'unavailable' && !confirmed) {
+    return <ServiceUnavailable blocking onRetry={retry} />
+  }
+  // 已确认会话：内容照常渲染；本次检查若 unavailable 以非阻断横幅提示
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-[#100f0e] flex items-center justify-center">
-      <div className="w-40 h-2 rounded-full bg-black/5 dark:bg-white/10 overflow-hidden">
-        <div className="h-full w-1/2 rounded-full bg-black/15 dark:bg-white/20 animate-pulse" />
-      </div>
-    </div>
+    <>
+      {settled && state.status === 'unavailable' && <ServiceUnavailable onRetry={retry} />}
+      {children}
+    </>
   )
 }
 
@@ -91,8 +132,10 @@ function ScrollToTop() {
 function ModuleFrame({ dark, setDark, children }) {
   const { pathname } = useLocation()
   const module = moduleForPath(pathname)
-  if (!module || isPublicPath(pathname)) return children
-  return <ModuleShell key={module} module={module} dark={dark} setDark={setDark}>{children}</ModuleShell>
+  // Suspense 下移到内容区：懒加载挂起时公共壳保持可见（公开页/门户有自己的外壳与占位）
+  const content = <Suspense fallback={<div className="min-h-screen bg-stone-50 dark:bg-[#100f0e]"><RouteLoading /></div>}>{children}</Suspense>
+  if (!module || isPublicPath(pathname)) return content
+  return <ModuleShell key={module} module={module} dark={dark} setDark={setDark}>{content}</ModuleShell>
 }
 
 function RouteBoundary({ children }) {
@@ -112,17 +155,18 @@ function DataContextNotice() {
 export default function App() {
   const dataEpoch = useSyncExternalStore(subscribeDataEpoch, getDataEpoch, getDataEpoch)
   const [dark, setDark] = useState(() => {
-    if (typeof window !== 'undefined') {
+    try {
       const saved = localStorage.getItem('doublog_dark')
       if (saved !== null) return saved === 'true'
       return window.matchMedia('(prefers-color-scheme: dark)').matches
+    } catch {
+      return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
     }
-    return false
   })
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('doublog_dark', dark)
+    try { localStorage.setItem('doublog_dark', dark) } catch { /* 存储不可用时保留内存态 */ }
   }, [dark])
 
   const toggleDark = useCallback(() => {
@@ -164,9 +208,8 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}><BrowserRouter><DataContextNotice />
       <ScrollToTop />
-      <Suspense fallback={<PageFallback />}>
-        <AuthGate key={dataEpoch}><RouteBoundary>
-          <ModuleFrame dark={dark} setDark={toggleDark}>
+      <AuthGate key={dataEpoch}><RouteBoundary>
+        <ModuleFrame dark={dark} setDark={toggleDark}>
           <Routes>
             <Route path="/login" element={<LoginPage dark={dark} setDark={toggleDark} />} />
             <Route path="/" element={<PortalPage dark={dark} setDark={toggleDark} />} />
@@ -194,9 +237,8 @@ export default function App() {
             <Route path="/bookmarks" element={<BookmarksPage dark={dark} setDark={toggleDark} />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
-          </ModuleFrame>
-        </RouteBoundary></AuthGate>
-      </Suspense>
+        </ModuleFrame>
+      </RouteBoundary></AuthGate>
     </BrowserRouter></QueryClientProvider>
   )
 }

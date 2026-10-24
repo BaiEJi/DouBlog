@@ -69,7 +69,7 @@ test_api（任务 CRUD/过滤/象限/排序/乐观锁/软删恢复/401 鉴权/�
 
 ## 公共 UI 外壳（2026-10-13）
 
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+前端由 `shared/ModuleShell.jsx` 提供统一侧栏（默认 220px，可拖动/键盘调整 180–420px，可折叠为 56px 图标窄轨；见 docs/modules/frontend.md）、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 待办池的收件箱 / 迁移池 / 搁置计划使用侧栏二级菜单，URL 为 `?v=backlog&bsub=inbox|migrate|shelved`；生活子视图仍使用 `lsub`。长表单通用 Modal 限制到视口高度，正文内部滚动，标题与操作按钮固定可见。
 

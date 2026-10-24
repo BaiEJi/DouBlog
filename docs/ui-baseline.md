@@ -44,7 +44,7 @@
 
 ## 执行口径
 
-- 模块外壳统一使用 `shared/ModuleShell.jsx`：220px 常驻侧栏（sticky + 100vh；顶部模块标题使用 16px font-mono，不显示副标题）、递归 children 菜单、同一内容画布（max-width 1700px，水平 40px、上下 32px）。不得重复添加全局容器留白；业务表格/编辑器/画布内部布局按功能保留。
+- 模块外壳统一使用 `shared/ModuleShell.jsx`：侧栏默认 220px（2026-10-24 起右边界可拖动/键盘调整 180–420px，底部固定操作区含折叠/展开与主题按钮；折叠为 56px 窄轨，仅一级菜单图标，完整菜单隐藏但保持挂载）；sticky + 100vh；顶部模块标题使用 16px font-mono，不显示副标题；递归 children 菜单、同一内容画布（max-width 1700px，水平 40px、上下 32px）。拖动手柄命中区 7px、role=separator、aria-valuemin/max/now、左右键 ±10px、Home/End 到边界、双击恢复 220px；偏好全站共享持久化（`doublog_sidebar_layout_v1`，详见 docs/modules/frontend.md）。不得重复添加全局容器留白；业务表格/编辑器/画布内部布局按功能保留。
 - PageHeader 仅注册导航和展示内容标题；模块主题控制集中于公共侧栏。前端不适配移动端（2026-10-17 起移除抽屉导航、响应式断点与触屏分支）。
 - 个性色保留：模块主色只用在图标底、徽章、主按钮；其余中性 stone
 - 改完目视自查明暗两态；构建由主线统一执行

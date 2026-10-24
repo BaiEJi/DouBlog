@@ -29,7 +29,7 @@ games/chapters/characters/chapter_characters/character_photos/boards/board_nodes
 
 ## 公共 UI 外壳（2026-10-13）
 
-前端由 `shared/ModuleShell.jsx` 提供统一 220px 侧栏、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
+前端由 `shared/ModuleShell.jsx` 提供统一侧栏（默认 220px，可拖动/键盘调整 180–420px，可折叠为 56px 图标窄轨；见 docs/modules/frontend.md）、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
 工作区使用显式画布高度；游戏、章节、人物、关系类型及看板请求失败均提供重试，避免无限加载。事件 / 统计卡片和 HUD 跟随明暗变量；人物 / 关系表格使用内部横向滚动。关系计数与聚焦邻居先建立 Map / Set，将节点遍历中的重复全关系扫描改为索引查询。
 

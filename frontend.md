@@ -31,6 +31,12 @@
 最终功能证据和复现命令见 `docs/mindmap-verification.md`；5000节点全展开仍有明显布局与绘制瓶颈，
 不能声称达到100ms/60FPS，具体数值见 `docs/mindmap-performance.md`。
 
+## 公共前端外壳（2026-10-24）
+
+启动引导/白屏恢复、认证会话截止、公共侧栏拖动调宽与折叠窄轨的完整契约、QA 隔离运行与实测体积，
+集中在专项文档 **`docs/modules/frontend.md`**（要点：侧栏默认 220px 可调 180–420px/折叠 56px 图标窄轨，
+偏好 `doublog_sidebar_layout_v1` 全站共享；认证 10s 截止、仅 401 视为未登录；Suspense 下移内容区）。
+
 > **技术栈**: React 19 + React Router 7 + Vite 8 + Tailwind CSS 4
 > **端口**: 60101（dev 与 preview 同端口）　**入口**: `frontend/src/main.jsx`
 > **本文档描述当前代码的真实架构；修改代码时必须同步更新本文档**（见 `AGENTS.md` 文档同步规则）
@@ -61,7 +67,7 @@
 | **多知识库** | 知识库页面选择器切换/新建知识库（`/blog?ws=` 记忆）；树/搜索/父文章选项均按当前库 |
 | **首页服务端分页** | `HomePage` 调 `fetchPosts`，每页24条；未搜索时携带当前 `workspace_id`，按服务端返回的 `total` / 页码导航。浏览器只保留当前页，不再启动全量拉取或设置2000条客户端截断 |
 | **全文关键词匹配（服务端）** | 输入防抖300ms调 `GET /api/posts?page=&page_size=24&keyword=`，后端匹配标题/摘要/英文名/**正文**；有关键词时不传 `workspace_id`，跨库分页展示。结果带库名，`Ctrl/Cmd+K` 聚焦搜索；清空关键词回到当前库的服务端分页。换页/换库/新输入取消旧请求 |
-| **路由级代码分割** | entry 承载React/路由、QueryClient、认证与公共外壳；Markdown/Mermaid与编辑器重依赖按需加载。本轮单个entry约270.4kB / gzip86.4kB，**包含静态依赖的初始JS闭包**为gzip89,947B（基线82,302B，增加7,645B）；单chunk大小不等于首屏闭包或页面总传输 |
+| **路由级代码分割** | entry 承载React/路由、QueryClient、认证与公共外壳；Markdown/Mermaid与编辑器重依赖按需加载。2026-10-24 公共前端专项后**入口静态JS闭包** gzip92,531B（此前89,947B，+2,584B≈2.52KiB，预算4KiB内，含侧栏拖动/折叠/键盘可达、启动看门狗与认证截止）；单chunk大小不等于首屏闭包或页面总传输 |
 
 ## 2. 文件结构
 
@@ -74,7 +80,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   └── LoginPage.jsx               # /login 统一登录页（会话 Cookie 签发）
 ├── shared/                         # 公共层
 │   ├── client.js                   # API_BASE/apiFetch（后端地址唯一持有处；会话 Cookie 认证 + 401 跳登录）
-│   ├── ModuleShell.jsx             # 全模块公共侧栏（220px 常驻 sticky）、递归多级菜单（分区作用域：带 to 的顶层 tab 其 children 仅在激活分区展示/匹配，防跨分区 key 重名串扰与误点）、统一内容画布
+│   ├── ModuleShell.jsx             # 全模块公共侧栏（默认 220px，可调 180–420px/折叠 56px 图标窄轨，见 docs/modules/frontend.md）、递归多级菜单（分区作用域：带 to 的顶层 tab 其 children 仅在激活分区展示/匹配，防跨分区 key 重名串扰与误点）、统一内容画布
 │   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
@@ -311,7 +317,7 @@ bash shell/frontend/start.sh dev     # 一键：dev server
 - **vite 代理键必须用正则（2026-10-17 修复）**：`server.proxy` 的 `/api` 纯字符串前缀会把
   `/apihub` 页面路由也吞进代理（浏览器打开 /apihub 直接显示后端 404 JSON）——已改为
   `'^/api(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
-- **页面布局约定（2026-10-17 更新）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。220px 左侧栏常驻 sticky（`h-screen`），侧栏整体纵向滚动；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px；带 children 的激活分区菜单项右侧配折叠/展开按钮（SVG 雪佛龙图标，viewBox 0 0 20 20、stroke 1.5、w-4 h-4，收起态 rotate -90°，按钮 w-8 h-8 rounded-lg 图标档位，遵循 ui-baseline.md；2026-10-18 前为文本字符 `⌄`/`›`，渲染游离且档位不符，已修）。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
+- **页面布局约定（2026-10-17 更新；2026-10-24 侧栏可调宽/折叠）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。左侧栏默认 220px、sticky（`h-screen`），右边界手柄可拖动或键盘调整（180–420px，双击恢复默认）；底部为固定操作区（折叠/展开 + 主题按钮，不随长菜单滚走），折叠成 56px 图标窄轨（只显示一级菜单图标，二级不进入窄轨；完整菜单 display:none 保持挂载，分组展开状态与插槽状态不丢）；菜单区独立纵向滚动；偏好经 `doublog_sidebar_layout_v1` 全站共享持久化（拖动仅在 pointerup 落盘）；宽度/折叠绝不作为业务子树 key；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px；带 children 的激活分区菜单项右侧配折叠/展开按钮（SVG 雪佛龙图标，viewBox 0 0 20 20、stroke 1.5、w-4 h-4，收起态 rotate -90°，按钮 w-8 h-8 rounded-lg 图标档位，遵循 ui-baseline.md；2026-10-18 前为文本字符 `⌄`/`›`，渲染游离且档位不符，已修）。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；注册的 subtitle 不在公共侧栏显示；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
 - **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
