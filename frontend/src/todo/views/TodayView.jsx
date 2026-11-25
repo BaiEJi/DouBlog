@@ -216,13 +216,13 @@ export default function TodayView({ toast, dark }) {
         <button onClick={() => setDrawerOpen(true)} className={btn.plain + ' relative'}>
           {Icon.migrate}待迁移
           {pendingCount > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-orange-500 text-white text-[10px] flex items-center justify-center tabular-nums">
+            <span className="absolute -top-1.5 -right-1.5 min-w-5 h-5 px-1 rounded-full bg-orange-700 text-white text-xs font-medium flex items-center justify-center tabular-nums">
               {pendingCount}
             </span>
           )}
         </button>
         {data && (
-          <span className="ml-auto min-w-0 truncate text-xs text-stone-400 dark:text-stone-500 tabular-nums">
+          <span className="ml-auto min-w-0 truncate text-sm text-stone-500 tabular-nums">
             昨日新建 {data.yesterday.created} · 昨日完成 {data.yesterday.completed} · 连续活跃 {data.streak.current} 天
           </span>
         )}

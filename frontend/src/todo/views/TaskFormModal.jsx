@@ -115,7 +115,7 @@ export default function TaskFormModal({
         </Field>
 
         <div>
-          <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">象限</div>
+          <div className="text-sm text-stone-500 dark:text-stone-400 mb-1.5">象限</div>
           <div className="grid grid-cols-2 gap-2">
             {QUADRANT_DISPLAY_ORDER.map(q => quadrantMeta(q)).map(m => {
               const active = quadrantSel === m.quadrant
@@ -124,11 +124,11 @@ export default function TaskFormModal({
                   className={'flex flex-col items-start gap-0.5 px-3 py-2.5 rounded-xl border text-left transition-colors ' +
                     (active ? '' : 'border-black/[0.08] dark:border-white/[0.1] hover:border-black/20 dark:hover:border-white/25')}
                   style={active ? { borderColor: m.color, background: m.color + '14' } : undefined}>
-                  <span className="flex items-center gap-1.5 text-[13px] font-medium">
-                    <span className="w-2 h-2 rounded-full" style={{ background: m.color }} />
-                    {m.icon} {subtitles(m.quadrant)}
+                  <span className="flex min-w-0 items-center gap-1.5 text-base font-medium">
+                    <span className="w-2 h-2 shrink-0 rounded-full" style={{ background: m.color }} />
+                    {m.icon} {labels(m.quadrant)}
                   </span>
-                  <span className="text-[11px] text-stone-400">{labels(m.quadrant)}</span>
+                  <span className="text-xs text-stone-500">{subtitles(m.quadrant)}</span>
                 </button>
               )
             })}
@@ -146,10 +146,10 @@ export default function TaskFormModal({
 
         <Field label="日期" hint="日期留空的任务会进入「待排期」">
           <div className="flex gap-2">
-            <input type="date" value={dateVal} onChange={e => setDateVal(e.target.value)} className={inputCls} />
+            <input type="date" value={dateVal} onChange={e => setDateVal(e.target.value)} className={inputCls + ' min-w-0 flex-1'} />
             {dateVal && (
               <button type="button" onClick={() => setDateVal('')}
-                className="px-3 h-9 rounded-lg text-xs text-stone-500 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
+                className="shrink-0 whitespace-nowrap px-3 h-9 rounded-lg text-sm text-stone-500 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
                 清空
               </button>
             )}
@@ -166,7 +166,7 @@ export default function TaskFormModal({
             <input type="checkbox" checked={notifyOn} onChange={e => setNotifyOn(e.target.checked)}
               className="w-4 h-4 accent-indigo-500" />
             <span className="text-sm">到期提醒</span>
-            <span className="text-[11.5px] text-stone-400">当天未完成时通知我</span>
+            <span className="text-xs text-stone-400">当天未完成时通知我</span>
           </label>
           {notifyOn && (
             <div className="mt-3 space-y-3 pl-6 border-l-2 border-black/[0.06] dark:border-white/[0.08]">
@@ -174,7 +174,7 @@ export default function TaskFormModal({
                 <input type="time" step={300} value={notifyTime} onChange={e => setNotifyTime(e.target.value)} className={inputCls} />
               </Field>
               <div>
-                <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">通知渠道（点击选择，可多选）</div>
+                <div className="text-sm text-stone-500 dark:text-stone-400 mb-1.5">通知渠道（点击选择，可多选）</div>
                 <div className="flex flex-wrap gap-1.5">
                   {NOTIFY_CHANNEL_OPTIONS.map(o => {
                     const on = notifyChannels.includes(o.value)
@@ -189,7 +189,7 @@ export default function TaskFormModal({
                     )
                   })}
                 </div>
-                <div className="text-[11px] text-stone-400 mt-1.5">渠道参数在 设置 → 消息推送 中配置</div>
+                <div className="text-xs text-stone-400 mt-1.5">渠道参数在 设置 → 消息推送 中配置</div>
               </div>
             </div>
           )}

@@ -69,9 +69,6 @@ def test_access_and_discovery(app, local, auth_headers, monkeypatch):
     for method in ('get', 'delete'):
         assert getattr(local, method)(PATH).status_code == 401
     assert rpc(local, {**headers, 'Origin': 'https://external.example'}, 'tools/list').status_code == 403
-    assert rpc(local, {**headers, 'Host': 'external.example'}, 'tools/list').status_code in (400, 403, 421)
-    with TestClient(app, base_url=LOCAL['base_url'], client=('192.0.2.1', 4040)) as remote:
-        assert rpc(remote, headers, 'tools/list').status_code == 403
     init = rpc(local, headers, 'initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
                                              'clientInfo': {'name': 'QA', 'version': '1'}})
     assert init.json()['result']['serverInfo']['name'] == 'mytodo'

@@ -194,7 +194,7 @@ bash shell/backend/stop.sh           # 停止
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `host` / `port` | `0.0.0.0` / `60100` | 监听地址 |
-| `DOUBLOG_MCP_PUBLIC_ORIGIN`（后端环境变量） | 空，仅本机 | 配置 HTTPS 来源并重启后，可通过该来源接入 MCP |
+| `DOUBLOG_MCP_PUBLIC_ORIGIN`（后端环境变量） | 空，使用当前访问地址 | 可选，覆盖配置中心展示的 MCP 服务来源，支持 HTTP 或 HTTPS |
 | `debug` | `True` | 调试模式（生产必须关闭） |
 | `cors_origins` | `*` | ⚠️ 死配置：中间件实际用 `allow_origin_regex ^https?://.*:60101$` + 凭据模式，不读此项 |
 | `auth_enabled` | `True` | 是否启用认证 |
@@ -212,7 +212,7 @@ bash shell/backend/stop.sh           # 停止
 
 ## API 概览
 
-MCP 默认地址为 `http://127.0.0.1:60100/mcp/todo`，仅接受本机连接。服务器可设置后端环境变量 `DOUBLOG_MCP_PUBLIC_ORIGIN=https://todo.example.com` 并重启，使用 HTTPS 反向代理对外提供 `/mcp/`。客户端在每次请求中发送模块令牌。[服务器接入示例](docs/modules/confcenter.md#服务器远程接入)
+MCP 支持从网络访问。直连可使用 `http://服务器IP:60100/mcp/todo`，使用 HTTPS 反向代理时填写公开域名下的 `/mcp/todo`。客户端在每次请求中发送模块令牌。[服务器接入示例](docs/modules/confcenter.md#服务器远程接入)
 
 统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`（orjson 渲染，NaN→null）；认证=统一登录（会话 Cookie 或 Basic；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub gw）；JSON 响应超过 1KB 自动 gzip。
 

@@ -1149,7 +1149,7 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 
 | 方法 | 路径 | 输入和响应 |
 | --- | --- | --- |
-| GET | `/api/confcenter/mcp` | 返回已注册模块、连接地址 `endpoint`、远程接入状态 `remote_enabled` 和工具清单。每个工具包含 `description`、`read_only`、`input_schema`、`enabled`。MyTodo 的每个输入属性通过 `description` 和 `examples` 提供中文含义及带类型的 JSON 示例，与 MCP 的 `tools/list` 一致 |
+| GET | `/api/confcenter/mcp` | 返回已注册模块、连接地址 `endpoint`、兼容字段 `remote_enabled`（固定为 `true`）和工具清单。连接地址使用当前后端访问地址或配置的公开地址。每个工具包含 `description`、`read_only`、`input_schema`、`enabled`。MyTodo 的输入属性通过 `description` 和 `examples` 提供含义及 JSON 示例，与 MCP 的 `tools/list` 一致 |
 | PUT | `/api/confcenter/mcp/{module}/tools/{tool}` | 例如 `{"enabled":false}`，立即对该模块的所有令牌生效 |
 | GET / POST | `/api/confcenter/mcp/{module}/tokens` | 列出令牌摘要或签发 30 天令牌。签发可传 `{"name":"桌面助手"}`，响应 201，`data.token` 为一次展示的明文 |
 | POST | `/api/confcenter/mcp/{module}/tokens/{id}/renew` | 传 `{"expected_expires_at":"2026-12-26T08:00:00+00:00"}`，值取自列表。有效令牌从原到期时间加 30 天，过期令牌从现在起加 30 天。返回新的令牌摘要，版本冲突 409，令牌不存在或已撤销 404 |

@@ -14,7 +14,7 @@ export function ReportPanel({ title, controls, children }) {
   return (
     <Card className="min-w-0">
       <header className="mb-5 flex min-h-10 items-center justify-between gap-3">
-        <h2 className="shrink-0 text-xl leading-7 font-semibold tracking-tight">{title}</h2>
+        <h2 className="shrink-0 text-lg font-semibold">{title}</h2>
         {controls}
       </header>
       {children}

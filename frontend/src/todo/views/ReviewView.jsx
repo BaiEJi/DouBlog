@@ -92,7 +92,7 @@ export default function ReviewView() {
 
   return (
     <ReportPage title="任务回顾" controls={
-      <label className="todo-report-muted flex shrink-0 items-center gap-3 text-[15px]">
+      <label className="todo-report-muted flex shrink-0 items-center gap-3 text-base">
         回顾日期<DateField label="回顾日期" value={date} onChange={setDate} />
       </label>
     }>

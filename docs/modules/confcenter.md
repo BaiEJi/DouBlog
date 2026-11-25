@@ -19,9 +19,9 @@
 
 ### 服务器远程接入
 
-默认接受本机连接。要让外部客户端接入，为域名配置 DNS 和 HTTPS，在后端服务环境中设置 `DOUBLOG_MCP_PUBLIC_ORIGIN=https://todo.example.com` 并重启。该值填写 HTTPS 来源，可含非默认端口，路径由服务按模块追加。示例中的 MyTodo 地址为 `https://todo.example.com/mcp/todo`。
+客户端可通过后端可达的任意服务器 IP 或域名访问 MCP。例如直连 MyTodo 使用 `http://服务器IP:60100/mcp/todo`，并发送 `Authorization: Bearer <YOUR_TOKEN>`。配置中心根据当前访问的后端地址生成 URL。需要覆盖展示地址时，可设置 `DOUBLOG_MCP_PUBLIC_ORIGIN=https://todo.example.com` 并重启。该值支持 HTTP 或 HTTPS，可含端口，路径由服务按模块追加。
 
-在该域名的 HTTPS 虚拟主机中将 `/mcp/` 转发到后端。例如同机 Nginx 可使用以下 location。
+使用 HTTPS 反向代理时，在该域名下将 `/mcp/` 转发到后端。例如同机 Nginx 可使用以下 location。
 
 ```nginx
 location /mcp/ {
@@ -35,7 +35,7 @@ location /mcp/ {
 }
 ```
 
-公网客户端需能访问该 HTTPS 端口。后端按配置的域名和 HTTPS 协议验证远程请求。带有 `Origin` 的远程请求须与配置同源。TLS 在代理处终止时，Uvicorn 只采用受信代理提供的协议和来源地址。代理位于其他主机或容器时，将 `FORWARDED_ALLOW_IPS` 设置为其实际连接后端的地址。[Uvicorn 代理设置](https://uvicorn.dev/settings/#http)
+服务器端口或代理入口需要对客户端可达。带有 `Origin` 的请求须与访问地址或配置的公开地址匹配。TLS 在代理处终止且需要自动识别 HTTPS 地址时，由受信代理传递 `X-Forwarded-Proto`。[Uvicorn 代理设置](https://uvicorn.dev/settings/#http)
 
 ## 2. 数据模型
 

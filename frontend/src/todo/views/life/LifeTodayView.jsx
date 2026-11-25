@@ -24,7 +24,7 @@ function ProgressRing({ size = 92, pct, done, total }) {
           style={{ transition: 'stroke-dashoffset .4s' }} />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-lg font-extrabold tabular-nums">{done}/{total}</span>
+        <span className="text-xl font-semibold tabular-nums">{done}/{total}</span>
       </div>
     </div>
   )
@@ -114,7 +114,7 @@ export default function LifeTodayView({ toast, dark }) {
                 <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 4l5 6-5 6" /></svg>
               </button>
             </div>
-            <div className="text-xl font-semibold tracking-tight">
+            <div className="text-lg font-semibold">
               {date.getMonth() + 1}月{date.getDate()}日 {WEEKDAY_CN(date)}
             </div>
             <div className="text-xs text-stone-500 dark:text-stone-400 mt-1">
@@ -122,7 +122,7 @@ export default function LifeTodayView({ toast, dark }) {
             </div>
             {pct === 100 && items.length > 0 && (
               <div className="mt-2">
-                <span className="inline-flex items-center rounded-full px-2.5 h-6 text-[11px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">🎉 全部完成，干得漂亮！</span>
+                <span className="inline-flex items-center rounded-full px-2.5 h-6 text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">🎉 全部完成，干得漂亮！</span>
               </div>
             )}
           </div>
@@ -132,11 +132,11 @@ export default function LifeTodayView({ toast, dark }) {
 
       {/* 打卡清单 */}
       {data == null ? (
-        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] py-10 text-center text-xs text-stone-400">加载中…</div>
+        <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] py-10 text-center text-sm text-stone-500">加载中…</div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] py-14 text-center">
-          <div className="text-3xl mb-2">{isToday ? '🌱' : '📅'}</div>
-          <div className="text-xs text-stone-400 max-w-[420px] mx-auto leading-relaxed">
+          <div className="text-xl mb-2">{isToday ? '🌱' : '📅'}</div>
+          <div className="text-base text-stone-500 max-w-[420px] mx-auto leading-relaxed">
             {isToday ? '今天没有安排。去 生活 → 计划 新建一个计划，开始规律生活吧。' : '这一天没有计划安排。'}
           </div>
         </div>
@@ -151,7 +151,7 @@ export default function LifeTodayView({ toast, dark }) {
             const accentDark = dark ? adjustForDark(accent) : accent
             return (
               <div key={task?.id ?? it.title}
-                className={'flex items-center gap-3 px-4 py-3 flex-wrap transition-opacity ' + (done ? 'opacity-60' : '')}>
+                className="flex items-center gap-3 px-4 py-3 flex-wrap">
                 <button onClick={() => {
                   if (!task) return
                   if (done) reopen(task.id)
@@ -163,25 +163,25 @@ export default function LifeTodayView({ toast, dark }) {
                     <svg width="10" height="10" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>
                   )}
                 </button>
-                <span className={'text-sm flex-1 min-w-0 truncate ' + (done ? 'line-through text-stone-400' : '') + (!plan && !done ? ' opacity-70' : '')}>
+                <span className={'text-base flex-1 min-w-0 truncate ' + (done ? 'line-through text-stone-500' : !plan ? 'text-stone-500' : '')}>
                   {it.title}
                 </span>
                 {plan ? (
-                  <span className="text-[11px] text-stone-400">🔁 {plan.rule_text}</span>
+                  <span className="text-xs text-stone-400">🔁 {plan.rule_text}</span>
                 ) : (
-                  <span className="text-[11px] text-stone-400">已删除的计划</span>
+                  <span className="text-xs text-stone-400">已删除的计划</span>
                 )}
                 {done && task?.completion_note && (
-                  <span className="text-[11px] text-stone-400 dark:text-stone-500 truncate max-w-[220px]">📝 {task.completion_note}</span>
+                  <span className="text-xs text-stone-400 dark:text-stone-500 truncate max-w-[220px]">📝 {task.completion_note}</span>
                 )}
                 {plan && cat && (
-                  <span className="rounded-full px-2 h-6 text-[11px] inline-flex items-center whitespace-nowrap"
-                    style={{ color: accentDark, borderColor: accentDark + '55', background: accentDark + '14' }}>
+                  <span className="todo-category-label rounded-full px-2 h-6 text-xs inline-flex items-center whitespace-nowrap"
+                    style={{ '--todo-category': accentDark, borderColor: accentDark + '55', background: accentDark + '14' }}>
                     {cat.icon ? `${cat.icon} ` : ''}{cat.name}
                   </span>
                 )}
                 {!task && (
-                  <span className="rounded-md px-1.5 h-5 text-[10.5px] inline-flex items-center bg-orange-500/10 text-orange-700 dark:text-orange-300">未生成</span>
+                  <span className="rounded-md px-1.5 h-5 text-xs inline-flex items-center bg-orange-500/10 text-orange-800 dark:text-orange-300">未生成</span>
                 )}
               </div>
             )

@@ -87,7 +87,7 @@ async def catalog(request: Request):
             enabled = enabled_tools(db.session, key, provider)
             items.append({
                 'key': key, 'title': provider.title, 'server_name': provider.server_name,
-                'endpoint': network.endpoint(request, key), 'remote_enabled': bool(network.public_origin),
+                'endpoint': network.endpoint(request, key), 'remote_enabled': True,
                 'env_name': f'DOUBLOG_{provider.server_name.upper()}_MCP_TOKEN',
                 'tools': [{'name': name, 'title': spec.title, 'group': spec.group,
                            'description': spec.handler.__doc__, 'read_only': spec.read_only, 'enabled': name in enabled,

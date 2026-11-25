@@ -103,13 +103,13 @@ export function MigrationList({ items, today, onChanged, toast }) {
               className="rounded-xl border border-black/[0.07] dark:border-white/[0.08] bg-white dark:bg-white/[0.025] px-3.5 py-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Dot color={quadrantMeta(task.quadrant).color} />
-                <span className="text-sm font-medium flex-1 min-w-0 truncate">{task.title}</span>
+                <span className="text-base font-medium flex-1 min-w-0 truncate">{task.title}</span>
                 {task.intervention_required && (
-                  <span className="rounded-md px-1.5 h-5 text-[10.5px] inline-flex items-center bg-red-500/10 text-red-600 dark:text-red-400">需人工确认</span>
+                  <span className="rounded-md px-1.5 h-5 text-xs inline-flex items-center bg-red-500/10 text-red-600 dark:text-red-400">需人工确认</span>
                 )}
               </div>
               <div className="mt-1.5">
-                <span className="inline-flex items-center rounded-md px-2 h-5 text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">
+                <span className="inline-flex items-center rounded-md px-2 h-5 text-xs bg-orange-500/10 text-orange-800 dark:text-orange-300 tabular-nums">
                   ⟲ 来自 {task.last_migrated_from || task.original_date || '?'}
                   {task.days_procrastinated != null ? ` · 拖延 ${task.days_procrastinated} 天` : ''} · 迁移×{task.migrated_count}
                 </span>
@@ -138,7 +138,7 @@ export function MigrationList({ items, today, onChanged, toast }) {
         <div className="fixed inset-0 z-[60] bg-black/40 flex items-center justify-center p-4" onClick={() => setIntervene(null)}>
           <div className="w-full max-w-sm p-5 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl"
             onClick={e => e.stopPropagation()}>
-            <div className="text-base font-semibold mb-2">该任务迁移次数较多</div>
+            <div className="text-lg font-semibold mb-2">该任务迁移次数较多</div>
             <p className="text-sm leading-relaxed text-stone-500 dark:text-stone-400">
               该任务已迁移 {intervene.migrated_count} 次（最初属于 {intervene.original_date || '未知日期'}），确定还要继续吗？
             </p>
@@ -163,7 +163,7 @@ export default function MigrationModal({ open, items, today, onClose, onChanged,
       <div className="w-full max-w-xl my-8 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown"
         onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">
-          <div className="text-base font-semibold">待迁移任务</div>
+          <div className="text-lg font-semibold">待迁移任务</div>
           <button onClick={onClose}
             className="w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>

@@ -62,7 +62,30 @@ def test_todo_parameter_docs_match_protocol_and_examples_validate(app, auth_head
         todo.tools[name].inputs.model_validate(example_args)
 
 
-def test_public_https_origin_and_trusted_proxy(app, auth_headers, monkeypatch):
+@pytest.mark.parametrize(('base_url', 'caller'), [
+    ('http://192.0.2.10:60100', '192.0.2.25'),
+    ('http://[2001:db8::10]:60100', '2001:db8::25'),
+    ('https://todo.example.test', '192.0.2.25'),
+])
+def test_remote_mcp_without_public_origin(app, auth_headers, monkeypatch, base_url, caller):
+    from app.config import settings
+    monkeypatch.setattr(settings, 'mcp_public_origin', '')
+    with TestClient(app, base_url=base_url, client=(caller, 40000)) as remote:
+        token = issue(remote, auth_headers)
+        catalog = remote.get(ADMIN, headers=auth_headers).json()['data'][0]
+        assert catalog['remote_enabled']
+        assert catalog['endpoint'] == f'{base_url}/mcp/todo'
+        assert remote.post('/mcp/todo', json={}).status_code == 401
+        assert len(tool_names(remote, token)) == 13
+        response = rpc(remote, token, 'tools/call', {'name': 'get_today', 'arguments': {}})
+        assert response.status_code == 200 and response.json()['result']
+        remote.headers['Origin'] = base_url
+        assert rpc(remote, token).status_code == 200
+        remote.headers['Origin'] = 'https://other.example.test'
+        assert rpc(remote, token).status_code == 403
+
+
+def test_public_origin_is_optional_and_sets_advertised_url(app, auth_headers, monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, 'mcp_public_origin', 'https://mcp.example.test:8443/')
     public_host = 'mcp.example.test:8443'
@@ -86,19 +109,17 @@ def test_public_https_origin_and_trusted_proxy(app, auth_headers, monkeypatch):
             assert rpc(remote, token).status_code == 403
             del remote.headers['Origin']
             remote.headers['Host'] = 'localhost:60100'
-            assert rpc(remote, token).status_code == 403
-        forwarded = {'X-Forwarded-Proto': 'https', 'X-Forwarded-For': external[0]}
-        for peer, status in [(external, 403), (('127.0.0.1', 41000), 200)]:
-            with TestClient(proxy_app, base_url='http://' + public_host, client=peer) as upstream:
-                assert rpc(upstream, token).status_code == 403
-                upstream.headers.update(forwarded)
-                assert rpc(upstream, token).status_code == status
+            assert rpc(remote, token).status_code == 200
+        with TestClient(proxy_app, base_url='http://backend.internal:60100', client=('127.0.0.1', 41000)) as proxy:
+            proxy.headers.update({'X-Forwarded-Proto': 'https', 'X-Forwarded-For': external[0],
+                                  'Origin': f'https://{public_host}'})
+            assert rpc(proxy, token).status_code == 200
 
 
-def test_configured_origin_must_be_an_https_origin(monkeypatch):
+def test_configured_origin_must_be_an_http_origin(monkeypatch):
     from app.config import settings
     from app.confcenter.mcp_network import McpNetwork
-    for value in ('http://host.example', 'https://*.example', 'https://a@b.test',
+    for value in ('ftp://host.example', 'https://*.example', 'https://a@b.test',
                   'https://host.example/path', 'https://host.example?token=x', 'https://host.example:0'):
         monkeypatch.setattr(settings, 'mcp_public_origin', value)
         with pytest.raises(ValueError, match='DOUBLOG_MCP_PUBLIC_ORIGIN'):
@@ -106,7 +127,8 @@ def test_configured_origin_must_be_an_https_origin(monkeypatch):
     monkeypatch.setattr(settings, 'mcp_public_origin', 'https://Mcp.example.test:443/')
     origin = McpNetwork.configured()
     assert origin.public_origin == 'https://mcp.example.test'
-    assert origin.public_hosts == ('mcp.example.test', 'mcp.example.test:443')
+    monkeypatch.setattr(settings, 'mcp_public_origin', 'http://192.0.2.10:60100')
+    assert McpNetwork.configured().public_origin == 'http://192.0.2.10:60100'
 
 
 def test_renew_active_expired_stale_and_revoked_tokens(app, auth_headers):

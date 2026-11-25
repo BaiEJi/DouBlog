@@ -12,9 +12,9 @@ import { getDataIdentity } from '@/shared/dataEpoch'
 
 /** 默认文案可被 设置→象限文案 覆盖（label=主文案，subtitle=行动建议） */
 export const QUADRANT_META = [
-  { quadrant: 1, color: '#ef4444', text: 'text-red-600 dark:text-red-400', short: 'Q1', label: '重要紧急', subtitle: '立即做', icon: '🔥' },
-  { quadrant: 2, color: '#6366f1', text: 'text-indigo-600 dark:text-indigo-400', short: 'Q2', label: '重要不紧急', subtitle: '计划做', icon: '🌱' },
-  { quadrant: 3, color: '#f59e0b', text: 'text-amber-600 dark:text-amber-400', short: 'Q3', label: '紧急不重要', subtitle: '委派·批量', icon: '⚡' },
+  { quadrant: 1, color: '#ef4444', text: 'text-red-700 dark:text-red-300', short: 'Q1', label: '重要紧急', subtitle: '立即做', icon: '🔥' },
+  { quadrant: 2, color: '#6366f1', text: 'text-indigo-700 dark:text-indigo-300', short: 'Q2', label: '重要不紧急', subtitle: '计划做', icon: '🌱' },
+  { quadrant: 3, color: '#f59e0b', text: 'text-amber-700 dark:text-amber-300', short: 'Q3', label: '紧急不重要', subtitle: '委派·批量', icon: '⚡' },
   { quadrant: 4, color: '#94a3b8', text: 'text-stone-500 dark:text-stone-400', short: 'Q4', label: '不紧急不重要', subtitle: '考虑删除', icon: '💭' },
 ]
 
@@ -126,8 +126,8 @@ export function adjustForDark(hex) {
 export function QuadrantBadge({ quadrant, label, small }) {
   const m = quadrantMeta(quadrant)
   return (
-    <span className={'inline-flex items-center gap-1 rounded-full border whitespace-nowrap ' +
-      (small ? 'px-1.5 h-5 text-[10.5px]' : 'px-2 h-6 text-[11px]') +
+    <span className={'inline-flex items-center gap-1 rounded-full border whitespace-nowrap text-xs ' +
+      (small ? 'px-1.5 h-5' : 'px-2 h-6') +
       ' border-current/20 ' + m.text}
       style={{ background: m.color + '14', borderColor: m.color + '40' }}>
       {m.short} {label || m.label}
@@ -138,9 +138,9 @@ export function QuadrantBadge({ quadrant, label, small }) {
 export function CategoryBadge({ name, color, icon, small }) {
   if (!name) return <span className="text-stone-400 text-xs">—</span>
   return (
-    <span className={'inline-flex items-center gap-1 rounded-full border whitespace-nowrap ' +
-      (small ? 'px-1.5 h-5 text-[10.5px]' : 'px-2 h-6 text-[11px]')}
-      style={{ color: color || '#78716c', borderColor: (color || '#78716c') + '55', background: (color || '#78716c') + '14' }}>
+    <span className={'todo-category-label inline-flex items-center gap-1 rounded-full border whitespace-nowrap text-xs ' +
+      (small ? 'px-1.5 h-5' : 'px-2 h-6')}
+      style={{ '--todo-category': color || '#78716c', borderColor: (color || '#78716c') + '55', background: (color || '#78716c') + '14' }}>
       {icon && <span>{icon}</span>}{name}
     </span>
   )
@@ -149,8 +149,8 @@ export function CategoryBadge({ name, color, icon, small }) {
 /** 迁移来源小标签（橙）：⟲ 来自 X · 拖延 N 天 · 迁移×N */
 export function MigrateTag({ task }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md px-2 h-5 text-[10.5px] whitespace-nowrap
-      bg-orange-500/10 text-orange-700 dark:text-orange-300">
+    <span className="inline-flex items-center gap-1 rounded-md px-2 h-5 text-xs whitespace-nowrap
+      bg-orange-500/10 text-orange-800 dark:text-orange-300">
       ⟲ 来自 {task.last_migrated_from || task.original_date || '?'}
       {task.days_procrastinated != null ? ` · 拖延 ${task.days_procrastinated} 天` : ''} · 迁移×{task.migrated_count}
     </span>

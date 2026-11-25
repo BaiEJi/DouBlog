@@ -56,7 +56,7 @@ function Heatmap({ year, days }) {
               if (first) marks.push({ ci, m: first.month })
             })
             return marks.map(({ ci, m }) => (
-              <span key={m} className="todo-report-muted text-[13px] leading-5 whitespace-nowrap"
+              <span key={m} className="todo-report-muted text-sm leading-5 whitespace-nowrap"
                 style={{ gridColumn: ci + 2 }}>{MONTHS[m]}</span>
             ))
           })()}
@@ -98,7 +98,7 @@ function Bar({ label, color, value, total, text, dark }) {
     <div className="mb-4 last:mb-0">
       <div className="mb-2 flex items-baseline justify-between gap-3">
         <span className="truncate text-base font-medium">{label}</span>
-        <span className="todo-report-muted shrink-0 text-[15px] tabular-nums">{text}</span>
+        <span className="todo-report-muted shrink-0 text-base tabular-nums">{text}</span>
       </div>
       <div className="h-1.5 rounded-full bg-black/[0.05] dark:bg-white/[0.08] overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: bg }} />
@@ -178,7 +178,7 @@ export default function StatsView({ toast, dark }) {
 
   return (
     <ReportPage title="任务统计" controls={
-      <time dateTime={summaryDate} className="todo-report-muted text-[15px] tabular-nums">截至 {summaryDate}</time>
+      <time dateTime={summaryDate} className="todo-report-muted text-base tabular-nums">截至 {summaryDate}</time>
     }>
       <ReportMetrics items={metrics} />
       <ReportPanel title="完成热力图" controls={
@@ -213,7 +213,7 @@ export default function StatsView({ toast, dark }) {
       </div>
 
       {shelved.length > 0 && (
-        <ReportPanel title="搁置任务" controls={<span className="todo-report-muted text-[15px] tabular-nums">{shelved.length} 项</span>}>
+        <ReportPanel title="搁置任务" controls={<span className="todo-report-muted text-base tabular-nums">{shelved.length} 项</span>}>
           <ul className="divide-y divide-stone-200/75 dark:divide-stone-700/70">
             {shelved.map(t => (
               <li key={t.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">

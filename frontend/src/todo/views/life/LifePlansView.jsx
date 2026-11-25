@@ -27,17 +27,17 @@ const textAreaCls = 'w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-white/
 function Bucket({ title, tone, list, strike, note }) {
   return (
     <div>
-      <div className={'text-[13px] font-semibold mb-2.5 ' + tone}>{title}</div>
+      <div className={'text-base font-semibold mb-2.5 ' + tone}>{title}</div>
       {list.length === 0 ? (
         <div className="text-xs text-stone-400 py-3">{note}</div>
       ) : (
         <div className="divide-y divide-black/[0.05] dark:divide-white/[0.06] rounded-xl border border-black/[0.06] dark:border-white/[0.07] max-h-[340px] overflow-y-auto">
           {list.map(t => (
-            <div key={t.id} className="flex items-center gap-2.5 px-3 py-2 text-[13px]">
-              <span className="text-[11px] text-stone-400 tabular-nums w-11 shrink-0">{(t.task_date ?? '').slice(5)}</span>
+            <div key={t.id} className="flex items-center gap-2.5 px-3 py-2 text-base">
+              <span className="text-xs text-stone-400 tabular-nums w-11 shrink-0">{(t.task_date ?? '').slice(5)}</span>
               <span className={'truncate ' + (strike ? 'line-through text-stone-400' : '')}>{t.title}</span>
               {strike && t.completion_note && (
-                <span className="text-[11px] text-stone-400 truncate max-w-[140px]">📝 {t.completion_note}</span>
+                <span className="text-xs text-stone-400 truncate max-w-[140px]">📝 {t.completion_note}</span>
               )}
             </div>
           ))}
@@ -187,12 +187,12 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
               <span className="text-xs text-stone-400">次</span>
             </div>
             {ruleType === 'weekly_times' && times >= 1 && (
-              <div className="text-[11px] text-stone-400 mt-1.5">
+              <div className="text-xs text-stone-400 mt-1.5">
                 自动安排在 {weekdaysForTimes(times).map(w => WEEKDAY_OPTIONS[w]).join('、')}
               </div>
             )}
             {ruleType === 'monthly_times' && (
-              <div className="text-[11px] text-stone-400 mt-1.5">
+              <div className="text-xs text-stone-400 mt-1.5">
                 按当月天数自动均摊到固定日期（如每月 2 次 → 15 日、月末）
               </div>
             )}
@@ -202,7 +202,7 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
           <textarea rows={2} value={description} onChange={e => setDescription(e.target.value)}
             placeholder="补充说明…" className={textAreaCls} />
         </Field>
-        <div className="text-[11.5px] text-stone-400">
+        <div className="text-xs text-stone-400">
           保存后{editing ? '未来未完成的实例将按新规则重新生成' : '从开始时间起（未来约 90 天内）自动生成任务实例'}。
         </div>
       </div>
@@ -312,7 +312,7 @@ export default function LifePlansView({ toast, dark }) {
           <div className="space-y-3 max-h-[560px] overflow-y-auto">
             {groupedPlans.map(g => (
               <div key={g.key}>
-                <div className="flex items-center gap-1.5 px-1.5 mb-1 text-[11px] text-stone-400">
+                <div className="flex items-center gap-1.5 px-1.5 mb-1 text-xs text-stone-400">
                   <Dot color={dark ? adjustForDark(g.color) : g.color} size={7} />
                   {g.name}
                   <span className="tabular-nums">{g.plans.length}</span>
@@ -324,13 +324,13 @@ export default function LifePlansView({ toast, dark }) {
                         ? 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
                         : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.05]')}>
                     <div className="flex-1 min-w-0">
-                      <div className={'text-[13px] font-medium truncate ' + (p.enabled ? '' : 'opacity-55')}>{p.title}</div>
-                      <div className="text-[10.5px] text-stone-400 truncate">
+                      <div className={'text-base font-medium truncate ' + (p.enabled ? '' : 'text-stone-500')}>{p.title}</div>
+                      <div className="text-xs text-stone-400 truncate">
                         {p.rule_text}{!p.enabled && ' · 已停用'}
                       </div>
                     </div>
                     {p.next_occurrence && (
-                      <span className="text-[10.5px] text-stone-400 tabular-nums shrink-0">{p.next_occurrence.slice(5)}</span>
+                      <span className="text-xs text-stone-400 tabular-nums shrink-0">{p.next_occurrence.slice(5)}</span>
                     )}
                   </button>
                 ))}
@@ -351,17 +351,17 @@ export default function LifePlansView({ toast, dark }) {
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
               <div className="flex items-center gap-2 flex-wrap">
                 <Dot color={catOf(selected.category_id)?.color ?? '#94a3b8'} />
-                <span className={'text-base font-semibold ' + (selected.enabled ? '' : 'opacity-60')}>{selected.title}</span>
+                <span className={'text-lg font-semibold ' + (selected.enabled ? '' : 'text-stone-500')}>{selected.title}</span>
                 {(() => {
                   const cat = catOf(selected.category_id)
                   return cat ? (
-                    <span className="rounded-full px-2 h-6 text-[11px] inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-500 dark:text-stone-400">
+                    <span className="rounded-full px-2 h-6 text-xs inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-500 dark:text-stone-400">
                       {cat.icon ? `${cat.icon} ` : ''}{cat.name}
                     </span>
                   ) : null
                 })()}
                 {!selected.enabled && (
-                  <span className="rounded-md px-1.5 h-5 text-[10.5px] inline-flex items-center bg-stone-500/10 text-stone-500 dark:text-stone-400">已停用</span>
+                  <span className="rounded-md px-1.5 h-5 text-xs inline-flex items-center bg-stone-500/10 text-stone-500 dark:text-stone-400">已停用</span>
                 )}
                 <span className="ml-auto flex items-center gap-2.5">
                   <span className="flex items-center gap-1.5" title={selected.enabled ? '停用后将清理未来实例，可随时再启用' : '已停用，开启后继续生成'}>
@@ -378,32 +378,32 @@ export default function LifePlansView({ toast, dark }) {
                 {selected.next_occurrence && <span>⏭ 下次 {selected.next_occurrence}</span>}
               </div>
               {selected.description && (
-                <div className="mt-2.5 text-[13px] text-stone-500 dark:text-stone-400">{selected.description}</div>
+                <div className="mt-2.5 text-base text-stone-500 dark:text-stone-400">{selected.description}</div>
               )}
               <div className="grid grid-cols-3 gap-3 mt-4">
                 <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.07] p-3">
-                  <div className="text-[11px] text-stone-400 mb-1">历史待完成</div>
-                  <div className={'text-lg font-semibold tabular-nums ' + (todoHistory.length ? 'text-orange-600 dark:text-orange-400' : '')}>{todoHistory.length}<span className="text-[11px] font-normal text-stone-400 ml-0.5">次</span></div>
+                  <div className="text-sm text-stone-500 mb-1">历史待完成</div>
+                  <div className={'text-xl font-semibold tabular-nums ' + (todoHistory.length ? 'text-orange-700 dark:text-orange-400' : '')}>{todoHistory.length}<span className="text-xs font-normal text-stone-400 ml-0.5">次</span></div>
                 </div>
                 <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.07] p-3">
-                  <div className="text-[11px] text-stone-400 mb-1">历史已完成</div>
-                  <div className={'text-lg font-semibold tabular-nums ' + (doneHistory.length ? 'text-emerald-600 dark:text-emerald-400' : '')}>{doneHistory.length}<span className="text-[11px] font-normal text-stone-400 ml-0.5">次</span></div>
+                  <div className="text-sm text-stone-500 mb-1">历史已完成</div>
+                  <div className={'text-xl font-semibold tabular-nums ' + (doneHistory.length ? 'text-emerald-700 dark:text-emerald-400' : '')}>{doneHistory.length}<span className="text-xs font-normal text-stone-400 ml-0.5">次</span></div>
                 </div>
                 <div className="rounded-xl border border-black/[0.06] dark:border-white/[0.07] p-3">
-                  <div className="text-[11px] text-stone-400 mb-1">未来安排</div>
-                  <div className="text-lg font-semibold tabular-nums">{future.length}<span className="text-[11px] font-normal text-stone-400 ml-0.5">次</span></div>
+                  <div className="text-sm text-stone-500 mb-1">未来安排</div>
+                  <div className="text-xl font-semibold tabular-nums">{future.length}<span className="text-xs font-normal text-stone-400 ml-0.5">次</span></div>
                 </div>
               </div>
             </div>
 
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold">总体看板</h3>
+                <h3 className="text-lg font-semibold">总体看板</h3>
                 <button onClick={load} className={btn.mini}>↻ 刷新</button>
               </div>
               <div className="grid grid-cols-3 gap-5">
-                <Bucket title={`历史待完成（${todoHistory.length}）`} tone="text-orange-600 dark:text-orange-400" list={todoHistory} note="没有欠账" />
-                <Bucket title={`历史已完成（${doneHistory.length}）`} tone="text-emerald-600 dark:text-emerald-400" list={doneHistory} strike note="还没有完成记录" />
+                <Bucket title={`历史待完成（${todoHistory.length}）`} tone="text-orange-700 dark:text-orange-400" list={todoHistory} note="没有欠账" />
+                <Bucket title={`历史已完成（${doneHistory.length}）`} tone="text-emerald-700 dark:text-emerald-400" list={doneHistory} strike note="还没有完成记录" />
                 <Bucket title={`未来（${future.length}）`} tone="" list={future} note="没有未来的安排" />
               </div>
             </div>

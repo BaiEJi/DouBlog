@@ -8,6 +8,7 @@
 import { lazy, Suspense, useCallback, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
+import './typography.css'
 
 const TodayView = lazy(() => import('./views/TodayView'))
 const BacklogView = lazy(() => import('./views/BacklogView'))
@@ -52,7 +53,7 @@ export default function TodoPage({ dark }) {
   }
 
   return (
-    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors h-[calc(100vh-64px)] flex flex-col">
+    <div className="todo-content min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors h-[calc(100vh-64px)] flex flex-col">
       <PageHeader title="MyTodo" subtitle="四象限 · 迁移 · 规律生活"
         tabs={TABS.map(t => ({ ...t, active: view === t.key, ...(t.key === 'backlog' ? { children: ['inbox', 'migrate', 'shelved'].map((key, i) => ({ key: `backlog:${key}`, label: ['待排期', '迁移池', '搁置计划'][i], active: view === 'backlog' && (sp.get('bsub') || 'inbox') === key })) } : {}), ...(t.key === 'life' ? { children: ['today', 'plans', 'calendar', 'stats', 'review'].map((key, i) => ({ key: `life:${key}`, label: ['今日打卡', '计划', '日历', '统计', '回顾'][i], active: view === 'life' && (sp.get('lsub') || 'today') === key })) } : {}) }))}
         activeTab={view}

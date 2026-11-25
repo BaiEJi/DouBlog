@@ -59,7 +59,7 @@ export function DualLine({ data, a, b, height = 240, showScale = false }) {
   const [ref, w] = useWidth()
   const [hover, setHover] = useState(null)
   const H = height, PAD_T = 12, PAD_B = showScale ? 32 : 24, PAD_R = 6
-  if (!data.length || w <= 0) return <div ref={ref} className="h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
+  if (!data.length || w <= 0) return <div ref={ref} className="ui-state-text h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
 
   const { max, ticks } = verticalScale(data, showScale, [0.25, 0.5, 0.75, 1])
   const PAD_L = showScale ? Math.max(24, String(max).length * 8 + 10) : 6
@@ -128,7 +128,7 @@ export function GroupedBars({ data, a, b, height = 190, showScale = false }) {
   const [ref, w] = useWidth()
   const [hover, setHover] = useState(null)
   const H = height, PAD_T = 10, PAD_B = showScale ? 32 : 24, PAD_R = 6
-  if (!data.length || w <= 0) return <div ref={ref} className="h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
+  if (!data.length || w <= 0) return <div ref={ref} className="ui-state-text h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
 
   const { max, ticks } = verticalScale(data, showScale, [0.5, 1])
   const PAD_L = showScale ? Math.max(24, String(max).length * 8 + 10) : 6
@@ -177,7 +177,7 @@ export function GroupedBars({ data, a, b, height = 190, showScale = false }) {
  */
 export function DonutPie({ data, size = 220, thickness = 30, centerLabel, centerValue }) {
   const [hover, setHover] = useState(null)
-  if (!data.length) return <div className="h-[140px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
+  if (!data.length) return <div className="ui-state-text h-[140px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
   const total = data.reduce((s, d) => s + d.value, 0) || 1
   const R = size / 2, r = R - thickness
   let angle = -Math.PI / 2

@@ -4,7 +4,7 @@
  * variant: 'todo'（全部任务）| 'life'（plan_only=true 生活模式）。
  * 点某天 → onOpenDay(dateStr)（今日页特定日期 / life 今日打卡）。
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getDataIdentity } from '@/shared/dataEpoch'
 
@@ -15,22 +15,27 @@ import {
 } from '../kit'
 
 /** 单元格迷你任务列表（定义在组件外，保持引用稳定） */
-function TaskMiniList({ list, max = 4 }) {
-  if (!list || list.length === 0) return null
+function TaskMiniList({ list, slots, measureRef }) {
+  const total = list.total ?? list.length
+  const limit = Math.min(4, slots)
+  const items = list.slice(0, total > limit ? Math.min(4, slots - 1) : limit)
+  const remaining = total - items.length
   return (
-    <div className="flex flex-col gap-[3px] mt-1 min-h-0">
-      {list.slice(0, max).map(t => {
+    <div ref={measureRef} className="todo-calendar-preview mt-0.5 flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden text-xs">
+      {items.map(t => {
         const m = quadrantMeta(t.quadrant)
         return (
           <div key={t.id}
-            className={'flex items-center gap-1 text-[10.5px] leading-4 rounded px-1 truncate ' +
-              (t.status === 'done' ? 'opacity-50 line-through' : '')}>
+            className={'flex shrink-0 items-center gap-1 rounded px-1 truncate ' +
+              (t.status === 'done' ? 'text-stone-500 line-through' : '')}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: m.color }} />
             <span className="truncate">{t.title}</span>
           </div>
         )
       })}
-      {(list.total ?? list.length) > max && <div className="text-[10px] text-stone-400 px-1">还有 {(list.total ?? list.length) - max} 项…</div>}
+      {remaining > 0 && <div className="shrink-0 truncate px-1 text-stone-500">
+        {items.length ? `还有 ${remaining} 项…` : `${remaining} 项任务`}
+      </div>}
     </div>
   )
 }
@@ -46,7 +51,30 @@ const intensityCls = count => {
 export default function CalendarView({ variant = 'todo', onOpenDay }) {
   const [mode, setMode] = useState('month')
   const [anchor, setAnchor] = useState(new Date())
+  const firstPreview = useRef(null)
+  const [monthSlots, setMonthSlots] = useState(1)
   const today = todayStr()
+
+  // 月格等高，只测一格。按实际行高预留汇总行，密集日期也能读到剩余项数。
+  useEffect(() => {
+    const area = firstPreview.current
+    if (!area || mode !== 'month') return
+    const measure = () => {
+      const style = getComputedStyle(area)
+      const line = parseFloat(style.lineHeight)
+      const gap = parseFloat(style.rowGap)
+      const slots = Math.floor((area.getBoundingClientRect().height + gap) / (line + gap))
+      setMonthSlots(Math.max(1, Math.min(5, slots)))
+    }
+    if (typeof ResizeObserver === 'undefined') {
+      const frame = requestAnimationFrame(measure)
+      window.addEventListener('resize', measure)
+      return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', measure) }
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(area)
+    return () => observer.disconnect()
+  }, [mode, anchor])
 
   const range = useMemo(() => {
     if (mode === 'week') {
@@ -112,7 +140,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
 
   return (
     <div className="h-full min-h-0 flex flex-col">
-      {calendarQuery.error && <div role="alert" className="mb-3 text-sm text-red-500">{calendarQuery.error.message}</div>}
+      {calendarQuery.error && <div role="alert" className="mb-3 text-sm text-red-700 dark:text-red-300">{calendarQuery.error.message}</div>}
       {/* 工具栏 */}
       <div className="shrink-0 flex flex-wrap items-center gap-2 mb-4">
         <Segmented value={mode} onChange={setMode}
@@ -131,7 +159,7 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
             <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 4l5 6-5 6" /></svg>
           </button>
         </div>
-        <span className="text-sm font-medium tabular-nums">{rangeLabel}</span>
+        <span className="text-base font-semibold tabular-nums">{rangeLabel}</span>
         <span className="ml-auto text-xs text-stone-400 dark:text-stone-500">
           {tasks ? `共 ${summary?.total ?? tasks.length} 个任务` : '加载中…'}
         </span>
@@ -151,10 +179,10 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
                     ? 'border-indigo-400/70 bg-indigo-500/[0.06]'
                     : 'border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] hover:border-black/20 dark:hover:border-white/20')}>
                 <div className="flex items-center gap-2 mb-1 shrink-0">
-                  <span className="text-[11px] text-stone-400">{WEEKDAY_LABELS[weekdayIndex(d)]}</span>
+                  <span className="text-xs text-stone-400">{WEEKDAY_LABELS[weekdayIndex(d)]}</span>
                   <span className={'text-sm font-semibold tabular-nums ' + (key === today ? 'text-indigo-600 dark:text-indigo-400' : '')}>{d.getDate()}</span>
                   {pending > 0 && (
-                    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-stone-200 dark:bg-white/[0.14] text-stone-600 dark:text-stone-300 text-[10px] flex items-center justify-center tabular-nums">
+                    <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-stone-200 dark:bg-white/[0.14] text-stone-600 dark:text-stone-300 text-xs flex items-center justify-center tabular-nums">
                       {pending}
                     </span>
                   )}
@@ -164,14 +192,14 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
                     const m = quadrantMeta(t.quadrant)
                     return (
                       <div key={t.id}
-                        className={'flex items-center gap-1.5 rounded-lg px-1.5 py-1 text-[11.5px] truncate border ' +
-                          (t.status === 'done' ? 'opacity-50 line-through border-transparent' : 'border-black/[0.05] dark:border-white/[0.06]')}>
+                        className={'flex shrink-0 items-center gap-1.5 rounded-lg px-1.5 py-1 text-sm truncate border ' +
+                          (t.status === 'done' ? 'text-stone-500 line-through border-transparent' : 'border-black/[0.05] dark:border-white/[0.06]')}>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: m.color }} />
                         <span className="truncate">{t.title}</span>
                       </div>
                     )
                   })}
-                  {list.length === 0 && <span className="text-[11px] text-stone-300 dark:text-stone-600 mt-2">无任务</span>}
+                  {list.length === 0 && <span className="text-xs text-stone-300 dark:text-stone-600 mt-2">无任务</span>}
                 </div>
               </button>
             )
@@ -184,10 +212,10 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
         <div className="flex-1 min-h-0 flex flex-col rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
           <div className="grid grid-cols-7 mb-1.5 shrink-0">
             {WEEKDAY_LABELS.map(w => (
-              <div key={w} className="text-center text-[11px] text-stone-400 py-1">{w}</div>
+              <div key={w} className="text-center text-sm text-stone-500 py-1">{w}</div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1.5 flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>
+          <div className="grid grid-cols-7 gap-1.5 flex-1 min-h-0 overflow-y-auto" style={{ gridAutoRows: 'minmax(3.75rem, 1fr)' }}>
             {monthMatrix(anchor).flatMap((row, ri) =>
               row.map((d, ci) => {
                 const key = `${ri}-${ci}`
@@ -202,9 +230,9 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
                         : list.length
                           ? 'border-black/[0.08] dark:border-white/[0.09] hover:border-black/20 dark:hover:border-white/25'
                           : 'border-black/[0.05] dark:border-white/[0.06] hover:border-black/15 dark:hover:border-white/20')}>
-                    <span className={'text-[11.5px] font-medium tabular-nums px-0.5 shrink-0 ' +
+                    <span className={'text-sm font-semibold tabular-nums px-0.5 shrink-0 ' +
                       (ds === today ? 'text-indigo-600 dark:text-indigo-400' : 'text-stone-500 dark:text-stone-400')}>{d.getDate()}</span>
-                    <TaskMiniList list={list} />
+                    <TaskMiniList list={list} slots={monthSlots} measureRef={d.getDate() === 1 ? firstPreview : undefined} />
                   </button>
                 )
               })
@@ -220,10 +248,10 @@ export default function CalendarView({ variant = 'todo', onOpenDay }) {
             const monthAnchor = new Date(anchor.getFullYear(), m, 1)
             return (
               <div key={m} className="flex flex-col min-h-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-3">
-                <div className="text-xs font-medium mb-1.5 shrink-0">{m + 1} 月</div>
+                <div className="text-base font-semibold mb-1.5 shrink-0">{m + 1} 月</div>
                 <div className="grid grid-cols-7 gap-[3px] mb-1 shrink-0">
                   {WEEKDAY_LABELS.map(w => (
-                    <div key={w} className="text-[9px] text-stone-300 dark:text-stone-600 text-center">{w}</div>
+                    <div key={w} className="text-xs text-stone-500 text-center">{w}</div>
                   ))}
                 </div>
                 <div className="grid grid-cols-7 gap-[3px] flex-1 min-h-0" style={{ gridAutoRows: 'minmax(0, 1fr)' }}>

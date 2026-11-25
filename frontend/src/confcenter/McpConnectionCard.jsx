@@ -15,7 +15,7 @@ export default function McpConnectionCard({ module, toast }) {
     </div>
     <dl className="mt-4 space-y-3">
       <div><dt className={label}>传输方式</dt><dd className="mt-1 text-sm">Streamable HTTP</dd></div>
-      <div><dt className={label}>服务地址 · {module.remote_enabled ? 'HTTPS 远程接入' : '本机接入'}</dt>
+      <div><dt className={label}>服务地址</dt>
         <dd className="mt-1 select-all break-all font-mono text-[13px]">{module.endpoint}</dd></div>
       <div><dt className={label}>认证请求头</dt>
         <dd className="mt-1 select-all break-all font-mono text-[13px]">Authorization: {authorization}</dd></div>

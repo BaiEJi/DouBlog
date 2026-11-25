@@ -83,7 +83,7 @@ backend/
 
 ## 3. 数据库设计
 
-配置中心通过 `confcenter_mcp_tokens` 管理模块令牌，通过 `confcenter_mcp_tools` 持久化逐工具开关。`app/shared/mcp_catalog.py` 从应用已加载模块的 `mcp_provider` 收集工具。每个提供方在 ASGI lifespan 内获得独立的无状态传输，逐请求检查连接来源、令牌摘要、模块、数据源和有效期。默认仅本机可连，配置 `DOUBLOG_MCP_PUBLIC_ORIGIN` 后可按指定来源接入 HTTPS 远程请求。工具发现、参数校验及调用共享开放清单。续期以原到期时间作为更新条件，避免并发重复延长。MyTodo 写工具继续复用 `todo_mutations`。
+配置中心通过 `confcenter_mcp_tokens` 管理模块令牌，通过 `confcenter_mcp_tools` 持久化逐工具开关。`app/shared/mcp_catalog.py` 从应用已加载模块的 `mcp_provider` 收集工具。每个提供方在 ASGI lifespan 内获得独立的无状态传输，校验令牌摘要、模块、数据源和有效期。任意调用方 IP 都可通过服务器监听的 HTTP 地址或 HTTPS 代理接入。请求携带 `Origin` 时校验同源。工具发现、参数校验及调用共享开放清单。续期以原到期时间作为更新条件，避免并发重复延长。MyTodo 写工具继续复用 `todo_mutations`。
 
 ### 3.1 Workspace 模型（`app/blog/models.py`）
 

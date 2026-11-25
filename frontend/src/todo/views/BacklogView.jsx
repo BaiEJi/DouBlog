@@ -48,7 +48,7 @@ function ShelvedList({ items, onChanged, toast }) {
 
   return (
     <div>
-      <div className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+      <div className="mb-3 text-sm text-stone-500 dark:text-stone-400">
         被你有意搁置的逾期任务，不再催办；随时可以迁移回来或恢复催办
       </div>
       <div className="flex flex-col gap-2.5">
@@ -57,11 +57,11 @@ function ShelvedList({ items, onChanged, toast }) {
             className="rounded-xl border border-black/[0.07] dark:border-white/[0.08] bg-white dark:bg-white/[0.025] px-3.5 py-3">
             <div className="flex items-center gap-2 flex-wrap">
               <Dot color={quadrantMeta(t.quadrant).color} />
-              <span className="text-sm font-medium flex-1 min-w-0 truncate">{t.title}</span>
-              {t.shelved_at && <span className="text-[11px] text-stone-400 tabular-nums">搁置于 {mdhmOf(t.shelved_at)}</span>}
+              <span className="text-base font-medium flex-1 min-w-0 truncate">{t.title}</span>
+              {t.shelved_at && <span className="text-xs text-stone-400 tabular-nums">搁置于 {mdhmOf(t.shelved_at)}</span>}
             </div>
             <div className="mt-1.5">
-              <span className="inline-flex items-center rounded-md px-2 h-5 text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">
+              <span className="inline-flex items-center rounded-md px-2 h-5 text-xs bg-orange-500/10 text-orange-800 dark:text-orange-300 tabular-nums">
                 ⟲ 来自 {t.original_date || '?'}
                 {t.days_procrastinated != null ? ` · 拖延 ${t.days_procrastinated} 天` : ''} · 迁移×{t.migrated_count}
               </span>
@@ -149,7 +149,7 @@ export default function BacklogView({ toast }) {
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
-      {taskQuery.error && <div role="alert" className="mb-3 text-sm text-red-500">{taskQuery.error.message}</div>}
+      {taskQuery.error && <div role="alert" className="mb-3 text-sm text-red-700 dark:text-red-300">{taskQuery.error.message}</div>}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <span className="text-sm tabular-nums text-stone-600 dark:text-stone-400">共 {counts[tab]} 项任务</span>
         {tab === 'inbox' && (
@@ -161,7 +161,7 @@ export default function BacklogView({ toast }) {
 
       {tab === 'inbox' && (
         <>
-          <div className="mb-3 text-xs text-stone-500 dark:text-stone-400">先记下任务，确定日期后再点「排期」。</div>
+          <div className="mb-3 text-sm text-stone-500 dark:text-stone-400">先记下任务，确定日期后再点「排期」。</div>
           {!tasks ? (
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]"><Spinner /></div>
           ) : tasks.length === 0 ? (
@@ -175,8 +175,8 @@ export default function BacklogView({ toast }) {
                   <div key={t.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.015] dark:hover:bg-white/[0.02] transition-colors">
                     <Dot color={quadrantMeta(t.quadrant).color} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{t.title}</div>
-                      <div className="text-[11px] text-stone-400 tabular-nums">{mdhmOf(t.created_at)}</div>
+                      <div className="text-base font-medium truncate">{t.title}</div>
+                      <div className="text-xs text-stone-400 tabular-nums">{mdhmOf(t.created_at)}</div>
                     </div>
                     <span className="inline-flex"><QuadrantBadge quadrant={t.quadrant} label={labels(t.quadrant)} small /></span>
                     <span className="inline-flex"><CategoryBadge name={t.category_name} color={t.category_color} small /></span>
@@ -222,8 +222,8 @@ export default function BacklogView({ toast }) {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setScheduleTask(null)}>
           <div className="w-full max-w-xs p-5 rounded-2xl bg-white dark:bg-[#1c1b1a] shadow-xl animate-dropdown"
             onClick={e => e.stopPropagation()}>
-            <div className="text-base font-semibold mb-1">排期</div>
-            <div className="text-xs text-stone-400 mb-3 truncate">「{scheduleTask.title}」</div>
+            <div className="text-lg font-semibold mb-1">排期</div>
+            <div className="text-sm text-stone-500 mb-3 truncate">「{scheduleTask.title}」</div>
             <input type="date" value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className={inputCls} />
             <div className="flex gap-2 justify-end mt-4">
               <button onClick={() => setScheduleTask(null)} className={btn.plain}>取消</button>

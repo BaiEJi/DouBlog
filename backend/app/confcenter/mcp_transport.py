@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException, Request
 from mcp.server.caching import CacheHint
 from mcp.server.lowlevel.server import Server
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp.server.transport_security import TransportSecurityMiddleware
 from mcp.shared.exceptions import MCPError
 from pydantic import ValidationError
 from starlette.responses import Response
@@ -42,7 +41,7 @@ async def _call_tool(provider, params):
     return types.CallToolResult(is_error=True, content=[types.TextContent(type='text', text=message)])
 
 
-def _transport(provider, security):
+def _transport(provider):
     catalog = {name: types.Tool(name=name, title=tool.title, description=tool.handler.__doc__,
                                 input_schema=tool.inputs.model_json_schema(),
                                 annotations=types.ToolAnnotations(read_only_hint=tool.read_only, open_world_hint=False))
@@ -62,30 +61,26 @@ def _transport(provider, security):
     server = Server(provider.server_name, version='1.0', instructions=provider.instructions,
                     on_list_tools=list_tools, on_call_tool=call_tool, get_tool_input_schema=input_schema,
                     cache_hints={'tools/list': CacheHint(ttl_ms=0, scope='private')})
-    return StreamableHTTPSessionManager(server, json_response=True, stateless=True, security_settings=security)
+    return StreamableHTTPSessionManager(server, json_response=True, stateless=True)
 
 
 @asynccontextmanager
 async def _lifespan(app):
     managers = {}
     network = McpNetwork.configured()
-    security = network.transport_security()
     async with AsyncExitStack() as stack:
         for key, provider in mcp_modules(app).items():
-            manager = _transport(provider, security)
+            manager = _transport(provider)
             await stack.enter_async_context(manager.run())
             managers[key] = (provider, manager)
-        yield {'mcp_managers': managers, 'mcp_network': network, 'mcp_security': TransportSecurityMiddleware(security)}
+        yield {'mcp_managers': managers, 'mcp_network': network}
 
 
 class McpEndpoint:
     async def __call__(self, scope, receive, send):
         request = Request(scope)
-        if not request.state.mcp_network.permits(request):
-            return await Response('当前连接不符合 MCP 接入设置', status_code=403)(scope, receive, send)
-        rejected = await request.state.mcp_security.validate_request(request)
-        if rejected is not None:
-            return await rejected(scope, receive, send)
+        if not request.state.mcp_network.accepts_origin(request):
+            return await Response('不允许的 MCP 请求来源', status_code=403)(scope, receive, send)
         key = request.path_params['module']
         module = request.state.mcp_managers.get(key)
         if module is None:

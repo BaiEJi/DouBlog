@@ -15,7 +15,7 @@ export function Modal({ title, open, onClose, children, footer, width = 'max-w-l
         role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : undefined}
         onClick={e => e.stopPropagation()}>
         <div className="shrink-0 flex items-center justify-between px-5 h-14 border-b border-black/[0.05] dark:border-white/[0.07]">
-          <div className="text-base font-semibold truncate">{title}</div>
+          <div className="ui-dialog-title text-base font-semibold truncate">{title}</div>
           <button onClick={onClose} aria-label="关闭弹窗"
             className="w-7 h-7 rounded-lg text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 flex items-center justify-center">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
@@ -70,7 +70,7 @@ export const inputCls = 'w-full px-3 h-9 rounded-lg text-sm bg-white dark:bg-whi
 export function Field({ label, children, hint }) {
   return (
     <label className="block">
-      <div className="text-xs text-stone-500 dark:text-stone-400 mb-1.5">{label}{hint && <span className="ml-1 text-stone-300 dark:text-stone-600">({hint})</span>}</div>
+      <div className="ui-field-label text-xs text-stone-500 dark:text-stone-400 mb-1.5">{label}{hint && <span className="ml-1 text-stone-300 dark:text-stone-600">({hint})</span>}</div>
       {children}
     </label>
   )
@@ -91,7 +91,7 @@ export const btn = {
 
 export function Spinner({ text = '加载中…' }) {
   return (
-    <div className="py-14 flex items-center justify-center gap-2 text-xs text-stone-400">
+    <div className="ui-state-text py-14 flex items-center justify-center gap-2 text-xs text-stone-400">
       <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
         <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
@@ -101,14 +101,14 @@ export function Spinner({ text = '加载中…' }) {
 }
 
 export function Empty({ text }) {
-  return <div className="py-10 text-center text-xs text-stone-400">{text}</div>
+  return <div className="ui-state-text py-10 text-center text-xs text-stone-400">{text}</div>
 }
 
 /** 数字统计卡（基线：text-lg~xl font-semibold tabular-nums） */
 export function StatTile({ title, value, suffix, tone }) {
   return (
     <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
-      <div className="text-xs text-stone-500 dark:text-stone-400 mb-1">{title}</div>
+      <div className="ui-stat-label text-xs text-stone-500 dark:text-stone-400 mb-1">{title}</div>
       <div className={'text-xl font-semibold tabular-nums ' + (tone || '')}>
         {value}{suffix && <span className="text-xs font-normal text-stone-400 ml-1">{suffix}</span>}
       </div>

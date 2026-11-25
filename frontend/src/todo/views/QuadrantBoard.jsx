@@ -52,15 +52,15 @@ function CardMenu({ anchorRef, task, onEdit, onReschedule, onMoveQuadrant, onDel
     node.style.top = `${Math.max(8, top)}px`
     node.style.left = `${Math.max(8, Math.min(window.innerWidth - node.offsetWidth - 8, anchor.right - node.offsetWidth))}px`
   }
-  const item = 'flex items-center gap-2 w-full px-3 h-8 text-left text-[13px] rounded-lg transition-colors '
+  const item = 'flex items-center gap-2 w-full px-3 h-8 text-left text-sm rounded-lg transition-colors '
   return createPortal(
-    <div ref={positionMenu} data-todo-menu className="db-menu-surface fixed left-0 top-0 z-50 w-40 max-h-[calc(100vh-16px)] overflow-y-auto p-1" onPointerDown={e => e.stopPropagation()}>
+    <div ref={positionMenu} data-todo-menu className="todo-content db-menu-surface fixed left-0 top-0 z-50 w-44 max-h-[calc(100vh-16px)] overflow-y-auto p-1" onPointerDown={e => e.stopPropagation()}>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
         onClick={() => { onClose(); onEdit(task) }}>编辑</button>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
         onClick={() => { onClose(); onReschedule(task) }}>改期</button>
       <div className="my-1 h-px bg-black/[0.06] dark:bg-white/[0.08]" />
-      <div className="px-3 py-1 text-[10.5px] text-stone-400">移动到</div>
+      <div className="px-3 py-1 text-xs text-stone-400">移动到</div>
       {QUADRANT_DISPLAY_ORDER.map(q => {
         const m = quadrantMeta(q)
         return (
@@ -73,10 +73,10 @@ function CardMenu({ anchorRef, task, onEdit, onReschedule, onMoveQuadrant, onDel
       <div className="my-1 h-px bg-black/[0.06] dark:bg-white/[0.08]" />
       {confirmDel ? (
         <div className="px-2 py-1.5 flex items-center gap-1.5">
-          <span className="text-[11.5px] text-red-600 dark:text-red-400 flex-1">确认删除？</span>
-          <button className="px-2 h-6 rounded-md text-[11px] bg-red-500/10 text-red-600 dark:text-red-400"
+          <span className="text-xs text-red-600 dark:text-red-400 flex-1">确认删除？</span>
+          <button className="px-2 h-6 rounded-md text-xs bg-red-500/10 text-red-600 dark:text-red-400"
             onClick={() => { onClose(); onDelete(task) }}>是</button>
-          <button className="px-2 h-6 rounded-md text-[11px] text-stone-400 hover:bg-black/5 dark:hover:bg-white/10"
+          <button className="px-2 h-6 rounded-md text-xs text-stone-400 hover:bg-black/5 dark:hover:bg-white/10"
             onClick={() => setConfirmDel(false)}>否</button>
         </div>
       ) : (
@@ -102,7 +102,6 @@ export const TaskCardContent = memo(function TaskCardContent({
   return (
     <div title={detail} className={'todo-task-card relative flex h-full min-h-0 min-w-0 items-center gap-2 whitespace-nowrap rounded-lg border px-2.5 transition-colors ' +
         className +
-        (done ? ' opacity-60 ' : '') +
         (focused ? ' ring-2 ring-indigo-400/70 ' : '') +
         ' border-black/[0.07] dark:border-white/[0.08] bg-white dark:bg-white/[0.03]'}
       style={{ ...tintStyle, ...style }}>
@@ -113,11 +112,11 @@ export const TaskCardContent = memo(function TaskCardContent({
             : 'bg-white dark:bg-white/[0.14] border-black/30 dark:border-white/45 hover:border-indigo-500 dark:hover:border-indigo-400')}>
         {done && <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>}
       </button>
-      <span className={'min-w-0 truncate text-base leading-5 ' + (done ? 'line-through text-stone-400 dark:text-stone-500' : '')}>{task.title}</span>
-      {task.plan_id && <span className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">生活</span>}
+      <span className={'min-w-0 truncate text-base ' + (done ? 'line-through text-stone-500' : '')}>{task.title}</span>
+      {task.plan_id && <span className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">生活</span>}
       {task.migrated_count > 0 && task.days_procrastinated != null && (
         <span title={`已迁移 ${task.migrated_count} 次，最初属于 ${task.original_date ?? '?'}`}
-          className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">拖{task.days_procrastinated}天</span>
+          className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-xs bg-orange-500/10 text-orange-800 dark:text-orange-300 tabular-nums">拖{task.days_procrastinated}天</span>
       )}
       {task.category_name && (
         <span title={task.category_name} className="flex max-w-[min(7rem,25%)] shrink-0 items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
@@ -173,25 +172,27 @@ function QuadrantColumn({ block, tasks, softLimit, focusedId, cardHandlers, onAd
       <div className="h-[3px] shrink-0 rounded-full mb-1.5" style={{ background: m.color }} />
       <div className="mb-2 flex min-w-0 shrink-0 items-center gap-2 whitespace-nowrap">
         <div className="flex min-w-0 flex-1 items-baseline gap-2">
-          <h2 title={block.label} className={'max-w-[65%] shrink-0 truncate text-xl leading-7 font-semibold ' + m.text}>{block.label}</h2>
-          <span title={block.subtitle} className="min-w-0 truncate text-[13px] leading-5 text-stone-500 dark:text-stone-400">{block.subtitle}</span>
+          <h2 title={block.label} className={'max-w-[65%] shrink-0 truncate text-lg font-semibold ' + m.text}>{block.label}</h2>
+          <span title={block.subtitle} className="min-w-0 truncate text-sm leading-5 text-stone-500 dark:text-stone-400">{block.subtitle}</span>
         </div>
-        {overLimit && <span title={limitHint} aria-label={limitHint} className="shrink-0 text-xs text-orange-600 dark:text-orange-400">⚠</span>}
-        <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[11px] flex items-center justify-center tabular-nums text-white" title={limitHint}
-          style={{ background: overLimit ? '#ef4444' : m.color }}>{pendingCount}</span>
+        {overLimit && <span title={limitHint} aria-label={limitHint} className="shrink-0 text-xs text-orange-700 dark:text-orange-400">⚠</span>}
+        <span className={'shrink-0 min-w-5 h-5 px-1.5 rounded-full text-xs font-semibold flex items-center justify-center tabular-nums ' +
+          (overLimit ? 'text-red-700 dark:text-red-300' : m.text)} title={limitHint}
+          style={{ background: (overLimit ? '#ef4444' : m.color) + '20' }}>{pendingCount}</span>
       </div>
       <div ref={setNodeRef} className="todo-task-list grid flex-1 min-h-0 min-w-0 content-start grid-cols-1 overflow-y-auto overflow-x-hidden"
-        style={{ gridAutoRows: `calc((100% - ${TASK_ROW_GAP * (VISIBLE_TASK_ROWS - 1)}px) / ${VISIBLE_TASK_ROWS})`, gap: TASK_ROW_GAP, scrollbarGutter: 'stable' }}>
+        style={{ gridAutoRows: tasks.length ? `max(1.75rem, (100% - ${TASK_ROW_GAP * (VISIBLE_TASK_ROWS - 1)}px) / ${VISIBLE_TASK_ROWS})` : '100%',
+          gap: TASK_ROW_GAP, scrollbarGutter: 'stable' }}>
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(t => (
             <SortableTaskCard key={t.id} task={t} quadrant={block.quadrant} focused={focusedId === t.id} dark={dark} {...cardHandlers} />
           ))}
         </SortableContext>
         {tasks.length === 0 && (
-          <div style={{ gridRow: `span ${VISIBLE_TASK_ROWS}` }} className="flex flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-black/[0.1] dark:border-white/[0.12]">
-            <span className="text-[11.5px] text-stone-400 dark:text-stone-500">这个象限还是空的</span>
+          <div className="flex flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-black/[0.1] dark:border-white/[0.12]">
+            <span className="text-base text-stone-500">这个象限还是空的</span>
             <button onClick={() => onAddFirst(block.quadrant)}
-              className="px-3 h-7 rounded-lg text-xs text-indigo-600 dark:text-indigo-400 border border-dashed border-indigo-500/40 hover:bg-indigo-500/10 transition-colors">添加第一个任务</button>
+              className="px-3 h-8 rounded-lg text-sm font-medium text-indigo-700 dark:text-indigo-300 border border-dashed border-indigo-500/40 hover:bg-indigo-500/10 transition-colors">添加第一个任务</button>
           </div>
         )}
       </div>

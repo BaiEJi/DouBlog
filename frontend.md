@@ -274,12 +274,12 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 
 公共侧栏提供配置管理、限流配置和 MCP 配置，支持 `?view=entries|ratelimit|mcp` 深链。已打开的 KV 与限流工作区在切换时保留列表和限流草稿。配置管理视图：首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，新建 KV 绑定当前空间（namespace 只读），选中项由 `?namespace=` 保持。切换空间重置搜索/分页并丢弃旧请求结果（请求身份含排序+列表版本）。KV 表四个数据列（key/类型/值预览/更新时间）表头可排序——button + aria-sort + 方向箭头（非活动列淡双向箭头暗示）；点当前列切升/降、点其他列从升序开始、变更回第 1 页；服务端全量排序后分页（sort_by/sort_order 走 api.js）。新建/编辑 Modal 中 str/json **共用同一个带行号的 CodeMirror 值编辑器实例**（切换类型/字号不重建，撤销栈保留；str 原样文本、json 着色 + Worker 格式化/压缩）；值工具栏字号调整：默认 15px、12–24 整数、A−/A+/统一下拉/恢复默认，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（损坏/越界/禁用回退 15）；状态/错误反馈区固定 48px 占位——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）。限流配置视图（RateLimitPage.jsx）：状态卡（三态 + 计数 + 刷新；失败显示错误+重试）、配置表单（GET 失败禁存+重试；保存成功重建已保存快照，可恢复）、重置区（统一下拉选目标，未选禁用）。字号和限流规则等字段共用 `shared/ui/Select.jsx`。配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值编辑器用户偏好字号默认 15px。模型、接口及迁移详见 `docs/modules/confcenter.md`。
 
-`McpConfigPage` 的模块侧栏合并门户目录和服务端注册的工具提供方，`?view=mcp&module=todo` 可直达所选模块。工具行可展开说明和读写类型。参数表从输入 Schema 读取中文含义、JSON 示例、类型和必填状态，滚动时保留表头。`McpTokenCard` 支持签发、续期和撤销，明文仅存于组件内存。`McpConnectionCard` 提供 Streamable HTTP 地址、认证头和带占位符的 JSON 配置。
+`McpConfigPage` 的模块侧栏合并门户目录和服务端注册的工具提供方，`?view=mcp&module=todo` 可直达所选模块。工具行可展开说明和读写类型。参数表从输入 Schema 读取中文含义、JSON 示例、类型和必填状态，滚动时保留表头。`McpTokenCard` 支持签发、续期和撤销，明文仅存于组件内存。`McpConnectionCard` 展示配置 API 返回的 Streamable HTTP 地址、认证头和带占位符的 JSON 配置。
 
 ### TodoPage.jsx（todo/，今日 / 特定日期四象限）
 
 
-今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白，工具栏下方由两行两列等高看板占满。每个象限保留 8 行空间，超出行数在象限内滚动。象限名称与说明基线对齐。任务标记随标题长度排在文字后方，操作按钮靠右对齐。长文省略，说明和完成备注通过悬停或编辑查看。菜单使用 portal 避免被滚动容器裁切。模块细节见 `docs/modules/todo.md`。
+今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白。等高四象限按八行分配任务空间，保留最小行高并在格内滚动。任务标记紧跟标题，操作按钮靠右对齐。说明和完成备注通过悬停或编辑查看。`todo/typography.css` 统一所有 MyTodo 主体视图及 portal 任务菜单的字号和明暗对比。任务与生活月历根据格高决定预览条数。模块细节见 `docs/modules/todo.md`。
 
 任务回顾与任务统计通过 `src/todo/views/ReportLayout.jsx` 共用日期栏、等宽指标及区块标题。回顾页并列展示当日记录与独立的区间报表。统计页提供年度热力图、30 天趋势与当日分布。折线图与分组柱图通过 `showScale` 启用整数纵轴及较大的横轴标签。
 

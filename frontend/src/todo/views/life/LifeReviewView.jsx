@@ -61,7 +61,9 @@ export default function LifeReviewView({ toast, dark }) {
     <div className="h-full min-h-0 overflow-y-auto space-y-4">
       {/* 日打卡回顾 */}
       <Card title="日打卡回顾"
-        extra={<input type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} className={inputCls + ' w-auto'} />}>
+        extra={<div className="w-40 shrink-0">
+          <input aria-label="打卡回顾日期" type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} className={inputCls} />
+        </div>}>
         <div className="grid grid-cols-4 gap-3">
           <StatTile title="安排" value={items.length} suffix="项" />
           <StatTile title="完成" value={doneList.length} suffix="项" />
@@ -70,18 +72,18 @@ export default function LifeReviewView({ toast, dark }) {
         </div>
         <div className="grid grid-cols-2 gap-6 mt-6">
           <div>
-            <div className="text-sm font-semibold mb-3">当日完成（{doneList.length}）</div>
+            <div className="text-base font-semibold mb-3">当日完成（{doneList.length}）</div>
             {doneList.length === 0 ? (
               <Empty text="这一天还没有打卡记录" />
             ) : (
               <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06] rounded-xl border border-black/[0.06] dark:border-white/[0.07]">
                 {doneList.map(({ plan, task, title }) => (
-                  <div key={task?.id ?? title} className="flex items-center gap-2.5 px-3 py-2.5 text-sm flex-wrap">
-                    <span className="text-[11.5px] text-stone-400 tabular-nums w-10 shrink-0">{hmOf(task?.completed_at)}</span>
+                  <div key={task?.id ?? title} className="flex items-center gap-2.5 px-3 py-2.5 text-base flex-wrap">
+                    <span className="text-xs text-stone-400 tabular-nums w-12 shrink-0">{hmOf(task?.completed_at)}</span>
                     <Dot color={catColor(plan?.category_id)} />
                     <span className="line-through text-stone-500 dark:text-stone-400 truncate">{plan?.title || title}</span>
                     {task?.completion_note && (
-                      <span className="text-[11px] text-stone-400 truncate max-w-[180px]">📝 {task.completion_note}</span>
+                      <span className="text-xs text-stone-400 truncate max-w-[180px]">📝 {task.completion_note}</span>
                     )}
                   </div>
                 ))}
@@ -89,13 +91,13 @@ export default function LifeReviewView({ toast, dark }) {
             )}
           </div>
           <div>
-            <div className="text-sm font-semibold mb-3">{isToday ? '今日待打卡' : `错过（${missedList.length}）`}</div>
+            <div className="text-base font-semibold mb-3">{isToday ? '今日待打卡' : `错过（${missedList.length}）`}</div>
             {pendingList.length === 0 ? (
               <Empty text={isToday ? '今天已全部完成 🎉' : '没有错过的安排'} />
             ) : (
               <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06] rounded-xl border border-black/[0.06] dark:border-white/[0.07]">
                 {pendingList.map(it => (
-                  <div key={it.task?.id ?? it.title} className="flex items-center gap-2.5 px-3 py-2.5 text-sm">
+                  <div key={it.task?.id ?? it.title} className="flex items-center gap-2.5 px-3 py-2.5 text-base">
                     <Dot color={catColor(it.plan?.category_id)} />
                     <span className="truncate">{it.plan?.title || it.title}</span>
                   </div>
@@ -116,7 +118,7 @@ export default function LifeReviewView({ toast, dark }) {
             <StatTile title="完成率" value={totals.scheduled ? `${Math.round((totals.completed / totals.scheduled) * 100)}%` : '—'} />
           </div>
           <div className="col-span-3">
-            <GroupedBars data={trendData}
+            <GroupedBars data={trendData} showScale
               a={{ label: '安排', color: '#a8a29e' }}
               b={{ label: '完成', color: '#6366f1' }} />
           </div>

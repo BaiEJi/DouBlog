@@ -72,12 +72,12 @@ export default function LifeStatsView({ toast, dark }) {
       <div className="grid grid-cols-4 gap-3">
         <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4 flex items-center">
           <div className="flex-1">
-            <div className="text-[11px] text-stone-500 dark:text-stone-400 mb-1">🔥 当前连续</div>
+            <div className="text-sm text-stone-500 dark:text-stone-400 mb-1">🔥 当前连续</div>
             <div className="text-xl font-semibold tabular-nums">{currentStreak}<span className="text-xs font-normal text-stone-400 ml-1">天</span></div>
           </div>
           <div className="w-px h-10 bg-black/[0.06] dark:bg-white/[0.08] mx-3" />
           <div className="flex-1">
-            <div className="text-[11px] text-stone-500 dark:text-stone-400 mb-1">🏆 最佳连续</div>
+            <div className="text-sm text-stone-500 dark:text-stone-400 mb-1">🏆 最佳连续</div>
             <div className="text-xl font-semibold tabular-nums">{bestStreak}<span className="text-xs font-normal text-stone-400 ml-1">天</span></div>
           </div>
         </div>
@@ -87,7 +87,7 @@ export default function LifeStatsView({ toast, dark }) {
       </div>
 
       <Card title="近 30 天趋势">
-        <DualLine data={trendData}
+        <DualLine data={trendData} showScale
           a={{ label: '安排', color: '#a8a29e' }}
           b={{ label: '完成', color: '#10b981' }} height={240} />
       </Card>
@@ -104,8 +104,8 @@ export default function LifeStatsView({ toast, dark }) {
               return (
                 <div key={r.plan?.id ?? r.title} className="mb-3.5 last:mb-0">
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[12.5px] font-medium truncate" style={{ color: color }}>{r.plan?.title || r.title}</span>
-                    <span className="text-[11.5px] text-stone-400 tabular-nums shrink-0 ml-2">{r.completed}/{r.scheduled}</span>
+                    <span className="todo-category-label text-base font-medium truncate" style={{ '--todo-category': color }}>{r.plan?.title || r.title}</span>
+                    <span className="text-xs text-stone-400 tabular-nums shrink-0 ml-2">{r.completed}/{r.scheduled}</span>
                   </div>
                   <div className="h-1.5 rounded-full bg-black/[0.05] dark:bg-white/[0.08] overflow-hidden">
                     <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />

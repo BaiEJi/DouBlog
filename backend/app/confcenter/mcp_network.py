@@ -1,8 +1,7 @@
-"""MCP 对外地址由部署者配置。ASGI scheme 已由 Uvicorn 按代理信任设置处理。"""
+"""生成 MCP 接入地址并校验浏览器请求携带的 Origin。"""
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import HttpUrl, ValidationError
 
 from app.config import settings
@@ -20,40 +19,27 @@ class McpNetwork:
         try:
             url = HttpUrl(value)
             raw = urlsplit(value)
-            if (raw.scheme == 'https' and raw.netloc and raw.path in ('', '/')
+            if (raw.scheme in ('http', 'https') and raw.netloc and raw.path in ('', '/')
                     and not any(c in value for c in ('@', '*', '?', '#', '\\'))
                     and not any(c.isspace() for c in value) and url.port != 0):
                 return cls(str(url).rstrip('/'))
         except (ValidationError, ValueError):
             pass
-        raise ValueError('DOUBLOG_MCP_PUBLIC_ORIGIN 须为完整的 HTTPS 来源，例如 https://todo.example.com，可含端口')
+        raise ValueError('DOUBLOG_MCP_PUBLIC_ORIGIN 须为 HTTP 或 HTTPS 来源，例如 https://todo.example.com，可含端口')
 
-    @property
-    def public_hosts(self):
-        if not self.public_origin:
-            return ()
-        url = urlsplit(self.public_origin)
-        return (url.netloc,) if url.port else (url.netloc, url.netloc + ':443')
-
-    def transport_security(self):
-        local = ['127.0.0.1', 'localhost', '[::1]']
-        local += [host + ':*' for host in local]
-        return TransportSecuritySettings(
-            enable_dns_rebinding_protection=True, allowed_hosts=[*local, *self.public_hosts],
-            allowed_origins=['http://' + host for host in local] + ['https://' + host for host in self.public_hosts],
-        )
-
-    def permits(self, request):
-        if not request.client:
+    def accepts_origin(self, request):
+        origins = request.headers.getlist('origin')
+        if not origins:
+            return True
+        if len(origins) != 1:
             return False
-        if request.headers.get('host', '') in self.public_hosts:
-            origin = request.headers.get('origin')
-            return request.scope['scheme'] == 'https' and (
-                origin is None or origin in ('https://' + host for host in self.public_hosts))
-        return request.client.host in ('127.0.0.1', '::1')
+        try:
+            request_origin = HttpUrl(f'{request.url.scheme}://{request.url.netloc}')
+        except ValidationError:
+            return False
+        return origins[0] == str(request_origin).rstrip('/') or (
+            bool(self.public_origin) and origins[0] == self.public_origin)
 
     def endpoint(self, request, module):
-        server = request.scope.get('server')
-        port = (server and server[1]) or settings.port
-        origin = self.public_origin or f'http://127.0.0.1:{port}'
-        return f'{origin}/mcp/{module}'
+        base = self.public_origin or str(request.base_url).rstrip('/')
+        return f'{base}/mcp/{module}'

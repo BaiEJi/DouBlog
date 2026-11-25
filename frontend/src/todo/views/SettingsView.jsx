@@ -45,7 +45,7 @@ function ColorSwatches({ value, onChange, dark }) {
       ))}
       <input type="color" value={value || '#6366f1'} onChange={e => onChange(e.target.value)} title="自定义颜色"
         className="w-7 h-7 rounded-lg cursor-pointer bg-transparent border border-black/10 dark:border-white/10" />
-      <span className="text-[11px] text-stone-400 font-mono">{shown}</span>
+      <span className="text-xs text-stone-400 font-mono">{shown}</span>
     </div>
   )
 }
@@ -290,14 +290,14 @@ export default function SettingsView({ toast, dark }) {
 
             {/* 象限文案 */}
             <div>
-              <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">象限文案（留空使用默认）</div>
-              <div className="grid grid-cols-[150px_1fr_1fr] gap-3 mb-1.5 text-[11px] text-stone-400 px-1">
+              <div className="text-sm font-medium text-stone-500 dark:text-stone-400 mb-2">象限文案（留空使用默认）</div>
+              <div className="grid grid-cols-[150px_1fr_1fr] gap-3 mb-1.5 text-xs text-stone-400 px-1">
                 <span>象限</span><span>名称</span><span>行动建议</span>
               </div>
               <div className="space-y-2">
                 {QUADRANT_META.map(m => (
                   <div key={m.quadrant} className="grid grid-cols-[150px_1fr_1fr] gap-3 items-center">
-                    <span className={'text-[12.5px] font-medium flex items-center gap-1.5 ' + m.text}>
+                    <span className={'text-xs font-medium flex items-center gap-1.5 ' + m.text}>
                       <Dot color={m.color} />Q{m.quadrant} · {m.subtitle}
                     </span>
                     <input value={prefs.quadrant_labels[`q${m.quadrant}`] || ''} placeholder={`如：${m.label}`}
@@ -323,11 +323,11 @@ export default function SettingsView({ toast, dark }) {
           {categories.map(c => (
             <div key={c.id} className="flex items-center gap-2.5 px-3.5 py-2.5 flex-wrap">
               <Dot color={dark ? adjustForDark(c.color) : c.color} size={9} />
-              <span className="text-sm font-medium">{c.name}</span>
+              <span className="text-base font-medium">{c.name}</span>
               {c.icon && <span className="text-sm">{c.icon}</span>}
-              <span className="rounded-md px-1.5 h-5 text-[10.5px] inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-500 dark:text-stone-400 tabular-nums">{c.task_count} 个任务</span>
+              <span className="rounded-md px-1.5 h-5 text-xs inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-500 dark:text-stone-400 tabular-nums">{c.task_count} 个任务</span>
               {c.is_archived && (
-                <span className="rounded-md px-1.5 h-5 text-[10.5px] inline-flex items-center bg-stone-500/10 text-stone-500 dark:text-stone-400">已归档</span>
+                <span className="rounded-md px-1.5 h-5 text-xs inline-flex items-center bg-stone-500/10 text-stone-500 dark:text-stone-400">已归档</span>
               )}
               <span className="ml-auto flex items-center gap-1.5">
                 <button onClick={() => openCatModal(c)} className={btn.mini}>编辑</button>
@@ -339,7 +339,7 @@ export default function SettingsView({ toast, dark }) {
         </div>
 
         <div className="rounded-xl border border-dashed border-black/[0.12] dark:border-white/[0.14] p-4">
-          <div className="text-[13px] font-medium mb-3">新增类别</div>
+          <div className="text-base font-semibold mb-3">新增类别</div>
           <div className="flex flex-wrap items-center gap-2">
             <input value={newCat.name} onChange={e => setNewCat(v => ({ ...v, name: e.target.value }))}
               placeholder="类别名称" className={inputCls + ' w-40'} />
@@ -356,20 +356,20 @@ export default function SettingsView({ toast, dark }) {
 
       {/* 消息推送 */}
       <Card title="消息推送">
-        <div className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+        <div className="mb-3 text-sm text-stone-500 dark:text-stone-400">
           任务在指定时间仍未完成时，向已启用的渠道推送提醒；各渠道共享同一配置接口，新渠道接入后在此统一配置。
         </div>
         <div className="flex flex-wrap gap-1.5 mb-4">
           {CHANNEL_LIST.map(c => c.key === 'email' ? (
             <span key={c.key}
-              className={'rounded-md px-2 h-6 text-[11px] inline-flex items-center ' +
+              className={'rounded-md px-2 h-6 text-xs inline-flex items-center ' +
                 (emailConfigured
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                   : 'bg-black/[0.04] dark:bg-white/[0.06] text-stone-400')}>
               {c.label} · {emailConfigured ? '已启用' : '未启用'}
             </span>
           ) : (
-            <span key={c.key} className="rounded-md px-2 h-6 text-[11px] inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-400">
+            <span key={c.key} className="rounded-md px-2 h-6 text-xs inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] text-stone-400">
               {c.label} · 预留
             </span>
           ))}
@@ -414,7 +414,7 @@ export default function SettingsView({ toast, dark }) {
           <button onClick={saveNotifications} disabled={notifSaving} className={btn.primary}>{notifSaving ? '保存中…' : '保存配置'}</button>
           <button onClick={testNotification} disabled={notifTesting} className={btn.plain}>{notifTesting ? '发送中…' : '测试发送'}</button>
         </div>
-        <div className="text-[11px] text-stone-400 mt-3">
+        <div className="text-xs text-stone-400 mt-3">
           授权密钥仅保存在本机数据库；「测试发送」会先保存当前配置，再向该邮箱推送一条测试消息。
         </div>
       </Card>
