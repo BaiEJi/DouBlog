@@ -163,7 +163,7 @@ npm run dev
 > 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 凭据模式，来源收敛 `:60101`）。
 > **统一登录**：打开前端即进 `/login`，登录一次签发会话 Cookie（30 天）全站生效；前端 bundle 不再持有任何凭据。Basic Auth 仅作为 API/脚本/测试的兼容通道。
 
-在「配置中心 → MCP 配置」的模块侧栏选择 MyTodo，可查看工具说明和输入参数、启停工具，或签发、续期和撤销模块令牌。「MCP 接入配置」提供 Streamable HTTP 地址、认证请求头和可复制的 JSON 示例。[MCP 接入说明](docs/modules/confcenter.md#mcp-配置)
+在「配置中心 → MCP 配置」的模块侧栏选择 MyTodo，可查看工具说明和输入参数、启停工具，或签发、续期和撤销模块令牌。「类别管理」分组可分别开启查询、新建、编辑归档和删除。「MCP 接入配置」提供 Streamable HTTP 地址、认证请求头和可复制的 JSON 示例。[MCP 接入说明](docs/modules/confcenter.md#mcp-配置)
 
 ## 生产部署
 

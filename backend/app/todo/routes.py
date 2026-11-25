@@ -17,18 +17,17 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.db import db, run_db
 from app.shared.auth import require_basic
 from app.shared.response import api_response
 
 from . import readcache
-from .models import Category, Plan, Task, TaskEvent
+from .models import Plan, TaskEvent
 from .schemas import (
     BulkMigrateIn,
     CategoryCreate,
-    CategoryOut,
     CategoryUpdate,
     CompleteIn,
     DecideIn,
@@ -43,6 +42,7 @@ from .schemas import (
     TaskReorderIn,
     TaskUpdate,
 )
+from .services import categories as category_svc
 from .services import day as day_svc
 from .services import get_settings, save_settings
 from .services import migrations as mig
@@ -50,7 +50,7 @@ from .services import plans as plan_svc
 from .services import stats as stats_svc
 from .services import tasks as task_svc
 from .services.notify import CHANNEL_LABELS, IMPLEMENTED_CHANNELS, dispatch
-from app.shared.timeutil import local_today, now_utc, uuid7
+from app.shared.timeutil import local_today
 
 # ---------- 子路由(全部挂 require_basic) ----------
 
@@ -279,101 +279,34 @@ async def reorder_task(task_id: str, p: TaskReorderIn):
 
 # ---------- categories ----------
 
-def _to_out(c: Category, task_count: int) -> CategoryOut:
-    out = CategoryOut.model_validate(c)
-    out.task_count = task_count
-    return out
-
-
-def _count_active(session, cat_id: str) -> int:
-    return (
-        session.scalar(
-            select(func.count())
-            .select_from(Task)
-            .where(
-                Task.category_id == cat_id,
-                Task.deleted_at.is_(None),
-                Task.status.in_(("pending", "in_progress")),
-            )
-        )
-        or 0
-    )
-
-
 @categories_router.get("")
 async def list_categories(include_archived: bool = False):
-    def _impl():
+    return await run_db(lambda: api_response(_dump(category_svc.list_categories(db.session, include_archived))))
+
+
+async def _write_category(operation, *args, code=200):
+    def write():
         session = db.session
-        stmt = select(Category).order_by(Category.sort_order, Category.created_at)
-        if not include_archived:
-            stmt = stmt.where(Category.is_archived.is_(False))
-        cats = list(session.scalars(stmt))
-        # 单条 GROUP BY 取全部类别的活跃任务数(原先逐类别一条 COUNT,N+1)
-        counts = dict(
-            session.execute(
-                select(Task.category_id, func.count())
-                .where(
-                    Task.deleted_at.is_(None),
-                    Task.status.in_(("pending", "in_progress")),
-                    Task.category_id.is_not(None),
-                )
-                .group_by(Task.category_id)
-            ).all()
-        )
-        return api_response(_dump([_to_out(c, counts.get(c.id, 0)) for c in cats]))
-    return await run_db(_impl)
+        result = operation(session, *args)
+        session.commit()
+        readcache.bump()
+        return api_response(_dump(result), code)
+    return await run_db(_guard(write))
 
 
 @categories_router.post("")
 async def create_category(p: CategoryCreate):
-    def _impl():
-        session = db.session
-        now = now_utc()
-        c = Category(
-            id=uuid7(), name=p.name.strip(), color=p.color, icon=p.icon,
-            sort_order=p.sort_order, is_archived=False, created_at=now, updated_at=now,
-        )
-        session.add(c)
-        session.commit()
-        readcache.bump()
-        return api_response(_dump(_to_out(c, 0)), 201)
-    return await run_db(_impl)
+    return await _write_category(category_svc.create_category, p, code=201)
 
 
 @categories_router.patch("/{cat_id}")
 async def update_category(cat_id: str, p: CategoryUpdate):
-    def _impl():
-        session = db.session
-        c = session.get(Category, cat_id)
-        if c is None:
-            return api_response(None, 404, "类别不存在")
-        for field in ("name", "color", "icon", "sort_order", "is_archived"):
-            v = getattr(p, field)
-            if v is not None:
-                setattr(c, field, v)
-        c.updated_at = now_utc()
-        session.commit()
-        readcache.bump()
-        return api_response(_dump(_to_out(c, _count_active(session, c.id))))
-    return await run_db(_impl)
+    return await _write_category(category_svc.update_category, cat_id, p)
 
 
 @categories_router.delete("/{cat_id}")
 async def delete_category(cat_id: str):
-    def _impl():
-        session = db.session
-        c = session.get(Category, cat_id)
-        if c is None:
-            return api_response(None, 404, "类别不存在")
-        n = session.scalar(
-            select(func.count()).select_from(Task).where(Task.category_id == cat_id, Task.deleted_at.is_(None))
-        ) or 0
-        session.query(Task).filter(Task.category_id == cat_id).update({"category_id": None})
-        session.delete(c)
-        session.commit()
-        readcache.bump()
-        return api_response({"ok": True, "moved_to_uncategorized": n})
-    return await run_db(_impl)
+    return await _write_category(category_svc.delete_category, cat_id)
 
 
 # ---------- plans(规律生活) ----------

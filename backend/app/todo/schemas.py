@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 # 任务级通知可选渠道(与 settings.notifications.channels 的 key 对齐)
 NOTIFY_CHANNEL_KEYS = {"email", "apk", "chrome", "chatbot", "other"}
@@ -30,19 +30,23 @@ def _norm_notify_channels(v: Optional[List[str]]) -> Optional[List[str]]:
 
 # ---------------- Category ----------------
 
+CategoryName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
 class CategoryCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    color: str = Field(default="#64748B", max_length=20)
-    icon: Optional[str] = Field(default=None, max_length=50)
-    sort_order: int = 0
+    name: CategoryName = Field(description="在类别列表和任务标签中显示的名称。", examples=["项目交付"])
+    color: str = Field(default="#64748B", max_length=20, description="类别标签的显示颜色。", examples=["#0E7490"])
+    icon: Optional[str] = Field(default=None, max_length=50, description="类别名称旁的图标，可填写 emoji。", examples=["📋"])
+    sort_order: int = Field(default=0, description="类别的排列顺序，数值越小越靠前。", examples=[10])
 
 
 class CategoryUpdate(BaseModel):
-    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    color: Optional[str] = Field(default=None, max_length=20)
-    icon: Optional[str] = Field(default=None, max_length=50)
-    sort_order: Optional[int] = None
-    is_archived: Optional[bool] = None
+    name: Optional[CategoryName] = Field(default=None, description="新的类别名称。", examples=["交付跟进"])
+    color: Optional[str] = Field(default=None, max_length=20, description="新的类别标签颜色。", examples=["#7C3AED"])
+    icon: Optional[str] = Field(default=None, max_length=50, description="新的类别图标，传 null 清除原图标。", examples=["📌"])
+    sort_order: Optional[int] = Field(default=None, description="新的排列顺序，数值越小越靠前。", examples=[2])
+    is_archived: Optional[bool] = Field(default=None, description="true 归档类别，false 恢复。归档后保留任务关联。",
+                                        examples=[True])
 
 
 class CategoryOut(BaseModel):

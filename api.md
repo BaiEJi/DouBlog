@@ -1037,7 +1037,7 @@ POST   /api/todo/tasks/{id}/move         改象限 {is_important, is_urgent, bef
 POST   /api/todo/tasks/{id}/reorder      象限内排序 {before_task_id?}（浮点中点）
 
 # 类别
-GET/POST /api/todo/categories - PATCH/DELETE /api/todo/categories/{id}（删除时任务归未分类）
+GET/POST /api/todo/categories - PATCH/DELETE /api/todo/categories/{id}（列表可传 include_archived=true，PATCH 可清除图标、归档和恢复，删除时关联任务与计划归未分类）
 
 # 今日 / 迁移
 GET    /api/todo/today                   ?date=（四象限分组+待迁移+昨日概况+streak+软上限）

@@ -15,8 +15,8 @@ from app.shared.mutations import fingerprint
 from app.shared.timeutil import local_today, now_utc
 from . import readcache
 from .models import Category, TaskEvent, TaskMutation
-from .schemas import EventOut, TaskCreate, TaskMoveIn, TaskReorderIn, TaskUpdate
-from .services import day, get_settings, migrations, stats, tasks
+from .schemas import CategoryCreate, CategoryUpdate, EventOut, TaskCreate, TaskMoveIn, TaskReorderIn, TaskUpdate
+from .services import categories, day, get_settings, migrations, stats, tasks
 
 
 class Inputs(BaseModel):
@@ -54,7 +54,7 @@ class Search(Inputs):
         default='active', description='按状态筛选。active 包含待办和进行中，all 包含所有未删除任务。', examples=['pending'])
     quadrant: Quadrant | None = Field(default=None, description='要筛选的象限。1 立即做、2 计划做、3 委派、4 考虑删除。',
                                       examples=[2])
-    category_id: RecordId | None = Field(default=None, description='只返回属于该类别的任务，填写已有类别的 ID。',
+    category_id: RecordId | None = Field(default=None, description='只查这个类别的任务，可用 list_categories 查询类别 ID。',
                                          examples=[_EXAMPLE_CATEGORY_ID])
     sort: Literal['position', 'due_at', 'created_at', 'migrated_count'] = Field(
         default='position', description='按手动顺序、截止时间、创建时间或迁移次数升序排列。', examples=['due_at'])
@@ -88,7 +88,7 @@ class Shelve(Edit):
 _TASK_FIELD_DOCS = {
     'title': ('显示在看板和列表中的任务名称。', '撰写项目周报'),
     'description': ('任务的详细内容或执行要求。', '整理本周进展和下周计划'),
-    'category_id': ('任务所属的已有类别 ID，传 null 可设为未分类。', _EXAMPLE_CATEGORY_ID),
+    'category_id': ('已有类别 ID，可用 list_categories 查询。传 null 可设为未分类。', _EXAMPLE_CATEGORY_ID),
     'is_important': ('任务是否重要，与紧急标记一起决定象限。', True),
     'is_urgent': ('任务是否紧急，与重要标记一起决定象限。', False),
     'task_date': ('排期可填 YYYY-MM-DD 或 today。传 null 放入待排期。', 'today'),
@@ -143,6 +143,23 @@ class Report(Inputs):
     end: Date | None = Field(default=None, description='range 模式必填，回顾区间的最后一天。', examples=['2026-11-29'])
     year: int | None = Field(default=None, ge=2, le=9998, description='heatmap 模式要统计的年份，省略时使用当前年份。',
                              examples=[2026])
+
+
+class ListCategories(Inputs):
+    include_archived: bool = Field(default=False, description='设为 true 时也返回已归档的类别。', examples=[True])
+
+
+class CreateCategory(CategoryCreate, Write):
+    pass
+
+
+class CategoryTarget(Write):
+    category_id: RecordId = Field(description='要管理的类别 ID，取自 list_categories 返回的 id。',
+                                  examples=[_EXAMPLE_CATEGORY_ID])
+
+
+class UpdateCategory(CategoryUpdate, CategoryTarget):
+    pass
 
 
 TOOLS = {}
@@ -278,6 +295,30 @@ def get_report(session, args):
     if args.mode == 'streak':
         return stats.compute_streak(session, get_settings(session)['timezone'])
     return stats.daily_stats(session, args.date.isoformat() if args.date else None)
+
+
+@tool(ListCategories, '查看类别', '类别管理')
+def list_categories(session, args):
+    """按顺序列出类别及其 ID、颜色、图标、归档状态和活跃任务数。"""
+    return {'items': categories.list_categories(session, args.include_archived)}
+
+
+@tool(CreateCategory, '新建类别', '类别管理')
+def create_category(session, args):
+    """创建任务类别，返回可用于任务归类的类别 ID。"""
+    return categories.create_category(session, args)
+
+
+@tool(UpdateCategory, '编辑与归档类别', '类别管理')
+def update_category(session, args):
+    """修改名称、颜色、图标或顺序，也可归档和恢复类别。只传需要修改的字段。"""
+    return categories.update_category(session, args.category_id, args)
+
+
+@tool(CategoryTarget, '删除类别', '类别管理')
+def delete_category(session, args):
+    """永久删除指定类别。关联任务和规律生活计划保留并转为未分类，返回转入未分类的未删除任务数。"""
+    return categories.delete_category(session, args.category_id)
 
 
 def execute(name, args, token_id):

@@ -42,8 +42,13 @@ def test_todo_parameter_docs_match_protocol_and_examples_validate(app, auth_head
     with TestClient(app, **LOCAL) as client:
         catalog = client.get(ADMIN, headers=auth_headers).json()['data']
         tools = next(module['tools'] for module in catalog if module['key'] == 'todo')
+        for tool in tools:
+            if not tool['enabled']:
+                enabled = client.put(f"{ADMIN}/todo/tools/{tool['name']}", headers=auth_headers, json={'enabled': True})
+                assert enabled.is_success
         listed = rpc(client, issue(client, auth_headers)).json()['result']['tools']
     protocol_schemas = {tool['name']: tool['inputSchema'] for tool in listed}
+    assert set(protocol_schemas) == {tool['name'] for tool in tools}
     for tool in tools:
         name = tool['name']
         schema = tool['input_schema']

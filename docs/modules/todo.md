@@ -15,6 +15,9 @@
 | 待办池与迁移 | `list_tasks`、`list_migration_queue`、`migrate_task`、`set_task_shelved` | `inbox=true` 看待排期，首次排期用 `update_task`。已排期的待办可迁移、搁置或取消搁置 |
 | 任务办理与排列 | `create_task`、`update_task`、`complete_task`、`reopen_task`、`arrange_task` | 新建、编辑、完成或重开，可按参照任务排序或跨象限移动 |
 | 日历与回顾 | `get_calendar`、`get_report` | 按起止日期查看日历，读取单日、区间回顾、年度热力图或连续活跃天数 |
+| 类别管理 | `list_categories`、`create_category`、`update_category`、`delete_category` | 查看类别 ID 和活跃任务数，新建、改名、更换颜色图标、排序、归档、恢复或删除类别 |
+
+类别管理的四项工具默认关闭，在配置中心按需开启。`list_categories` 的 `include_archived=true` 会包含归档类别。`update_category` 传 `is_archived=true` 归档，传 `false` 恢复。归档保留已有归类。删除类别时，关联任务和规律生活计划会转为未分类，返回的 `moved_to_uncategorized` 统计这次转为未分类的未删除任务数。
 
 写工具需要 `mutation_id`，每次新操作生成一个 UUID。同一令牌重试时传回原参数和 ID，服务返回第一次的结果。编辑、排列还需传入查询得到的 `revision`。遇到版本冲突时重新读取任务，再决定是否提交新的操作。
 
@@ -47,7 +50,7 @@
 ## 3. 站点 REST API 契约（登录会话或 Basic，DouBlog 信封）
 
 tasks：GET /api/todo/tasks（date/from/to/inbox/overdue/status/category_id/quadrant/q/sort/plan_only/exclude_plans；可选page/page_size，分页时返回items/total/page/page_size）、POST(201)、GET /{id}（含最近 50 事件）、PATCH /{id}（revision 乐观锁 409）、DELETE（软删）、POST /{id}/restore|complete（可带 note）|reopen|move|reorder。
-categories：GET/POST/PATCH/DELETE（删除时任务归未分类，返回 moved_to_uncategorized）。
+categories：GET 可包含归档类别，POST 新建，PATCH 编辑、排序、归档或恢复，显式提交 `icon: null` 清除图标。DELETE 后关联任务和计划归入未分类，返回 `moved_to_uncategorized`。
 plans：GET（含 next_occurrence）、POST（创建即物化）、GET /today（打卡视图）、GET /report?days、PATCH、DELETE。
 today：GET /api/todo/today?date=（四象限分组+待迁移+昨日概况+streak+软上限提示）。
 migrations：GET /pending、GET /shelved、POST /tasks/{id}/migrate、/bulk、/decide（keep/delete/unshelve）、/auto。

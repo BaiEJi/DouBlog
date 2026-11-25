@@ -432,7 +432,7 @@ FastAPI 无代理概念）：配置内存快照（版本化，管理端改动 re
 
 ## 11. 测试
 
-`tests/todo/test_mcp.py` 通过 ASGI 入口覆盖协议发现、各工具、令牌生命周期和并发重试，并用临时 PostgreSQL 验证开关与跨库隔离。`tests/confcenter/test_mcp_config.py` 验证工具即时启停、已签发令牌、模块隔离、持久化及旧令牌升级。
+`tests/todo/test_mcp.py` 通过 ASGI 入口覆盖协议发现、各工具、令牌生命周期和并发重试，并用临时 PostgreSQL 验证开关与跨库隔离。网页和 MCP 共用 `app/todo/services/categories.py`，类别生命周期测试在 SQLite 和 PostgreSQL 上校验任务、回收站与计划的关联。`tests/confcenter/test_mcp_config.py` 验证工具即时启停、输入示例、模块隔离及旧令牌升级。
 
 ```bash
 cd backend && python -m pytest tests/ -q -n 8   # 2026-10-21最终930项通过，356.00秒；含3项真实临时PG集成，0跳过/失败/错误

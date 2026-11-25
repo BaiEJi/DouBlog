@@ -37,8 +37,8 @@ def rpc(client, headers, method, params=None):
     return client.post(PATH, headers=headers, json=message)
 
 
-def call(client, headers, name, *, expect_error=False, **args):
-    r = rpc(client, headers, 'tools/call', {'name': name, 'arguments': args})
+def call(client, headers, tool_name, *, expect_error=False, **args):
+    r = rpc(client, headers, 'tools/call', {'name': tool_name, 'arguments': args})
     assert r.status_code == 200, r.text
     result = r.json()['result']
     assert bool(result.get('isError')) == expect_error, result['content']
@@ -149,6 +149,74 @@ def test_concurrent_receipt_and_rollback(local, auth_headers):
     assert call(local, headers, 'create_task', mutation_id=new_id, title='已修正')['id']
 
 
+def check_category_lifecycle(client, auth_headers, token):
+    admin = ADMIN + '/todo/tools/'
+    catalog = client.get(ADMIN, headers=auth_headers).json()['data']
+    tools = next(m['tools'] for m in catalog if m['key'] == 'todo')
+    group = {t['name']: t['enabled'] for t in tools if t['group'] == '类别管理'}
+    assert set(group) == {'list_categories', 'create_category', 'update_category', 'delete_category'}
+    assert not any(group.values())
+    assert rpc(client, token, 'tools/call', {'name': 'list_categories', 'arguments': {}}).json()['error']['code'] == -32602
+    for name in group:
+        assert client.put(admin + name, headers=auth_headers, json={'enabled': True}).is_success
+
+    def write(tool_name, **args):
+        args.setdefault('mutation_id', str(uuid4()))
+        return call(client, token, tool_name, **args)
+
+    new = {'mutation_id': str(uuid4()), 'name': '  交付  ', 'color': '#0E7490', 'icon': '📋', 'sort_order': 8}
+    assert write('create_category', name='未保存', is_archived=True, expect_error=True)
+    assert write('create_category', **{**new, 'name': '   '}, expect_error=True)
+    category = call(client, token, 'create_category', **new)
+    assert category == call(client, token, 'create_category', **new)
+    cid = category['id']
+    assert category['name'] == '交付' and category['task_count'] == 0
+    rest = '/api/todo/categories'
+    assert any(c['id'] == cid for c in client.get(rest, headers=auth_headers).json()['data'])
+    task = write('create_task', title='待办关联', category_id=cid)
+    done = write('create_task', title='已完成关联', category_id=cid)
+    write('complete_task', task_id=done['id'])
+    trashed = write('create_task', title='回收站关联', category_id=cid)
+    trashed_path = '/api/todo/tasks/' + trashed['id']
+    assert client.delete(trashed_path, headers=auth_headers).is_success
+
+    archived = write('update_category', category_id=cid, name='交付跟进', is_archived=True, color='#7C3AED', sort_order=-1)
+    assert archived['task_count'] == 1 and archived['icon'] == '📋' and archived['name'] == '交付跟进'
+    assert cid not in [c['id'] for c in call(client, token, 'list_categories')['items']]
+    assert call(client, token, 'list_categories', include_archived=True)['items'][0] == archived
+    web = client.patch(rest + '/' + cid, headers=auth_headers, json={'is_archived': False, 'icon': None})
+    assert web.is_success
+    restored = call(client, token, 'list_categories')['items'][0]
+    assert restored['id'] == cid and restored['icon'] is None and not restored['is_archived']
+    assert call(client, token, 'get_task', task_id=task['id'])['category_id'] == cid
+
+    future = (date.today() + timedelta(days=365)).isoformat()
+    plan = client.post('/api/todo/plans', headers=auth_headers, json={
+        'title': '交付计划', 'start_date': future, 'category_id': cid, 'rule': {'type': 'weekly', 'weekdays': [0]}})
+    assert plan.status_code == 201
+    remove = {'mutation_id': str(uuid4()), 'category_id': cid}
+    deleted = call(client, token, 'delete_category', **remove)
+    assert deleted == {'ok': True, 'moved_to_uncategorized': 2}
+    assert call(client, token, 'delete_category', **remove) == deleted
+    for tid in (task['id'], done['id']):
+        assert call(client, token, 'get_task', task_id=tid)['category_id'] is None
+    assert client.post(trashed_path + '/restore', headers=auth_headers).json()['data']['category_id'] is None
+    plans = client.get('/api/todo/plans', headers=auth_headers).json()['data']
+    plan_id = plan.json()['data']['id']
+    assert next(p for p in plans if p['id'] == plan_id)['category_id'] is None
+    today = call(client, token, 'get_today')['date']
+    changed = client.patch('/api/todo/plans/' + plan_id, headers=auth_headers, json={
+        'start_date': today, 'end_date': today, 'rule': {'type': 'weekly', 'weekdays': list(range(7))}})
+    assert changed.is_success
+    instances = client.get('/api/todo/tasks', headers=auth_headers, params={'date': today, 'plan_only': True}).json()['data']
+    assert any(t['plan_id'] == plan_id and t['category_id'] is None for t in instances)
+    assert '404' in write('delete_category', category_id=cid, expect_error=True)
+
+
+def test_category_management_uses_the_same_records_as_the_website(local, auth_headers):
+    check_category_lifecycle(local, auth_headers, bearer(mint(local, auth_headers)))
+
+
 def test_receipts_and_token_isolation_on_postgres(local, auth_headers, tmp_path_factory, monkeypatch):
     pgserver = pytest.importorskip('pgserver')
     from sqlalchemy.engine import make_url
@@ -186,5 +254,6 @@ def test_receipts_and_token_isolation_on_postgres(local, auth_headers, tmp_path_
             with ThreadPoolExecutor(2) as pool:
                 a, b = [f.result() for f in [pool.submit(create), pool.submit(create)]]
             assert a == b and call(pg, token, 'list_tasks', q='PG 任务')['total'] == 1
+            check_category_lifecycle(pg, auth_headers, token)
     finally:
         server.cleanup()
