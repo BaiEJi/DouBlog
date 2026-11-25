@@ -1,8 +1,9 @@
 /**
  * 任务新增/编辑弹窗（照搬 MyTodo TaskFormModal 交互）：
- * 标题 + 象限四选卡（文案可被设置覆盖）+ 类别 + 日期（清空→收件箱）+
+ * 标题 + 象限四选卡（文案可被设置覆盖）+ 类别 + 日期（清空→待排期）+
  * 备注 + 任务级通知（当天 notify_time 未完成时推送所选渠道）。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useState } from 'react'
 
 import { todoCreateTask, todoUpdateTask } from '../api'
@@ -23,7 +24,7 @@ const textAreaCls = 'w-full px-3 py-2 rounded-lg text-sm bg-white dark:bg-white/
 
 export default function TaskFormModal({
   open, categories, initialTask = null, initialQuadrant = 2,
-  /** 'YYYY-MM-DD'；null 表示默认不排期（收件箱）；undefined 表示默认今天 */
+  /** 'YYYY-MM-DD'；null 表示默认待排期；undefined 表示默认今天 */
   defaultDate,
   onClose, onSuccess, toast,
 }) {
@@ -33,7 +34,7 @@ export default function TaskFormModal({
   const [notifyOn, setNotifyOn] = useState(false)
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState('')
-  const [dateVal, setDateVal] = useState('')     // '' = 不排期（收件箱）
+  const [dateVal, setDateVal] = useState('')     // '' = 待排期
   const [description, setDescription] = useState('')
   const [notifyTime, setNotifyTime] = useState('09:00')
   const [notifyChannels, setNotifyChannels] = useState(['email'])
@@ -135,15 +136,15 @@ export default function TaskFormModal({
         </div>
 
         <Field label="类别">
-          <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={inputCls}>
-            <option value="">选择类别…</option>
-            {categories.filter(c => !c.is_archived).map(c => (
-              <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>
-            ))}
-          </select>
+          <Select
+            aria-label="任务类别" className="w-full"
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[{ value: '', label: '选择类别…' }, ...categories.filter(c => !c.is_archived).map(c => ({ value: c.id, label: [c.icon, c.name].filter(Boolean).join(' ') }))]}
+          />
         </Field>
 
-        <Field label="日期" hint="清空后任务进入待办池（收件箱）">
+        <Field label="日期" hint="日期留空的任务会进入「待排期」">
           <div className="flex gap-2">
             <input type="date" value={dateVal} onChange={e => setDateVal(e.target.value)} className={inputCls} />
             {dateVal && (

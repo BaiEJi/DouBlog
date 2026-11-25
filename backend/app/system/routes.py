@@ -39,17 +39,6 @@ def _pg_connection_url(pg: dict) -> str:
     return get_database_url({'backend': 'postgres', 'postgres': pg})
 
 
-def _merged_cfg(target: str, overrides: dict | None) -> dict:
-    """以当前存储配置为基础，合并请求体中的 postgres 连接覆盖项"""
-    cfg = load_db_config()
-    cfg['backend'] = target
-    if target == 'postgres' and isinstance(overrides, dict):
-        for key in ('host', 'port', 'user', 'password', 'dbname'):
-            if overrides.get(key) not in (None, ''):
-                cfg['postgres'][key] = overrides[key]
-    return cfg
-
-
 def _try_connect(url: str, timeout: int = 3):
     """尝试连接，返回 (engine|None, error_message|None)"""
     connect_args = {}
@@ -187,8 +176,8 @@ def _database_test_sync(data: dict):
     if target == 'sqlite':
         return api_response({'ok': True, 'message': 'SQLite 本地文件可用'})
 
-    cfg = _merged_cfg(target, data.get('postgres'))
-    url = _pg_connection_url(cfg['postgres'])
+    pg = load_db_config(postgres_overrides=data.get('postgres'))['postgres']
+    url = _pg_connection_url(pg)
     engine, err = _try_connect(url)
     if engine:
         version = ''
@@ -200,7 +189,7 @@ def _database_test_sync(data: dict):
         return api_response({'ok': True, 'message': f'连接成功 {version}'})
 
     # 目标库可能只是不存在——单独探测并报告，便于前端提示"切换时会自动创建"
-    created_check = _ensure_postgres_database(cfg['postgres'])
+    created_check = _ensure_postgres_database(pg)
     if created_check is None:
         return api_response({'ok': True, 'message': '连接成功（已自动创建数据库）'})
     return api_response(None, 400, f'连接失败：{err}')
@@ -236,7 +225,8 @@ def _database_switch_sync(data: dict, app=None):
 
     try:
         if target == 'postgres':
-            cfg = _merged_cfg(target, data.get('postgres'))
+            cfg = load_db_config(postgres_overrides=data.get('postgres'))
+            cfg['backend'] = target
             err = _ensure_postgres_database(cfg['postgres'])
             if err:
                 return api_response(None, 400, f'无法连接 PostgreSQL：{err}')

@@ -26,6 +26,7 @@
 
 ## 2. 公共侧栏契约
 
+- 栏目名和当前选中项由公共侧栏呈现，正文直接展示当前视图的操作、计数及内容。侧栏折叠后可以通过图标的名称识别入口。
 - **宽度**：默认 220px；右边界手柄拖动或键盘调整，范围 **180–420px**；双击手柄恢复 220。折叠窄轨 **56px**。
 - **持久化**：`localStorage["doublog_sidebar_layout_v1"]`，值严格为 `{"version":1,"width":220,"collapsed":false}`。width 仅存有限数字（非法类型回退默认、超界截断）；collapsed 按布尔严格解析；version≠1/坏 JSON 整体回退默认。全站共享（跨模块一致）；折叠保留"上一次展开宽度"，展开恢复该值（56 永不写入 width）。读写全部捕获存储异常，失败用内存态继续。**拖动过程中不写存储**（rAF 只改 DOM 宽度），pointerup/键盘确认/折叠切换才提交；提交由 effect 统一落盘。
 - **手柄**：`role=separator`、`aria-orientation=vertical`、`aria-valuemin/max/now`（180/420/当前）、`aria-controls=module-sidebar`；tabIndex=0；左右键 ±10px、Home/End 到边界、拖动中 Escape 回到本次开始前宽度；光标 col-resize；命中区 7px。

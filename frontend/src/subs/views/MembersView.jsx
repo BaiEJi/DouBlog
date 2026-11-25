@@ -2,6 +2,7 @@
  * 会员列表视图：搜索（防抖）/ 分类 / 状态筛选 + 表格与卡片双视图（本地记忆）+
  * 分页 + 新建/编辑会员弹窗 + 删除确认。点击会员进详情页。
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 
@@ -161,25 +162,22 @@ export default function MembersView({ dark, toast }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-base font-semibold">会员管理</h2>
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-xl border border-black/[0.08] dark:border-white/[0.1] overflow-hidden">
-            <button onClick={() => setView('table')}
-              className={'px-2.5 h-8 text-[12px] flex items-center gap-1 transition-colors ' + (viewMode === 'table' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05]')}>
-              {Icon.members} 表格
-            </button>
-            <button onClick={() => setView('card')}
-              className={'px-2.5 h-8 text-[12px] flex items-center gap-1 transition-colors ' + (viewMode === 'card' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05]')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" opacity=".9" /><rect x="13" y="3" width="8" height="8" rx="1.5" opacity=".55" /><rect x="3" y="13" width="8" height="8" rx="1.5" opacity=".55" /><rect x="13" y="13" width="8" height="8" rx="1.5" opacity=".9" /></svg> 卡片
-            </button>
-          </div>
-          <button className={btn.plain} onClick={load}>{Icon.refresh} 刷新</button>
-          {hasFilters && (
-            <button className={btn.plain} onClick={() => { setFilters({}); setSearch(''); setPage(1) }}>清除筛选</button>
-          )}
-          <button className={btn.primary} onClick={openCreate}>{Icon.plus} 添加会员</button>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex rounded-xl border border-black/[0.08] dark:border-white/[0.1] overflow-hidden">
+          <button onClick={() => setView('table')}
+            className={'px-2.5 h-8 text-[12px] flex items-center gap-1 transition-colors ' + (viewMode === 'table' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05]')}>
+            {Icon.members} 表格
+          </button>
+          <button onClick={() => setView('card')}
+            className={'px-2.5 h-8 text-[12px] flex items-center gap-1 transition-colors ' + (viewMode === 'card' ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400' : 'text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05]')}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" opacity=".9" /><rect x="13" y="3" width="8" height="8" rx="1.5" opacity=".55" /><rect x="3" y="13" width="8" height="8" rx="1.5" opacity=".55" /><rect x="13" y="13" width="8" height="8" rx="1.5" opacity=".9" /></svg> 卡片
+          </button>
         </div>
+        <button className={btn.plain} onClick={load}>{Icon.refresh} 刷新</button>
+        {hasFilters && (
+          <button className={btn.plain} onClick={() => { setFilters({}); setSearch(''); setPage(1) }}>清除筛选</button>
+        )}
+        <button className={btn.primary} onClick={openCreate}>{Icon.plus} 添加会员</button>
       </div>
 
       {/* 筛选栏 */}
@@ -191,19 +189,24 @@ export default function MembersView({ dark, toast }) {
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="6.5" /><path d="M21 21l-4.8-4.8" strokeLinecap="round" /></svg>
         </div>
         <div className="w-32">
-          <select value={filters.category_id ?? ''} className={inputCls}
-            onChange={e => { setFilters(f => ({ ...f, category_id: e.target.value ? Number(e.target.value) : undefined })); setPage(1) }}>
-            <option value="">全部分类</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-          </select>
+          <Select
+            aria-label="会员分类" className="w-full"
+            value={filters.category_id ?? ''}
+            onChange={next => { setFilters(f => ({ ...f, category_id: next || undefined })); setPage(1) }}
+            options={[{ value: '', label: '全部分类' }, ...categories.map(c => ({ value: c.id, label: [c.icon, c.name].filter(Boolean).join(' ') }))]}
+          />
         </div>
         <div className="w-28">
-          <select value={filters.status ?? ''} className={inputCls}
-            onChange={e => { setFilters(f => ({ ...f, status: e.target.value || undefined })); setPage(1) }}>
-            <option value="">全部状态</option>
-            <option value="active">有效</option>
-            <option value="expired">已过期</option>
-          </select>
+          <Select
+            aria-label="会员状态" className="w-full"
+            value={filters.status ?? ''}
+            onChange={next => { setFilters(f => ({ ...f, status: next || undefined })); setPage(1) }}
+            options={[
+              { value: '', label: '全部状态' },
+              { value: 'active', label: '有效' },
+              { value: 'expired', label: '已过期' }
+            ]}
+          />
         </div>
         <span className="text-xs text-stone-400 tabular-nums">共 {total} 条</span>
       </div>
@@ -256,9 +259,12 @@ export default function MembersView({ dark, toast }) {
         <div className="flex items-center justify-between text-xs text-stone-400">
           <div className="flex items-center gap-2">
             每页
-            <select value={pageSize} onChange={e => setPsz(Number(e.target.value))} className="h-7 rounded-lg bg-black/[0.03] dark:bg-white/[0.05] border border-black/[0.08] dark:border-white/[0.1] px-1">
-              {[10, 20, 50].map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <Select
+              aria-label="每页会员数" className="w-16" size="sm"
+              value={pageSize}
+              onChange={setPsz}
+              options={[10, 20, 50]}
+            />
             条
           </div>
           <div className="flex items-center gap-1.5">
@@ -287,11 +293,12 @@ export default function MembersView({ dark, toast }) {
               placeholder="如: QQ音乐、Netflix" />
           </Field>
           <Field label="分类">
-            <select className={inputCls} value={form.category_id}
-              onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
-              <option value="">未分类</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-            </select>
+            <Select
+              aria-label="所属分类" className="w-full"
+              value={form.category_id}
+              onChange={next => setForm(f => ({ ...f, category_id: next }))}
+              options={[{ value: '', label: '未分类' }, ...categories.map(c => ({ value: c.id, label: [c.icon, c.name].filter(Boolean).join(' ') }))]}
+            />
           </Field>
           <Field label="提前提醒天数" hint="到期前 N 天开始提醒">
             <input type="number" min={0} max={365} className={inputCls} value={form.reminder_days}

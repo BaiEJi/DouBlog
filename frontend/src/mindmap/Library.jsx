@@ -1,3 +1,4 @@
+import Select from '@/shared/ui/Select'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useModuleNavigation } from '@/shared/module-navigation'
@@ -92,8 +93,29 @@ export default function Library() {
 
   const names = Object.fromEntries(workspaces.map(item => [item.id, item.name]))
   return <>
-    <header className="mm-library-header"><div><div className="mm-eyebrow"><MapIcon size={16} /> MIND MAPS</div><h1>思维导图</h1><p>整理知识、连接灵感，从一个中心主题开始。</p></div><div className="mm-actions"><input ref={file} type="file" accept=".json,.xmind,.md,.markdown" hidden onChange={importFile} /><button className="mm-button" disabled={busy} onClick={() => file.current?.click()}>导入文件</button><button className="mm-button mm-primary" disabled={busy} onClick={() => openDialog('create')}><span aria-hidden="true">＋</span> 新建导图</button></div></header>
-    <div className="mm-library-filters"><div className="mm-search"><span aria-hidden="true">⌕</span><input aria-label="搜索导图" placeholder="搜索导图名称…" value={keyword} onChange={event => setKeyword(event.target.value)} />{keyword && <button aria-label="清空搜索" onClick={() => setKeyword('')}>×</button>}</div><select aria-label="按知识库筛选" value={workspace} onChange={event => { setWorkspace(event.target.value); setPage(1); setLoading(true) }}><option value="">全部知识库</option>{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="导图排序" value={sort} onChange={event => { setSort(event.target.value); setPage(1) }}><option value="updated_desc">最近更新</option><option value="created_desc">最近创建</option><option value="name_asc">名称 A–Z</option></select><span className="mm-list-count">{data?.total ?? '—'} 张导图</span><button className="mm-icon-button" aria-label="刷新导图列表" title="刷新" onClick={() => { setLoading(true); setRefresh(value => value + 1) }}>↻</button></div>
+    <header className="mm-library-header">
+      <input ref={file} type="file" accept=".json,.xmind,.md,.markdown" hidden onChange={importFile} />
+      <button className="mm-button" disabled={busy} onClick={() => file.current?.click()}>导入文件</button>
+      <button className="mm-button mm-primary" disabled={busy} onClick={() => openDialog('create')}><span aria-hidden="true">＋</span> 新建导图</button>
+    </header>
+    <div className="mm-library-filters"><div className="mm-search"><span aria-hidden="true">⌕</span><input aria-label="搜索导图" placeholder="搜索导图名称…" value={keyword} onChange={event => setKeyword(event.target.value)} />{keyword && <button aria-label="清空搜索" onClick={() => setKeyword('')}>×</button>}</div>
+      <Select
+        aria-label="按知识库筛选" className="w-40 shrink-0"
+        value={workspace}
+        onChange={next => { setWorkspace(next); setPage(1); setLoading(true) }}
+        options={[{ value: '', label: '全部知识库' }, ...workspaces.map(item => ({ value: String(item.id), label: item.name }))]}
+      />
+      <Select
+        aria-label="导图排序" className="w-40 shrink-0"
+        value={sort}
+        onChange={next => { setSort(next); setPage(1) }}
+        options={[
+          { value: 'updated_desc', label: '最近更新' },
+          { value: 'created_desc', label: '最近创建' },
+          { value: 'name_asc', label: '名称 A–Z' }
+        ]}
+      />
+    <span className="mm-list-count">{data?.total ?? '—'} 张导图</span><button className="mm-icon-button" aria-label="刷新导图列表" title="刷新" onClick={() => { setLoading(true); setRefresh(value => value + 1) }}>↻</button></div>
     {error && <div className="mm-banner mm-danger" role="alert">{error}<button onClick={() => setRefresh(value => value + 1)}>重试</button></div>}
     {busy && !dialog && <div className="mm-banner" role="status">正在处理导图…</div>}
     {loading ? <div className="mm-loading" role="status">正在加载导图…</div> : data?.items?.length ? <div className="mm-map-grid">{data.items.map(item => <article key={item.id} className="mm-map-card"><Link className="mm-card-open" to={`/mindmap/${item.id}`}><div className="mm-map-preview" aria-hidden="true"><span className="mm-preview-center"><MapIcon size={24} /></span><span className="mm-preview-branch mm-preview-one" /><span className="mm-preview-branch mm-preview-two" /><span className="mm-preview-branch mm-preview-three" /><span className="mm-preview-branch mm-preview-four" /></div><div className="mm-card-content"><h2 title={item.name}>{item.name}</h2><p>{item.workspace_id ? names[item.workspace_id] || '关联知识库' : '独立导图'}{item.post_id ? ' · 已关联文章' : ''}</p><div className="mm-card-meta"><span>{item.node_count || 1} 个节点</span><span>v{item.revision}</span><span>{formatDate(item.updated_at)}</span></div></div></Link><div className="mm-card-actions"><Link to={`/mindmap/${item.id}?mode=read`}>只读打开</Link><div><button disabled={busy} onClick={() => duplicate(item)} title="复制导图">复制</button><button disabled={busy} onClick={() => openDialog('rename', item)} title="重命名或关联文章">设置</button><button className="mm-danger-text" disabled={busy} onClick={() => openDialog('delete', item)}>删除</button></div></div></article>)}</div> : <div className="mm-empty"><div className="mm-empty-icon"><MapIcon size={34} /></div><h2>{query || workspace ? '没有找到匹配的导图' : '让第一个想法开始生长'}</h2><p>{query || workspace ? '试试其他关键词，或切换知识库筛选。' : '新建思维导图，或导入 JSON、XMind、Markdown 文件。'}</p>{!query && !workspace && <button className="mm-button mm-primary" onClick={() => openDialog('create')}>新建第一张导图</button>}</div>}

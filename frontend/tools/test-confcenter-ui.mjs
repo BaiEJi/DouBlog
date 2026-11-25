@@ -252,11 +252,11 @@ try {
       if (def !== '15px') throw new Error(`默认字号应 15px: ${def}`)
       await page.getByRole('dialog').getByRole('button', { name: '增大字号' }).click()
       if (await readFs() !== '16px') throw new Error('A+ 未到 16px')
-      await page.getByRole('button', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '24', exact: true }).click()
+      await page.getByRole('combobox', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '24', exact: true }).click()
       if (await readFs() !== '24px') throw new Error('select 24 未生效')
       if (!(await page.getByRole('dialog').getByRole('button', { name: '增大字号' }).isDisabled()))
         throw new Error('24px 上界未禁用 A+')
-      await page.getByRole('button', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '12', exact: true }).click()
+      await page.getByRole('combobox', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '12', exact: true }).click()
       if (!(await page.getByRole('dialog').getByRole('button', { name: '减小字号' }).isDisabled()))
         throw new Error('12px 下界未禁用 A−')
       const gutterFs = await page.evaluate(() => {
@@ -264,7 +264,7 @@ try {
         return g ? getComputedStyle(g).fontSize : null })
       if (gutterFs !== '12px') throw new Error(`行号字号未同步: ${gutterFs}`)
       const frame = await page.evaluate(() => document.querySelector('[role="dialog"] .cm-editor').getBoundingClientRect().height)
-      await page.getByRole('button', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '24', exact: true }).click()
+      await page.getByRole('combobox', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '24', exact: true }).click()
       await page.waitForTimeout(120)
       const frame2 = await page.evaluate(() => document.querySelector('[role="dialog"] .cm-editor').getBoundingClientRect().height)
       if (Math.abs(frame - frame2) > 1) throw new Error(`字号变化改变外框高度 ${frame}→${frame2}`)
@@ -284,7 +284,7 @@ try {
     if (!dark) {
       await check('U2-persist', async () => {
         await openEditorForNew(page)
-        await page.getByRole('button', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '18', exact: true }).click()
+        await page.getByRole('combobox', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '18', exact: true }).click()
         await page.keyboard.press('Escape')
         await page.reload(); await page.waitForSelector('tbody tr')
         await openEditorForNew(page)
@@ -376,7 +376,7 @@ try {
       await check('U1-str-editor-shot', async () => {
         await openEditorForNew(page)
         await page.locator('.cm-content').fill('第一行\nsecond line\n\tTab\n中文\n尾行')
-        await page.getByRole('button', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '18', exact: true }).click()
+        await page.getByRole('combobox', { name: '编辑器字号' }).click(); await page.getByRole('option', { name: '18', exact: true }).click()
         await page.waitForTimeout(150)
         await shot(page, 'str-editor-linenumbers-font', 'U1/U2')
         await page.keyboard.press('Escape')

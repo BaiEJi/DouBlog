@@ -3,7 +3,7 @@
 > ⚠️ **历史设计稿**（成稿于 Flask 时代，先于附件/告警等功能）。实现与现行行为的权威文档是 `docs/modules/pwsvc.md`；本文保留算法规范与威胁模型的参考价值，结构/路径/API 清单以模块文档为准。（2026-10-10 标注）
 
 
-> DouBlog 密码库子模块：为多个项目提供**轮换密码**（默认每 60 秒更换）与**机器校验 API**。
+> DouBlog 独立密码服务模块：为多个项目提供**轮换密码**（默认每 60 秒更换）与**机器校验 API**。
 > 定位：给测试环境/内部系统/演示账号等场景提供"密码始终在变、但随时可查可验"的统一服务。
 
 ---
@@ -142,20 +142,20 @@ Response:
 - API Key 泄露影响面：仅能"验密码"，不能读密码（读密码仅管理员 UI）
 - 服务器被完全攻破 = 攻击者可推导该项目全部轮换密码（服务固有属性，文档声明）
 
-## 6. UI 设计（密码库内新分区「密码服务」）
+## 6. UI 设计（门户模块 /pwsvc）
 
 ```
-密码库侧栏
- └── 密码服务（分区，与 Trash 之间加分隔线）
+DouBlog 门户
+ └── 密码服务 /pwsvc
       项目卡片列表（名称/描述/类型数/用户数）＋ 新建项目
       └── 项目页（三段）
           ① API 集成：端点地址 + curl 示例（一键复制）+ 重置 Key
           ② 用户类型：策略行（长度/字符集/周期），编辑弹层
-          ③ 用户表：用户名 | 类型 | 当前密码(打码,Reveal+复制+圆环倒计时) | 状态 | 删除
+          ③ 用户表：用户名 | 类型 | 当前密码、复制与倒计时 | 状态 | 删除
 ```
 
 - 新建项目后弹层显示 API Key（仅一次 + 确认已保存）
-- 密码行复用 vault 的 SecretField 交互（默认隐藏、15s 自动隐藏、复制 30s 自动清理）
+- 项目页使用共享复制按钮和 30 秒剪贴板清理，离开模块时清理本次复制的敏感内容。
 - 倒计时到 0 自动刷新本行密码
 - 全中文文案、stone 暖色系，与现有视觉一致
 
@@ -175,11 +175,10 @@ Response:
 ## 8. 实施清单
 
 ```
-backend/app/api/pwsvc.py            蓝图（derive + CRUD + validate）
-backend/app/models/models.py        + 三张表
-backend/tests/test_pwsvc.py
-frontend/src/vault/PwsvcView.jsx    项目/类型/用户/集成面板
-frontend/src/VaultPage.jsx          侧栏入口
-frontend/src/api.js                 封装
+backend/app/pwsvc/                  routes、models、迁移
+backend/tests/pwsvc/                独立服务与推导测试
+frontend/src/pwsvc/                 PwsvcPage.jsx 和 api.js
+frontend/src/app/App.jsx            /pwsvc 路由
+frontend/src/portal/systems.jsx     门户卡片
 docs/pwsvc-design.md                本文档 → 完成后同步 api.md/frontend.md/backend.md
 ```

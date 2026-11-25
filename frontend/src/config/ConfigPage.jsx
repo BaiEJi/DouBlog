@@ -6,6 +6,7 @@
  * - API Hub 出站代理：上游连接的可选正向代理（QQ 开放平台等直连不通的目标）
  * - 登录账号：用户名/密码管理（system_accounts 表，PBKDF2 哈希，改密需验旧密码）
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useState, useRef } from 'react'
 import PageHeader from '../shared/PageHeader'
 import { advanceDataEpoch } from '../shared/dataEpoch'
@@ -231,10 +232,15 @@ function LoggingCard() {
           <input className={INPUT} value={cfg.url} placeholder="http://127.0.0.1:60100/api/v1/logs"
             onChange={e => setCfg({ ...cfg, url: e.target.value })} /></div>
         <div><label className={LABEL}>外发最低级别</label>
-          <select className={INPUT} value={cfg.level} onChange={e => setCfg({ ...cfg, level: e.target.value })}>
-            <option value="WARNING">WARNING 及以上</option>
-            <option value="INFO">INFO 及以上</option>
-          </select></div>
+          <Select
+            aria-label="日志上报级别" className="w-full"
+            value={cfg.level}
+            onChange={next => setCfg({ ...cfg, level: next })}
+            options={[
+              { value: 'WARNING', label: 'WARNING 及以上' },
+              { value: 'INFO', label: 'INFO 及以上' }
+            ]}
+          /></div>
       </div>
 
       {modules.length > 0 && (

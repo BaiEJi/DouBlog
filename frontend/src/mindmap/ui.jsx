@@ -1,3 +1,4 @@
+import Select from '@/shared/ui/Select'
 import { useEffect, useId, useRef, useState } from 'react'
 import { listPosts, listWorkspaces } from './api'
 
@@ -44,5 +45,19 @@ export function AssociationFields({ workspaceId, postId, onChange, disabled = fa
     listPosts(workspaceId).then(data => { if (alive) setPosts(Array.isArray(data) ? data : data.items || []) }).catch(error => { if (alive) setError(error.message) })
     return () => { alive = false }
   }, [workspaceId])
-  return <><label className="mm-field">所属知识库<select disabled={disabled} value={workspaceId || ''} onChange={event => onChange({ workspace_id: event.target.value ? Number(event.target.value) : null, post_id: null })}><option value="">默认知识库</option>{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label className="mm-field">关联文章<select disabled={disabled || !workspaceId} value={postId || ''} onChange={event => onChange({ workspace_id: workspaceId || null, post_id: event.target.value ? Number(event.target.value) : null })}><option value="">不关联文章</option>{posts.map(item => <option key={item.id} value={item.id}>{item.title || item.name}</option>)}</select><span className="mm-hint">导图保存到所选知识库，可选择关联该库内的文章。</span></label>{error && <p className="mm-error" role="alert">{error}</p>}</>
+  return <><label className="mm-field">所属知识库
+    <Select
+      aria-label="所属知识库" className="w-full"
+      value={workspaceId || ''} disabled={disabled}
+      onChange={next => onChange({ workspace_id: next || null, post_id: null })}
+      options={[{ value: '', label: '默认知识库' }, ...workspaces.map(item => ({ value: item.id, label: item.name }))]}
+    />
+  </label><label className="mm-field">关联文章
+    <Select
+      aria-label="关联文章" className="w-full"
+      value={postId || ''} disabled={disabled || !workspaceId}
+      onChange={next => onChange({ workspace_id: workspaceId || null, post_id: next || null })}
+      options={[{ value: '', label: '不关联文章' }, ...posts.map(item => ({ value: item.id, label: item.title || item.name }))]}
+    />
+  <span className="mm-hint">导图保存到所选知识库，可选择关联该库内的文章。</span></label>{error && <p className="mm-error" role="alert">{error}</p>}</>
 }

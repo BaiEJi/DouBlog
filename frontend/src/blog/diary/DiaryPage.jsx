@@ -27,14 +27,6 @@ import HeatmapView from './components/HeatmapView'
 import StatsView from './components/StatsView'
 import ShareDialog from './components/ShareDialog'
 
-const VIEWS = [
-  { key: 'timeline', label: '时间线', icon: Icon.timeline },
-  { key: 'calendar', label: '日历', icon: Icon.calendar },
-  { key: 'heatmap', label: '热力图', icon: Icon.heat },
-  { key: 'stats', label: '统计', icon: Icon.stats },
-  { key: 'trash', label: '回收站', icon: Icon.trash },
-]
-
 export default function DiaryPage({ dark }) {
   const [view, setView] = useState('timeline')
   const [journals, setJournals] = useState([])
@@ -167,7 +159,7 @@ export default function DiaryPage({ dark }) {
 
   return (
     <div className="min-h-0 text-stone-800 dark:text-stone-100 transition-colors">
-      <h1 className="text-base font-semibold mb-6">日记 · {VIEWS.find(v => v.key === view)?.label}<span className="ml-3 text-xs font-normal text-stone-500 dark:text-stone-400">{dateStr}</span></h1>
+      <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">{dateStr}</p>
       <div className={view === 'timeline' ? 'flex gap-6 items-start' : undefined}>
         {view === 'timeline' && journalsAside}
         <main className="flex-1 min-w-0 w-full">

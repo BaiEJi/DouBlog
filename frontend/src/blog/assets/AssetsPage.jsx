@@ -5,6 +5,7 @@
  * （快速过滤/分类/标签）+ 列表卡片网格 + 右侧详情抽屉；编辑器/分类管理/导入导出为弹层；
  * 支持批量操作与 Ctrl+K 搜索。删除为直接彻底删除（带确认），无回收站/统计视图。
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useModuleNavigation } from '../../shared/module-navigation'
 import { useDebouncedValue } from '../../shared/useDebouncedValue'
@@ -258,10 +259,6 @@ export default function AssetsPage({ dark }) {
 
   return (
     <div>
-      <div className="mb-6"><h1 className="text-base font-semibold tracking-tight">
-        {view === 'skill' ? '资产库 · Skill' : '资产库 · Prompt'}
-      </h1></div>
-
       <div className="flex gap-6 items-start">
         {/* 左过滤栏 */}
         <aside className="flex flex-col w-52 shrink-0 sticky top-4 space-y-5" aria-label="资产过滤">
@@ -335,10 +332,12 @@ export default function AssetsPage({ dark }) {
               )}
             </div>
 
-            <select value={sort} onChange={e => setSort(e.target.value)} aria-label="排序"
-              className="px-2.5 py-2 rounded-xl border border-black/[0.1] dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-[13px] outline-none">
-              {SORTS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-            </select>
+            <Select
+              aria-label="排序" className="w-28"
+              value={sort}
+              onChange={setSort}
+              options={SORTS.map(([value, label]) => ({ value, label }))}
+            />
             <button type="button" onClick={() => { setBulkMode(v => !v); setSelection(new Set()) }}
               className={`px-3 py-2 rounded-xl text-[13px] border transition-colors ${bulkMode
                 ? 'border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-400 font-medium'

@@ -5,6 +5,8 @@
  */
 
 // ─── 常量 ────────────────────────────────────────────────
+import { accountSiteName, loginName, siteLabel } from './accountBook.js'
+
 export const ITEM_TYPES = ['Website', 'App', 'Email', 'Social', 'Developer', 'Server', 'Finance', 'Work', 'Other']
 export const CATEGORIES = ['Social', 'Developer', 'Work', 'Finance', 'Shopping', 'Entertainment', 'Email', 'Server', 'Other']
 export const SECRET_KINDS = [
@@ -39,8 +41,10 @@ export function emptyItem() {
   return {
     v: 1,
     service: '',
+    site_name: '',
     type: 'Website',
     category: 'Other',
+    group_id: '',
     urls: [],
     app_name: '',
     username: '',
@@ -92,16 +96,16 @@ export function generatePassword(opts = {}) {
   const length = Math.max(8, Math.min(128, opts.length || 20))
   const pools = []
   const chars = []
-  const use = (set, enabled, fallback) => {
+  const addPool = (set, enabled) => {
     if (enabled) {
       pools.push(set)
       chars.push(set[randomInt(set.length)])
     }
   }
-  use(opts.includeAmbiguous ? FULL_UPPER : CHARSETS.uppercase, opts.uppercase !== false)
-  use(opts.includeAmbiguous ? FULL_LOWER : CHARSETS.lowercase, opts.lowercase !== false)
-  use(opts.includeAmbiguous ? FULL_NUM : CHARSETS.numbers, opts.numbers !== false)
-  use(CHARSETS.symbols, opts.symbols !== false)
+  addPool(opts.includeAmbiguous ? FULL_UPPER : CHARSETS.uppercase, opts.uppercase !== false)
+  addPool(opts.includeAmbiguous ? FULL_LOWER : CHARSETS.lowercase, opts.lowercase !== false)
+  addPool(opts.includeAmbiguous ? FULL_NUM : CHARSETS.numbers, opts.numbers !== false)
+  addPool(CHARSETS.symbols, opts.symbols !== false)
   if (!pools.length) {
     pools.push(FULL_LOWER)
     chars.push(FULL_LOWER[randomInt(FULL_LOWER.length)])
@@ -231,8 +235,11 @@ export function analyzeSecurity(items) {
 
   const dupMap = new Map()
   for (const i of live) {
-    const key = `${(i.data.service || '').toLowerCase().trim()}|${(i.data.username || '').toLowerCase().trim()}`
-    if (!i.data.service) continue
+    const site = accountSiteName(i.data).toLowerCase()
+    const name = (i.data.service || '').trim().toLowerCase()
+    if (!site && !name) continue
+    const login = loginName(i.data).trim().toLowerCase()
+    const key = JSON.stringify([site, site && login ? '' : name, login])
     if (!dupMap.has(key)) dupMap.set(key, [])
     dupMap.get(key).push(i)
   }
@@ -298,12 +305,12 @@ export function usageDays(entry) {
 
 // ─── 搜索 ────────────────────────────────────────────────
 /** 条目匹配：服务名/用户名/邮箱/手机/域名/标签/Account ID */
-export function itemMatches(item, query) {
+export function itemMatches(item, query, groupLabel = '') {
   const q = query.trim().toLowerCase()
   if (!q) return true
   const d = item.data
   const haystack = [
-    d.service, d.username, d.account_id, d.app_name, d.phone, d.email, d.real_name,
+    d.service, siteLabel(accountSiteName(d)), loginName(d), d.username, d.purpose, d.account_id, d.app_name, d.phone, d.email, d.real_name, groupLabel,
     ...(d.tags || []),
     ...(d.urls || []).map(u => u.value),
     ...(d.identities || []).map(i => i.value),

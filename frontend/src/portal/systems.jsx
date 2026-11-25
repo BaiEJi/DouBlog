@@ -7,6 +7,32 @@ import { MODULES } from '../shared/modules'
  */
 const CARDS = [
   {
+    key: 'todo',
+    to: '/todo',
+    title: '待办 · 四象限',
+    desc: 'MyTodo 迁入 · 今日看板 · 规律生活计划',
+    box: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <rect x="3" y="3" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M3 7.5h14M7.5 3v14" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M6 11l1.6 1.6L10.8 9.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    key: 'subs',
+    to: '/subs',
+    title: '订阅管理',
+    desc: '会员订阅 · 支出统计 · 到期日历',
+    box: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+    icon: (
+      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
+        <path d="M3.2 6.5l3.3 3.3L10 5l3.5 4.8 3.3-3.3-1 8.5H4.2l-1-8.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     key: 'mindmap',
     to: '/mindmap',
     title: '思维导图',
@@ -50,20 +76,6 @@ const CARDS = [
     ),
   },
   {
-    key: 'todo',
-    to: '/todo',
-    title: '待办 · 四象限',
-    desc: 'MyTodo 迁入 · 今日看板 · 规律生活计划',
-    box: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <rect x="3" y="3" width="14" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M3 7.5h14M7.5 3v14" stroke="currentColor" strokeWidth="1.4" />
-        <path d="M6 11l1.6 1.6L10.8 9.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
     key: 'practice',
     to: '/practice',
     title: '刷题 · 算法练习',
@@ -90,22 +102,10 @@ const CARDS = [
     ),
   },
   {
-    key: 'subs',
-    to: '/subs',
-    title: '订阅管理',
-    desc: '会员订阅 · 支出统计 · 到期日历',
-    box: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-    icon: (
-      <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
-        <path d="M3.2 6.5l3.3 3.3L10 5l3.5 4.8 3.3-3.3-1 8.5H4.2l-1-8.5z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
     key: 'vault',
     to: '/vault',
     title: '密码库',
-    desc: '零知识端到端加密 · 密码服务 · 安全中心',
+    desc: '个人账号 · 加密保存 · 快速复制',
     box: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     icon: (
       <svg className="w-5 h-5" viewBox="0 0 20 20" fill="none">
@@ -114,6 +114,14 @@ const CARDS = [
         <path d="M10 11v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
+  },
+  {
+    key: 'pwsvc',
+    to: '/pwsvc',
+    title: '密码服务',
+    desc: '项目轮换密码 · 用户策略 · 校验日志',
+    box: 'bg-teal-500/10 text-teal-600 dark:text-teal-400',
+    icon: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="8" cy="9" r="4" /><path d="m11 12 8 8 3-3-2-2m-3 0 2-2" /></svg>,
   },
   {
     key: 'apihub',

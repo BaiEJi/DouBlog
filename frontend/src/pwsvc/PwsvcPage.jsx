@@ -2,18 +2,25 @@
  * 密码服务（轮换密码）：项目 / 用户类型（策略）/ 用户（独立密码链 + 倒计时）/ API 集成。
  * 注意：本模块为服务端校验服务（非零知识），UI 中已明确标注。
  */
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   pwsvcCreateProject, pwsvcListProjects, pwsvcUpdateProject,
   pwsvcResetApiKey, pwsvcCreateType, pwsvcListTypes, pwsvcUpdateType, pwsvcDeleteType,
   pwsvcCreateUser, pwsvcListUsers, pwsvcUpdateUser, pwsvcDeleteUser, pwsvcCurrentPassword,
   pwsvcListLogs,
-} from '../api'
-import { API_BASE } from '../api'
-import { CopyButton, I, Select } from './ui'
-import usePolling from '../../shared/usePolling'
-import useClock from '../../shared/useClock'
-import VirtualList from '../../shared/VirtualList'
+} from './api'
+import { API_BASE } from '@/shared/client'
+import CopyButton from '@/shared/ui/CopyButton'
+import Select from '@/shared/ui/Select'
+import { Icon as I } from '@/shared/ui/icons'
+import { clearSensitiveClipboard, makeClipboardCopier } from '@/shared/sensitiveClipboard'
+import { subscribeDataEpoch } from '@/shared/dataEpoch'
+import { useModuleNavigation } from '@/shared/module-navigation'
+import usePolling from '@/shared/usePolling'
+import useClock from '@/shared/useClock'
+import VirtualList from '@/shared/VirtualList'
+
+const validateUrl = new URL((API_BASE || '') + '/api/pwsvc/validate', window.location.origin).href
 
 const ROTATIONS = [
   { v: 30, l: '30 秒' }, { v: 60, l: '60 秒' }, { v: 120, l: '2 分钟' },
@@ -172,7 +179,7 @@ function TypeEditor({ pid, initial, onDone, onCancel }) {
 // ─── API Key 一次性展示 ──────────────────────────────────
 function ApiKeyOnce({ apiKey, name, copier, onConfirm }) {
   const [saved, setSaved] = useState(false)
-  const curl = `curl -X POST ${API_BASE}/api/pwsvc/validate \\
+  const curl = `curl -X POST ${validateUrl} \\
   -H "X-Api-Key: ${apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{"username": "user001", "password": "..."}'`
@@ -198,29 +205,51 @@ function ApiKeyOnce({ apiKey, name, copier, onConfirm }) {
 }
 
 // ─── 主视图 ──────────────────────────────────────────────
-export default function PwsvcView({ copier }) {
+export default function PwsvcPage() {
+  const [copier] = useState(() => makeClipboardCopier(30000))
   const [projects, setProjects] = useState(null)
   const [current, setCurrent] = useState(null)      // 当前项目详情
   const [types, setTypes] = useState([])
   const [users, setUsers] = useState(null)
   const [keyOnce, setKeyOnce] = useState(null)       // {api_key, name}
   const [newProject, setNewProject] = useState(false)
+  const [error, setError] = useState('')
+  const listLoad = useRef(null)
   const projectLoad = useRef(null)
   const activeProject = useRef(null)
   const alive = useRef(true)
 
-  const loadProjects = async () => {
-    const d = await pwsvcListProjects().catch(() => null)
-    if (alive.current && d?.success) setProjects(d.data)
-  }
-  useEffect(() => { alive.current = true; loadProjects(); return () => { alive.current = false; activeProject.current = null; projectLoad.current?.abort() } }, [])
+  useEffect(() => {
+    const off = subscribeDataEpoch(() => { clearSensitiveClipboard(); setKeyOnce(null); setNewProject(false) })
+    return () => { off(); clearSensitiveClipboard() }
+  }, [])
+
+  const loadProjects = useCallback(() => {
+    listLoad.current?.abort()
+    const controller = new AbortController()
+    listLoad.current = controller
+    return pwsvcListProjects({ signal: controller.signal }).then(result => {
+      if (!alive.current || controller.signal.aborted) return
+      if (!result.success) throw new Error(result.message || '读取项目失败')
+      setError(''); setProjects(result.data)
+    }).catch(error => { if (!controller.signal.aborted && alive.current) setError(error.message) })
+  }, [])
+  useEffect(() => { alive.current = true; loadProjects(); return () => { alive.current = false; activeProject.current = null; listLoad.current?.abort(); projectLoad.current?.abort() } }, [loadProjects])
 
   // 打开项目：拉类型与用户
+  const backToProjects = () => {
+    activeProject.current = null
+    projectLoad.current?.abort()
+    setCurrent(null)
+    loadProjects()
+  }
+  useModuleNavigation({ activeKey: 'projects', onSelect: backToProjects })
+
   const openProject = async (p) => {
     projectLoad.current?.abort()
     const controller = new AbortController(); projectLoad.current = controller
     activeProject.current = p.id
-    setCurrent(p)
+    setCurrent(p); setError('')
     setUsers(null)
     setTypes([])
     const [usersRes, typesRes] = await Promise.all([
@@ -228,23 +257,21 @@ export default function PwsvcView({ copier }) {
       pwsvcListTypes(p.id, { signal: controller.signal }).catch(() => null),
     ])
     if (!alive.current || controller.signal.aborted || activeProject.current !== p.id) return
+    if (!typesRes?.success || !usersRes?.success) setError('读取项目详情失败')
     if (typesRes?.success) setTypes(typesRes.data)
     if (usersRes?.success) setUsers(usersRes.data)
   }
 
   return (
-    <div className="p-8 overflow-y-auto h-full animate-fade-in">
+    <div className="min-w-0 animate-fade-in">
       <div className="max-w-[1700px] w-full">
-        <div className="flex items-center gap-2.5 mb-1">
-          <span className="text-stone-400">{I.key}</span>
-          <h2 className="text-xl font-semibold">密码服务</h2>
-        </div>
         <p className="text-[12px] text-stone-400 mb-7">
           为项目提供自动轮换的密码（每用户独立密码链）与校验 API。
           <span className="text-amber-600/80"> 本模块为服务端校验服务，非零知识加密。</span>
         </p>
 
-        {!projects ? <p className="text-sm text-stone-400 py-8 text-center">加载中…</p>
+        {error && <p role="alert" className="mb-3 text-sm">{error} <button className="underline" onClick={() => current ? openProject(current) : loadProjects()}>重试</button></p>}
+        {!projects ? !error && <p className="text-sm text-stone-400 py-8 text-center">加载中…</p>
           : current ? (
             <ProjectDetail
               key={current.id}
@@ -254,7 +281,7 @@ export default function PwsvcView({ copier }) {
               copier={copier}
               onTypesChange={value => { if (alive.current && activeProject.current === current.id) setTypes(value) }}
               onUsersChange={async () => { const d = await pwsvcListUsers(current.id); if (alive.current && activeProject.current === current.id && d.success) setUsers(d.data) }}
-              onBack={async () => { activeProject.current = null; projectLoad.current?.abort(); setCurrent(null); loadProjects() }}
+              onBack={backToProjects}
               onResetKey={async () => {
                 const d = await pwsvcResetApiKey(current.id)
                 if (d.success) setKeyOnce({ api_key: d.data.api_key, name: current.name })
@@ -270,7 +297,7 @@ export default function PwsvcView({ copier }) {
               {projects.length === 0 ? (
                 <p className="text-sm text-stone-400 py-12 text-center">还没有项目——新建一个，为它的用户发放轮换密码</p>
               ) : (
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,230px),1fr))] gap-2.5">
                   {projects.map(p => (
                     <button key={p.id} onClick={() => openProject(p)}
                       className="group text-left p-4 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] hover:border-black/[0.15] dark:hover:border-white/[0.15] hover:shadow-sm transition-all">
@@ -376,9 +403,9 @@ function ProjectDetail({ project, users, types, copier, onTypesChange, onUsersCh
       <SecTitle>API 集成</SecTitle>
       <div className="mt-2.5 mb-8 p-3.5 rounded-2xl bg-stone-50 dark:bg-white/[0.02] border border-black/[0.06] dark:border-white/[0.06]">
         <div className="flex items-center gap-2 mb-2 text-[12px] text-stone-500">
-          <span className="font-mono text-[11.5px]">POST {API_BASE}/api/pwsvc/validate</span>
+          <span className="font-mono text-[11.5px]">POST {validateUrl}</span>
         </div>
-        <pre className="text-[11px] leading-relaxed overflow-x-auto text-stone-500 dark:text-stone-400">{`curl -X POST ${API_BASE}/api/pwsvc/validate \\
+        <pre className="text-[11px] leading-relaxed overflow-x-auto text-stone-500 dark:text-stone-400">{`curl -X POST ${validateUrl} \\
   -H "X-Api-Key: <你的项目 Key>" \\
   -H "Content-Type: application/json" \\
   -d '{"username": "user001", "password": "当前密码"}'
@@ -475,19 +502,22 @@ function LogsPanel({ pid }) {
   const [error, setError] = useState('')
   const request = useRef(null)
 
-  const load = async (p = 1, append = false) => {
-    request.current?.abort(); const controller = new AbortController(); request.current = controller
-    setBusy(true); setError('')
-    try {
-      const d = await pwsvcListLogs(pid, p, 50, { signal: controller.signal })
+  const load = useCallback((p = 1, append = false) => {
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    return pwsvcListLogs(pid, p, 50, { signal: controller.signal }).then(result => {
       if (controller.signal.aborted) return
-      if (!d?.success) throw new Error(d?.message || '读取日志失败')
-      setData(previous => append && previous ? { ...d.data, items: [...previous.items, ...d.data.items.filter(item => !previous.items.some(old => old.id === item.id))] } : d.data)
-      setPage(p)
-    } catch (error) { if (!controller.signal.aborted) setError(error.message) }
-    finally { if (!controller.signal.aborted) setBusy(false) }
-  }
-  useEffect(() => { load(1); return () => request.current?.abort() }, [pid])
+      if (!result?.success) throw new Error(result?.message || '读取日志失败')
+      setData(previous => append && previous
+        ? { ...result.data, items: [...previous.items, ...result.data.items.filter(item => !previous.items.some(old => old.id === item.id))] }
+        : result.data)
+      setError(''); setPage(p)
+    }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
+      .finally(() => { if (!controller.signal.aborted) setBusy(false) })
+  }, [pid])
+  useEffect(() => { load(); return () => request.current?.abort() }, [load])
+  const refresh = (p, append) => { setBusy(true); setError(''); load(p, append) }
 
   if (!data) return <p className="text-[12.5px] text-stone-400">{error || '加载中…'}</p>
 
@@ -515,7 +545,7 @@ function LogsPanel({ pid }) {
           </span>
         )}
         <span className="ml-auto text-[11px] text-stone-400">共 {total} 条 · 保留 30 天</span>
-        <button onClick={() => load(1)} disabled={busy}
+        <button onClick={() => refresh(1)} disabled={busy}
           className="px-2.5 h-7 rounded-lg text-[11.5px] text-stone-500 border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40">{busy ? '…' : '刷新'}</button>
       </div>
 
@@ -541,7 +571,7 @@ function LogsPanel({ pid }) {
       )}
 
       {items.length < total && (
-        <button onClick={() => load(page + 1, true)} disabled={busy}
+        <button onClick={() => refresh(page + 1, true)} disabled={busy}
           className="mt-2.5 px-3 h-8 rounded-lg text-[12px] text-stone-500 border border-black/10 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-40">
           加载更多（{items.length} / {total}）
         </button>
@@ -582,7 +612,7 @@ function NewUserForm({ pid, types, onDone }) {
       </div>
       <div>
         <label className={label}>用户类型</label>
-        <Select value={typeId} onChange={v => setTypeId(+v)}
+        <Select aria-label="密码类型" className="w-full" value={typeId} onChange={v => setTypeId(+v)}
           options={types.map(t => ({ value: t.id, label: `${t.name}（${t.length} 位 · ${t.rotation_seconds}s）` }))} />
       </div>
       {err && <p className="text-[12px] text-red-500">{err}</p>}

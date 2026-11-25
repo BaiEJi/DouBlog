@@ -59,7 +59,7 @@ export default function ExpiryCalendar({ onGo, onRefresh }) {
   }
 
   const cell = (dateStr, i) => {
-    if (!dateStr) return <div key={'e' + i} className="h-[72px]" />
+    if (!dateStr) return <div key={'e' + i} className="h-14" />
     const list = byDate[dateStr]
     const isToday = dateStr === todayStr
     const info = getDayInfo(dateStr)
@@ -78,18 +78,19 @@ export default function ExpiryCalendar({ onGo, onRefresh }) {
       : 'text-stone-700 dark:text-stone-200'
 
     return (
-      <button key={dateStr}
-        onClick={() => list?.length && setSelected(dateStr)}
-        className={'relative h-[72px] rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors ' + bg +
+      <button type="button" key={dateStr} disabled={!list?.length}
+        aria-label={list?.length ? `${dateStr}，${list.length} 条订阅到期` : dateStr}
+        onClick={() => setSelected(dateStr)}
+        className={'relative h-14 rounded-lg flex flex-col items-center justify-center gap-0.5 transition-colors ' + bg +
           (list?.length ? ' cursor-pointer hover:brightness-95 dark:hover:brightness-125' : ' cursor-default')}>
-        <span className={'text-[12px] tabular-nums leading-4 ' + dateColor}>{Number(dateStr.slice(8))}</span>
+        <span className={'text-sm tabular-nums leading-5 ' + dateColor}>{Number(dateStr.slice(8))}</span>
         {holidayLabel ? (
-          <span className={'text-[9px] leading-3 max-w-full px-0.5 truncate ' +
+          <span className={'text-[11px] leading-4 max-w-full px-0.5 truncate ' +
             (info.isHoliday ? 'text-red-600 dark:text-red-400' : 'text-orange-500')}>
             {holidayLabel}
           </span>
         ) : lt && (
-          <span className={'text-[9px] leading-3 max-w-full px-0.5 truncate ' +
+          <span className={'text-[11px] leading-4 max-w-full px-0.5 truncate ' +
             (lunarRed ? 'text-red-500/90' : 'text-stone-400/80')} title={lt}>{lt}</span>
         )}
         {bc && (
@@ -101,24 +102,24 @@ export default function ExpiryCalendar({ onGo, onRefresh }) {
   }
 
   return (
-    <div className="p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2 text-sm font-semibold">{Icon.calendar} 订阅到期日历</div>
+    <section className="subs-overview-panel" aria-labelledby="subs-calendar-title">
+      <header className="subs-panel-head">
+        <h2 id="subs-calendar-title">订阅到期日历</h2>
         <div className="flex items-center gap-1.5">
-          <button className="w-8 h-8 rounded-lg border border-black/[0.07] dark:border-white/[0.1] hover:bg-black/[0.03] dark:hover:bg-white/[0.05] flex items-center justify-center"
+          <button type="button" aria-label="上个月" title="上个月" className="subs-overview-refresh"
             onClick={() => setYm(({ y, m }) => m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 })}>{Icon.arrowL}</button>
           <button className="px-2 h-8 rounded-lg text-xs hover:bg-black/[0.03] dark:hover:bg-white/[0.05]" onClick={() => setYm({ y: now.getFullYear(), m: now.getMonth() })}>今天</button>
-          <button className="w-8 h-8 rounded-lg border border-black/[0.07] dark:border-white/[0.1] hover:bg-black/[0.03] dark:hover:bg-white/[0.05] flex items-center justify-center"
+          <button type="button" aria-label="下个月" title="下个月" className="subs-overview-refresh"
             onClick={() => setYm(({ y, m }) => m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 })}>{Icon.arrowR}</button>
-          <button className="w-8 h-8 rounded-lg text-stone-400 hover:bg-black/[0.03] dark:hover:bg-white/[0.05] flex items-center justify-center"
+          <button type="button" aria-label="刷新到期日历" title="刷新到期日历" className="subs-overview-refresh"
             onClick={() => { load(); onRefresh?.() }}>{Icon.refresh}</button>
         </div>
-      </div>
+      </header>
 
-      <div className="text-center text-sm font-semibold tabular-nums mb-2.5">{ym.y} 年 {ym.m + 1} 月</div>
+      <div className="text-center text-base font-semibold tabular-nums mb-2.5">{ym.y} 年 {ym.m + 1} 月</div>
       <div className="grid grid-cols-7 gap-1 mb-1">
         {WEEKDAYS.map((wd, i) => (
-          <div key={wd} className={'text-center text-[11px] py-1 ' + (i >= 5 ? 'text-sky-500' : 'text-stone-400')}>{wd}</div>
+          <div key={wd} className={'text-center text-xs py-1 ' + (i >= 5 ? 'text-sky-600 dark:text-sky-400' : 'text-stone-500 dark:text-stone-400')}>{wd}</div>
         ))}
       </div>
       <div className="grid grid-cols-7 gap-1">
@@ -151,7 +152,7 @@ export default function ExpiryCalendar({ onGo, onRefresh }) {
           ))}
         </div>
       </Modal>
-    </div>
+    </section>
   )
 }
 

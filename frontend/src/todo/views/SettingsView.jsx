@@ -3,6 +3,7 @@
  * 基本偏好（时区/象限文案/自动迁移/迁移干预阈值/象限软上限/一天开始小时）
  * + 类别管理（CRUD/归档）+ 消息推送（email 渠道配置 + 测试发送；其余渠道预留）。
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
@@ -256,12 +257,12 @@ export default function SettingsView({ toast, dark }) {
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <Field label="时区" hint="决定「今天」的划分与统计口径">
-                <select value={prefs.timezone} onChange={e => setPref('timezone', e.target.value)} className={inputCls + ' appearance-none pr-8 bg-no-repeat'} style={{ backgroundImage: 'linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%)', backgroundPosition: 'calc(100% - 14px) calc(50% - 2px), calc(100% - 9px) calc(50% - 2px)', backgroundSize: '5px 5px, 5px 5px' }}>
-                  {TIMEZONES.includes(prefs.timezone)
-                    ? TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)
-                    : [<option key={prefs.timezone} value={prefs.timezone}>{prefs.timezone}</option>]
-                      .concat(TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>))}
-                </select>
+                <Select
+                  aria-label="时区" className="w-full"
+                  value={prefs.timezone}
+                  onChange={next => setPref('timezone', next)}
+                  options={TIMEZONES.includes(prefs.timezone) ? TIMEZONES : [prefs.timezone, ...TIMEZONES]}
+                />
               </Field>
               <Field label="一天开始于" hint="0-23 点，跨午夜作息用">
                 <input type="number" min={0} max={23} value={prefs.day_start_hour}

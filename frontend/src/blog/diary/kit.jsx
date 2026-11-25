@@ -2,6 +2,7 @@
  * 日记公共小件：心情模型 / 天气码映射 / 图标 / 轻组件（供各视图复用）。
  */
 
+import Select from '@/shared/ui/Select'
 export const MOODS = [
   { key: 'great', label: '很棒', emoji: '😄', color: '#f59e0b' },
   { key: 'good', label: '不错', emoji: '🙂', color: '#84a860' },
@@ -65,5 +66,14 @@ export function Confirm({ text, onOk, onCancel, danger }) {
         </div>
       </div>
     </div>
+  )
+}
+
+export function TemplateSelect({ templates, onInsert, className }) {
+  return (
+    <Select aria-label="插入日记模板" size="sm" className={className}
+      value={null} placeholder="📋 插入模板"
+      options={templates.map(t => ({ value: t.key, label: [t.emoji, t.name].filter(Boolean).join(' '), body: t.body }))}
+      onChange={(_, option) => onInsert(option.body)} />
   )
 }

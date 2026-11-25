@@ -110,7 +110,7 @@ function ContextMenu({ x, y, items, onClose }) {
   }
 
   return (
-    <div ref={ref} className="fixed z-[100] py-1 bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg shadow-lg min-w-[160px]" style={style}>
+    <div ref={ref} className="db-menu-surface fixed z-[100] py-1 min-w-[160px]" style={style}>
       {items.map((item, i) =>
         item.separator
           ? <div key={i} className="h-px bg-black/5 dark:bg-white/5 my-1" />

@@ -2,6 +2,7 @@
  * 博客/知识库首页 /blog：卡片网格 + 知识库切换器 + 搜索 + 最近浏览。
  * （自 app/App.jsx 拆出；导航与布局由本页自绘，博客不出现其他系统入口。）
  */
+import Select from '@/shared/ui/Select'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchPosts, fetchWorkspaces, createWorkspace, prefetchPost, fetchRecentPosts } from '../api'
@@ -106,144 +107,83 @@ function WorkspaceSwitcher({ workspaces, current, onSelect, onCreate }) {
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const ref = useRef(null)
-  const inputRef = useRef(null)
-
-  // 点击外部 / Esc 关闭
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) close() }
-    const onKey = (e) => { if (e.key === 'Escape') close() }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  const selectRef = useRef(null)
+  const createRef = useRef(null)
 
   const close = () => {
-    setOpen(false)
     setCreating(false)
+    setOpen(false)
     setName('')
     setError('')
+    selectRef.current?.focus()
   }
-
-  const startCreate = () => {
-    setCreating(true)
-    setError('')
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }
-
-  const submit = async () => {
-    const trimmed = name.trim()
-    if (!trimmed || submitting) return
+  const submit = async event => {
+    event.preventDefault()
+    if (!name.trim() || submitting) return
     setSubmitting(true)
     setError('')
-    const result = await onCreate(trimmed)
-    setSubmitting(false)
-    if (result.ok) {
-      close()
-    } else {
-      setError(result.error || '创建失败')
+    try {
+      const result = await onCreate(name.trim())
+      if (result.ok) close()
+      else setError(result.error || '创建失败')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建失败')
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
-    <div ref={ref} className="relative">
-      {/* 触发按钮 */}
-      <button
-        type="button"
-        onClick={() => (open ? close() : setOpen(true))}
-        className="flex items-center gap-2 pl-2.5 pr-2 py-1.5 max-w-52 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-black/[0.02] dark:bg-white/[0.05] hover:bg-black/[0.05] dark:hover:bg-white/[0.09] transition-colors"
-      >
-        <span className="w-5 h-5 rounded-md bg-blue-500/10 dark:bg-blue-400/15 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-          {Icons.folder}
+    <Select ref={selectRef} aria-label="切换知识库" className="max-w-52" prefix={Icons.folder}
+      open={open} onOpenChange={next => {
+        setOpen(next)
+        if (!next && creating) { setCreating(false); setName(''); setError('') }
+      }}
+      onInputKeyDown={event => {
+        if (open && !creating && event.key === 'Tab' && !event.shiftKey) {
+          event.preventDefault()
+          event.stopPropagation()
+          createRef.current?.focus()
+        }
+      }}
+      value={current?.id} placeholder="知识库"
+      options={workspaces.map(w => ({ value: w.id, label: w.name, count: w.post_count }))}
+      optionRender={({ data }) => (
+        <span className="flex items-center justify-between gap-4">
+          {data.label}
+          {data.count != null && <small className="text-stone-500 dark:text-stone-400 tabular-nums">{data.count}</small>}
         </span>
-        <span className="text-sm font-medium text-[#111] dark:text-[#eee] truncate">{current ? current.name : '知识库'}</span>
-        <span className="text-[#999] dark:text-[#666] shrink-0 transition-transform duration-200" style={{ transform: open ? 'rotate(180deg)' : '' }}>
-          {Icons.chevron}
-        </span>
-      </button>
-
-      {/* 下拉面板 */}
-      {open && (
-        <div className="absolute left-0 top-[calc(100%+8px)] w-64 p-1.5 rounded-2xl border border-black/[0.08] dark:border-white/[0.1]
-          bg-white dark:bg-[#181818] shadow-xl shadow-black/10 dark:shadow-black/50 animate-dropdown z-50">
-          {!creating ? (
-            <>
-              <div className="px-3 pt-2 pb-1.5 text-xs font-medium text-[#999] dark:text-[#666]">
-                知识库 · {workspaces.length}
-              </div>
-              <div className="max-h-72 overflow-y-auto">
-                {workspaces.map(w => {
-                  const active = current && w.id === current.id
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() => { onSelect(w.id); close() }}
-                      className={'w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors ' + (
-                        active
-                          ? 'bg-blue-500/[0.08] dark:bg-blue-400/[0.12]'
-                          : 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
-                      )}
-                    >
-                      <span className={'w-1.5 h-1.5 rounded-full shrink-0 ' + (active ? 'bg-blue-500 dark:bg-blue-400' : 'bg-black/15 dark:bg-white/15')} />
-                      <span className={'text-sm truncate flex-1 ' + (active ? 'font-medium text-[#111] dark:text-[#eee]' : 'text-[#333] dark:text-[#ccc]')}>
-                        {w.name}
-                      </span>
-                      <span className="text-xs text-[#999] dark:text-[#666] tabular-nums shrink-0">{w.post_count}</span>
-                    </button>
-                  )
-                })}
-              </div>
-              <div className="my-1.5 h-px bg-black/[0.06] dark:bg-white/[0.08]" />
-              <button
-                type="button"
-                onClick={startCreate}
-                className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-sm text-[#333] dark:text-[#ccc]
-                  hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-              >
-                <span className="w-5 h-5 rounded-md border border-dashed border-black/20 dark:border-white/25 flex items-center justify-center shrink-0 text-[#666] dark:text-[#999]">＋</span>
-                新建知识库
-              </button>
-            </>
-          ) : (
-            <div className="p-2">
-              <div className="text-xs font-medium text-[#999] dark:text-[#666] mb-2">新知识库名称</div>
-              <input
-                ref={inputRef}
-                value={name}
-                onChange={e => { setName(e.target.value); setError('') }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') submit()
-                  if (e.key === 'Escape') { e.stopPropagation(); close() }
-                }}
-                placeholder="例如：读书笔记"
-                maxLength={50}
-                className="w-full px-3 py-2 text-sm bg-black/[0.03] dark:bg-white/[0.06] border border-black/10 dark:border-white/10
-                  rounded-xl text-[#111] dark:text-[#eee] placeholder:text-[#bbb] dark:placeholder:text-[#555]
-                  focus:outline-none focus:border-blue-400 transition-colors"
-              />
-              {error && <div className="mt-1.5 px-1 text-xs text-red-500">{error}</div>}
-              <div className="flex items-center justify-end gap-2 mt-3">
-                <button type="button" onClick={close} className="px-3 py-1.5 text-sm rounded-lg text-[#666] dark:text-[#999] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">取消</button>
-                <button
-                  type="button"
-                  onClick={submit}
-                  disabled={!name.trim() || submitting}
-                  className="px-3.5 py-1.5 text-sm rounded-lg bg-[#111] dark:bg-[#eee] text-white dark:text-[#111] font-medium
-                    hover:opacity-90 transition-opacity disabled:opacity-40"
-                >
-                  {submitting ? '创建中…' : '创建'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
       )}
-    </div>
+      onChange={onSelect}
+      popupRender={menu => creating ? (
+        <form className="w-60 p-2" onSubmit={submit} onKeyDown={e => {
+          if (e.key === 'Escape') { e.stopPropagation(); close() }
+        }}>
+          <label className="block text-sm">
+            新知识库名称
+            <input autoFocus value={name} maxLength={50} placeholder="例如：读书笔记"
+              onChange={e => { setName(e.target.value); setError('') }}
+              className="mt-2 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" />
+          </label>
+          {error && <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={close} className="rounded-lg px-3 py-1.5 text-sm hover:bg-black/5 dark:hover:bg-white/10">取消</button>
+            <button disabled={!name.trim() || submitting} className="rounded-lg px-3 py-1.5 text-sm font-medium bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 disabled:opacity-40">
+              {submitting ? '创建中…' : '创建'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {menu}
+          <button type="button" ref={createRef} className="db-select-menu-action"
+            onMouseDown={e => e.preventDefault()} onClick={() => setCreating(true)}
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); close() } }}>
+            ＋ 新建知识库
+          </button>
+        </>
+      )}
+    />
   )
 }
 

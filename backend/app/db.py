@@ -24,7 +24,7 @@ import weakref
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, scoped_session, sessionmaker
 
-from app.config import settings
+from app.config import resolve_postgres_dbname, settings
 
 DB_CONFIG_FILE = 'db_config.json'
 SUPPORTED_BACKENDS = ('sqlite', 'postgres')
@@ -39,6 +39,7 @@ LEGACY_TABLE_MAP = {
     'sdk_alerts': 'sdklogs_alerts',
     # apihub 2026-10-17 重构：upstream 维度改为 system（列级迁移见 app/apihub/__init__.py）
     'apihub_upstreams': 'apihub_systems',
+    'todo_mcp_tokens': 'confcenter_mcp_tokens',
 }
 
 
@@ -62,9 +63,10 @@ def db_config_path() -> str:
     return os.path.join(runtime.data_dir if runtime else settings.data_dir, DB_CONFIG_FILE)
 
 
-def load_db_config() -> dict:
-    """读取数据库后端配置（data/db_config.json），文件缺失/损坏时回退默认值"""
+def load_db_config(*, postgres_overrides: dict | None = None) -> dict:
+    """依次合并默认值、已保存的配置和本次连接参数，解析实际使用的库名。"""
     cfg = _default_db_config()
+    pg = cfg['postgres']
     path = db_config_path()
     if os.path.isfile(path):
         try:
@@ -73,9 +75,17 @@ def load_db_config() -> dict:
             if stored.get('backend') in SUPPORTED_BACKENDS:
                 cfg['backend'] = stored['backend']
             if isinstance(stored.get('postgres'), dict):
-                cfg['postgres'].update({k: v for k, v in stored['postgres'].items() if v is not None})
+                pg.update({k: v for k, v in stored['postgres'].items() if v is not None})
         except (json.JSONDecodeError, OSError):
             pass
+
+    if isinstance(postgres_overrides, dict):
+        for key in ('host', 'port', 'user', 'password', 'dbname'):
+            if postgres_overrides.get(key) not in (None, ''):
+                pg[key] = postgres_overrides[key]
+
+    # 旧配置或管理页请求可能携带另一平台的默认库名。
+    pg['dbname'] = resolve_postgres_dbname(pg['dbname'])
     return cfg
 
 

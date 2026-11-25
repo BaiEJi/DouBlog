@@ -38,7 +38,6 @@ export default function SearchPage({ dark = true }) {
 
   return (
     <div className="w-full">
-      <h1 className="text-lg font-semibold tracking-tight mb-5">全局搜索 · <span className="gm-gradient-text">找人物、找关系、找剧情</span></h1>
       <Space.Compact style={{ width: '100%', maxWidth: 640, marginBottom: 18 }}>
         <Input size="large" prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="输入关键词：人物名、称呼、关系说明、剧情…"
           value={q} onChange={(e) => setQ(e.target.value)} onPressEnter={() => setSubmitted(q.trim())}

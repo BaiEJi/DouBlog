@@ -266,7 +266,7 @@ def seed_demo_data(app, ctx):
                 task_date=today, created_at=now, updated_at=now,
             ))
         session.add(TodoTask(
-            id='qa-task-inbox', title='收件箱：无日期任务示例', description=None,
+            id='qa-task-inbox', title='待排期任务示例', description=None,
             category_id=None, is_important=False, is_urgent=False,
             position=1024.0, status='pending', task_date=None,
             created_at=now, updated_at=now,

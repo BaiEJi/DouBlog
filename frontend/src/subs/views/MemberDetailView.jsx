@@ -3,6 +3,7 @@
  * 订阅记录（表格视图：级别/周期/状态/覆盖日期筛选 + 增删改）与时间轴视图
  * （3m/6m/12m/全部 + 缩放平移 + 今天标线 + 条形详情弹层）。
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
@@ -98,16 +99,20 @@ function SubscriptionModal({ open, sub, onSubmit, onClose, loading }) {
             onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="价格" />
         </Field>
         <Field label="币种">
-          <select className={inputCls} value={form.currency}
-            onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
-            {CURRENCY_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          <Select
+            aria-label="币种" className="w-full"
+            value={form.currency}
+            onChange={next => setForm(f => ({ ...f, currency: next }))}
+            options={CURRENCY_OPTIONS}
+          />
         </Field>
         <Field label="计费周期">
-          <select className={inputCls} value={form.billing_cycle}
-            onChange={e => setForm(f => ({ ...f, billing_cycle: e.target.value }))}>
-            {BILLING_CYCLE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-          </select>
+          <Select
+            aria-label="计费周期" className="w-full"
+            value={form.billing_cycle}
+            onChange={next => setForm(f => ({ ...f, billing_cycle: next }))}
+            options={BILLING_CYCLE_OPTIONS}
+          />
         </Field>
         <Field label="订阅渠道">
           <input className={inputCls} value={form.channel} maxLength={50}
@@ -455,24 +460,33 @@ export default function MemberDetailView({ dark, toast }) {
               {/* 筛选 */}
               <div className="flex flex-wrap gap-2 mb-3">
                 <div className="w-28">
-                  <select value={fLevel} onChange={e => setFLevel(e.target.value)} className={inputCls + ' h-8'}>
-                    <option value="">全部级别</option>
-                    {levelOptions.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
+                  <Select
+                    aria-label="订阅级别" className="w-full" size="sm"
+                    value={fLevel}
+                    onChange={setFLevel}
+                    options={[{ value: '', label: '全部级别' }, ...levelOptions]}
+                  />
                 </div>
                 <div className="w-26">
-                  <select value={fCycle} onChange={e => setFCycle(e.target.value)} className={inputCls + ' h-8'}>
-                    <option value="">全部周期</option>
-                    {BILLING_CYCLE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                  </select>
+                  <Select
+                    aria-label="筛选周期" className="w-full" size="sm"
+                    value={fCycle}
+                    onChange={setFCycle}
+                    options={[{ value: '', label: '全部周期' }, ...BILLING_CYCLE_OPTIONS]}
+                  />
                 </div>
                 <div className="w-28">
-                  <select value={fStatus} onChange={e => setFStatus(e.target.value)} className={inputCls + ' h-8'}>
-                    <option value="">全部状态</option>
-                    <option value="active">正常</option>
-                    <option value="expiring">即将到期</option>
-                    <option value="expired">已过期</option>
-                  </select>
+                  <Select
+                    aria-label="订阅状态" className="w-full" size="sm"
+                    value={fStatus}
+                    onChange={setFStatus}
+                    options={[
+                      { value: '', label: '全部状态' },
+                      { value: 'active', label: '正常' },
+                      { value: 'expiring', label: '即将到期' },
+                      { value: 'expired', label: '已过期' }
+                    ]}
+                  />
                 </div>
                 <div className="w-38">
                   <DateInput value={fDate} onChange={e => setFDate(e.target.value)}

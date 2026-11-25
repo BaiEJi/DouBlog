@@ -2,6 +2,7 @@
  * 资产编辑器（新建/编辑共用）：kind、标题、摘要、分类、标签、正文 + 版本备注；
  * 正文实时检测 {{变量}}；Ctrl+S 保存。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useMemo, useState } from 'react'
 import CodeEditor from '@/shared/CodeEditor'
 import { BTN_GHOST, BTN_PRIMARY, INPUT, KIND_META } from '../kit'
@@ -56,7 +57,11 @@ export default function ItemEditor({ item, categories, defaultKind, onClose, onS
     const onKey = e => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save() }
       // 捕获阶段阻断：编辑器叠在详情抽屉上时，Esc 只关编辑器
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+      if (e.key === 'Escape') {
+        if (e.target?.closest?.('[role="combobox"][aria-expanded="true"]')) return
+        e.stopPropagation()
+        onClose()
+      }
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
@@ -93,13 +98,12 @@ export default function ItemEditor({ item, categories, defaultKind, onClose, onS
             </div>
             <div>
               <label className="block text-[12px] font-medium text-stone-500 mb-1.5" htmlFor="asset-category">分类</label>
-              <select id="asset-category" className={INPUT} value={categoryId}
-                onChange={e => setCategoryId(e.target.value)}>
-                <option value="">未分类</option>
-                {categories.filter(c => c.id != null).map(c => (
-                  <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>
-                ))}
-              </select>
+              <Select
+                aria-label="资产分类" id="asset-category" className="w-full"
+                value={categoryId}
+                onChange={setCategoryId}
+                options={[{ value: '', label: '未分类' }, ...categories.filter(c => c.id != null).map(c => ({ value: c.id, label: [c.icon, c.name].filter(Boolean).join(' ') }))]}
+              />
             </div>
           </div>
 

@@ -42,25 +42,30 @@ export function caseConversions(input) {
 
 // ─── CSV（RFC 4180：引号包裹、双引号转义、字段内换行）────────
 
-export function csvParse(text, delim = ',') {
+export function csvParse(text, delim = ',', { strict = false } = {}) {
   const rows = []
-  let row = [], field = '', inQuotes = false
+  let row = [], field = '', inQuotes = false, closed = false
   for (let i = 0; i < text.length; i++) {
     const c = text[i]
+    if (strict && closed && c !== delim && c !== '\r' && c !== '\n') throw new Error('CSV 引号后的分隔符无效')
     if (inQuotes) {
       if (c === '"') {
         if (text[i + 1] === '"') { field += '"'; i++ }
-        else inQuotes = false
+        else { inQuotes = false; closed = true }
       } else field += c
-    } else if (c === '"') inQuotes = true
-    else if (c === delim) { row.push(field); field = '' }
+    } else if (c === '"') {
+      if (strict && field) throw new Error('CSV 字段中的引号无效')
+      inQuotes = true
+    }
+    else if (c === delim) { row.push(field); field = ''; closed = false }
     else if (c === '\n' || c === '\r') {
       if (c === '\r' && text[i + 1] === '\n') i++
       row.push(field); field = ''
       if (row.length > 1 || row[0] !== '') rows.push(row)
-      row = []
+      row = []; closed = false
     } else field += c
   }
+  if (strict && inQuotes) throw new Error('CSV 引号未闭合')
   row.push(field)
   if (row.length > 1 || row[0] !== '') rows.push(row)
   return rows

@@ -1,6 +1,6 @@
 /**
  * 应用壳：主题状态 + 统一登录守卫 + 路由表（路由级代码分割）+ 全局行为（ScrollToTop/代码块复制委托）。
- * 各能力包：portal(/) blog(/blog /post /create /assets /diary /bookmarks) vault(/vault) logs(/logs)
+ * 各能力包：portal(/) blog(/blog /post /create /assets /diary /bookmarks) vault(/vault) pwsvc(/pwsvc) logs(/logs)
  * apihub(/apihub) config(/config) confcenter(/confcenter) clash(/clash)；
  * diary 与 bookmarks 已并入 blog 模块（src/blog/ 下，侧栏 tab 展示）。
  * 公开页：/login 与 /diary/s/:token（分享）。
@@ -27,6 +27,7 @@ const CreatePost = lazy(() => import('@/blog/pages/CreatePost'))
 const EditPost = lazy(() => import('@/blog/pages/EditPost'))
 const DiaryPage = lazy(() => import('@/blog/diary/DiaryPage'))
 const DiaryPublicShare = lazy(() => import('@/blog/diary/PublicShare'))
+const PwsvcPage = lazy(() => import('@/pwsvc/PwsvcPage'))
 const VaultPage = lazy(() => import('@/vault/VaultPage'))
 const LogsPage = lazy(() => import('@/logs/LogsPage'))
 const ApiHubPage = lazy(() => import('@/apihub/ApiHubPage'))
@@ -220,7 +221,8 @@ export default function App() {
             <Route path="/admin" element={<Navigate to="/blog" replace />} />
             <Route path="/diary" element={<DiaryPage dark={dark} setDark={toggleDark} />} />
             <Route path="/diary/s/:token" element={<DiaryPublicShare dark={dark} />} />
-            <Route path="/vault" element={<VaultPage dark={dark} setDark={toggleDark} />} />
+            <Route path="/pwsvc" element={<PwsvcPage />} />
+            <Route path="/vault" element={<VaultPage />} />
             <Route path="/logs" element={<LogsPage dark={dark} setDark={toggleDark} />} />
             <Route path="/apihub" element={<ApiHubPage dark={dark} setDark={toggleDark} />} />
             <Route path="/subs/*" element={<SubsPage dark={dark} setDark={toggleDark} />} />

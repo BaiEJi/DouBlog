@@ -53,10 +53,8 @@ export default function TodoPage({ dark }) {
 
   return (
     <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors h-[calc(100vh-64px)] flex flex-col">
-      {/* ── 顶栏 ── */}
       <PageHeader title="MyTodo" subtitle="四象限 · 迁移 · 规律生活"
-
-        tabs={TABS.map(t => ({ ...t, active: view === t.key, ...(t.key === 'backlog' ? { children: ['inbox', 'migrate', 'shelved'].map((key, i) => ({ key: `backlog:${key}`, label: ['收件箱', '迁移池', '搁置计划'][i], active: view === 'backlog' && (sp.get('bsub') || 'inbox') === key })) } : {}), ...(t.key === 'life' ? { children: ['today', 'plans', 'calendar', 'stats', 'review'].map((key, i) => ({ key: `life:${key}`, label: ['今日打卡', '计划', '日历', '统计', '回顾'][i], active: view === 'life' && (sp.get('lsub') || 'today') === key })) } : {}) }))}
+        tabs={TABS.map(t => ({ ...t, active: view === t.key, ...(t.key === 'backlog' ? { children: ['inbox', 'migrate', 'shelved'].map((key, i) => ({ key: `backlog:${key}`, label: ['待排期', '迁移池', '搁置计划'][i], active: view === 'backlog' && (sp.get('bsub') || 'inbox') === key })) } : {}), ...(t.key === 'life' ? { children: ['today', 'plans', 'calendar', 'stats', 'review'].map((key, i) => ({ key: `life:${key}`, label: ['今日打卡', '计划', '日历', '统计', '回顾'][i], active: view === 'life' && (sp.get('lsub') || 'today') === key })) } : {}) }))}
         activeTab={view}
         onTabChange={goTab}
         accent="indigo" />
@@ -66,7 +64,7 @@ export default function TodoPage({ dark }) {
         {view === 'today' && <TodayView toast={toast} dark={dark} />}
         {view === 'backlog' && <BacklogView toast={toast} />}
         {view === 'calendar' && <CalendarView variant="todo" onOpenDay={openDay} toast={toast} />}
-        {view === 'review' && <ReviewView toast={toast} />}
+        {view === 'review' && <ReviewView />}
         {view === 'stats' && <StatsView toast={toast} dark={dark} />}
         {view === 'life' && <LifeView toast={toast} dark={dark} />}
         {view === 'settings' && <SettingsView toast={toast} dark={dark} />}

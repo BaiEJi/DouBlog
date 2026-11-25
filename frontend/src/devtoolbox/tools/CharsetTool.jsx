@@ -1,6 +1,7 @@
 /** 字符集互转（乱码修复）：经后端 Python codecs——浏览器无法「编码到」GBK/Big5（TextEncoder 仅 UTF-8） */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
-import { ToolHead, TwoPane, CopyBtn, StatusLine, LBL, selectCls, areaCls, btnPri } from '../kit'
+import { ToolHead, TwoPane, CopyBtn, StatusLine, LBL, areaCls, btnPri } from '../kit'
 import { dtCharsetConvert } from '../api'
 
 const CHARSETS = ['utf-8', 'gbk', 'gb18030', 'big5', 'shift_jis', 'euc-kr', 'latin-1', 'windows-1252', 'utf-16']
@@ -31,13 +32,19 @@ export default function CharsetTool() {
     <div>
       <ToolHead title="字符集互转 · 乱码修复" desc="text --encode(from)--> 字节 --decode(to)--> 结果；from=错误解码所用的字符集，to=真实字符集"
         right={<>
-          <select className={selectCls} value={from} onChange={e => setFrom(e.target.value)} aria-label="来源字符集">
-            {CHARSETS.map(c => <option key={c} value={c}>从 {c}</option>)}
-          </select>
+          <Select
+            aria-label="来源字符集"
+            value={from}
+            onChange={setFrom}
+            options={CHARSETS.map(c => ({ value: c, label: '从 ' + c }))}
+          />
           <span className="text-stone-400">→</span>
-          <select className={selectCls} value={to} onChange={e => setTo(e.target.value)} aria-label="目标字符集">
-            {CHARSETS.map(c => <option key={c} value={c}>到 {c}</option>)}
-          </select>
+          <Select
+            aria-label="目标字符集"
+            value={to}
+            onChange={setTo}
+            options={CHARSETS.map(c => ({ value: c, label: '到 ' + c }))}
+          />
           <button className={btnPri} disabled={busy || !text} onClick={convert}>{busy ? '转换中…' : '转换'}</button>
         </>} />
       <TwoPane

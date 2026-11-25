@@ -67,7 +67,7 @@ class TaskCreate(BaseModel):
     category_id: Optional[str] = None
     is_important: bool = False
     is_urgent: bool = False
-    task_date: Optional[str] = None  # None/""=收件箱;"today"=今天;"YYYY-MM-DD"
+    task_date: Optional[str] = None  # None/""=待排期，"today"=今天，也可指定 "YYYY-MM-DD"
     due_at: Optional[datetime] = None
     due_is_full_day: bool = True
     estimate_minutes: Optional[int] = Field(default=None, ge=1, le=1440)

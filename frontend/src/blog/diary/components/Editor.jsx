@@ -2,13 +2,14 @@
  * 日记编辑器（全屏弹层）：日期/心情/本子 + 模板 + 引导问题 + 天气获取 +
  * Markdown 预览切换 + 停止输入自动保存（新篇首存 POST，此后 PUT）。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import CodeEditor from '@/shared/CodeEditor'
 import { createSaveCoordinator } from '@/shared/saveCoordinator'
 import { getDataIdentity } from '@/shared/dataEpoch'
 import md, { renderMermaidDiagrams } from '@/shared/md'
 import { diaryCreate, diaryUpdate, diaryDelete, diaryTemplates, diaryPrompt, diaryUpsertSummary } from '../api'
-import { MOODS, Icon, Confirm } from '../kit'
+import { MOODS, Icon, Confirm, TemplateSelect } from '../kit'
 import { fetchWeather } from '../api-entry'
 
 const p2 = n => String(n).padStart(2, '0')
@@ -32,7 +33,6 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
   const [status, setStatus] = useState('')          // '' | saving | saved HH:MM | fail
   const [prompt, setPrompt] = useState('')
   const [templates, setTemplates] = useState([])
-  const [showTpl, setShowTpl] = useState(false)
   const [confirmDel, setConfirmDel] = useState(false)
   const taRef = useRef(null)
   const coordinatorRef = useRef(null)
@@ -176,15 +176,12 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
               ))}
             </div>
             {!isSummary && (
-              <select value={journalId == null ? '' : journalId}
-                onChange={e => { setJournalId(e.target.value ? +e.target.value : null); dirtyRef.current = true }}
-                className={'h-8 px-2 text-xs bg-white dark:bg-white/[0.04] border rounded-lg outline-none ' +
-                  (journalId == null ? 'border-red-500/50' : 'border-black/10 dark:border-white/10')}>
-                <option value="" disabled>选择日记本（必选）</option>
-                {journals.map(j => (
-                  <option key={String(j.id)} value={j.id}>{j.emoji} {j.name}</option>
-                ))}
-              </select>
+              <Select
+                aria-label="日记本" size="sm"
+                value={journalId == null ? '' : journalId} invalid={journalId == null}
+                onChange={next => { setJournalId(next || null); dirtyRef.current = true }}
+                options={[{ value: '', label: '选择日记本（必选）', disabled: true }, ...journals.map(j => ({ value: j.id, label: [j.emoji, j.name].filter(Boolean).join(' ') }))]}
+              />
             )}
             {isSummary && (
               <span className="px-2 h-8 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 text-[11.5px] inline-flex items-center">📝 每日总结</span>
@@ -195,23 +192,11 @@ export default function Editor({ entry, journals, onClose, onSaved, onDeleted })
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="relative ml-auto">
-              <button onClick={() => setShowTpl(s => !s)}
-                className="h-6 px-2 rounded-full border border-black/10 dark:border-white/10 text-[11px] text-stone-400 hover:text-stone-600 dark:hover:text-stone-300">
-                📋 插入模板
-              </button>
-              {showTpl && (
-                <div className="absolute right-0 z-20 mt-1 py-1 w-40 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
-                  {templates.map(t => (
-                    <button key={t.key}
-                      onClick={() => { setContent(c => (c ? c + '\n\n' : '') + t.body); setShowTpl(false); dirtyRef.current = true; taRef.current?.focus() }}
-                      className="w-full text-left px-3 h-8 text-xs text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.05]">
-                      {t.emoji} {t.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TemplateSelect className="ml-auto" templates={templates} onInsert={body => {
+              setContent(text => (text ? text + '\n\n' : '') + body)
+              dirtyRef.current = true
+              taRef.current?.focus()
+            }} />
             <button onClick={() => setPreview(p => !p)}
               className="h-6 px-2 rounded-full border border-black/10 dark:border-white/10 text-[11px] text-stone-400 hover:text-stone-600 dark:hover:text-stone-300">
               {preview ? '✏️ 编辑' : '👁 预览'}

@@ -35,15 +35,18 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，14 
 - **书签与稍后阅读**（知识库模块 tab `/bookmarks`，2026-10-17 自独立模块并入 blog）：**分类树**（≤3 层文件夹）+ **条目状态机**（未读→阅读中→已读/归档/星标）+ 标签；**URL 规范化查重**（剥 utm 追踪参数）；**收录表单一键抓取页面元信息**；**离线快照**（HTML→Markdown 正文抽取，原文删帖也不怕，列表页不传大字段）；**死链批量检测**（可达/失效/异常三态标记）；**阅读队列**（"下一篇"英雄卡）；**统计**（状态分布/30 天趋势/分类·标签·站点 TOP）；**导入导出**（Netscape 浏览器书签格式 + JSON 全量备份，重复自动跳过）；回收站（还原/彻底删除）
 - **订阅管理**（`/subs`，CrownFlow 全量迁移）：**会员主表 + 多订阅记录**（一次购买/续费一条：价格/币种 5 种/计费周期 4 种/起止/渠道）按自定义分类（emoji+颜色）组织；**支出统计**（日均×重叠天数折算 CNY 静态汇率；概览/分类汇总/趋势 day·week·month·quarter 粒度）；**到期提醒**（按会员 reminder_days 阈值）与**订阅到期日历**（农历/法定节假日/当日徽标）；会员支出排行榜（4 维度）、订阅时间轴（3m/6m/12m/全部+今天线）、表格/卡片双视图；**每日 10:00 支出摘要日志**
 - **私人日记**（知识库模块 tab `/diary`，Memos × Day One 超集，2026-10-17 自独立模块并入 blog）：**随记分日记本**（预置 日常🏡/工作💼/感悟🌱，可自建；随记必选本，录入框内直接切换）+ **每日总结**（每天一篇 upsert，总结卡置顶日期组、随记带连接线挂在总结之后）；侧栏工作台（视图/日记本含计数）+ 快捷录入（**本子**/心情/模板/**每日引导问题**/**天气位置一键记录**）；置顶/归档/**回收站**；**年度热力图**、**那年今日**、统计图表（连续/每月字数/心情趋势/**年度回顾**）；单篇**免登录分享链接**（可撤销/有效期）；一句话快速录入 API + 全量 Markdown 导出
-- **密码库**（`/vault`，零知识端到端加密）：本地Worker执行Argon2id派生 + AES-256-GCM，参数不降，服务端只存密文；**TOTP 验证码生成**（RFC 6238，30s 环形倒计时 + 一键复制，编辑器粘贴 otpauth:// 自动解析）、**HIBP 泄露检查**（k-anonymity，仅上传 SHA-1 前 5 位，结果仅会话内存缓存、不持久化完整哈希；锁定取消请求和后续队列）、**健康总评分**（0-100 环，按泄露/弱/复用等加权扣分，点击下钻）、**安全附件**（前端 VEK 加密上传/下载/删除，5MB/文件，purge 级联清理）、密码历史（改密自动归档）、身份（邮箱/手机 → 关联账号）、密码/口令短语生成器 + 编辑器实时强度条、安全中心（泄露/弱/复用/过旧/**到期提醒**/无 2FA/重复/缺恢复，全客户端分析）、**密码到期提醒**（条目可设 N 天周期，超期概览横条+详情徽标）、⌘K 全局搜索、自动锁定、Recovery Key、加密备份导入导出；全中文界面，三面板布局，明暗主题
-- **密码服务**（密码库内子模块）：为项目提供**自动轮换密码**（30s~10min）与机器校验 API——项目 → 用户类型（密码策略）→ 用户（**每用户独立密码链**）；密码不落盘、由 seed+时间窗口确定性推导（TOTP 思路），上一窗口 **30 秒宽限**；`POST /api/pwsvc/validate`（X-Api-Key）供第三方服务校验；**校验限流**（页面可配，默认 120 次/分钟）+ **校验日志与失败统计**（项目页时间线，保留 30 天，永不含密码内容）；设计见 `docs/pwsvc-design.md`
+- **密码库**（`/vault`）解锁后进入个人账号本，可搜索、收藏、复制登录账号和密码，打开网址，查看最近使用。支持 TOTP、密码历史、生成器、安全检查、最近删除与撤销。浏览器 CSV 在本地预览去重，密文追加。加密备份包含附件，恢复密钥可重设主密码。
+  「我的账号」左侧可创建、改名或删除分组，每个账号可归入一个分组。删除分组后，原账号可在「未分组」找到。加密备份包含分组和归属。
+  每条账号可标记所属网站，如谷歌、微软或自定义平台，并按网站搜索和筛选。登录网址用于打开对应页面。
+  已初始化的空库可从「忘记主密码」进入「重新设置空密码库」。库中有账号、最近删除、附件或分组时，需用原主密码或恢复密钥解锁。
+- **密码服务**（`/pwsvc`，门户独立模块）：为项目提供**自动轮换密码**（30s~10min）与机器校验 API——项目 → 用户类型（密码策略）→ 用户（**每用户独立密码链**）；密码不落盘、由 seed+时间窗口确定性推导（TOTP 思路），上一窗口 **30 秒宽限**；`POST /api/pwsvc/validate`（X-Api-Key）供第三方服务校验；**校验限流**（页面可配，默认 120 次/分钟）+ **校验日志与失败统计**（项目页时间线，保留 30 天，永不含密码内容）；设计见 `docs/pwsvc-design.md`
 - **API Hub QQ 机器人接入**（2026-10-17）：`qq_bot` 动态令牌鉴权（token 进程内缓存自动刷新）+ 全局出站代理（`/config` 页配置，QQ 域名直连不通时走 Clash）+ API 参数默认值（openid/msg_type 可不传）——`POST /api/apihub/gw/apis/qq-send-c2c` 传 `{"content": "..."}` 即推送 QQ 私聊，见 api.md 第 14 章
 - **API Hub 内置本机目录：配置中心只读对外 OpenAPI**（2026-10-24）：启动幂等登记内置系统 `DouBlog（本机）`（slug=doublog）与两个只读 API，把本实例配置中心作为外部 OpenAPI 提供——对外统一入口 `GET /api/apihub/openapi/{system}/{api}`（默认格式，全系统通用）：`…/openapi/doublog/confcenter_namespaces`（全部 namespace，含空空间）与 `…/openapi/doublog/confcenter_get_key?namespace=…&key=…`（单条，str/json 保真，路径变量经同名 query 参数传入）；内层默认用户由网关 Basic 注入，四级限流/配额/白名单与 invoke 完全一致；标准契约 `docs/openapi/apihub-doublog.yaml`（OpenAPI 3.1）；内置结构固定、可停用，详见 api.md 14.1b
 - **模块化日志上报**：每个模块独立 sys_name（doublog.blog（含资产/日记/书签子域）/vault/…），WARNING+ 按标准 HTTP 发往日志查询模块，**服务地址/开关/级别在系统配置页 `/config` 配置**（即时生效）
 - **日志接收**（`/logs`，lizysdk 配套）：接收 `lizysdk` `send_json=True` 的 JSON 日志（单条/批量），队列+单写者批量落库、坏日志死信兜底（队列有容量上限，202表示接收，不承诺崩溃耐久）、按保留期自动清理；存储跟随设置页数据库；SDK 侧 `send_url="http://host:60100/api/v1/logs"` 即装即用。查询页为完整日志探索界面（对齐 Datadog/Better Stack 主路径，调研见 `docs/logs-benchmark.md`）：**时间直方图**（级别分色，点击柱/拖拽框选缩放）、相对时间 chips、**Live Tail**（3s 轮询增量置顶）、**日志上下文**（前后各 N 条，锚点高亮）、**一键字段过滤**（⊕/⊖）、搜索词高亮、级别统计 chips、**保存的查询集**、URL 同步查询状态、导出 CSV/JSON、多行堆栈折叠、**模式分组**（相似消息模板归并）、键盘导航（j/k/Enter//）、无限滚动+加载更多、**日志告警**（阈值规则+webhook 通知+事件确认）、**trace 时间线**（同 trace_id 点阵+偏移）
 - **LizySDK 接入**（[BaiEJi/LizySDK](https://github.com/BaiEJi/LizySDK)）：后端日志经 lizysdk 落盘 `data/logs/doublog.log`（INFO+，轮转）并**自摄**——INFO+ 全量回灌自身 `/api/v1/logs`（2026-10-13 起默认全量采集；含每请求 access 日志，trace 贯穿同请求全部记录；系统配置页可切回仅 WARNING），日志查询页实时检索本服务全部日志；API 异常统一走 SDK 的 `AppError` 家族（响应 `data.error_code` 携带 SDK 错误码）
 - **配置中心**（`/confcenter`）：先创建 namespace，再从左侧进入空间管理 KV；空空间独立保留；value={type,data}（str 原样/json 校验，type 可变更）；Redis 读穿缓存（未配置/不可达自动降级直连 DB，配置页可启停/测试/清空）
-- **四象限待办**（`/todo`，MyTodo 迁入）：今日看板（拖拽跨象限/象限内排序）、待办池（收件箱/待迁移/已搁置+干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
+- **四象限待办**（`/todo`，MyTodo 迁入）：今日看板（拖拽跨象限/象限内排序）、待办池（待排期/迁移池/搁置计划，迁移支持干预三选）、日历（周/月/年）、回顾与统计（streak/热力图/趋势）、**规律生活计划**（四循环规则自动物化任务+打卡）、任务级邮件提醒；数据已从 MyTodo 全量导入（2500 任务）；Chrome 扩展与 Android 客户端平迁至仓库 `extensions/todo/`（仍对接旧 8070 协议，见 docs/modules/todo.md 已知边界）
 - **剧情图谱**（`/gamemap`，独立模块，gamemap 迁入）：React Flow 关系画布（拖拽存档/关系线/跨章聚合）、人物档案/图鉴、剧情事件时间线、关系类型配置、整游戏备份导入导出
 - **刷题练习**（`/practice`，独立模块）：题解/代码/标签管理、艾宾浩斯复习、一键抓题（LeetCode/洛谷）
 - **Steam 挂机**（`/steamidler`，独立模块，steam-idler 迁入）：账号登录挂机、时长统计、运行日志
@@ -60,7 +63,7 @@ DouBlog 是一个单用户个人系统，**`/` 为统一入口（工作台，14 
 | ORM / 数据库 | SQLAlchemy 2.0 / SQLite（WAL 模式） |
 | 认证 | 统一登录：会话 Cookie（HMAC 签名，30 天）+ Basic 兼容（`require_basic` 双通道） |
 | 日志/异常/并发池 | lizysdk（basekit）：logs / errors(AppError) / pools |
-| 数据库 | PostgreSQL 17（psycopg2，默认 117.72.98.99:50002/app_dev）/ SQLite（WAL，可切换） |
+| 数据库 | PostgreSQL 17（psycopg2，Windows 使用 `app_dev`，Linux 使用 `app`）/ SQLite（WAL，可切换） |
 | 前端框架 | React 19 + React Router 7 |
 | 构建 | Vite 8 |
 | 样式 | Tailwind CSS 4 |
@@ -102,7 +105,8 @@ DouBlog/
 │       ├── shared/           # 公共层：client.js（后端地址唯一处）+ md.js（渲染管线）+ PageHeader.jsx
 │       ├── portal/           # / 工作台门户（dnd 分组布局）
 │       ├── blog/             # /blog /post /create：api + pages×4 + editor×2（快捷键/图片上传）
-│       ├── vault/            # /vault：VaultPage + api + components（crypto/core/ui/密码服务）
+│       ├── pwsvc/            # /pwsvc 独立项目、轮换策略和校验日志
+│       ├── vault/            # /vault：VaultPage + api + components（账号本、密钥、备份）
 │       ├── logs/ subs/ apihub/ config/ confcenter/   # 其余能力包（api + 页面 + 组件）
 │       ├── todo/             # /todo：TodoPage + views×11 + kit + charts（kit/charts 被 gamemap/practice/steamidler/bookmarks 跨模块引用）
 │       ├── gamemap/          # /gamemap：GamemapShell（antd6/@xyflow 保留栈）+ board/ + pages/
@@ -127,7 +131,7 @@ DouBlog/
 
 - Python 3.10+
 - Node.js 18+
-- PostgreSQL 17（默认）：`117.72.98.99:50002/app_dev`（用户 `lizy`）；也可在系统配置页 `/config` 一键切回本地 SQLite（零配置）
+- 默认使用 PostgreSQL 17，地址为 `117.72.98.99:50002`，用户为 `lizy`。后端在 Windows 上连接 `app_dev`，在 Linux 上连接 `app`。系统配置页 `/config` 提供本地 SQLite 选项。
 
 ### 1. 启动后端（端口 60100）
 
@@ -159,6 +163,8 @@ npm run dev
 > 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 凭据模式，来源收敛 `:60101`）。
 > **统一登录**：打开前端即进 `/login`，登录一次签发会话 Cookie（30 天）全站生效；前端 bundle 不再持有任何凭据。Basic Auth 仅作为 API/脚本/测试的兼容通道。
 
+在「配置中心 → MCP 配置」的模块侧栏选择 MyTodo，可查看工具说明和输入参数、启停工具，或签发、续期和撤销模块令牌。「MCP 接入配置」提供 Streamable HTTP 地址、认证请求头和可复制的 JSON 示例。[MCP 接入说明](docs/modules/confcenter.md#mcp-配置)
+
 ## 生产部署
 
 开发脚本只适合本机调试；对外提供服务请使用构建产物：
@@ -188,12 +194,14 @@ bash shell/backend/stop.sh           # 停止
 | 配置项 | 默认值 | 说明 |
 |---|---|---|
 | `host` / `port` | `0.0.0.0` / `60100` | 监听地址 |
+| `DOUBLOG_MCP_PUBLIC_ORIGIN`（后端环境变量） | 空，仅本机 | 配置 HTTPS 来源并重启后，可通过该来源接入 MCP |
 | `debug` | `True` | 调试模式（生产必须关闭） |
 | `cors_origins` | `*` | ⚠️ 死配置：中间件实际用 `allow_origin_regex ^https?://.*:60101$` + 凭据模式，不读此项 |
 | `auth_enabled` | `True` | 是否启用认证 |
 | `auth_username` / `auth_password` | `admin` / `lizy111A` | **仅首次播种默认**——凭据实际存 `system_accounts` 表（PBKDF2 哈希），`/config` 页可改 |
 | `database_backend` | `postgres` | 默认后端（运行时以 `data/db_config.json` 为准） |
-| `postgres_host/port/user/password/dbname` | `117.72.98.99/50002/lizy/lizy111pg/app_dev` | PG 连接默认值 |
+| `postgres_host/port/user/password` | `117.72.98.99/50002/lizy/lizy111pg` | PG 连接默认值 |
+| `postgres_dbname` | Windows `app_dev`，Linux `app` | 已保存的这两个内置库名随系统选择，其他库名按配置使用。 |
 | `data_dir` / `images_dir` | `<根目录>/data[/images]` | 数据与图片目录 |
 | `max_page_size` | `100` | 分页上限 |
 
@@ -204,12 +212,17 @@ bash shell/backend/stop.sh           # 停止
 
 ## API 概览
 
+MCP 默认地址为 `http://127.0.0.1:60100/mcp/todo`，仅接受本机连接。服务器可设置后端环境变量 `DOUBLOG_MCP_PUBLIC_ORIGIN=https://todo.example.com` 并重启，使用 HTTPS 反向代理对外提供 `/mcp/`。客户端在每次请求中发送模块令牌。[服务器接入示例](docs/modules/confcenter.md#服务器远程接入)
+
 统一响应格式：`{ "success": bool, "code": int, "message": str, "data": any }`（orjson 渲染，NaN→null）；认证=统一登录（会话 Cookie 或 Basic；免认证例外：图片 GET、sdklogs 摄入、日记分享、apihub gw）；JSON 响应超过 1KB 自动 gzip。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | `POST` | `/api/auth/login` | 登录校验 |
 | `GET` | `/api/auth/check` | 检查认证状态 |
+| `GET / PUT` | `/api/confcenter/mcp`、`/api/confcenter/mcp/{module}/tools/{tool}` | 查询注册模块与工具，设置工具是否开放 |
+| `GET / POST / DELETE` | `/api/confcenter/mcp/{module}/tokens`、`…/tokens/{id}/renew`、`…/tokens/{id}` | 列出、签发、续期和撤销模块令牌 |
+| `POST` | `/mcp/todo` | Streamable HTTP，发送 Bearer 令牌 |
 | `GET` | `/api/posts` | 文章列表（`page/page_size`分页；**不含正文**；`workspace_id`按库，`keyword`由服务端匹配正文等字段） |
 | `GET` | `/api/posts/tree` | 文章树（**不含正文**，按知识库返回，缺省 = 默认库） |
 | `GET` | `/api/posts/id/<id>` | 详情（含正文，自增浏览量；`?no_view=1` 预取不计） |

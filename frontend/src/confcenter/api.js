@@ -3,6 +3,20 @@
 
 import { apiFetch } from '../shared/client.js'
 
+const mcpPath = module => `/api/confcenter/mcp/${encodeURIComponent(module)}`
+export const confMcpModules = () => json('/api/confcenter/mcp')
+export const confMcpSetTool = (module, name, enabled) =>
+  json(`${mcpPath(module)}/tools/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ enabled }) })
+export const confMcpTokens = module => json(`${mcpPath(module)}/tokens`)
+export const confMcpIssueToken = (module, name) =>
+  json(`${mcpPath(module)}/tokens`, { method: 'POST', body: JSON.stringify({ name }) })
+export const confMcpRenewToken = (module, id, expiresAt) =>
+  json(`${mcpPath(module)}/tokens/${encodeURIComponent(id)}/renew`, {
+    method: 'POST', body: JSON.stringify({ expected_expires_at: expiresAt }),
+  })
+export const confMcpRevokeToken = (module, id) =>
+  json(`${mcpPath(module)}/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
 async function json(path, options = {}) {
   const r = await apiFetch(path, options)
   const body = await r.json().catch(() => ({}))

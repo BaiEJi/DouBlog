@@ -18,9 +18,7 @@ export function BackButton({ to = '/', label = '门户' }) {
   )
 }
 
-export default function PageHeader({ title, subtitle, tabs, activeTab, onTabChange, accent, extra, hideTitle }) {
+export default function PageHeader({ title, subtitle, tabs, activeTab, onTabChange, accent, extra }) {
   useModuleNavigation({ title, subtitle, ...(accent ? { accent } : {}), ...(tabs?.length ? { items: tabs, activeKey: activeTab, onSelect: onTabChange } : {}) })
-  const label = tabs?.find(tab => tab.key === activeTab)?.label || title
-  if (hideTitle) return null
-  return <div className="mb-6"><h1 className="text-base font-semibold tracking-tight">{label}</h1>{extra}</div>
+  return extra ?? null
 }

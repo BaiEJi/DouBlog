@@ -11,6 +11,11 @@ dist
 backend/app/_reload_stamp.py
 
 venv/
+backend/pytest-of-*/
+backend/pip-build-tracker-*/
+backend/pip-ephem-wheel-cache-*/
+backend/pip-install-*/
+backend/pip-unpack-*/
 data/
 # 性能分析产物 / 压测临时数据 / 截图存档 / Flask 快照 / vault 测试残留
 *.prof

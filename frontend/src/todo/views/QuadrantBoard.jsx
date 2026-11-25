@@ -54,7 +54,7 @@ function CardMenu({ anchorRef, task, onEdit, onReschedule, onMoveQuadrant, onDel
   }
   const item = 'flex items-center gap-2 w-full px-3 h-8 text-left text-[13px] rounded-lg transition-colors '
   return createPortal(
-    <div ref={positionMenu} data-todo-menu className="fixed left-0 top-0 z-50 w-40 max-h-[calc(100vh-16px)] overflow-y-auto p-1 rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white dark:bg-[#262524] shadow-lg" onPointerDown={e => e.stopPropagation()}>
+    <div ref={positionMenu} data-todo-menu className="db-menu-surface fixed left-0 top-0 z-50 w-40 max-h-[calc(100vh-16px)] overflow-y-auto p-1" onPointerDown={e => e.stopPropagation()}>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
         onClick={() => { onClose(); onEdit(task) }}>编辑</button>
       <button className={item + 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]'}
@@ -113,19 +113,19 @@ export const TaskCardContent = memo(function TaskCardContent({
             : 'bg-white dark:bg-white/[0.14] border-black/30 dark:border-white/45 hover:border-indigo-500 dark:hover:border-indigo-400')}>
         {done && <svg width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10.5l4 4 8-9" /></svg>}
       </button>
-      <span className={'min-w-0 flex-1 truncate text-sm leading-5 ' + (done ? 'line-through text-stone-400 dark:text-stone-500' : '')}>{task.title}</span>
+      <span className={'min-w-0 truncate text-base leading-5 ' + (done ? 'line-through text-stone-400 dark:text-stone-500' : '')}>{task.title}</span>
       {task.plan_id && <span className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">生活</span>}
       {task.migrated_count > 0 && task.days_procrastinated != null && (
         <span title={`已迁移 ${task.migrated_count} 次，最初属于 ${task.original_date ?? '?'}`}
           className="shrink-0 inline-flex items-center rounded px-1 h-[18px] text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums">拖{task.days_procrastinated}天</span>
       )}
       {task.category_name && (
-        <span title={task.category_name} className="min-w-0 max-w-24 flex items-center gap-1 text-[10.5px] text-stone-500 dark:text-stone-400">
+        <span title={task.category_name} className="flex max-w-[min(7rem,25%)] shrink-0 items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
           <Dot color={task.category_color ?? '#94a3b8'} size={7} /><span className="truncate">{task.category_name}</span>
         </span>
       )}
       <button ref={menuButtonRef} type="button" onClick={e => { e.stopPropagation(); setMenuOpen(v => !v) }} aria-label="任务操作" aria-expanded={menuOpen} title="任务操作"
-        className={'shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors ' +
+        className={'ml-auto shrink-0 w-5 h-5 rounded flex items-center justify-center transition-colors ' +
           (menuOpen ? 'bg-black/[0.07] dark:bg-white/[0.12] text-stone-700 dark:text-stone-200' : 'text-stone-400 hover:bg-black/[0.05] dark:hover:bg-white/10')}>
         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.4" /><circle cx="10" cy="10" r="1.4" /><circle cx="15.5" cy="10" r="1.4" /></svg>
       </button>
@@ -171,9 +171,11 @@ function QuadrantColumn({ block, tasks, softLimit, focusedId, cardHandlers, onAd
         ? 'border-indigo-400/70 ring-2 ring-indigo-400/30'
         : 'border-black/[0.07] dark:border-white/[0.07]')}>
       <div className="h-[3px] shrink-0 rounded-full mb-1.5" style={{ background: m.color }} />
-      <div className="flex h-5 shrink-0 min-w-0 items-center gap-2 mb-1.5 whitespace-nowrap">
-        <span className={'shrink-0 text-sm font-semibold ' + m.text}>{block.label}</span>
-        <span className="min-w-0 flex-1 truncate text-[11px] text-stone-400 dark:text-stone-500" title={block.subtitle}>{block.subtitle}</span>
+      <div className="mb-2 flex min-w-0 shrink-0 items-center gap-2 whitespace-nowrap">
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <h2 title={block.label} className={'max-w-[65%] shrink-0 truncate text-xl leading-7 font-semibold ' + m.text}>{block.label}</h2>
+          <span title={block.subtitle} className="min-w-0 truncate text-[13px] leading-5 text-stone-500 dark:text-stone-400">{block.subtitle}</span>
+        </div>
         {overLimit && <span title={limitHint} aria-label={limitHint} className="shrink-0 text-xs text-orange-600 dark:text-orange-400">⚠</span>}
         <span className="shrink-0 min-w-[20px] h-5 px-1.5 rounded-full text-[11px] flex items-center justify-center tabular-nums text-white" title={limitHint}
           style={{ background: overLimit ? '#ef4444' : m.color }}>{pendingCount}</span>

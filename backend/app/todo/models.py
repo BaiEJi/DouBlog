@@ -70,7 +70,7 @@ class Task(Base):
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
 
-    # 日期体系:task_date 为空 = 收件箱;original_date 迁移后不变
+    # task_date 为空表示待排期，original_date 迁移后不变
     task_date: Mapped[Optional[date]] = mapped_column(Date)
     original_date: Mapped[Optional[date]] = mapped_column(Date)
     due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

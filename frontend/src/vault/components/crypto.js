@@ -124,7 +124,8 @@ export async function unlockVault(account, secret, isRecovery = false) {
  * @returns {Promise<{box, salt, params}>} 提交 PUT /api/vault/account/keys 的对应字段
  */
 export async function rewrapVaultKey(account, currentSecret, isRecovery, newSecret, newIsRecovery) {
-  const params = { ...DEFAULT_KDF }
+  // 两个包裹共用账号的 KDF 参数，单独重设其中一个时沿用该账号的参数。
+  const params = { ...account.kdf_params }
   // 用旧通道解出 VEK 字节（仅在本函数作用域内瞬时存在）
   const oldParams = account.kdf_params
   const oldSalt = fromB64(isRecovery ? account.recovery_salt : account.kdf_salt)

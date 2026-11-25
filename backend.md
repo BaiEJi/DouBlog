@@ -30,7 +30,7 @@
 
 | 决策 | 说明 |
 |---|---|
-| PG 默认 + SQLite 可切换 | PostgreSQL（117.72.98.99:50002/app_dev）默认；SQLite(WAL) 经配置页/API 一键切换（只换连接读目标库现有数据），配置持久化于 `data/db_config.json` |
+| PG 默认 + SQLite 可切换 | 默认使用 PostgreSQL（`117.72.98.99:50002`，Windows 连接 `app_dev`，Linux 连接 `app`）；SQLite(WAL) 经配置页/API 一键切换（只换连接读目标库现有数据），配置持久化于 `data/db_config.json` |
 | 知识库（Workspace） | 文章的顶层分组：库间数据隔离、name 库内唯一、顶级排序存在 `workspaces.children_order` |
 | 核心部署 | 浏览计数实时写库；单进程 uvicorn。confcenter 可选 Redis 缓存/限流，APIHub 有模块限流；模块后台任务随 app 生命周期启动与排空 |
 | 虚拟根节点 | id=0 的特殊行统一管理顶级文章的父子关系与排序 |
@@ -65,7 +65,7 @@ backend/
 │   ├── sdklogs/               # 日志接收（lizysdk 服务端）：models(sdklogs_*) + routes（写者线程/死信/保留）
 │   ├── subs/                  # 订阅管理（CrownFlow 迁移）：models + routes（每日支出摘要线程）
 │   ├── apihub/                # API Hub（统一 API 网关）：models/core/pool/http连接池/state/routes
-│   ├── todo/                  # 四象限待办（MyTodo 迁入）
+│   ├── todo/                  # 四象限待办，通过 mcp_provider 注册本模块工具
 │   ├── gamemap/               # 剧情图谱（gamemap 迁入）：13 表 + routers 9 组 + response_cache
 │   ├── practice/              # 刷题记录：题目/解法/复习 + 抓题适配器（时区设置复用 todo.services）
 │   ├── steamidler/            # Steam 挂机：账号管理 + Manager（gevent 限 worker 线程独立 hub）
@@ -82,6 +82,8 @@ backend/
 **请求执行模型**：DB 端点一律 `async def` + `return await run_db(_impl)`——同步 SQLAlchemy 逻辑提交到共享 SDK 线程池 `doublog-db` 执行。任务结束（含异常）先在同一工作线程检查所属 registry 是否已有 scoped session；已有时保持 `try rollback() / finally remove()`，没有时不创建空会话。纯缓存命中或仅使用 `engine.connect()` 的任务可省去 ORM 会话构造；后者的连接仍由调用函数自己的上下文关闭。清理必须在工作线程内做，等待方清理清不到工作线程的 session。
 
 ## 3. 数据库设计
+
+配置中心通过 `confcenter_mcp_tokens` 管理模块令牌，通过 `confcenter_mcp_tools` 持久化逐工具开关。`app/shared/mcp_catalog.py` 从应用已加载模块的 `mcp_provider` 收集工具。每个提供方在 ASGI lifespan 内获得独立的无状态传输，逐请求检查连接来源、令牌摘要、模块、数据源和有效期。默认仅本机可连，配置 `DOUBLOG_MCP_PUBLIC_ORIGIN` 后可按指定来源接入 HTTPS 远程请求。工具发现、参数校验及调用共享开放清单。续期以原到期时间作为更新条件，避免并发重复延长。MyTodo 写工具继续复用 `todo_mutations`。
 
 ### 3.1 Workspace 模型（`app/blog/models.py`）
 
@@ -252,7 +254,8 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 | `cors_origins` | `*` | ⚠️ 死配置（中间件用 allow_origin_regex `:60101` + allow_credentials） |
 | `auth_username` / `auth_password` | `admin` / `lizy111A` | 仅首次播种默认——凭据实际存 `system_accounts` 表（PBKDF2 哈希，2026-10-12 迁入；`/config` 页可改，见 docs/modules/system.md 第 0 节） |
 | `database_backend` | `postgres` | 默认后端；运行时以 `data/db_config.json` 为准（测试 conftest 强制 sqlite） |
-| `postgres_*` | `117.72.98.99/50002/lizy/lizy111pg/app_dev` | PG 连接默认值（host/port/user/password/dbname） |
+| `postgres_host/port/user/password` | `117.72.98.99/50002/lizy/lizy111pg` | PG 连接默认值 |
+| `postgres_dbname` | Windows `app_dev`，Linux `app` | `load_db_config` 合并文件和请求参数后，按后端系统解析内置库名。自定义库名按原值使用。 |
 | `data_dir` / `images_dir` | `<根>/data[/images]` | 数据与图片目录 |
 | `max_page_size` / `default_page_size` | `100` / `20` | 分页 |
 
@@ -276,14 +279,19 @@ slug = 从根到本节点的 `name` 路径，如 `/java/java8`。
 - 与文章体系零耦合；表 `diary_journals` + `diary_diaries`（日期 YYYY-MM-DD 字符串，mood 枚举，word_count 保存时按 CJK 逐字+西文按词重算；随记必选本）；迁移由 blog `ensure_migrations` 链式调用
 - 模块细节（22 端点/分册/置顶/归档/回收站/分享/统计/ensure_migrations 迁移）见 `docs/modules/blog.md` 日记子域节
 
-## 10.45 Vault（零知识密码库，app/vault/；四表含 vault_attachments，附件 5MB/文件/8MB 总量、purge 级联，详见 docs/modules/vault.md）
+## 10.45 Vault（零知识密码库，app/vault/；四表含 vault_attachments，附件 每文件最多 5 MiB，密文限额计入两层 Base64、purge 级联，详见 docs/modules/vault.md）
 
-- 三表：vault_accounts（KDF 参数/盐/双通道包裹 VEK）、vault_items（密文 blob + 非敏感元数据列）、vault_audit_logs（仅行为+条目 ID）
+- vault_attachments 存储加密附件，备份 v2 在一致快照中读取账号、全部条目和附件。恢复在同一事务中重建附件关联，旧版 v1 仍可读取。CSV 批量追加校验本次预览的账号快照。
+- `vault_accounts.group_catalog` 保存客户端加密的分组目录，存量库启动时幂等补充可空 TEXT 列。分组变更在事务中核对当前库和旧目录随机数，目录随账号材料进入加密备份。条目归属保存在条目密文内。
+- 空库重新设置时，在同一事务中核对两项旧盐、全表账号记录（含最近删除）、分组目录和附件。新增条目与这项操作互斥。重新设置后，新增请求必须带当前密钥标识，防止旧窗口写入旧密钥加密的内容。
+- 其余三表：vault_accounts（KDF 参数/盐/双通道包裹 VEK）、vault_items（密文 blob + 非敏感元数据列）、vault_audit_logs（仅行为+条目 ID）
 - 物理表无任何明文敏感列（测试断言）；blob/包裹材料结构校验 {n, ct}；跟随同一数据库会话（db_config.json 切换生效）
 
-## 10.47 Pwsvc（密码服务：轮换密码，app/pwsvc/routes.py）
+## 10.47 Pwsvc 轮换密码服务
 
-- 四表：pwsvc_projects（API Key 只存 SHA-256 哈希 + 12 字符前缀 + rate_limit 限流配置）、pwsvc_user_types（密码策略：长度 8-64 / 四类字符集 / 排除易混淆 / rotation_seconds ∈ {30,60,120,300,600}）、pwsvc_users（**每用户独立 每用户独立 256-bit（32 字节）seed**，AES-256-GCM 加密落盘，密钥 `data/pwsvc.key` 自动生成）、pwsvc_validate_logs（校验日志：项目/用户名/结果/IP/时间，**永不含密码内容**，保留 30 天写入时清理）
+门户路径为 `/pwsvc`，后端通过 `app/pwsvc/routes.py` 和模块自己的迁移注册到 DouBlog。站点登录后即可管理项目。
+
+- 四表：pwsvc_projects（API Key 只存 SHA-256 哈希 + 12 字符前缀 + rate_limit 限流配置）、pwsvc_user_types（密码策略：长度 8-64 / 四类字符集 / 排除易混淆 / rotation_seconds ∈ {30,60,120,300,600}）、pwsvc_users（**每用户独立 256-bit（32 字节）seed**，AES-256-GCM 加密落盘，密钥 `data/pwsvc.key` 自动生成）、pwsvc_validate_logs（校验日志：项目/用户名/结果/IP/时间，**永不含密码内容**，保留 30 天写入时清理）
 - **密码不存储**：`derive(seed, window, policy)` 确定性推导（HMAC-SHA256 流 + 确定性拒绝采样 + Fisher-Yates 洗牌）；测试含**黄金向量**（固定 seed+window → 固定密码）防算法漂移
 - 校验 `POST /api/pwsvc/validate`（X-Api-Key 认证，不走 Basic）：当前窗口命中 → valid+expires_in；未命中且**进入窗口 30s 内**（`min(30, rotation)`）→ 比对上一窗口（宽限）；`hmac.compare_digest` 常数时间比较；**限流**：进程内令牌桶（每项目 rate_limit 次/分钟，默认 120，0=不限，页面可改），超出 429 且不落日志
 - 每次校验落一条 `pwsvc_validate_logs`；`GET /projects/<id>/logs` 倒序分页 + 近 1h/24h 成败统计 + 失败 TOP5（爆破定位）
@@ -423,6 +431,8 @@ FastAPI 无代理概念）：配置内存快照（版本化，管理端改动 re
 - 每连接 PRAGMA（connect 事件）：busy_timeout=5000 / synchronous=NORMAL / cache_size=20MB / temp_store=MEMORY
 
 ## 11. 测试
+
+`tests/todo/test_mcp.py` 通过 ASGI 入口覆盖协议发现、各工具、令牌生命周期和并发重试，并用临时 PostgreSQL 验证开关与跨库隔离。`tests/confcenter/test_mcp_config.py` 验证工具即时启停、已签发令牌、模块隔离、持久化及旧令牌升级。
 
 ```bash
 cd backend && python -m pytest tests/ -q -n 8   # 2026-10-21最终930项通过，356.00秒；含3项真实临时PG集成，0跳过/失败/错误

@@ -7,30 +7,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 export { CLIPBOARD_OPTIONS, makeClipboardCopier } from './clipboard'
 
 // ─── 复制按钮 ────────────────────────────────────────────
-export function CopyButton({ value, copier, label = '复制', done = '已复制' }) {
-  const [ok, setOk] = useState(false)
-  const t = useRef(0)
-  const onClick = async () => {
-    if (!value) return
-    const r = await copier(value)
-    if (r) {
-      setOk(true)
-      clearTimeout(t.current)
-      t.current = setTimeout(() => setOk(false), 1500)
-    }
-  }
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      className={'shrink-0 px-1.5 h-6 rounded-md text-[11px] font-medium transition-colors ' + (ok
-        ? 'text-emerald-600 dark:text-emerald-400'
-        : 'text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10')}
-    >
-      {ok ? done : label}
-    </button>
-  )
-}
+import CopyButton from '@/shared/ui/CopyButton'
+export { CopyButton }
 
 // ─── 密文字段：默认隐藏，Reveal 15s 后自动隐藏 ────────────
 export function SecretField({ label, value, copier, mono = true, extra }) {
@@ -71,66 +49,8 @@ export function SecretField({ label, value, copier, mono = true, extra }) {
 }
 
 // ─── 统一样式下拉框（替代原生 select：菜单走应用 stone 配色 + 暗色适配）──
-const SELECT_TRIGGER = 'w-full h-9 px-3 text-sm rounded-lg border flex items-center justify-between gap-2 text-left transition-colors ' +
-  'bg-white dark:bg-white/[0.04] border-black/10 dark:border-white/10 ' +
-  'text-stone-800 dark:text-stone-100 hover:border-black/20 dark:hover:border-white/20 ' +
-  'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black/30 dark:focus-visible:outline-white/30'
-const SELECT_MENU = 'absolute z-50 mt-1 w-full min-w-[7rem] max-h-60 overflow-y-auto py-1 rounded-lg border shadow-xl ' +
-  'bg-white dark:bg-[#1c1b1a] border-black/[0.08] dark:border-white/[0.1] animate-dropdown'
-const SELECT_OPTION = 'w-full px-3 h-8 text-sm text-left flex items-center text-stone-600 dark:text-stone-300 ' +
-  'hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors cursor-pointer'
-const SELECT_OPTION_ACTIVE = 'bg-black/[0.055] dark:bg-white/[0.08] font-medium text-stone-900 dark:text-stone-100'
+export { default as Select } from '@/shared/ui/Select'
 
-function Chevron({ open }) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      aria-hidden="true" className={'shrink-0 text-stone-400 transition-transform ' + (open ? 'rotate-180' : '')}>
-      <path d="m6 9 6 6 6-6" />
-    </svg>
-  )
-}
-
-/**
- * 统一样式下拉框。options 接受 [{value,label}] 或字符串数组；
- * value/onChange 与原生 select 同构，直接替换 <select> 使用。
- */
-export function Select({ value, onChange, options, className = '', title }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  const norm = options.map(o => (typeof o === 'string' ? { value: o, label: o } : o))
-  const current = norm.find(o => o.value === value)
-
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
-    window.addEventListener('pointerdown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
-  }, [open])
-
-  return (
-    <div ref={ref} className={'relative ' + className}>
-      <button type="button" title={title} aria-haspopup="listbox" aria-expanded={open}
-        onClick={() => setOpen(o => !o)}
-        className={SELECT_TRIGGER}>
-        <span className="truncate">{current ? current.label : '…'}</span>
-        <Chevron open={open} />
-      </button>
-      {open && (
-        <div role="listbox" className={SELECT_MENU}>
-          {norm.map(o => (
-            <button key={o.value} type="button" role="option" aria-selected={o.value === value}
-              onClick={() => { onChange(o.value); setOpen(false) }}
-              className={SELECT_OPTION + ' ' + (o.value === value ? SELECT_OPTION_ACTIVE : '')}>
-              <span className="truncate">{o.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export function FieldRow({ label, extra, children }) {
   return (

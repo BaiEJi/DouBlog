@@ -3,6 +3,7 @@
  * 左侧总览侧栏（按类别分组）+ 右侧详情（启停/编辑/删除 + 总体看板三桶：
  * 历史待完成/历史已完成/未来）+ 计划表单（四种循环规则）。
  */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { todoPlans, todoCreatePlan, todoUpdatePlan, todoDeletePlan, todoTasks, todoCategories } from '../../api'
@@ -132,12 +133,12 @@ function PlanForm({ open, editing, categories, onClose, onSaved, toast }) {
             placeholder="如：晨跑 5 公里" className={inputCls} />
         </Field>
         <Field label="类型">
-          <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={inputCls}>
-            <option value="">选择计划类型…</option>
-            {categories.filter(c => !c.is_archived).map(c => (
-              <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>
-            ))}
-          </select>
+          <Select
+            aria-label="计划类型" className="w-full"
+            value={categoryId}
+            onChange={setCategoryId}
+            options={[{ value: '', label: '选择计划类型…' }, ...categories.filter(c => !c.is_archived).map(c => ({ value: c.id, label: [c.icon, c.name].filter(Boolean).join(' ') }))]}
+          />
         </Field>
         <Field label="起止时间" hint="结束时间留空 = 长期坚持">
           <div className="flex items-center gap-2">
@@ -298,7 +299,7 @@ export default function LifePlansView({ toast, dark }) {
       {/* 左：总览侧栏 */}
       <div className="w-[260px] shrink-0 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-semibold">计划（{plans?.length ?? 0}）</span>
+          <span className="text-sm tabular-nums text-stone-600 dark:text-stone-400">共 {plans?.length ?? '—'} 个计划</span>
           <button onClick={() => { setEditing(null); setFormOpen(true) }} className={btn.miniPrimary}>
             + 新增
           </button>

@@ -1,138 +1,138 @@
 /**
- * 回顾（照搬 MyTodo ReviewPage 交互）：
- * 日回顾（stats/daily + 当日任务 status=all：创建/完成/完成率/迁入 + 完成清单 + 迁入清单）
- * + 区间回顾（stats/range：总创建/总完成/总迁入 + 创建 vs 完成分组柱图）。
+ * 日回顾使用选中日期的任务与统计，区间回顾独立选择起止日期。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getDataIdentity } from '@/shared/dataEpoch'
 
 import { todoStatsDaily, todoStatsRange, todoTasks } from '../api'
 import { GroupedBars } from '../charts'
-import { Card, Empty, StatTile, inputCls, hmOf, Dot, quadrantMeta, todayStr, startOfWeek, addDays, fmtDate } from '../kit'
+import { Dot, quadrantMeta, hmOf, todayStr, startOfWeek, addDays, fmtDate } from '../kit'
+import { ReportMetrics, ReportPage, ReportPanel } from './ReportLayout'
 
-const dateInput = inputCls + ' w-auto'
+const filters = [
+  { key: 'done', label: '完成' },
+  { key: 'migrated', label: '迁入' },
+]
+const noTasks = []
 
-export default function ReviewView({ toast }) {
+function DateField({ label, value, onChange }) {
+  return <input type="date" aria-label={label} className="todo-report-date" value={value}
+    onChange={event => { if (event.target.value) onChange(event.target.value) }} />
+}
+
+function ActivityTable({ items, migrated }) {
+  if (!items.length) {
+    return <p className="todo-report-muted py-10 text-center text-base">{migrated ? '当天没有迁入任务' : '当天没有完成记录'}</p>
+  }
+  return (
+    <table className="w-full table-fixed border-collapse text-left">
+      <thead className="todo-report-muted border-b border-stone-200 text-sm dark:border-stone-700">
+        <tr>
+          <th scope="col" className={'pb-2.5 font-medium ' + (migrated ? 'w-[102px]' : 'w-[76px]')}>{migrated ? '迁自日期' : '完成时间'}</th>
+          <th scope="col" className="pb-2.5 font-medium">任务</th>
+          <th scope="col" className={'pb-2.5 text-right font-medium ' + (migrated ? 'w-[76px]' : 'w-[52px]')}>{migrated ? '迁移次数' : '象限'}</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-stone-200/75 dark:divide-stone-700/70">
+        {items.map(task => (
+          <tr key={task.id}>
+            <td className="todo-report-muted py-3 pr-2 text-sm tabular-nums whitespace-nowrap">{migrated ? task.last_migrated_from : hmOf(task.completed_at)}</td>
+            <td className="py-3 pr-2 text-base leading-6 [overflow-wrap:anywhere]" title={task.completion_note || task.title}>
+              {task.title}
+              {task.plan_id && <span className="ml-2 inline-block rounded bg-stone-100 px-1.5 align-middle text-xs leading-5 text-stone-600 dark:bg-white/[0.07] dark:text-stone-300">生活打卡</span>}
+            </td>
+            <td className="todo-report-muted py-3 text-right text-sm tabular-nums whitespace-nowrap">
+              {migrated ? `${task.migrated_count} 次` : (
+                <span className="inline-flex items-center gap-1.5"><Dot color={quadrantMeta(task.quadrant).color} />Q{task.quadrant}</span>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+export default function ReviewView() {
   const [date, setDate] = useState(todayStr())
   const [from, setFrom] = useState(fmtDate(startOfWeek(new Date())))
   const [to, setTo] = useState(fmtDate(addDays(startOfWeek(new Date()), 6)))
-  const [daily, setDaily] = useState(null)
-  const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [rangeStats, setRangeStats] = useState(null)
+  const [filter, setFilter] = useState('done')
+  const identity = getDataIdentity()
+  const dayQuery = useQuery({
+    queryKey: ['todo-review-day', identity, date],
+    queryFn: ({ signal }) => Promise.all([todoStatsDaily(date, { signal }), todoTasks({ date, status: 'all' }, { signal })]),
+  })
+  const rangeQuery = useQuery({
+    queryKey: ['todo-review-range', identity, from, to],
+    enabled: from <= to,
+    queryFn: ({ signal }) => todoStatsRange(from, to, { signal }),
+  })
+  const [daily, tasks] = dayQuery.data ?? [null, noTasks]
+  const loading = dayQuery.isPending
+  const dayMessage = dayQuery.error?.message || (loading ? '加载中…' : '')
+  const rangeStats = rangeQuery.data
+  const rangeError = from > to ? '开始日期须早于或等于结束日期' : rangeQuery.error?.message
 
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    Promise.all([todoStatsDaily(date), todoTasks({ date, status: 'all' })])
-      .then(([d, ts]) => {
-        if (cancelled) return
-        setDaily(d)
-        setTasks(ts)
-      })
-      .catch(err => {
-        toast(err instanceof Error ? err.message : '加载回顾数据失败', 'error')
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [date, toast])
-
-  useEffect(() => {
-    if (!from || !to) { setRangeStats(null); return }
-    let cancelled = false
-    todoStatsRange(from, to)
-      .then(r => { if (!cancelled) setRangeStats(r) })
-      .catch(() => { if (!cancelled) setRangeStats(null) })
-    return () => { cancelled = true }
-  }, [from, to])
-
-  const completedList = tasks.filter(t => t.status === 'done')
-  const migratedList = tasks.filter(
-    t => t.last_migrated_from != null && t.original_date != null && t.original_date !== date
-  )
-  const rateText = daily?.completion_rate == null
-    ? '—'
-    : `${Math.round(daily.completion_rate <= 1 ? daily.completion_rate * 100 : daily.completion_rate)}%`
-
-  const weekData = useMemo(
-    () => (rangeStats?.days ?? []).map(d => ({ x: d.date.slice(5), xFull: d.date, a: d.created, b: d.completed })),
-    [rangeStats]
-  )
+  const completed = useMemo(() => tasks.filter(t => t.status === 'done')
+    .sort((a, b) => Date.parse(b.completed_at || b.created_at) - Date.parse(a.completed_at || a.created_at)), [tasks])
+  const migrated = tasks.filter(t => t.last_migrated_from && t.original_date && t.original_date !== date)
+  const groups = { done: completed, migrated }
+  const rate = daily?.completion_rate
+  const dailyMetrics = [
+    { label: '当日创建', value: daily?.created, unit: '项' },
+    { label: '当日完成', value: daily?.completed, unit: '项', accent: true },
+    { label: '完成率', value: rate == null ? null : Math.round(rate <= 1 ? rate * 100 : rate), unit: '%' },
+    { label: '当日迁入', value: daily?.migrated_in, unit: '项' },
+  ]
+  const chart = useMemo(() => (rangeStats?.days ?? []).map(d => ({
+    x: d.date.slice(5), xFull: d.date, a: d.created, b: d.completed,
+  })), [rangeStats])
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto space-y-4">
-      {/* 日回顾 */}
-      <Card title="日回顾" extra={<input type="date" value={date} onChange={e => e.target.value && setDate(e.target.value)} className={dateInput} />}>
-        {loading ? (
-          <Empty text="加载中…" />
-        ) : (
-          <>
-            <div className="grid grid-cols-4 gap-3">
-              <StatTile title="创建" value={daily?.created ?? 0} suffix="项" />
-              <StatTile title="完成" value={daily?.completed ?? 0} suffix="项" />
-              <StatTile title="完成率" value={rateText} />
-              <StatTile title="迁入" value={daily?.migrated_in ?? 0} suffix="项" />
-            </div>
-            <div className="grid grid-cols-2 gap-6 mt-6">
-              <div>
-                <div className="text-sm font-semibold mb-3">当日完成（{completedList.length}）</div>
-                {completedList.length === 0 ? (
-                  <Empty text="这一天还没有记录" />
-                ) : (
-                  <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06] rounded-xl border border-black/[0.06] dark:border-white/[0.07]">
-                    {completedList.map(t => (
-                      <div key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 text-sm">
-                        <span className="text-[11.5px] text-stone-400 tabular-nums w-10 shrink-0">{hmOf(t.completed_at)}</span>
-                        <Dot color={quadrantMeta(t.quadrant).color} />
-                        <span className="line-through text-stone-500 dark:text-stone-400 truncate">{t.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-sm font-semibold mb-3">当日迁入（{migratedList.length}）</div>
-                {migratedList.length === 0 ? (
-                  <Empty text="没有迁入的任务" />
-                ) : (
-                  <div className="divide-y divide-black/[0.06] dark:divide-white/[0.06] rounded-xl border border-black/[0.06] dark:border-white/[0.07]">
-                    {migratedList.map(t => (
-                      <div key={t.id} className="flex items-center gap-2.5 px-3 py-2.5 text-sm">
-                        <span className="inline-flex items-center rounded-md px-2 h-5 text-[10.5px] bg-orange-500/10 text-orange-700 dark:text-orange-300 tabular-nums shrink-0">
-                          ⟲ {t.last_migrated_from} · 迁移×{t.migrated_count}
-                        </span>
-                        <span className="truncate">{t.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
-      </Card>
-
-      {/* 区间回顾 */}
-      <Card title="区间回顾"
-        extra={
-          <div className="flex items-center gap-1.5">
-            <input type="date" value={from} onChange={e => e.target.value && setFrom(e.target.value)} className={dateInput} />
-            <span className="text-stone-400 text-xs">–</span>
-            <input type="date" value={to} onChange={e => e.target.value && setTo(e.target.value)} className={dateInput} />
+    <ReportPage title="任务回顾" controls={
+      <label className="todo-report-muted flex shrink-0 items-center gap-3 text-[15px]">
+        回顾日期<DateField label="回顾日期" value={date} onChange={setDate} />
+      </label>
+    }>
+      <ReportMetrics items={dailyMetrics.map(item => ({ ...item, value: loading ? '—' : item.value ?? '—' }))} />
+      <div className="todo-report-columns">
+        <ReportPanel title="当日记录" controls={
+          <div role="group" aria-label="记录类型" className="flex items-center gap-1 rounded-lg bg-stone-100 p-1 dark:bg-white/[0.07]">
+            {filters.map(({ key, label }) => (
+              <button type="button" key={key} aria-pressed={filter === key} onClick={() => setFilter(key)}
+                className={'rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap focus-visible:outline-2 focus-visible:outline-indigo-500 ' +
+                  (filter === key ? 'bg-white text-indigo-700 shadow-sm dark:bg-stone-700 dark:text-indigo-200' : 'text-stone-600 hover:text-stone-900 dark:text-stone-300 dark:hover:text-white')}>
+                {label}<span className="ml-1.5 tabular-nums">{loading ? '—' : groups[key].length}</span>
+              </button>
+            ))}
           </div>
         }>
-        <div className="grid grid-cols-4 gap-6 items-start">
-          <div className="flex flex-col gap-3">
-            <StatTile title="总创建" value={rangeStats?.totals.created ?? 0} suffix="项" />
-            <StatTile title="总完成" value={rangeStats?.totals.completed ?? 0} suffix="项" />
-            <StatTile title="总迁入" value={rangeStats?.totals.migrated ?? 0} suffix="项" />
+          {dayMessage ? <p className="todo-report-muted py-10 text-center">{dayMessage}</p> : (
+            <ActivityTable items={groups[filter]} migrated={filter === 'migrated'} />
+          )}
+        </ReportPanel>
+
+        <ReportPanel title="区间回顾">
+          <div className="mb-4 flex items-center gap-2">
+            <DateField label="区间开始日期" value={from} onChange={setFrom} />
+            <span className="todo-report-muted text-sm">至</span>
+            <DateField label="区间结束日期" value={to} onChange={setTo} />
           </div>
-          <div className="col-span-3">
-            <GroupedBars data={weekData}
-              a={{ label: '创建', color: '#a8a29e' }}
-              b={{ label: '完成', color: '#6366f1' }} />
+          <ReportMetrics compact items={[
+            { label: '总创建', value: rangeStats?.totals.created ?? '—', unit: '项' },
+            { label: '总完成', value: rangeStats?.totals.completed ?? '—', unit: '项', accent: true },
+            { label: '总迁入', value: rangeStats?.totals.migrated ?? '—', unit: '项' },
+          ]} />
+          <div className="mt-5 min-w-0">
+            {rangeError || !rangeStats ? <p className="todo-report-muted py-10 text-center text-base">{rangeError || '加载中…'}</p> : (
+              <GroupedBars data={chart} showScale height={202}
+                a={{ label: '创建', color: '#9995a1' }} b={{ label: '完成', color: '#7064dc' }} />
+            )}
           </div>
-        </div>
-      </Card>
-    </div>
+        </ReportPanel>
+      </div>
+    </ReportPage>
   )
 }

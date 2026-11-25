@@ -11,6 +11,7 @@
  * - 日志：内核日志尾部 + 实时日志开关（log-level）
  * 未安装 clashctl 时整页空态（门户卡片同时置灰）。个性色 sky（docs/ui-baseline.md）。
  */
+import Select from '@/shared/ui/Select'
 import usePolling from '../shared/usePolling'
 import useConnections from './useConnections'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -266,12 +267,16 @@ function OverviewView({ toast, unavailable }) {
           <button className={btn} disabled={!!busy || !secretDraft.trim()} onClick={saveSecret}>修改密钥</button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select className={inputCls} value={channel} onChange={e => setChannel(e.target.value)}
-            aria-label="升级通道">
-            <option value="">默认通道</option>
-            <option value="release">稳定版</option>
-            <option value="alpha">测试版</option>
-          </select>
+          <Select
+            aria-label="升级通道" className="w-28"
+            value={channel}
+            onChange={setChannel}
+            options={[
+              { value: '', label: '默认通道' },
+              { value: 'release', label: '稳定版' },
+              { value: 'alpha', label: '测试版' }
+            ]}
+          />
           <button className={btn} disabled={!!busy}
             onClick={() => act('upgrade', () => clashUpgrade(channel), null)}>
             {busy === 'upgrade' ? '升级中…' : '升级内核'}
@@ -629,10 +634,12 @@ function LogView({ toast, unavailable }) {
               onChange={e => setAuto(e.target.checked)} />
             5s 自动刷新
           </label>
-          <select className={inputCls} value={lines} onChange={e => setLines(Number(e.target.value))}
-            aria-label="日志行数">
-            {[100, 200, 500, 1000, 2000].map(n => <option key={n} value={n}>{n} 行</option>)}
-          </select>
+          <Select
+            aria-label="日志行数" className="w-26"
+            value={lines}
+            onChange={setLines}
+            options={[100, 200, 500, 1000, 2000].map(n => ({ value: n, label: n + ' 行' }))}
+          />
           <button className={btn} disabled={busy} onClick={() => refresh()}>{busy ? '刷新中…' : '刷新'}</button>
         </div>
       </div>
@@ -680,7 +687,7 @@ export default function ClashPage() {
   return (
     <div>
       <PageHeader title="Clash 代理" subtitle="内核启停 · 代理组与测速 · 订阅 · 连接与规则"
-        tabs={TABS} activeTab={tab} onTabChange={setTab} accent="sky" hideTitle />
+        tabs={TABS} activeTab={tab} onTabChange={setTab} accent="sky" />
       {avail === null ? (
         <div className="px-6 py-16 text-center text-sm text-stone-400">检测 clashctl 安装状态…</div>
       ) : unavailable ? (

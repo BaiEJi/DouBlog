@@ -43,9 +43,6 @@ export default function Dashboard({ dark = true }) {
 
   return (
     <div className="w-full">
-      <h1 className="text-2xl font-semibold tracking-tight mb-5">
-        概览 · <span className="gm-gradient-text">你的剧情宇宙</span>
-      </h1>
       <Row gutter={[16, 16]}>
         {[
           { icon: <BookOutlined />, title: '游戏', value: list.length, color: '#7c5cff' },

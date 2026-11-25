@@ -25,12 +25,13 @@ class VaultAccount(Base):
     recovery_salt: Mapped[str] = mapped_column(String(64), nullable=False, comment='Recovery Key 盐 base64')
     wrapped_vault_key: Mapped[str] = mapped_column(Text, nullable=False, comment='KEK₁(主密码) 包裹的 VEK {n,ct}')
     recovery_wrapped_vault_key: Mapped[str] = mapped_column(Text, nullable=False, comment='KEK₂(恢复密钥) 包裹的 VEK {n,ct}')
+    group_catalog: Mapped[str | None] = mapped_column(Text, nullable=True, comment='VEK 加密的账号分组目录')
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     def to_dict(self):
-        return {
+        data = {
             'id': self.id,
             'kdf_algo': self.kdf_algo,
             'kdf_params': json.loads(self.kdf_params or '{}'),
@@ -40,6 +41,9 @@ class VaultAccount(Base):
             'recovery_wrapped_vault_key': json.loads(self.recovery_wrapped_vault_key or '{}'),
             'created_at': _iso(self.created_at),
         }
+        if self.group_catalog is not None:
+            data['group_catalog'] = orjson.loads(self.group_catalog)
+        return data
 
 
 class VaultItem(Base):

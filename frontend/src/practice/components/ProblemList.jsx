@@ -4,6 +4,7 @@
  * 语言|下一复习日(逾期红)|更新时间，行点击进详情）+ 分页。
  * 导入导出入口在父级 PracticeView 的子视图头（与新增题目同一行）。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useState } from 'react'
 
 import {
@@ -22,7 +23,6 @@ const SORTS = [
   { value: 'review_asc', label: '最早复习' },
 ]
 
-const selectCls = 'h-9 px-2.5 rounded-lg text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
 
 // ─── 表格小件 ────────────────────────────────────────────────
 
@@ -183,21 +183,30 @@ export default function ProblemList({ toast, onOpen, refreshSignal = 0, tags, on
                 <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><circle cx="9" cy="9" r="5.5" /><path d="M13.5 13.5 17 17" /></svg>
               </span>
             </div>
-            <select value={filters.status} onChange={e => patch({ status: e.target.value })} className={selectCls}>
-              <option value="">全部状态</option>
-              {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-            <select value={filters.source} onChange={e => patch({ source: e.target.value })} className={selectCls}>
-              <option value="">全部来源</option>
-              {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-            <select value={filters.language} onChange={e => patch({ language: e.target.value })} className={selectCls}>
-              <option value="">全部语言</option>
-              {LANGUAGES.map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-            </select>
-            <select value={filters.sort} onChange={e => setFilters(f => ({ ...f, sort: e.target.value }))} className={selectCls}>
-              {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+            <Select
+              aria-label="题目状态"
+              value={filters.status}
+              onChange={next => patch({ status: next })}
+              options={[{ value: '', label: '全部状态' }, ...STATUSES]}
+            />
+            <Select
+              aria-label="题目来源"
+              value={filters.source}
+              onChange={next => patch({ source: next })}
+              options={[{ value: '', label: '全部来源' }, ...SOURCES]}
+            />
+            <Select
+              aria-label="编程语言"
+              value={filters.language}
+              onChange={next => patch({ language: next })}
+              options={[{ value: '', label: '全部语言' }, ...LANGUAGES]}
+            />
+            <Select
+              aria-label="题目排序"
+              value={filters.sort}
+              onChange={next => setFilters(f => ({ ...f, sort: next }))}
+              options={SORTS}
+            />
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">

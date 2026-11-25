@@ -9,6 +9,7 @@
  * - P2：模式分组（本地模板过滤）、键盘导航（j/k/Enter//）、无限滚动、日志告警、trace 时间线
  * 过滤全部下推后端；直方图/模式/导出与列表共用同一组查询参数。
  */
+import Select from '@/shared/ui/Select'
 import VirtualList from '../shared/VirtualList'
 import usePolling from '../shared/usePolling'
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
@@ -97,41 +98,6 @@ function useClickOutside(ref, onClose) {
   }, [ref, onClose])
 }
 
-/** 自绘下拉（原生 select 在深色主题下样式失控） */
-function Dropdown({ value, onChange, options, placeholder, width = 'w-36' }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  useClickOutside(ref, () => setOpen(false))
-  const current = options.find(o => o.v === value)
-
-  return (
-    <div className={'relative ' + width} ref={ref}>
-      <button type="button" onClick={() => setOpen(o => !o)}
-        className={inputCls + ' w-full flex items-center justify-between gap-1 text-left'}>
-        <span className={'truncate ' + (current ? '' : 'text-stone-400')}>{current?.l ?? placeholder}</span>
-        <svg className={'w-3 h-3 shrink-0 text-stone-400 transition-transform ' + (open ? 'rotate-180' : '')} viewBox="0 0 12 12" fill="none">
-          <path d="M2.5 4.5L6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute z-30 mt-1 w-full min-w-[8.5rem] py-1 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg animate-dropdown">
-          {options.map(o => (
-            <button key={o.v} type="button"
-              onClick={() => { onChange(o.v); setOpen(false) }}
-              className={'w-full text-left px-3 h-8 flex items-center text-[12.5px] transition-colors ' +
-                (o.v === value
-                  ? 'bg-stone-100 dark:bg-white/[0.07] text-stone-900 dark:text-stone-100 font-medium'
-                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.04]')}>
-              {o.l}
-              {o.v === value && <span className="ml-auto text-blue-500">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 const p2 = n => String(n).padStart(2, '0')
 
@@ -192,7 +158,7 @@ function DateTimeInput({ value, onChange, placeholder }) {
         )}
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 p-2.5 w-64 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg animate-dropdown">
+        <div className="db-menu-surface absolute z-30 mt-1 p-2.5 w-64 animate-dropdown">
           {/* 月份导航 */}
           <div className="flex items-center mb-1.5">
             <button type="button" onClick={() => setView(v => ({ y: v.m === 0 ? v.y - 1 : v.y, m: (v.m + 11) % 12 }))}
@@ -500,10 +466,12 @@ function AlertModal({ onClose }) {
               </label>
               <label className="flex items-center gap-2 text-[12px]">
                 <span className="text-stone-500 w-[92px] shrink-0">级别 ≥</span>
-                <select value={cfg.level_gte} onChange={e => setCfg(c => ({ ...c, level_gte: e.target.value }))}
-                  className={inputCls + ' w-28 bg-white dark:bg-[#1c1b1a]'}>
-                  {['WARNING', 'ERROR', 'CRITICAL'].map(l => <option key={l}>{l}</option>)}
-                </select>
+                <Select
+                  aria-label="最低告警级别" className="w-28" size="sm"
+                  value={cfg.level_gte}
+                  onChange={next => setCfg(c => ({ ...c, level_gte: next }))}
+                  options={['WARNING', 'ERROR', 'CRITICAL']}
+                />
               </label>
               {num('threshold', '阈值（条数）', 1, 100000)}
               {num('window_minutes', '窗口（分钟）', 1, 1440)}
@@ -686,7 +654,8 @@ export default function LogsPage() {
     try { return JSON.parse(localStorage.getItem(SAVED_KEY)) || [] } catch { return [] }
   })
   const [savedOpen, setSavedOpen] = useState(false)
-  const [exportOpen, setExportOpen] = useState(false)
+  const savedMenuRef = useRef(null)
+  useClickOutside(savedMenuRef, () => setSavedOpen(false))
   const [expandedId, setExpandedId] = useState(null)
   const [selIdx, setSelIdx] = useState(-1)              // 键盘导航选中行
   const [contextLog, setContextLog] = useState(null)
@@ -950,7 +919,6 @@ export default function LogsPage() {
 
   // 导出
   const doExport = async format => {
-    setExportOpen(false)
     try {
       const blob = await sdklogExport(buildParams(), format)
       const url = URL.createObjectURL(blob)
@@ -972,7 +940,6 @@ export default function LogsPage() {
       <header className="mb-6">
         <div className="w-full flex flex-wrap items-center gap-2">
 
-          <h1 className="text-lg font-semibold tracking-tight">日志查询</h1>
           {/* Live Tail */}
           <button onClick={() => setLiveTail(v => !v)} title="实时追尾：每 3 秒自动拉取新日志"
             className={'flex items-center gap-1.5 px-2.5 h-7 rounded-lg text-[12px] border transition-colors ' +
@@ -983,10 +950,10 @@ export default function LogsPage() {
             {liveTail ? '实时中' : '实时'}
           </button>
           {/* 保存的搜索 */}
-          <div className="relative">
-            <button onClick={() => setSavedOpen(o => !o)} className="px-2.5 h-7 rounded-lg text-[12px] text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">★ 查询集</button>
+          <div className="relative" ref={savedMenuRef}>
+            <button type="button" aria-expanded={savedOpen} onClick={() => setSavedOpen(o => !o)} className="db-select db-select-size-sm">★ 查询集</button>
             {savedOpen && (
-              <div className="absolute z-30 left-0 mt-1 w-56 py-1 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
+              <div className="db-menu-surface absolute z-30 left-0 mt-1 w-56 p-1">
                 {saved.length === 0 && <p className="px-3 py-2 text-[11.5px] text-stone-400">还没有保存的查询</p>}
                 {saved.map(s => (
                   <div key={s.name} className="flex items-center px-3 h-8 text-[12.5px] text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.04]">
@@ -1005,15 +972,8 @@ export default function LogsPage() {
             )}
           </div>
           {/* 导出 */}
-          <div className="relative">
-            <button onClick={() => setExportOpen(o => !o)} className="px-2.5 h-7 rounded-lg text-[12px] text-stone-600 dark:text-stone-300 bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">⬇ 导出</button>
-            {exportOpen && (
-              <div className="absolute z-30 left-0 mt-1 w-32 py-1 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
-                <button onClick={() => doExport('csv')} className="w-full text-left px-3 h-8 text-[12.5px] text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.04]">CSV</button>
-                <button onClick={() => doExport('json')} className="w-full text-left px-3 h-8 text-[12.5px] text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.04]">JSON</button>
-              </div>
-            )}
-          </div>
+          <Select aria-label="日志导出格式" size="sm" value={null} placeholder="⬇ 导出" onChange={doExport}
+            options={[{ value: 'csv', label: 'CSV' }, { value: 'json', label: 'JSON' }]} />
           {/* 告警 */}
           <button onClick={() => setAlertOpen(true)}
             className={'relative px-2.5 h-7 rounded-lg text-[12px] border transition-colors ' +
@@ -1056,13 +1016,13 @@ export default function LogsPage() {
             ))}
           </div>
           <div className="flex-1 min-w-[8.5rem]">
-            <Dropdown value={sysName} onChange={v => { setSysName(v); runQuery({ ...filtersRef.current, sysName: v }) }} placeholder="全部系统" width="w-full"
-              options={[{ v: '', l: '全部系统' },
-                ...sysNames.map(n => ({ v: n.sys_name, l: `${n.sys_name} · ${n.count}` }))]} />
+            <Select aria-label="日志系统" size="sm" value={sysName} onChange={v => { setSysName(v); runQuery({ ...filtersRef.current, sysName: v }) }} placeholder="全部系统" className="w-full"
+              options={[{ value: '', label: '全部系统' },
+                ...sysNames.map(n => ({ value: n.sys_name, label: `${n.sys_name} · ${n.count}` }))]} />
           </div>
           <div className="flex-1 min-w-[7.5rem]">
-            <Dropdown value={levelGte} onChange={v => { setLevelGte(v); setExactLevels([]); runQuery({ ...filtersRef.current, levelGte: v, exactLevels: [] }) }} placeholder="全部级别" width="w-full"
-              options={[{ v: '', l: '全部级别' }, ...LEVELS.map(l => ({ v: l, l: `${l} 及以上` }))]} />
+            <Select aria-label="日志级别" size="sm" value={levelGte} onChange={v => { setLevelGte(v); setExactLevels([]); runQuery({ ...filtersRef.current, levelGte: v, exactLevels: [] }) }} placeholder="全部级别" className="w-full"
+              options={[{ value: '', label: '全部级别' }, ...LEVELS.map(l => ({ value: l, label: `${l} 及以上` }))]} />
           </div>
           <input ref={qInputRef} className={inputCls + ' flex-[2] min-w-[12rem]'} placeholder="消息包含…（按 / 聚焦）" value={q}
             onChange={e => setQ(e.target.value)} />

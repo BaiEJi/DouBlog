@@ -1,6 +1,7 @@
 /** 进制转换：任意进制互转（BigInt 大数安全）+ 位分组视图（字节/十六进制/二进制） */
+import Select from '@/shared/ui/Select'
 import { useMemo, useState } from 'react'
-import { ToolHead, CopyBtn, StatusLine, LBL, inputCls, selectCls, card } from '../kit'
+import { ToolHead, CopyBtn, StatusLine, LBL, inputCls, card } from '../kit'
 
 const DIGITS = '0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -45,14 +46,12 @@ export default function RadixTool() {
       <div className="flex flex-wrap gap-2 items-center">
         <input className={inputCls + ' flex-1 min-w-56 font-mono'} value={text} spellCheck={false}
           onChange={e => setText(e.target.value)} placeholder="输入数值" aria-label="数值输入" />
-        <select className={selectCls} value={from} onChange={e => setFrom(+e.target.value)} aria-label="源进制">
-          {targets.map(b => <option key={b} value={b}>{b} 进制</option>)}
-          <option value={3}>3 进制</option><option value={4}>4 进制</option>
-          <option value={5}>5 进制</option><option value={6}>6 进制</option>
-          <option value={7}>7 进制</option><option value={9}>9 进制</option>
-          <option value={11}>11 进制</option><option value={12}>12 进制</option>
-          <option value={20}>20 进制</option><option value={60}>60 进制</option>
-        </select>
+        <Select
+          aria-label="源进制"
+          value={from}
+          onChange={setFrom}
+          options={[...targets, 3, 4, 5, 6, 7, 9, 11, 12, 20, 60].map(n => ({ value: n, label: n + ' 进制' }))}
+        />
       </div>
       <div className="mt-2"><StatusLine ok={value != null && !!text.trim()} err={text.trim() && value == null ? `输入含 ${from} 进制以外的字符` : null} okText="有效数值" /></div>
       <div className={'mt-3 divide-y divide-black/[0.05] dark:divide-white/[0.06] ' + card}>

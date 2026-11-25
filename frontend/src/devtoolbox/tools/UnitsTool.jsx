@@ -1,6 +1,7 @@
 /** 单位换算：长度/重量/数据量/速度/面积/时间/温度——一次输入全单位列表 */
+import Select from '@/shared/ui/Select'
 import { useMemo, useState } from 'react'
-import { ToolHead, CopyBtn, LBL, inputCls, selectCls, card } from '../kit'
+import { ToolHead, CopyBtn, LBL, inputCls, card } from '../kit'
 import { UNIT_TABLES, TEMP_TABLE } from '../data'
 
 const fmt = n => {
@@ -40,20 +41,24 @@ export default function UnitsTool() {
     <div>
       <ToolHead title="单位换算" desc="长度 / 重量 / 数据量（十进制与二进制）/ 速度 / 面积 / 时间 / 温度" />
       <div className="flex flex-wrap gap-2 items-center mb-4">
-        <select className={selectCls} value={category}
-          onChange={e => {
-            setCategory(e.target.value)
-            const first = Object.keys((e.target.value === 'temp' ? TEMP_TABLE : UNIT_TABLES[e.target.value]).units)[0]
+        <Select
+          aria-label="单位类别"
+          value={category}
+          onChange={next => {
+            setCategory(next)
+            const first = Object.keys((next === 'temp' ? TEMP_TABLE : UNIT_TABLES[next]).units)[0]
             setUnit(first)
-          }} aria-label="单位类别">
-          {Object.entries(UNIT_TABLES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
-          <option value="temp">{TEMP_TABLE.label}</option>
-        </select>
+          }}
+          options={[...Object.entries(UNIT_TABLES).map(([value, table]) => ({ value, label: table.label })), { value: 'temp', label: TEMP_TABLE.label }]}
+        />
         <input className={inputCls + ' w-32 font-mono'} value={value} spellCheck={false}
           onChange={e => setValue(e.target.value)} placeholder="数值" aria-label="数值" />
-        <select className={selectCls} value={unit} onChange={e => setUnit(e.target.value)} aria-label="源单位">
-          {unitKeys.map(k => <option key={k} value={k}>{table.units[k][0]}</option>)}
-        </select>
+        <Select
+          aria-label="源单位"
+          value={unit}
+          onChange={setUnit}
+          options={unitKeys.map(key => ({ value: key, label: table.units[key][0] }))}
+        />
       </div>
       <div className="grid grid-cols-3 gap-3">
         {results.map(([k, label, v]) => (

@@ -14,6 +14,7 @@
  * 配置类字段（auth/请求/响应/探活）用 JSON 编辑，失焦校验。
  * 接口全部走 ./api（admin，Basic Auth）；网关调用（sk-）是给外部调用方的，不在本页。
  */
+import Select from '@/shared/ui/Select'
 import { createContext, useContext, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import CodeEditor from '../shared/CodeEditor'
@@ -118,46 +119,6 @@ function Err({ e }) {
     border border-red-500/20 bg-red-500/10">{e.message || String(e)}</div>
 }
 
-/** 统一下拉框：按钮 + 绝对定位菜单。
- *  原生 <select> 展开的选项列表在暗色下泛白刺眼（color-scheme 各浏览器支持不一），
- *  全模块改用它保持明暗一致；options: [{value, label}]。 */
-function Select({ value, onChange, options, placeholder = '选择…', disabled }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef(null)
-  useEffect(() => {
-    if (!open) return
-    const close = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    document.addEventListener('mousedown', close)
-    return () => document.removeEventListener('mousedown', close)
-  }, [open])
-  const cur = options.find(o => String(o.value) === String(value))
-  return (
-    <div className="relative" ref={ref}>
-      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)}
-        className={`${inputCls} w-full flex items-center justify-between gap-2 text-left disabled:opacity-50`}>
-        <span className="truncate">{cur ? cur.label : placeholder}</span>
-        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-             className={`w-3.5 h-3.5 shrink-0 text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`}>
-          <path d="M5 8l5 5 5-5" />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] py-1 shadow-xl">
-          {options.map(o => (
-            <button key={String(o.value)} type="button"
-              onClick={() => { onChange(o.value); setOpen(false) }}
-              className={`w-full text-left px-3 py-1.5 text-sm transition-colors ${
-                String(o.value) === String(value)
-                  ? 'text-amber-600 dark:text-amber-400 font-medium bg-amber-500/[0.08]'
-                  : 'text-stone-700 dark:text-stone-200 hover:bg-black/[0.05] dark:hover:bg-white/[0.06]'}`}>
-              {o.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 /** 主题切换图标（与 todo/practice 页同款按钮规格） */
 export default function ApiHubPage() {
@@ -639,7 +600,7 @@ function SystemForm({ row, onClose, onSaved, setErr }) {
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">状态</span>
             <div className="mt-1">
-              <Select value={form.status} onChange={v => set('status', v)} options={[
+              <Select aria-label="API 状态" className="w-full" value={form.status} onChange={v => set('status', v)} options={[
                 { value: 1, label: '启用' }, { value: 2, label: '手动禁用' },
               ]} />
             </div>
@@ -895,7 +856,7 @@ function ApiForm({ row, system, onClose, onSaved, setErr }) {
           </div>
           <div className="grid grid-cols-3 gap-3 mt-3">
             <Field label="Method">
-              <Select value={form.method} disabled={builtin} onChange={v => set('method', v)} options={
+              <Select aria-label="请求方法" className="w-full" value={form.method} disabled={builtin} onChange={v => set('method', v)} options={
                 ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(m => ({ value: m, label: m }))
               } />
             </Field>
@@ -1032,7 +993,7 @@ function AuthSection({ auth, onChange }) {
   return (
     <div className="space-y-3">
       <Field label="鉴权方式">
-        <Select value={type} onChange={setType} options={AUTH_TYPES} />
+        <Select aria-label="鉴权方式" className="w-full" value={type} onChange={setType} options={AUTH_TYPES} />
       </Field>
       {type !== 'custom' && (
         <>
@@ -1144,7 +1105,7 @@ function RequestSection({ req, onChange }) {
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-3">
         <Field label="Body 类型">
-          <Select value={bodyType} onChange={v => setBody('type', v)} options={[
+          <Select aria-label="请求体格式" className="w-full" value={bodyType} onChange={v => setBody('type', v)} options={[
             { value: 'json', label: 'JSON' }, { value: 'form', label: '表单 urlencoded' }, { value: 'raw', label: '原始文本' },
           ]} />
         </Field>
@@ -1196,7 +1157,7 @@ function ResponseSection({ res, onChange }) {
   return (
     <div className="grid grid-cols-3 gap-3">
       <Field label="信封模式">
-        <Select value={res.envelope || 'passthrough'} onChange={v => onChange({ ...res, envelope: v })} options={[
+        <Select aria-label="响应封装" className="w-full" value={res.envelope || 'passthrough'} onChange={v => onChange({ ...res, envelope: v })} options={[
           { value: 'passthrough', label: '透传（系统侧原文）' }, { value: 'wrap', label: '统一信封 {code,message,data}' },
         ]} />
       </Field>
@@ -1229,7 +1190,7 @@ function ProbeSection({ probe, onChange }) {
   return (
     <div className="grid grid-cols-4 gap-3">
       <Field label="Method">
-        <Select value={p.method} onChange={v => set('method', v)} options={
+        <Select aria-label="探活方法" className="w-full" value={p.method} onChange={v => set('method', v)} options={
           ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'].map(m => ({ value: m, label: m }))
         } />
       </Field>
@@ -1536,7 +1497,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">层级</span>
             <div className="mt-1">
-              <Select value={f.scope} onChange={v => set('scope', v)} options={[
+              <Select aria-label="限流范围" className="w-full" value={f.scope} onChange={v => set('scope', v)} options={[
                 { value: 'token_api', label: '令牌×API（单 API 分令牌）' },
                 { value: 'api', label: 'API 总量（保护系统）' },
                 { value: 'token', label: '令牌全局' },
@@ -1547,7 +1508,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">算法</span>
             <div className="mt-1">
-              <Select value={f.algorithm} onChange={v => set('algorithm', v)} options={[
+              <Select aria-label="限流算法" className="w-full" value={f.algorithm} onChange={v => set('algorithm', v)} options={[
                 { value: 'token_bucket', label: '令牌桶（速率，允许突发）' },
                 { value: 'fixed_window', label: '固定窗口（长周期配额）' },
               ]} />
@@ -1558,7 +1519,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">API</span>
             <div className="mt-1">
-              <Select value={f.api_id || ''} onChange={v => set('api_id', v)} placeholder="选择 API…" options={
+              <Select aria-label="限流 API" className="w-full" value={f.api_id || ''} onChange={v => set('api_id', v)} placeholder="选择 API…" options={
                 apis.map(a => ({ value: a.id, label: `${a.name}（${a.slug}）` }))
               } />
             </div>
@@ -1568,7 +1529,7 @@ function RuleForm({ row, apis, tokens, onClose, onSaved, setErr }) {
           <label className="block">
             <span className="text-xs text-stone-500 dark:text-stone-400">平台令牌</span>
             <div className="mt-1">
-              <Select value={f.token_id || ''} onChange={v => set('token_id', v)} placeholder="选择令牌…" options={
+              <Select aria-label="限流令牌" className="w-full" value={f.token_id || ''} onChange={v => set('token_id', v)} placeholder="选择令牌…" options={
                 tokens.map(t => ({ value: t.id, label: `${t.name}（${t.key_hint}）` }))
               } />
             </div>
@@ -1623,7 +1584,7 @@ function Logs({ setErr }) {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="w-56">
-          <Select value={apiId} onChange={setApiId} options={[
+          <Select aria-label="筛选 API" className="w-full" value={apiId} onChange={setApiId} options={[
             { value: '', label: '全部 API' },
             ...apis.map(a => ({ value: a.id, label: a.slug })),
           ]} />

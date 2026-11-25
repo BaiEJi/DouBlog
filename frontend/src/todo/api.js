@@ -83,8 +83,8 @@ export const todoMigrationsAuto = () =>
   json('/api/todo/migrations/auto', { method: 'POST' })
 
 // ── 统计 stats ─────────────────────────────────────────────
-export const todoStatsDaily = (date) => json(`/api/todo/stats/daily${qs({ date })}`)
-export const todoStatsRange = (from, to) => json(`/api/todo/stats/range?from=${from}&to=${to}`)
+export const todoStatsDaily = (date, options = {}) => json(`/api/todo/stats/daily${qs({ date })}`, options)
+export const todoStatsRange = (from, to, options = {}) => json(`/api/todo/stats/range?from=${from}&to=${to}`, options)
 export const todoStatsHeatmap = (year) => json(`/api/todo/stats/heatmap?year=${year}`)
 export const todoStatsStreak = () => json('/api/todo/stats/streak')
 

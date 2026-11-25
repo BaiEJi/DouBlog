@@ -43,6 +43,8 @@ try {
   await theme(false);await shot('portal-light');await theme(true);await shot('portal-dark')
   await page.getByLabel('恢复默认布局').click();await page.getByRole('status').filter({hasText:'布局已保存'}).waitFor()
   assert.equal((await api('GET','/api/home/layout')).groups.length,0)
+  const firstCards = await page.locator('[data-card]').evaluateAll(cards => cards.slice(0, 2).map(card => card.dataset.card))
+  assert.deepEqual(firstCards, ['todo', 'subs'])
   await page.waitForTimeout(1000);assert.equal((await api('GET','/api/home/layout')).groups.length,0)
   mark('portal: reset forms a barrier and queued layout does not reappear')
 
@@ -82,7 +84,7 @@ try {
     await page.getByRole('button',{name:'创建密码库',exact:true}).click();await page.getByText('保存你的恢复密钥',{exact:true}).waitFor()
     await page.getByRole('checkbox').check();await page.getByRole('button',{name:'已保存，进入解锁'}).click()
   }
-  await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁保险库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
+  await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁密码库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
   const existing=await api('GET','/api/vault/items?trash=0')
   if(existing.items.length<250){
     const account=await api('GET','/api/vault/account')
@@ -93,9 +95,9 @@ try {
       return out
     },{account,start:existing.items.length})
     for(let offset=0;offset<payloads.length;offset+=8)await Promise.all(payloads.slice(offset,offset+8).map(payload=>api('POST','/api/vault/items',payload)))
-    await page.reload();await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁保险库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
+    await page.reload();await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁密码库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
   }
-  await page.getByRole('button',{name:'全部条目',exact:false}).first().click()
+  await page.getByRole('button',{name:'我的账号',exact:false}).first().click()
   await page.locator('[data-virtual-total="250"]').waitFor()
   assert.ok(await page.locator('[data-virtual-total="250"] [data-index]').count()<100)
   assert.equal(blocked.some(url=>url.includes('duckduckgo.com')),false,'external icons must remain opt-in')
@@ -110,7 +112,7 @@ try {
   const hold=new Promise(resolve=>{release=resolve})
   const holdItems=async route=>{started=true;const response=await route.fetch();await hold;await route.fulfill({response}).catch(()=>{})}
   await page.route('**/api/vault/items?trash=0',holdItems)
-  await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁保险库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
+  await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁密码库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()
   await page.waitForFunction(()=>document.body.textContent.includes('锁定'))
   await page.getByRole('button',{name:'锁定',exact:true}).click();release();await page.waitForTimeout(400);await page.unroute('**/api/vault/items?trash=0',holdItems)
   assert.equal(started,true);assert.equal(await page.locator('[data-virtual-total]').count(),0);assert.equal(await page.getByText('QA 密码条目 249',{exact:true}).count(),0)

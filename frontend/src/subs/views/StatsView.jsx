@@ -2,6 +2,7 @@
  * 统计视图：日期范围（快速选择 本周/本月/本季度/本年）+ 粒度（按天在跨度 ≥90 天时禁用）+
  * 支出趋势面积图 + 分类支出环形饼图（占比/明细开关，hover 提示展示订阅明细）。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useMemo, useState } from 'react'
 
 import { subsStatsTrend, subsStatsSpending, subsStatsDetails } from '../api'
@@ -134,8 +135,6 @@ export default function StatsView({ dark, toast }) {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-base font-semibold">统计图表</h2>
-
       {/* 控制栏 */}
       <div className="flex flex-wrap items-center gap-2.5 p-5 rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
         <div className="flex items-center gap-1.5">
@@ -145,12 +144,17 @@ export default function StatsView({ dark, toast }) {
           <DateInput className={inputCls} value={range[1]}
             onChange={e => { changeRange([range[0], e.target.value]); setQuick('') }} />
         </div>
-        <select className={inputCls + ' w-24'} value={granularity} onChange={e => setGranularity(e.target.value)}>
-          <option value="day" disabled={dayDisabled}>按天</option>
-          <option value="week">按周</option>
-          <option value="month">按月</option>
-          <option value="quarter">按季度</option>
-        </select>
+        <Select
+          aria-label="统计粒度" className="w-24"
+          value={granularity}
+          onChange={setGranularity}
+          options={[
+            { value: 'day', label: '按天', disabled: dayDisabled },
+            { value: 'week', label: '按周' },
+            { value: 'month', label: '按月' },
+            { value: 'quarter', label: '按季度' }
+          ]}
+        />
         <div className="flex items-center gap-1">
           {QUICK.map(q => (
             <button key={q.key}

@@ -86,12 +86,9 @@ export default function DevToolboxPage() {
         </Suspense>
       ) : (
         <div>
-          <div className="mb-5">
-            <h1 className="text-2xl font-semibold tracking-tight">开发者工具箱</h1>
-            <p className="mt-1.5 text-[13px] text-stone-500 dark:text-stone-400">
-              31 个日常高频工具——JSON 处理、diff 对比、编解码、哈希、时间、转换生成；除标注「后端」的 4 类外全部浏览器本地计算，数据不出本机
-            </p>
-          </div>
+          <p className="mb-5 text-[13px] text-stone-500 dark:text-stone-400">
+            31 个日常高频工具——JSON 处理、diff 对比、编解码、哈希、时间、转换生成；除标注「后端」的 4 类外全部浏览器本地计算，数据不出本机
+          </p>
           <div className="relative mb-5">
             <input autoFocus className={inputCls + ' w-full max-w-lg pl-9'} value={q} spellCheck={false}
               onChange={e => setQ(e.target.value)} placeholder="搜索工具：名称 / 描述 / 分类…" aria-label="搜索工具" />

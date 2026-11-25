@@ -1,8 +1,8 @@
 # Pwsvc 模块文档（密码服务 / Password Service）
 
-> 更新日期：**2026-10-21**（依据 `backend/app/pwsvc/**`、`backend/tests/pwsvc/test_pwsvc.py`、`frontend/src/vault/components/PwsvcView.jsx`）。
+> 2026-11-21 按 `backend/app/pwsvc/`、`frontend/src/pwsvc/` 和测试更新。
 > 上游文档：算法规范与威胁模型见 `docs/pwsvc-design.md`；接口契约总表见根目录 `api.md` 第 11 章；架构条目见 `backend.md` 10.47；全局红线见 `AGENTS.md` 第 13a 条。
-> UI 无独立前端目录——视图在 `frontend/src/vault/components/PwsvcView.jsx`，由 **vault 模块**负责（见 vault 模块文档）。
+> 门户中的「密码服务」直达 `/pwsvc`，使用站点统一登录。
 
 ---
 
@@ -193,9 +193,9 @@ Body:    {"username": "user001", "password": "..."}
 
 `_PROJECT_LIST_QUERY` 在模块导入时构建一次，只持有表元数据、SQL 表达式及 `coalesce` 的固定 0 常量，不持有 Engine、Session、请求值、秘密或结果。每次请求仍在 `run_db` 捕获的当前 runtime 中读取 `db.session` 并执行；不同 app / 数据库共享表达式结构，各自查询自己的数据，写入后下一次 GET 重新计算计数。SQL 往返由三次减为一次，固定表达式另省去逐请求构建和 cache-key 工作；落地前隔离诊断见 `.ui-qa/optimization/pwsvc-select-poc.json`，不能据此宣称 HTTP 吞吐改善。
 
-## 5. 前端（vault 内子视图 PwsvcView）
+## 5. 独立前端
 
-页面归属 **vault 模块**（结构、路由与视觉体系见 vault 模块文档）；入口：`frontend/src/vault/VaultPage.jsx` 侧栏「密码服务」分区（`section === 'pwsvc'`）→ `frontend/src/vault/components/PwsvcView.jsx`。全部请求经 `frontend/src/vault/api.js` 的 `pwsvc*` 封装（底层 `shared/client.js` apiFetch，自动带统一登录凭据）。
+`frontend/src/pwsvc/PwsvcPage.jsx` 通过 ModuleShell 注册项目导航，`src/pwsvc/api.js` 封装 `/api/pwsvc/*`。复制、轮询和下拉框使用共享组件。现有项目、用户种子、API Key、数据库表和日志归属沿用原服务。
 
 - **头部**：模块说明 + 琥珀色警示「本模块为服务端校验服务，非零知识加密」。
 - **项目列表**：卡片网格（名称 / `api_key_prefix` / 描述 / 类型数 / 用户数）+「新建项目」弹层（名称 + 描述）。创建成功 → **ApiKeyOnce 弹层**：API Key 明文仅显示一次，附复制 Key / 复制 curl 示例，必须勾选「我已安全保存此 Key」才能关闭。

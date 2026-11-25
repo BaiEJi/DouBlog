@@ -24,6 +24,7 @@ MODULE_BY_PREFIX = (
     ('/api/home', 'system'),
     ('/api/apihub', 'apihub'),
     ('/api/todo', 'todo'),
+    ('/mcp/', 'confcenter'),
     ('/api/gamemap', 'gamemap'),
     ('/api/practice', 'practice'),
     ('/api/steamidler', 'steamidler'),

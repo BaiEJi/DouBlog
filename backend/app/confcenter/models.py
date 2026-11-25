@@ -9,10 +9,31 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+
+
+class McpToken(Base):
+    __tablename__ = 'confcenter_mcp_tokens'
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    module: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    hint: Mapped[str] = mapped_column(String(4), nullable=False)
+    database_identity: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class McpToolSetting(Base):
+    __tablename__ = 'confcenter_mcp_tools'
+
+    module: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tool: Mapped[str] = mapped_column(String(128), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 class ConfEntry(Base):

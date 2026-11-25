@@ -1,8 +1,9 @@
 /** JSON 格式化 / 压缩 / 校验：缩进可选、键排序、统计（节点数/深度/字节数） */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
 import useComputation from '../../shared/useComputation'
 import CodeEditor from '../../shared/CodeEditor'
-import { ToolHead, TwoPane, CopyBtn, StatusLine, LBL, selectCls, Check } from '../kit'
+import { ToolHead, TwoPane, CopyBtn, StatusLine, LBL, Check } from '../kit'
 
 const SAMPLE = `{"name":"DouBlog","modules":14,"tags":["fastapi","react"],"db":{"backend":"postgres","pool":5}}`
 
@@ -20,12 +21,17 @@ export default function JsonFormatTool() {
       <ToolHead title="JSON 格式化" desc="格式化 / 压缩 / 校验 JSON，支持键排序与节点统计"
         right={<>
           <Check checked={sortKeys} onChange={setSortKeys} label="键排序" />
-          <select className={selectCls} value={indent} onChange={e => setIndent(e.target.value)} aria-label="缩进">
-            <option value="2">缩进 2 空格</option>
-            <option value="4">缩进 4 空格</option>
-            <option value="tab">缩进 Tab</option>
-            <option value="min">压缩（单行）</option>
-          </select>
+          <Select
+            aria-label="缩进"
+            value={indent}
+            onChange={setIndent}
+            options={[
+              { value: '2', label: '缩进 2 空格' },
+              { value: '4', label: '缩进 4 空格' },
+              { value: 'tab', label: '缩进 Tab' },
+              { value: 'min', label: '压缩（单行）' }
+            ]}
+          />
         </>} />
       <TwoPane
         leftTitle={`输入${stats ? ` · ${stats.inBytes} B` : ''}`}

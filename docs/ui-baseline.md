@@ -13,7 +13,7 @@
 | 元素 | 基线 |
 |---|---|
 | 页面底色 | `bg-stone-50 dark:bg-[#100f0e]`（全站统一；已是 `#fafafa/#0a0a0a` 的页面切到本档） |
-| 页面大标题（页首 H1） | `text-2xl font-semibold tracking-tight`（门户级大标语才用 30-34px；**sticky 密集工具栏例外档 `text-lg`**，如 /logs 顶栏） |
+| 独立页面或文档主标题 | `text-2xl font-semibold tracking-tight`，门户主标题可用 30–34px |
 | 区块标题 | `text-base font-semibold` |
 | 卡片标题 | `text-[15px] font-medium` 或 `text-sm font-semibold` |
 | 正文/控件文字 | `text-sm`（14px 基准；表格单元格同） |
@@ -21,6 +21,7 @@
 | 微注/页脚 | `text-[11.5px] text-stone-400 dark:text-stone-500` |
 | 卡片容器 | `rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5`（大容器 `rounded-3xl p-6/8`） |
 | 输入框 | `text-sm px-3 py-2 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] outline-none focus:border-black/30 dark:focus:border-white/30` |
+| 下拉框 | 全站使用 `shared/ui/Select.jsx`。常规触发器高 36px，紧凑档 30px。浮层使用明暗主题实底、圆角、选中勾和独立滚动。字段通过 `aria-label` 或关联标签命名。 |
 | 主按钮 | `text-sm font-medium px-4 py-2 rounded-lg` + 实底 `bg-stone-900 dark:bg-stone-100`（或模块主色实底） |
 | 次按钮 | 同尺寸 + `bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14]` |
 | 危险按钮 | `text-red-600 dark:text-red-400` 文字或 `bg-red-500/10` 底 |
@@ -35,6 +36,10 @@
 
 配置中心 `/confcenter` 使用阅读字号档：主要控件 16px、辅助文字 14px、等宽 key/完整值 15px、类型徽章 13px、弹窗标题 18px。
 
+MyTodo 的任务回顾和任务统计使用 20px 区块标题、16px 任务正文。摘要数字为 34px，标签为 15px，图表坐标为 13px。同组指标等宽，数值与单位按基线对齐。
+
+MyTodo 四象限看板使用 20px 象限标题、13px 象限说明、16px 任务标题和 12px 类别标记。
+
 ## 硬性检查项
 
 1. **暗色完整**：所有新增/修改的类必须带 `dark:` 变体；不得出现暗色下白底/黑字不可读
@@ -45,6 +50,6 @@
 ## 执行口径
 
 - 模块外壳统一使用 `shared/ModuleShell.jsx`：侧栏默认 220px（2026-10-24 起右边界可拖动/键盘调整 180–420px，底部固定操作区含折叠/展开与主题按钮；折叠为 56px 窄轨，仅一级菜单图标，完整菜单隐藏但保持挂载）；sticky + 100vh；顶部模块标题使用 16px font-mono，不显示副标题；递归 children 菜单、同一内容画布（max-width 1700px，水平 40px、上下 32px）。拖动手柄命中区 7px、role=separator、aria-valuemin/max/now、左右键 ±10px、Home/End 到边界、双击恢复 220px；偏好全站共享持久化（`doublog_sidebar_layout_v1`，详见 docs/modules/frontend.md）。不得重复添加全局容器留白；业务表格/编辑器/画布内部布局按功能保留。
-- PageHeader 仅注册导航和展示内容标题；模块主题控制集中于公共侧栏。前端不适配移动端（2026-10-17 起移除抽屉导航、响应式断点与触屏分支）。
+- 栏目名称由侧栏显示。正文从工具栏、筛选条件、指标或内容开始。日期、数量、文档名称和图表标题在对应内容处展示。PageHeader 将导航注册到公共侧栏，主题控制位于侧栏底部。
 - 个性色保留：模块主色只用在图标底、徽章、主按钮；其余中性 stone
 - 改完目视自查明暗两态；构建由主线统一执行

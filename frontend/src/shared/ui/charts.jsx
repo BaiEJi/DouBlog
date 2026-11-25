@@ -4,6 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 
+// eslint-disable-next-line react-refresh/only-export-components -- 旧版图表入口也对外导出了这个 Hook。
 export function useWidth() {
   const ref = useRef(null)
   const [w, setW] = useState(0)
@@ -25,24 +26,49 @@ export function useWidth() {
 
 const gridLine = 'stroke-black/[0.05] dark:stroke-white/[0.07]'
 
+function verticalScale(data, showScale, fractions) {
+  const peak = Math.max(1, ...data.map(d => Math.max(d.a, d.b)))
+  if (!showScale) return { max: peak, ticks: fractions.map(f => peak * f) }
+  const target = Math.max(1, peak / 4)
+  const base = 10 ** Math.floor(Math.log10(target))
+  const step = base * [1, 2, 5, 10].find(n => n * base >= target)
+  const count = Math.ceil(peak / step)
+  return { max: count * step, ticks: Array.from({ length: count + 1 }, (_, i) => i * step) }
+}
+
+function GridLines({ ticks, py, left, right, showScale }) {
+  return ticks.map(tick => (
+    <g key={tick}>
+      <line x1={left} x2={right} y1={py(tick)} y2={py(tick)} className={gridLine} strokeWidth={1} />
+      {showScale && <text x={left - 7} y={py(tick)} dy="0.35em" textAnchor="end" fontSize={13} className="chart-axis">{tick}</text>}
+    </g>
+  ))
+}
+
+function labelInterval(step, showScale) {
+  if (showScale || step < 19) return Math.max(1, Math.ceil(52 / step))
+  return step >= 38 ? 1 : 2
+}
+
 /**
  * 双序列折线趋势图
  * data: [{ x: 标签, a: 数值1, b: 数值2 }]
  * a/b: { label, color }
  */
-export function DualLine({ data, a, b, height = 240 }) {
+export function DualLine({ data, a, b, height = 240, showScale = false }) {
   const [ref, w] = useWidth()
   const [hover, setHover] = useState(null)
-  const H = height, PAD_T = 12, PAD_B = 24, PAD_L = 6, PAD_R = 6
+  const H = height, PAD_T = 12, PAD_B = showScale ? 32 : 24, PAD_R = 6
   if (!data.length || w <= 0) return <div ref={ref} className="h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
 
+  const { max, ticks } = verticalScale(data, showScale, [0.25, 0.5, 0.75, 1])
+  const PAD_L = showScale ? Math.max(24, String(max).length * 8 + 10) : 6
   const plotW = w - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B
-  const max = Math.max(1, ...data.map(d => Math.max(d.a, d.b)))
   const step = plotW / data.length
   const px = i => PAD_L + i * step + step / 2
   const py = v => PAD_T + plotH - (v / max) * (plotH - 6)
   const lineOf = key => data.map((d, i) => `${px(i)},${py(d[key])}`).join(' ')
-  const labelEvery = step >= 38 ? 1 : step >= 19 ? 2 : Math.ceil(52 / step)
+  const labelEvery = labelInterval(step, showScale)
 
   return (
     <div ref={ref} className="relative">
@@ -54,11 +80,7 @@ export function DualLine({ data, a, b, height = 240 }) {
           const idx = Math.floor(x / step)
           setHover(idx >= 0 && idx < data.length ? idx : null)
         }}>
-        {[0.25, 0.5, 0.75, 1].map(f => (
-          <line key={f} x1={PAD_L} x2={w - PAD_R}
-            y1={PAD_T + plotH - f * (plotH - 6)} y2={PAD_T + plotH - f * (plotH - 6)}
-            className={gridLine} strokeWidth={1} />
-        ))}
+        <GridLines ticks={ticks} py={py} left={PAD_L} right={w - PAD_R} showScale={showScale} />
         {(['a', 'b']).map(key => (
           <polyline key={key} points={lineOf(key)} fill="none"
             stroke={key === 'a' ? a.color : b.color} strokeWidth={2}
@@ -77,17 +99,17 @@ export function DualLine({ data, a, b, height = 240 }) {
             fill={b.color} className="transition-all" />
         ))}
         {data.map((d, i) => i % labelEvery === 0 && (
-          <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="fill-stone-400" fontSize="9.5">
+          <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="chart-axis fill-stone-400" fontSize={showScale ? 13 : 9.5}>
             {d.x.length > 9 ? d.x.slice(-5) : d.x}
           </text>
         ))}
       </svg>
-      <div className="flex items-center gap-4 justify-center mt-1 text-[11px] text-stone-500 dark:text-stone-400">
+      <div className="chart-legend flex items-center gap-4 justify-center mt-1 text-[11px] text-stone-500 dark:text-stone-400">
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-[2.5px] rounded-full" style={{ background: a.color }} />{a.label}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-[2.5px] rounded-full" style={{ background: b.color }} />{b.label}</span>
       </div>
       {hover != null && (
-        <div className="absolute top-2 pointer-events-none rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/95 dark:bg-[#262524]/95 backdrop-blur shadow-lg px-3 py-2 text-[11.5px]"
+        <div className="chart-tooltip absolute top-2 pointer-events-none rounded-xl border border-black/[0.08] dark:border-white/[0.1] bg-white/95 dark:bg-[#262524]/95 backdrop-blur shadow-lg px-3 py-2 text-[11.5px]"
           style={{ left: Math.min(Math.max(px(hover) - 70, 4), Math.max(w - 150, 4)) }}>
           <div className="text-stone-400 tabular-nums mb-1">{data[hover].xFull || data[hover].x}</div>
           <div className="flex items-center gap-1.5 tabular-nums"><span className="w-2 h-2 rounded-full" style={{ background: a.color }} />{a.label} {data[hover].a}</div>
@@ -102,19 +124,20 @@ export function DualLine({ data, a, b, height = 240 }) {
  * 分组柱状图（回顾页：创建 vs 完成）
  * data: [{ x: 标签, a, b }]；a/b: { label, color }
  */
-export function GroupedBars({ data, a, b, height = 190 }) {
+export function GroupedBars({ data, a, b, height = 190, showScale = false }) {
   const [ref, w] = useWidth()
   const [hover, setHover] = useState(null)
-  const H = height, PAD_T = 10, PAD_B = 24, PAD_L = 6, PAD_R = 6
+  const H = height, PAD_T = 10, PAD_B = showScale ? 32 : 24, PAD_R = 6
   if (!data.length || w <= 0) return <div ref={ref} className="h-[100px] flex items-center justify-center text-[12px] text-stone-400">暂无数据</div>
 
+  const { max, ticks } = verticalScale(data, showScale, [0.5, 1])
+  const PAD_L = showScale ? Math.max(24, String(max).length * 8 + 10) : 6
   const plotW = w - PAD_L - PAD_R, plotH = H - PAD_T - PAD_B
-  const max = Math.max(1, ...data.map(d => Math.max(d.a, d.b)))
   const step = plotW / data.length
   const barW = Math.min(12, step / 3)
   const px = i => PAD_L + i * step + step / 2
   const py = v => PAD_T + plotH - (v / max) * (plotH - 4)
-  const labelEvery = step >= 38 ? 1 : step >= 19 ? 2 : Math.ceil(52 / step)
+  const labelEvery = labelInterval(step, showScale)
 
   return (
     <div ref={ref} className="relative">
@@ -124,13 +147,10 @@ export function GroupedBars({ data, a, b, height = 190 }) {
           const idx = Math.floor((e.clientX - rect.left - PAD_L) / step)
           setHover(idx >= 0 && idx < data.length ? idx : null)
         }}>
-        {[0.5, 1].map(f => (
-          <line key={f} x1={PAD_L} x2={w - PAD_R}
-            y1={PAD_T + plotH - f * (plotH - 4)} y2={PAD_T + plotH - f * (plotH - 4)}
-            className={gridLine} strokeWidth={1} />
-        ))}
+        <GridLines ticks={ticks} py={py} left={PAD_L} right={w - PAD_R} showScale={showScale} />
         {data.map((d, i) => (
           <g key={i} opacity={hover == null || hover === i ? 1 : 0.45} className="transition-opacity">
+            <title>{d.xFull || d.x} · {a.label} {d.a} · {b.label} {d.b}</title>
             <rect x={px(i) - barW - 1} y={py(d.a)} width={barW} height={Math.max(1, PAD_T + plotH - py(d.a))}
               rx={2.5} fill={a.color} />
             <rect x={px(i) + 1} y={py(d.b)} width={barW} height={Math.max(1, PAD_T + plotH - py(d.b))}
@@ -138,12 +158,12 @@ export function GroupedBars({ data, a, b, height = 190 }) {
           </g>
         ))}
         {data.map((d, i) => i % labelEvery === 0 && (
-          <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="fill-stone-400" fontSize="9.5">
+          <text key={i} x={px(i)} y={H - 7} textAnchor="middle" className="chart-axis fill-stone-400" fontSize={showScale ? 13 : 9.5}>
             {d.x.length > 9 ? d.x.slice(-5) : d.x}
           </text>
         ))}
       </svg>
-      <div className="flex items-center gap-4 justify-center mt-1 text-[11px] text-stone-500 dark:text-stone-400">
+      <div className="chart-legend flex items-center gap-4 justify-center mt-1 text-[11px] text-stone-500 dark:text-stone-400">
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: a.color }} />{a.label}</span>
         <span className="inline-flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-[3px]" style={{ background: b.color }} />{b.label}</span>
       </div>
@@ -161,7 +181,8 @@ export function DonutPie({ data, size = 220, thickness = 30, centerLabel, center
   const total = data.reduce((s, d) => s + d.value, 0) || 1
   const R = size / 2, r = R - thickness
   let angle = -Math.PI / 2
-  const arcs = data.map((d, i) => {
+  const arcs = []
+  for (const [i, d] of data.entries()) {
     const sweep = (d.value / total) * Math.PI * 2
     const a0 = angle, a1 = angle + sweep
     angle = a1
@@ -175,11 +196,11 @@ export function DonutPie({ data, size = 220, thickness = 30, centerLabel, center
       `A ${r} ${r} 0 ${big} 0 ${R + r * Math.cos(a0)} ${R + r * Math.sin(a0)}`,
       'Z',
     ].join(' ')
-    return { path: p, d, i }
-  })
+    arcs.push({ path: p, d, i })
+  }
   const pct = v => Math.round((v / total) * 100)
   return (
-    <div className="flex flex-col items-center">
+    <div className="chart-pie flex flex-col items-center">
       <div className="relative">
         <svg width={size} height={size}>
           {arcs.map(({ path, d, i }) => (
@@ -189,11 +210,11 @@ export function DonutPie({ data, size = 220, thickness = 30, centerLabel, center
           ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <div className="text-lg font-semibold tabular-nums">{hover != null ? `${data[hover].value}` : centerValue}</div>
-          <div className="text-[10.5px] text-stone-400 mt-0.5">{hover != null ? data[hover].name : centerLabel}</div>
+          <div className="chart-pie-value text-lg font-semibold tabular-nums">{hover != null ? `${data[hover].value}` : centerValue}</div>
+          <div className="chart-pie-label text-[10.5px] text-stone-400 mt-0.5">{hover != null ? data[hover].name : centerLabel}</div>
         </div>
       </div>
-      <div className="mt-3 w-full flex flex-wrap gap-x-4 gap-y-1.5 justify-center max-h-[92px] overflow-y-auto">
+      <div className="chart-legend mt-3 w-full flex flex-wrap gap-x-4 gap-y-1.5 justify-center max-h-[92px] overflow-y-auto">
         {data.map((d, i) => (
           <span key={i}
             className={'inline-flex items-center gap-1.5 text-[11.5px] cursor-pointer ' +

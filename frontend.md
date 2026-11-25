@@ -84,19 +84,20 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 │   ├── module-navigation.js        # 页面注册本地视图与侧栏扩展的 context/hook
 │   ├── module-routes.js            # 一级路径到模块的映射（文章页归 blog）
 │   ├── ModuleErrorBoundary.jsx     # 路由渲染/懒加载错误兜底，导航保持可用
-│   ├── PageHeader.jsx              # 兼容适配器：将页面 tabs 注册到侧栏，渲染内容标题；BackButton 单独导出
+│   ├── PageHeader.jsx              # 将页面 tabs 注册到侧栏，可传入操作控件，单独导出 BackButton
 │   ├── CodeEditor.jsx              # 公共 CodeMirror 6 编辑器（行号/虚拟长文档/明暗主题/撤销；挂载实例跨 value/主题变化保留 selection 与 undo）。可选参数（2026-10-24，默认行为不变）：`fontSize`（默认 13，compartment 重配置——不重建实例、不清撤销栈）、`keepViewportOnExternalChange`（默认 false；true 时外部 value 整文替换前后保持滚动位置，供格式化场景）、`fallbackWrap`（默认 'soft'，降级 textarea 折行策略；'off'=横向滚动，供带行号栏的降级对齐）、`onLoadFailure`（真实动态加载失败通知，适配层据此切换降级 UI）；降级 textarea 应用同一 fontSize/行高 1.5 且 `resize:none`；aria-label 变化时经 contentDOM 属性动态同步（不重建实例）。使用方：blog 编辑器、devtoolbox、confcenter（传 15/12–24 用户偏好字号）
 │   └── md.js                       # markdown-it 渲染管线（12 插件 + 双链 + mermaid）
-├── portal/                         # /        统一入口（13 卡；dnd 自定义分组布局——**布局与卡片标题/描述覆盖全量持久化服务端**（/api/home/layout，system_home_* 表，2026-10-17）：localStorage doublog_portal_layout_v2 仅首屏缓存、服务端为唯一事实源，旧 doublog_portal_layout/doublog_portal_order 在服务端为空时一次性迁移上存；卡片 hover 铅笔按钮 → CardEditModal 编辑标题描述（空 = systems.jsx 内置默认文案，"恢复默认文案"清覆盖）；systems.jsx 卡片定义单源（key/to/默认文案/配色/图标）、api.js 布局 API；新模块自动追加末组 + 未知卡/跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
+├── portal/                         # /        统一入口（默认前两张卡依次为 MyTodo、订阅管理；dnd 自定义分组布局——**布局与卡片标题/描述覆盖全量持久化服务端**（/api/home/layout，system_home_* 表，2026-10-17）：localStorage doublog_portal_layout_v2 仅首屏缓存、服务端为唯一事实源，旧 doublog_portal_layout/doublog_portal_order 在服务端为空时一次性迁移上存；卡片 hover 铅笔按钮 → CardEditModal 编辑标题描述（空 = systems.jsx 内置默认文案，"恢复默认文案"清覆盖）；systems.jsx 卡片定义单源（key/to/默认文案/配色/图标）、api.js 布局 API；新模块自动追加末组 + 未知卡/跨组重复卡去重自愈；**落点判定 pointerWithin→closestCenter 兜底**——原 closestCorners 下全宽分组 section 四角偏远，悬停空分组中部时 over 误判成别组卡片致"拖不进空分组"（2026-10-13 修复）；拖拽走 DragOverlay 悬浮克隆（拎起微倾+大投影，原槽位虚线占位，松手 240ms 缓动归位，2026-10-13）；新建分组后平滑滚动到新组）
 ├── blog/                           # /blog /post/:id /create + 模块 tab：/assets /diary /bookmarks（assets·diary·bookmarks 子目录）
 │   ├── api.js                      # 文章/知识库/图片/最近浏览/反链/导出/数据库管理（透传 client 基础导出）
 │   ├── pages/                      # HomePage PostDetail CreatePost EditPost
 │   └── editor/                     # useEditorShortcuts / useEditorEnhancements
 │                                   #   HeatmapView StatsView ShareDialog SummaryCard
-├── vault/                          # /vault（零知识密码库 + 密码服务子视图）
-│   ├── api.js                      # vault* + pwsvc* 封装
+├── vault/                          # /vault（个人账号本、恢复与加密备份）
+│   ├── api.js                      # 仅 /api/vault 的密文及元数据
 │   ├── VaultPage.jsx               # 锁屏/侧栏/三面板外壳
-│   └── components/                 # crypto core ui ItemDetail ItemEditor Generator SecurityCenter PwsvcView
+│   └── components/                 # crypto core ui ItemDetail ItemEditor AccountList Transfers Generator SecurityCenter
+├── pwsvc/                          # /pwsvc（轮换密码服务）：PwsvcPage.jsx + api.js，共用 ModuleShell
 ├── logs/                          # /logs：api.js + LogsPage.jsx（lizysdk 接收端查询页；全页等宽字体）
 ├── apihub/                        # /apihub（统一 API 调用平台）：api.js + ApiHubPage.jsx（全页等宽字体）
 ├── config/                        # /config：api.js + ConfigPage.jsx（公共 ModuleShell 侧栏）
@@ -104,7 +105,7 @@ frontend/src/                       # 按一级路径分包，每个能力目录
 ├── gamemap/                       # /gamemap（剧情图谱，antd6+@xyflow 保留栈）：GamemapShell（App.jsx 顶级路由 /gamemap/*）+ board/ + pages/
 ├── practice/                      # /practice（刷题）：PracticePage（公共 ModuleShell 侧栏）+ PracticeView + components/
 ├── steamidler/                    # /steamidler（Steam 挂机）：SteamIdlerPage（公共 ModuleShell 侧栏）+ SteamIdlerView + components/
-├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（配置管理视图：创建/切换 namespace、空间内 KV 四列排序、带行号值编辑器+字号偏好、Redis 状态与配置）+ RateLimitPage.jsx（限流配置视图）+ Select.jsx（统一下拉）+ editorPreferences.js（字号 localStorage）
+├── confcenter/                    # /confcenter（配置中心）：api.js + ConfCenterPage.jsx（配置管理视图：创建/切换 namespace、空间内 KV 四列排序、带行号值编辑器+字号偏好、Redis 状态与配置）+ RateLimitPage.jsx（限流配置视图）+ editorPreferences.js（字号 localStorage）
 ├── clash/                         # /clash（Clash 代理，clashctl Web 迁移）：api.js + ClashPage.jsx（总览/订阅/配置/日志；门户卡片未装置灰）
 └── subs/                          # /subs（订阅管理，CrownFlow 迁移）
     ├── api.js                     # 会员/订阅/分类/统计/提醒封装
@@ -143,7 +144,10 @@ invalidatePost(id)     // 编辑保存/删除后失效；LRU 上限 50 条
 
 - `blog/api.js`：`fetchPosts(params,{signal})` 为当前首页分页/搜索入口；fetchWorkspaces / createWorkspace / fetchPostTree / prefetchPost·takeCachedPost·setCachedPost·invalidatePost（按账号/数据库隔离的SWR缓存）/ uploadImage / fetchRecentPosts / fetchBacklinks；保留旧 fetchAllPosts / searchPosts helper，但首页不再调用；并透传 `apiFetch, API_BASE`
 - `blog/diary/api.js`（日记子域）：条目 CRUD/动作/快速录入、分册 CRUD、日历/热力图/那年今日/统计/趋势/年度回顾、分享（含免登录 `diaryPublicShare` 走 API_BASE 直连）、导出、模板/引导
-- `vault/api.js`：vault*（条目/审计/备份）+ pwsvc*（项目/类型/用户/校验日志/限流）封装，透传 `API_BASE`
+- `vault/api.js` 封装密码库的条目、附件、审计和备份。`pwsvc/api.js` 独立封装项目、策略、用户和校验日志。两者经 `shared/client.js` 使用站点会话。
+- 密码库每次解锁会重新读取密钥材料。已登录用户在「忘记主密码」页可为完全空的库重新设置主密码并领取新的恢复密钥。
+- 「我的账号」列表左侧按分组筛选，右侧的收藏、最近使用和其他筛选叠加生效。新增账号默认使用当前分组，编辑时可通过统一下拉框更换分组。Ctrl/Cmd+K 搜索所有分组。
+- 账号编辑器使用可输入的统一选择器填写「所属网站」。列表可按网站筛选，宽列表单列展示网站，较窄的列表在账号名称下方显示网站。字段随条目加密。
 - `logs/api.js`：sdklogSearch / sdklogSysnames
 
 约定：列表/树接口条目**没有 `content` 字段**，需要正文时调 `GET /api/posts/id/<id>`（详见根目录 `api.md`）。
@@ -207,8 +211,8 @@ task-lists(label)、footnote、emoji(**light 词典 150 个**，无 `:+1:`/`:roc
 ### SubsPage.jsx（subs/，订阅管理 —— CrownFlow 迁移 UI）
 - 壳：侧栏（返回入口 / 概览/会员/统计/设置导航；概览带即将到期计数徽标、会员带 活跃/总数）+ 内嵌 `<Routes>`
   （`/subs` 概览、`/subs/members`、`/subs/members/:id` 详情、`/subs/stats`、`/subs/settings`）
-- **OverviewView**：4 指标卡（总数/活跃/本月/年度支出，月年口径=整月整年）+ 分类汇总表（列排序+合计行）+
-  即将到期提醒列表（点击进详情）+ 会员支出排行榜（4 维度切换：累计花费/平均订阅/订阅次数/累计时长，金银铜奖杯+火焰）+
+- **OverviewView** 顶部指标栏展示会员总数、活跃会员与整月、整年支出。分类汇总表和到期提醒并排，列排序同步更新支出占比条。提醒默认显示最近六项，支持展开和跳转会员详情。
+  下方为会员排行（累计花费、平均订阅、订阅次数、累计时长）与
   **订阅到期日历**（月历：`lunar-javascript` 农历与节日（红字优先显示法定节假日/补班）、timor.tech 节假日着色、
   当日到期数徽标（橙=7 天内/绿=更远）、点有订阅的日期弹当日列表、今天高亮、图例）
 - **MembersView**：搜索（300ms 防抖）/分类/状态筛选 + **表格/卡片双视图**（localStorage 记忆 subs-members-view）+
@@ -266,13 +270,18 @@ api.js 走 apiFetch（admin 接口走统一登录会话）；网关调用（sk-�
 - **日志上报卡**：外发启用开关 + 服务地址 + 外发最低级别（WARNING/INFO，`GET/PUT /api/admin/logging`，保存即重装配管道即时生效）+ `发送测试日志`（POST /logging/test，返回 marker 引导到 /logs 验证）+ 各模块 sys_name 徽章墙（doublog.blog 等）
 - `config/api.js` 走 apiFetch；数据库与日志上报统一从 `/config` 操作
 
-### ConfCenterPage.jsx（confcenter/，配置管理 / 限流配置双视图）
+### ConfCenterPage.jsx（配置管理、限流配置和 MCP 配置）
 
-公共侧栏两个同级视图（PageHeader tabs 注册）：配置管理（默认）与限流配置（`?view=ratelimit` 深链/刷新，缺省回 entries）；两视图保持挂载（hidden 切换），限流未保存草稿跨菜单保留。配置管理视图：首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，新建 KV 绑定当前空间（namespace 只读），选中项由 `?namespace=` 保持。切换空间重置搜索/分页并丢弃旧请求结果（请求身份含排序+列表版本）。KV 表四个数据列（key/类型/值预览/更新时间）表头可排序——button + aria-sort + 方向箭头（非活动列淡双向箭头暗示）；点当前列切升/降、点其他列从升序开始、变更回第 1 页；服务端全量排序后分页（sort_by/sort_order 走 api.js）。新建/编辑 Modal 中 str/json **共用同一个带行号的 CodeMirror 值编辑器实例**（切换类型/字号不重建，撤销栈保留；str 原样文本、json 着色 + Worker 格式化/压缩）；值工具栏字号调整：默认 15px、12–24 整数、A−/A+/统一下拉/恢复默认，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（损坏/越界/禁用回退 15）；状态/错误反馈区固定 48px 占位——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）。限流配置视图（RateLimitPage.jsx）：状态卡（三态 + 计数 + 刷新；失败显示错误+重试）、配置表单（GET 失败禁存+重试；保存成功重建已保存快照，可恢复）、重置区（统一下拉选目标，未选禁用）。模块统一下拉 `Select.jsx`（apihub 同款 button+菜单，选中 cyan 高亮，明暗一致）替代原生 select。配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值编辑器用户偏好字号默认 15px。模型、接口及迁移详见 `docs/modules/confcenter.md`。
+公共侧栏提供配置管理、限流配置和 MCP 配置，支持 `?view=entries|ratelimit|mcp` 深链。已打开的 KV 与限流工作区在切换时保留列表和限流草稿。配置管理视图：首次进入引导创建独立 namespace；左侧为带 KV 计数的空间导航，新建 KV 绑定当前空间（namespace 只读），选中项由 `?namespace=` 保持。切换空间重置搜索/分页并丢弃旧请求结果（请求身份含排序+列表版本）。KV 表四个数据列（key/类型/值预览/更新时间）表头可排序——button + aria-sort + 方向箭头（非活动列淡双向箭头暗示）；点当前列切升/降、点其他列从升序开始、变更回第 1 页；服务端全量排序后分页（sort_by/sort_order 走 api.js）。新建/编辑 Modal 中 str/json **共用同一个带行号的 CodeMirror 值编辑器实例**（切换类型/字号不重建，撤销栈保留；str 原样文本、json 着色 + Worker 格式化/压缩）；值工具栏字号调整：默认 15px、12–24 整数、A−/A+/统一下拉/恢复默认，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（损坏/越界/禁用回退 15）；状态/错误反馈区固定 48px 占位——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）。限流配置视图（RateLimitPage.jsx）：状态卡（三态 + 计数 + 刷新；失败显示错误+重试）、配置表单（GET 失败禁存+重试；保存成功重建已保存快照，可恢复）、重置区（统一下拉选目标，未选禁用）。字号和限流规则等字段共用 `shared/ui/Select.jsx`。配置中心采用放大后的字号：主要控件/正文 16px，状态条、表头、计数和辅助说明 14px，namespace/key 与完整值 15px，类型徽章 13px，弹窗标题 18px；值编辑器用户偏好字号默认 15px。模型、接口及迁移详见 `docs/modules/confcenter.md`。
+
+`McpConfigPage` 的模块侧栏合并门户目录和服务端注册的工具提供方，`?view=mcp&module=todo` 可直达所选模块。工具行可展开说明和读写类型。参数表从输入 Schema 读取中文含义、JSON 示例、类型和必填状态，滚动时保留表头。`McpTokenCard` 支持签发、续期和撤销，明文仅存于组件内存。`McpConnectionCard` 提供 Streamable HTTP 地址、认证头和带占位符的 JSON 配置。
 
 ### TodoPage.jsx（todo/，今日 / 特定日期四象限）
 
-今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白，标题和工具栏外的剩余高度由两行两列等高看板占满。每象限固定显示 8 行空间，空内容不收缩，超出行数在象限内滚动；任务标题与标记单行，长文省略，说明和完成备注通过悬停或编辑查看。菜单使用 portal 避免被滚动容器裁切。其余视图保留原来的页面流布局；模块细节见 `docs/modules/todo.md`。
+
+今日视图使用 `calc(100vh - 64px)` 容器衔接公共内容留白，工具栏下方由两行两列等高看板占满。每个象限保留 8 行空间，超出行数在象限内滚动。象限名称与说明基线对齐。任务标记随标题长度排在文字后方，操作按钮靠右对齐。长文省略，说明和完成备注通过悬停或编辑查看。菜单使用 portal 避免被滚动容器裁切。模块细节见 `docs/modules/todo.md`。
+
+任务回顾与任务统计通过 `src/todo/views/ReportLayout.jsx` 共用日期栏、等宽指标及区块标题。回顾页并列展示当日记录与独立的区间报表。统计页提供年度热力图、30 天趋势与当日分布。折线图与分组柱图通过 `showScale` 启用整数纵轴及较大的横轴标签。
 
 ### bookmarks（书签与稍后阅读，blog 子域 src/blog/bookmarks/，路由 /bookmarks——知识库模块 tab）
 - `BookmarksPage` → `BookmarksView`（blog 模块侧栏「书签 · 稍后阅读」项的 children：收藏夹/稍后阅读(徽标=待读数，经 useModuleNavigation badges 合并)/统计/工具/回收站）；详情与收录/编辑为覆盖层（state 切换，同 practice 先例）
@@ -319,8 +328,9 @@ bash shell/frontend/start.sh dev     # 一键：dev server
   `/apihub` 页面路由也吞进代理（浏览器打开 /apihub 直接显示后端 404 JSON）——已改为
   `'^/api(/|$)'`；新增前端一级路由若与代理前缀撞车同理。
 - **页面布局约定（2026-10-17 更新；2026-10-24 侧栏可调宽/折叠）**：App 的 ModuleFrame 将所有业务模块包入同一 `shared/ModuleShell.jsx`（文章详情/新建/编辑均属于 blog）。左侧栏默认 220px、sticky（`h-screen`），右边界手柄可拖动或键盘调整（180–420px，双击恢复默认）；底部为固定操作区（折叠/展开 + 主题按钮，不随长菜单滚走），折叠成 56px 图标窄轨（只显示一级菜单图标，二级不进入窄轨；完整菜单 display:none 保持挂载，分组展开状态与插槽状态不丢）；菜单区独立纵向滚动；偏好经 `doublog_sidebar_layout_v1` 全站共享持久化（拖动仅在 pointerup 落盘）；宽度/折叠绝不作为业务子树 key；菜单字号 14px，模块标题 16px 等宽字体（font-mono），标题下方不显示说明文字，徽标与页脚 11px；菜单行高 36px、行间距 4px；带 children 的激活分区菜单项右侧配折叠/展开按钮（SVG 雪佛龙图标，viewBox 0 0 20 20、stroke 1.5、w-4 h-4，收起态 rotate -90°，按钮 w-8 h-8 rounded-lg 图标档位，遵循 ui-baseline.md；2026-10-18 前为文本字符 `⌄`/`›`，渲染游离且档位不符，已修）。内容画布一律 `max-w-[1700px] px-10 py-8`，页面内部不再重复加全局 padding。门户、登录和日记公开分享保留独立外壳。**前端不适配移动端**：已移除移动端菜单抽屉、响应式断点类（sm:/md:/lg:/xl:）、触屏拖拽分支与 viewport meta，全部页面按桌面宽屏单态渲染；新增页面禁止引入任何响应式断点类或移动端专属 UI。
+- **下拉选择**使用 `@/shared/ui/Select`。单选、多选和允许自由输入的联想字段共用选框与浮层设计，交互由 `@rc-component/select` 提供。业务方传入 `options`、`value`、`onChange` 和可访问名称。动态选项以业务 ID 标识，菜单跟随主题并支持键盘操作。
 - **菜单契约**：`useModuleNavigation({title?,subtitle?,items,activeKey,onSelect,sidebar?})`；item 支持 `key/label/icon/to/badge/active/children/onClick`，children 可任意递归。路由菜单用 Link，本地视图用 onSelect。Context 只暴露稳定 setter，侧栏状态刷新不会连带重渲染页面。PageHeader 将原 tabs 适配到公共菜单，不再绘制独立顶栏；注册的 subtitle 不在公共侧栏显示；主题按钮统一放侧栏底部。生活子视图、订阅设置、gamemap 章节/视图和 vault 分类/标签使用多级菜单。
-- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
+- **布局细节**：日记本与导出放公共侧栏 sidebar 插槽，剧情图谱的章节按钮/摘要也使用侧栏插槽；密码库保留条目列表/详情两面板及工具栏，安全检查与工具栏共用 ModuleShell 的左右留白；文章页保留文档树/正文/目录；配置中心左侧为独立 namespace 导航（先创建空间，再管理该空间的 KV）。gamemap 游戏工作区显式提供 `calc(100dvh - 100px)` 高度（至少 600px），避免 React Flow 父容器无高度导致空画布；画布/网格/HUD/缩放控件/小地图随主题变化。数据加载失败显示重试，懒加载或渲染失败由 ModuleErrorBoundary 兜底。- **性能（2026-10-13）**：Todo 七个视图改为按需加载；农历日历从订阅概览拆到独立 ExpiryCalendar chunk；文章编辑预览用 useDeferredValue 延后 Markdown 解析；Steam 轮询防重入、后台页面暂停、游戏名称缓存 60s；日志实时追尾防重入/后台暂停，增量合并用 Set；日记搜索 300ms 防抖并忽略过时结果，统计等独立视图不再额外拉时间线。仍保持文章预取/SWR 与稳定 innerHTML 引用。模块内导航不重挂路由子树。
 - **⚠️ Tailwind 扫描失效事故（2026-09-19，已修复）**：症状=全系统 UI 崩（内联 SVG 失去尺寸约束撑满整页、间距全乱、深色类失效）。根因有三：① **tailwindcss 4.3.0 扫描器 bug**（部分 utilities 静默跳过/多目录合并扫描丢候选）——升级 4.3.3；② vite.config URL 式别名 `'@': '/src'` 干扰模块图——改 `path.resolve(__dirname, 'src')`；③ index.css 的 `@source` 路径**相对 CSS 文件**（src/index.css）而非 CWD，`../` 与 `!` 写法都会静默失效——最终形态：`@import "tailwindcss" source(none);` + 按能力目录显式 `@source "./app"` 等（见 src/index.css）。**诊断技巧**：对页面 style 标签文本用 JS `indexOf('w-3')` 定位（grep `.w-3{` 会被非压缩空格换行骗）；CSS 里类名转义 `.w-\[104px\]`，正则查转义前形式必误报
 - **4.3.3 残留 bug 规避**：**任意值色 + 透明度修饰**（如 `dark:bg-[#100f0e]/95`、`bg-[rgba(...)]`）不会被编译（标准色+透明度如 `dark:bg-white/[0.04]` 正常）——此类需求一律写显式无修饰等价类（如 `dark:bg-[#141312]`）。新增深色样式后在 /logs 页抽查 `getComputedStyle` 确认真的生成了
 

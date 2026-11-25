@@ -1,6 +1,7 @@
 /** 密码生成器：长度/字符集/排除易混淆 + 批量；口令短语模式；熵估计（crypto.getRandomValues） */
+import Select from '@/shared/ui/Select'
 import { useMemo, useState } from 'react'
-import { ToolHead, CopyBtn, Check, LBL, btnPri, selectCls, card } from '../kit'
+import { ToolHead, CopyBtn, Check, LBL, btnPri, card } from '../kit'
 import { randomPassword, entropyBits, PW_SETS } from '../lib/misc'
 
 const PHRASE_WORDS = ('apple river mountain castle dragon forest planet silver window garden bamboo candle harbor meadow orange purple rocket sunset tiger velvet water anchor bridge cherry dolphin eagle falcon galaxy honey island jungle kitten lantern magnet nectar ocean pearl quiver rainbow storm thunder umbrella violet walnut zephyr').split(' ')
@@ -87,12 +88,17 @@ export default function PasswordTool() {
             </label>
             <label className="flex items-center gap-1.5 text-[13px] text-stone-600 dark:text-stone-300">
               分隔符
-              <select className={selectCls} value={sep} onChange={e => setSep(e.target.value)} aria-label="分隔符">
-                <option value="-">-</option>
-                <option value=".">.</option>
-                <option value="_">_</option>
-                <option value=" ">空格</option>
-              </select>
+              <Select
+                aria-label="分隔符"
+                value={sep}
+                onChange={setSep}
+                options={[
+                  { value: '-', label: '-' },
+                  { value: '.', label: '.' },
+                  { value: '_', label: '_' },
+                  { value: ' ', label: '空格' }
+                ]}
+              />
             </label>
             <Check checked={capFirst} onChange={setCapFirst} label="首字母大写" />
           </div>
@@ -100,9 +106,12 @@ export default function PasswordTool() {
         <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-black/[0.05] dark:border-white/[0.06]">
           <label className="flex items-center gap-2 text-[13px] text-stone-600 dark:text-stone-300">
             数量
-            <select className={selectCls} value={count} onChange={e => setCount(+e.target.value)} aria-label="生成数量">
-              {[1, 3, 5, 10, 20].map(n => <option key={n} value={n}>{n} 个</option>)}
-            </select>
+            <Select
+              aria-label="生成数量"
+              value={count}
+              onChange={setCount}
+              options={[1, 3, 5, 10, 20].map(n => ({ value: n, label: n + ' 个' }))}
+            />
           </label>
           <span className={'px-2.5 py-1 rounded-full text-xs font-medium ' + strength.cls}>熵 ≈ {bits} bit · {strength.label}</span>
           <span className={LBL}>字符池 {mode === 'random' ? poolSize : PHRASE_WORDS.length + 100}</span>

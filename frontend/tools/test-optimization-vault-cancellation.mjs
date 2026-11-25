@@ -9,7 +9,7 @@ page.on('pageerror',error=>errors.push(error.message));page.setDefaultTimeout(20
 await context.route('**/*',route=>{const u=new URL(route.request().url());if(['blob:','data:'].includes(u.protocol)||(u.hostname==='127.0.0.1'&&['60111','60113','60115'].includes(u.port)))return route.continue();blocked.push(u.origin+u.pathname);return route.abort()})
 const api=async url=>{const r=await context.request.get(base+url);assert.ok(r.ok());return(await r.json()).data}
 const mark=name=>{checks.push(name);console.log('PASS',name)}
-const unlock=async()=>{await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁保险库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()}
+const unlock=async()=>{await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁密码库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()}
 const lock=async()=>{await page.getByRole('button',{name:'锁定',exact:true}).click();await page.getByText('密码库已锁定',{exact:true}).waitFor()}
 try{
  await page.goto(base+'/login');assert.equal(await page.evaluate(async()=>(await import('/src/shared/client.js')).API_BASE),'')
@@ -20,7 +20,7 @@ try{
  // Replace seven ciphertexts only inside this browser response. No fixture
  // rows or real account parameters are changed by this cancellation test.
  await page.route('**/api/vault/items?trash=0',async route=>{const response=await route.fetch(),body=await response.json();body.data.items=body.data.items.slice(0,7).map((item,index)=>({...item,blob:encrypted[index]}));body.data.total=7;await route.fulfill({response,json:body})})
- await page.goto(base+'/vault');await unlock();await page.getByRole('button',{name:'安全中心',exact:true}).click()
+ await page.goto(base+'/vault');await unlock();await page.getByRole('button',{name:'安全检查',exact:true}).click()
  let hibpCalls=0,release;const held=new Promise(resolve=>{release=resolve})
  // Fulfill the exact external URL locally; generic routing still rejects all
  // other external traffic. This never reaches HIBP or sends a real password.
@@ -30,7 +30,7 @@ try{
  await lock();release();await page.waitForTimeout(500);assert.equal(hibpCalls,3);assert.equal(await page.getByText('QA cancel item 0',{exact:true}).count(),0)
  mark('lock aborts three active HIBP requests; the remaining queue never starts or publishes')
 
- await unlock();await page.getByRole('button',{name:'全部条目',exact:false}).first().click();await page.getByText('QA cancel item 0',{exact:true}).click();await page.getByRole('button',{name:'＋ 加密上传附件',exact:true}).waitFor()
+ await unlock();await page.getByRole('button',{name:'我的账号',exact:false}).first().click();await page.getByText('QA cancel item 0',{exact:true}).click();await page.getByRole('button',{name:'＋ 加密上传附件',exact:true}).waitFor()
  let posts=0
  const countWrites=route=>{if(route.request().method()==='POST')posts++;return route.continue()}
  await page.route('**/api/vault/items/*/attachments',countWrites)
@@ -39,7 +39,7 @@ try{
  await lock();await page.evaluate(()=>{window.qaReleaseFileRead();File.prototype.arrayBuffer=window.qaOriginalArrayBuffer});await page.waitForTimeout(450);assert.equal(posts,0)
  mark('lock during deferred file read prevents encryption continuation and attachment POST')
 
- await unlock();await page.getByRole('button',{name:'全部条目',exact:false}).first().click();await page.getByText('QA cancel item 0',{exact:true}).click();await page.getByRole('button',{name:'＋ 加密上传附件',exact:true}).waitFor()
+ await unlock();await page.getByRole('button',{name:'我的账号',exact:false}).first().click();await page.getByText('QA cancel item 0',{exact:true}).click();await page.getByRole('button',{name:'＋ 加密上传附件',exact:true}).waitFor()
  await page.evaluate(()=>{window.qaFileReadStarted=false;window.qaOriginalArrayBuffer=File.prototype.arrayBuffer;File.prototype.arrayBuffer=function(){window.qaFileReadStarted=true;return new Promise(resolve=>{window.qaReleaseFileRead=()=>resolve(new TextEncoder().encode('QA held file input').buffer)})}})
  await page.locator('input[type="file"]').setInputFiles({name:'qa-unmounted-upload.txt',mimeType:'text/plain',buffer:Buffer.from('QA held file input')});await page.waitForFunction(()=>window.qaFileReadStarted)
  await page.getByText('QA cancel item 1',{exact:true}).click();await page.evaluate(()=>{window.qaReleaseFileRead();File.prototype.arrayBuffer=window.qaOriginalArrayBuffer});await page.waitForTimeout(450);assert.equal(posts,0)

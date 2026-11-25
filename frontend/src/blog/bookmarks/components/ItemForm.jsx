@@ -2,6 +2,7 @@
  * 收录 / 编辑表单（覆盖层）：URL + 一键抓取元信息自动填充；标题/摘要/笔记/
  * 分类/状态/星标/标签（自由输入逗号分隔，已有标签可点选）。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useMemo, useState } from 'react'
 
 import { createItem, getItem, updateItem, fetchMeta } from '../api'
@@ -109,16 +110,21 @@ export default function ItemForm({ itemId, categories, tags, onBack, onSaved, to
       <div className="grid grid-cols-2 gap-4">
         <div className={FMT}>
           <label className="text-xs font-medium text-stone-500 dark:text-stone-400">分类</label>
-          <select value={form.category_id} onChange={e => set('category_id', e.target.value)} className={inputCls}>
-            <option value="">（未分类）</option>
-            {flatCats.map(c => <option key={c.id} value={c.id}>{'　'.repeat(c.depth)}{c.name}</option>)}
-          </select>
+          <Select
+            aria-label="书签分类" className="w-full"
+            value={form.category_id}
+            onChange={next => set('category_id', next)}
+            options={[{ value: '', label: '（未分类）' }, ...flatCats.map(c => ({ value: c.id, label: '　'.repeat(c.depth) + c.name }))]}
+          />
         </div>
         <div className={FMT}>
           <label className="text-xs font-medium text-stone-500 dark:text-stone-400">状态</label>
-          <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
-            {STATUSES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-          </select>
+          <Select
+            aria-label="阅读状态" className="w-full"
+            value={form.status}
+            onChange={next => set('status', next)}
+            options={STATUSES}
+          />
         </div>
       </div>
 

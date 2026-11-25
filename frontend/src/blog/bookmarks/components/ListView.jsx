@@ -2,6 +2,7 @@
  * 收藏夹主列表：筛选（搜索/分类/状态/标签/排序）+ 批量操作条 + 分页。
  * 数据由 BookmarksView 传入 categories/tags，操作经 onChanged 通知上层刷新。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
@@ -100,19 +101,24 @@ export default function ListView({ toast, categories, tags, refreshSignal, onCha
             <path d="M13.5 13.5 17 17" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         </div>
-        <select value={categoryId} onChange={e => setCategoryId(e.target.value)} className={inputCls} style={{ width: '11rem' }}>
-          <option value="">全部分类</option>
-          {flatCats.map(c => (
-            <option key={c.id} value={c.id}>{'　'.repeat(c.depth)}{c.name}（{c.total_count}）</option>
-          ))}
-        </select>
-        <select value={tagId} onChange={e => setTagId(e.target.value)} className={inputCls} style={{ width: '9.5rem' }}>
-          <option value="">全部标签</option>
-          {tags.map(t => <option key={t.id} value={t.id}>{t.name}（{t.item_count}）</option>)}
-        </select>
-        <select value={sort} onChange={e => setSort(e.target.value)} className={inputCls} style={{ width: '8.5rem' }}>
-          {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <Select
+          aria-label="筛选分类" className="w-44"
+          value={categoryId}
+          onChange={setCategoryId}
+          options={[{ value: '', label: '全部分类' }, ...flatCats.map(c => ({ value: c.id, label: '　'.repeat(c.depth) + c.name + '（' + c.total_count + '）' }))]}
+        />
+        <Select
+          aria-label="筛选标签" className="w-38"
+          value={tagId}
+          onChange={setTagId}
+          options={[{ value: '', label: '全部标签' }, ...tags.map(t => ({ value: t.id, label: t.name + '（' + t.item_count + '）' }))]}
+        />
+        <Select
+          aria-label="排序" className="w-34"
+          value={sort}
+          onChange={setSort}
+          options={SORTS}
+        />
         <button type="button" onClick={onManageCategories}
           className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm bg-black/[0.06] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors">
           分类管理</button>
@@ -143,13 +149,12 @@ export default function ListView({ toast, categories, tags, refreshSignal, onCha
             className="px-2.5 h-7 rounded-lg text-xs bg-black/[0.05] dark:bg-white/[0.08] hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50">标为未读</button>
           <button type="button" disabled={busy} onClick={() => runBatch('star', {}, '已加星标')}
             className="px-2.5 h-7 rounded-lg text-xs bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 transition-colors disabled:opacity-50">加星标</button>
-          <select disabled={busy} defaultValue=""
-            onChange={e => { const v = e.target.value; if (v !== '') runBatch('move_category', { value: v || null }, '已移动分类'); e.target.value = '' }}
-            className="px-2 h-7 rounded-lg text-xs bg-black/[0.05] dark:bg-white/[0.08] border-0 outline-none disabled:opacity-50" style={{ width: '9rem' }}>
-            <option value="">移动到分类…</option>
-            <option value="">（未分类）</option>
-            {flatCats.map(c => <option key={c.id} value={c.id}>{'　'.repeat(c.depth)}{c.name}</option>)}
-          </select>
+          <Select
+            aria-label="批量移动到分类" className="w-36" size="sm"
+            value={null} disabled={busy} placeholder="移动到分类…"
+            onChange={next => runBatch('move_category', { value: next === '' ? null : next }, '已移动分类')}
+            options={[{ value: '', label: '（未分类）' }, ...flatCats.map(c => ({ value: c.id, label: '　'.repeat(c.depth) + c.name }))]}
+          />
           <input placeholder="加标签（逗号分隔）" className="px-2 h-7 w-40 rounded-lg text-xs bg-black/[0.05] dark:bg-white/[0.08] border-0 outline-none"
             onKeyDown={e => {
               if (e.key === 'Enter' && e.target.value.trim()) {

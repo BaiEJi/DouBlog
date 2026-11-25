@@ -1,11 +1,12 @@
 /* 角色图鉴：全屏抽屉——档案头 + 按章节分组的照片墙。
  * 每章组可上传（复用 /api/gamemap/uploads → 关联 character_photos），照片支持
  * 点击放大预览、改备注/换章、删除；未分章照片归入末尾「通用」组。 */
+import Select from '@/shared/ui/Select'
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App as AntApp, Avatar, Button, Drawer, Image, Input, Modal,
-  Popconfirm, Select, Space, Tag, Typography, Upload,
+  Popconfirm, Space, Tag, Typography, Upload,
 } from 'antd'
 import { CameraOutlined, DeleteOutlined, EditOutlined, FileImageOutlined, UploadOutlined } from '@ant-design/icons'
 import { api, apiUpload, assetUrl } from '../api'
@@ -190,7 +191,7 @@ export function PhotoCodex({ characterId, character, chapters, onClose, onChange
               </div>
               <div>
                 <div style={{ fontSize: 12.5, color: '#9aa3b8', marginBottom: 4 }}>所属章节</div>
-                <Select style={{ width: '100%' }} value={editChapter} onChange={setEditChapter} options={chOpts} />
+                <Select aria-label="照片所属章节" style={{ width: '100%' }} value={editChapter} onChange={setEditChapter} options={chOpts} />
               </div>
             </Space>
           </Modal>

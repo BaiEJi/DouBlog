@@ -53,6 +53,151 @@ def test_account_requires_auth(client):
     assert client.get('/api/vault/account').status_code == 401
 
 
+def _check_groups(client, headers):
+    url = '/api/vault/account/groups'
+    key = ACCOUNT['kdf_salt']
+    first = {'n': 'G' * 16, 'ct': 'encrypted-first-catalog'}
+    second = {'n': 'H' * 16, 'ct': 'encrypted-second-catalog'}
+
+    def put(box, nonce):
+        return client.put(url, json={'blob': box, 'expected_key': key, 'expected_nonce': nonce}, headers=headers)
+
+    assert put(first, None).status_code == 200
+    assert put(first, None).status_code == 200  # Safe retry after a lost response.
+    assert put(second, None).status_code == 409
+    assert put(second, first['n']).status_code == 200
+    assert put(None, first['n']).status_code == 409
+    assert client.get('/api/vault/account', headers=headers).json()['data']['group_catalog'] == second
+    backup = client.get('/api/vault/export', headers=headers).json()['data']
+    assert backup['account']['group_catalog'] == second
+    assert put(None, second['n']).status_code == 200
+    assert client.post('/api/vault/import', headers=headers, json=backup).status_code == 200
+    assert client.get('/api/vault/account', headers=headers).json()['data']['group_catalog'] == second
+    del backup['account']['group_catalog']  # A backup made before groups existed.
+    assert client.post('/api/vault/import', headers=headers, json=backup).status_code == 200
+    assert 'group_catalog' not in client.get('/api/vault/account', headers=headers).json()['data']
+
+
+def test_encrypted_groups_roundtrip_and_revision(client, auth_headers):
+    _init_account(client, auth_headers)
+    _check_groups(client, auth_headers)
+
+
+def test_groups_protect_empty_reset_and_stale_account_changes(client, auth_headers):
+    url = '/api/vault/account/groups'
+    payload = {'blob': BOX, 'expected_key': ACCOUNT['kdf_salt'], 'expected_nonce': None}
+    assert client.put(url, json=payload).status_code == 401
+    assert client.put(url, headers=auth_headers, json=payload).status_code == 404
+    _init_account(client, auth_headers)
+    for changes in ({'name': 'private'}, {'blob': {'name': 'private'}}, {'blob': {**BOX, 'name': 'private'}}):
+        assert client.put(url, headers=auth_headers, json={**payload, **changes}).status_code == 400
+    assert client.put(url, headers=auth_headers, json={**payload, 'expected_key': 'stale'}).status_code == 409
+    assert client.put(url, headers=auth_headers, json=payload).status_code == 200
+    assert client.get('/api/vault/account', headers=auth_headers).json()['data']['can_reinitialize_empty'] is False
+    assert client.post('/api/vault/account', headers=auth_headers, json=_empty_reset()).status_code == 409
+    create = {'blob': BOX, 'expected_group_nonce': None, 'expected_key': ACCOUNT['kdf_salt']}
+    assert client.post('/api/vault/items', headers=auth_headers, json=create).status_code == 409
+    create['expected_group_nonce'] = BOX['n']
+    item = client.post('/api/vault/items', headers=auth_headers, json=create).json()['data']
+    path = f"/api/vault/items/{item['id']}"
+    newer = {'n': 'T' * 16, 'ct': 'new-opaque-fixture'}
+    edit = {**create, 'blob': newer, 'expected_item_nonce': BOX['n']}
+    assert client.put(path, headers=auth_headers, json=edit).status_code == 200
+    assert client.put(path, headers=auth_headers, json=edit).status_code == 409
+    fav = client.put(path, headers=auth_headers, json={'favorite': True, 'expected_key': ACCOUNT['kdf_salt'],
+                                                       'expected_item_nonce': newer['n']})
+    assert fav.status_code == 200 and fav.json()['data']['blob'] == newer
+    assert client.put(url, headers=auth_headers, json={**payload, 'blob': None, 'expected_nonce': BOX['n']}).status_code == 200
+    assert client.put(path, headers=auth_headers, json={**edit, 'expected_item_nonce': newer['n']}).status_code == 409
+    assert client.get('/api/vault/items', headers=auth_headers).json()['data']['items'][0]['blob'] == newer
+
+
+def test_group_column_existing_sqlite_schema_migration():
+    from sqlalchemy import create_engine, inspect, text
+    from app.vault import ensure_migrations
+    engine = create_engine('sqlite://')
+    try:
+        with engine.begin() as conn:
+            conn.execute(text('CREATE TABLE vault_accounts (id INTEGER PRIMARY KEY)'))
+            conn.execute(text('INSERT INTO vault_accounts VALUES (1)'))
+            conn.execute(text('CREATE TABLE vault_items (deleted_at TEXT, updated_at TEXT)'))
+            conn.execute(text('CREATE TABLE vault_audit_logs (created_at TEXT)'))
+        ensure_migrations(engine)
+        ensure_migrations(engine)
+        assert 'group_catalog' in {c['name'] for c in inspect(engine).get_columns('vault_accounts')}
+        with engine.connect() as conn:
+            assert conn.execute(text('SELECT id, group_catalog FROM vault_accounts')).one() == (1, None)
+    finally:
+        engine.dispose()
+
+
+def _empty_reset():
+    return {**ACCOUNT, 'kdf_salt': 'S' * 24, 'recovery_salt': 'R' * 24,
+            'replace_empty': {k: ACCOUNT[k] for k in ('kdf_salt', 'recovery_salt')}}
+
+
+def test_empty_reset_checks_current_material_and_rejects_stale_writers(client, auth_headers):
+    url = '/api/vault/account'
+    payload = _empty_reset()
+    assert client.post(url, json=payload).status_code == 401
+    assert client.post(url, json=payload, headers=auth_headers).status_code == 409
+    previous = _init_account(client, auth_headers)
+    assert client.get(url, headers=auth_headers).json()['data']['can_reinitialize_empty'] is True
+    for changes, code in [
+        ({'replace_empty': {}}, 400), ({'kdf_params': '[]'}, 400),
+        ({'recovery_wrapped_vault_key': {}}, 400), ({'kdf_salt': previous['kdf_salt']}, 400),
+        ({'replace_empty': {**payload['replace_empty'], 'recovery_salt': 'stale'}}, 409),
+    ]:
+        assert client.post(url, headers=auth_headers, json={**payload, **changes}).status_code == code
+    assert client.get(url, headers=auth_headers).json()['data']['kdf_salt'] == previous['kdf_salt']
+    result = client.post(url, headers=auth_headers, json=payload)
+    assert result.status_code == 200
+    assert result.json()['data']['id'] == previous['id']
+    assert client.post(url, headers=auth_headers, json=payload).status_code == 409
+    for stale in ({'blob': BOX}, {'blob': BOX, 'expected_key': previous['kdf_salt']}):
+        assert client.post('/api/vault/items', headers=auth_headers, json=stale).status_code == 409
+    assert client.post('/api/vault/items', headers=auth_headers,
+                       json={'blob': BOX, 'expected_key': payload['kdf_salt']}).status_code == 201
+    events = client.get('/api/vault/audit', headers=auth_headers).json()['data']['items']
+    assert [row['action'] for row in events].count('empty_vault_reinitialized') == 1
+
+
+def test_empty_reset_protects_live_deleted_items_and_files(client, auth_headers):
+    _init_account(client, auth_headers)
+    item = _create_item(client, auth_headers)
+    path = f"/api/vault/items/{item['id']}"
+    assert client.post(path + '/attachments', headers=auth_headers, json={'blob': BOX, 'size': 8}).status_code == 201
+    for in_trash in (False, True):
+        if in_trash:
+            assert client.delete(path, headers=auth_headers).status_code == 200
+        before = client.get('/api/vault/export', headers=auth_headers).json()['data']
+        assert client.get('/api/vault/account', headers=auth_headers).json()['data']['can_reinitialize_empty'] is False
+        assert client.post('/api/vault/account', headers=auth_headers, json=_empty_reset()).status_code == 409
+        after = client.get('/api/vault/export', headers=auth_headers).json()['data']
+        assert all(after[key] == before[key] for key in ('account', 'items', 'attachments'))
+
+
+def test_first_create_and_empty_reset_cannot_both_win(client, auth_headers, app):
+    import asyncio
+    import httpx
+
+    _init_account(client, auth_headers)
+
+    async def race():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as c:
+            return await asyncio.gather(
+                c.post('/api/vault/items', headers=auth_headers, json={'blob': BOX}),
+                c.post('/api/vault/account', headers=auth_headers, json=_empty_reset()))
+
+    writing, resetting = asyncio.run(race())
+    assert (writing.status_code, resetting.status_code) in {(201, 409), (409, 200)}
+    state = client.get('/api/vault/export', headers=auth_headers).json()['data']
+    if resetting.status_code == 200:
+        assert state['account']['kdf_salt'] == _empty_reset()['kdf_salt'] and not state['items']
+    else:
+        assert state['account']['kdf_salt'] == ACCOUNT['kdf_salt'] and len(state['items']) == 1
+
+
 def test_rotate_keys(client, auth_headers):
     _init_account(client, auth_headers)
     new_box = {'n': 'BBBBBBBBBBBBBBBB', 'ct': 'bmV3LWNpcGhlcnRleHQ='}
@@ -215,6 +360,14 @@ def test_attachment_limits_and_validation(client, auth_headers):
     big_ct = {'n': 'A' * 16, 'ct': 'A' * (8 * 1024 * 1024 + 1)}
     assert client.post(f"/api/vault/items/{item['id']}/attachments",
                        json={'blob': big_ct, 'size': 1024}, headers=auth_headers).status_code == 413
+    # Production envelope: Base64 file bytes inside encrypted JSON, then outer Base64.
+    size = 5 * 1024 * 1024
+    inner = 4 * ((size + 2) // 3) + 100
+    browser_box = {'n': BOX['n'], 'ct': 'A' * (4 * ((inner + 16 + 2) // 3))}
+    url = f"/api/vault/items/{item['id']}/attachments"
+    assert client.post(url, headers=auth_headers, json={'size': size, 'blob': browser_box}).status_code == 201
+    oversized = {**browser_box, 'ct': browser_box['ct'] + 'A' * 16384}
+    assert client.post(url, headers=auth_headers, json={'size': size, 'blob': oversized}).status_code == 413
     # 合法上限内
     assert client.post(f"/api/vault/items/{item['id']}/attachments",
                        json={'blob': ok, 'size': 5 * 1024 * 1024}, headers=auth_headers).status_code == 201
@@ -334,3 +487,155 @@ def test_retry_locked_recovers(client, monkeypatch):
         pass
     else:
         raise AssertionError('非锁类 OperationalError 应原样抛出')
+
+def _check_backup_roundtrip(client, auth_headers):
+    _init_account(client, auth_headers)
+    first = _create_item(client, auth_headers)
+    other = _create_item(client, auth_headers)
+    file_box = {'n': 'F' * 16, 'ct': 'YXR0YWNobWVudA=='}
+    for item, size in [(first, 8), (other, 19)]:
+        assert client.post(f"/api/vault/items/{item['id']}/attachments", headers=auth_headers,
+                           json={'blob': file_box, 'size': size}).status_code == 201
+    client.delete(f"/api/vault/items/{other['id']}", headers=auth_headers)
+    backup = client.get('/api/vault/export', headers=auth_headers).json()['data']
+    assert backup['version'] == 2 and len(backup['attachments']) == 2
+    # Remap IDs from a foreign library, and deliberately reverse its item order.
+    for item in backup['items']:
+        item['id'] += 500
+    for att in backup['attachments']:
+        att['item_id'] += 500
+    backup['items'].reverse()
+    res = client.post('/api/vault/import', json=backup, headers=auth_headers)
+    assert res.status_code == 200 and res.json()['data'] == {'imported_items': 2, 'imported_attachments': 2}
+    new = client.get('/api/vault/export', headers=auth_headers).json()['data']
+    parents = {item['id']: item for item in new['items']}
+    for att in new['attachments']:
+        item = parents[att['item_id']]
+        assert bool(item['deleted_at']) == (att['size'] == 19)
+        original = next(x for x in backup['items'] if bool(x['deleted_at']) == bool(item['deleted_at']))
+        assert item['created_at'] == original['created_at'] and item['updated_at'] == original['updated_at']
+        assert att['blob'] == file_box
+    archived = next(i for i in new['items'] if i['deleted_at'])
+    assert client.post(f"/api/vault/items/{archived['id']}/restore", headers=auth_headers).status_code == 200
+    assert client.get(f"/api/vault/items/{archived['id']}/attachments", headers=auth_headers).json()['data'][0]['size'] == 19
+
+
+def test_backup_v2_keeps_files_with_their_account_and_dates(client, auth_headers):
+    _check_backup_roundtrip(client, auth_headers)
+
+
+def test_invalid_backup_is_atomic_and_v1_is_still_readable(client, auth_headers):
+    _init_account(client, auth_headers)
+    item = _create_item(client, auth_headers)
+    client.post(f"/api/vault/items/{item['id']}/attachments", headers=auth_headers, json={'size': 10, 'blob': BOX})
+    before = client.get('/api/vault/export', headers=auth_headers).json()['data']
+    for changes in [
+        {'items': [*before['items'], before['items'][0]]}, {'attachments': [{'item_id': 9999, 'blob': BOX, 'size': 10}]},
+        {'attachments': [dict(before['attachments'][0], size=-1)]}, {'items': [{'id': 5, 'blob': {}}]},
+        {'attachments': None}, {'version': 3}, {'account': dict(before['account'], kdf_params='[]')},
+    ]:
+        assert client.post('/api/vault/import', headers=auth_headers, json={**before, **changes}).status_code == 400
+    assert client.post('/api/vault/import', headers=auth_headers, json={**before, 'expected_key': 'changed'}).status_code == 409
+    actual = client.get('/api/vault/export', headers=auth_headers).json()['data']
+    for key in ('account', 'items', 'attachments'):
+        assert actual[key] == before[key]
+    legacy = {key: before[key] for key in ('format', 'account', 'items')}
+    legacy['version'] = 1
+    res = client.post('/api/vault/import', headers=auth_headers, json=legacy)
+    assert res.status_code == 200 and res.json()['data']['imported_attachments'] == 0
+    from app.vault.models import VaultAttachment
+    assert VaultAttachment.query.count() == 0
+
+
+def test_append_is_atomic_and_stale_previews_cannot_add_duplicates(client, auth_headers, app):
+    _init_account(client, auth_headers)
+    item = _create_item(client, auth_headers)
+    payload = {'items': [BOX, BOX], 'expected_key': ACCOUNT['kdf_salt'], 'expected_items': [[item['id'], BOX['n']]]}
+    url = '/api/vault/items/append'
+    assert client.post(url, headers=auth_headers, json={**payload, 'items': [BOX, {'password': 'fixture'}]}).status_code == 400
+    assert client.post(url, headers=auth_headers, json={**payload, 'expected_key': 'stale'}).status_code == 409
+    import asyncio
+    import httpx
+
+    async def race():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as c:
+            results = await asyncio.gather(*(c.post(url, headers=auth_headers, json=payload) for _ in range(2)))
+            return [r.status_code for r in results]
+
+    responses = asyncio.run(race())
+    assert sorted(responses) == [201, 409]
+    assert client.post(url, headers=auth_headers, json=payload).status_code == 409
+    assert client.get('/api/vault/items', headers=auth_headers).json()['data']['total'] == 3
+
+
+def test_rewrap_detects_stale_material_and_pwsvc_is_independent(client, auth_headers):
+    _init_account(client, auth_headers)
+    new = {'n': 'B' * 16, 'ct': 'Zml4dHVyZS1ib3g='}
+    update = {'wrapped_vault_key': new, 'kdf_salt': 'D' * 24,
+              'expected_key': ACCOUNT['kdf_salt'], 'expected_recovery': ACCOUNT['recovery_salt']}
+    response = client.put('/api/vault/account/keys', headers=auth_headers, json=update)
+    assert response.status_code == 200 and response.json()['data']['recovery_wrapped_vault_key'] == BOX
+    assert client.put('/api/vault/account/keys', headers=auth_headers, json=update).status_code == 409
+    from app.main import MODULES
+    from app.shared.modules import module_for_path
+    assert 'pwsvc' in MODULES and module_for_path('/api/pwsvc/projects') == 'pwsvc'
+    assert client.get('/api/pwsvc/projects').status_code == 401
+
+def test_favorite_only_preserves_current_ciphertext(client, auth_headers):
+    _init_account(client, auth_headers)
+    item = _create_item(client, auth_headers)
+    path = f"/api/vault/items/{item['id']}"
+    next_box = {'n': 'CCCCCCCCCCCCCCCC', 'ct': 'b3BhcXVlLW5ldw=='}
+    assert client.put(path, headers=auth_headers, json={'blob': next_box}).status_code == 200
+    updated = client.put(path, headers=auth_headers, json={'favorite': True})
+    assert updated.status_code == 200
+    assert updated.json()['data']['favorite'] is True
+    assert updated.json()['data']['blob'] == next_box
+    for invalid in ({}, ['invalid']):
+        assert client.put(path, headers=auth_headers, json=invalid).status_code == 400
+
+
+def test_library_roundtrip_on_real_postgresql(client, auth_headers, tmp_path, monkeypatch):
+    import pytest
+    from fastapi.testclient import TestClient
+    from sqlalchemy.engine import make_url
+    from app.config import settings
+    from app.main import create_app, stop_background
+
+    pgserver = pytest.importorskip('pgserver')
+    monkeypatch.setattr(settings, 'debug', False)
+    pgdata = tmp_path / 'vault-pg'
+    pgdata.mkdir()
+    server = pgserver.get_server(str(pgdata))
+    pg_app = None
+    try:
+        uri = make_url(server.get_uri())
+        assert uri.host in ('localhost', '127.0.0.1') and uri.port
+        target = {'host': '127.0.0.1', 'port': uri.port, 'user': 'postgres', 'password': '', 'dbname': 'vault_roundtrip'}
+        response = client.post('/api/admin/database/switch', headers=auth_headers, json={'target': 'postgres', 'postgres': target})
+        assert response.status_code == 200, response.text
+        pg_app = create_app()
+        with TestClient(pg_app) as pg:
+            engine = pg_app.state.engine
+            assert engine.dialect.name == 'postgresql' and engine.url.port == uri.port
+            _check_backup_roundtrip(pg, auth_headers)
+            _check_groups(pg, auth_headers)
+            rows = pg.get('/api/vault/items', headers=auth_headers).json()['data']['items']
+            batch = {'expected_key': ACCOUNT['kdf_salt'], 'expected_items': [[i['id'], i['blob']['n']] for i in rows], 'items': [BOX]}
+            assert pg.post('/api/vault/items/append', headers=auth_headers, json=batch).status_code == 201
+            assert pg.post('/api/vault/items/append', headers=auth_headers, json=batch).status_code == 409
+            assert pg.post('/api/vault/account', headers=auth_headers, json=_empty_reset()).status_code == 409
+            snapshot = pg.get('/api/vault/export', headers=auth_headers).json()['data']
+            for item in snapshot['items']:
+                assert pg.delete(f"/api/vault/items/{item['id']}/purge", headers=auth_headers).status_code == 200
+            assert pg.post('/api/vault/account', headers=auth_headers, json=_empty_reset()).status_code == 200
+            assert pg.post('/api/vault/items', headers=auth_headers, json={'blob': BOX}).status_code == 409
+            assert pg.post('/api/vault/items', headers=auth_headers,
+                           json={'blob': BOX, 'expected_key': _empty_reset()['kdf_salt']}).status_code == 201
+    finally:
+        try:
+            if pg_app is not None:
+                stop_background(pg_app)
+                pg_app.state.engine.dispose()
+        finally:
+            server.cleanup()

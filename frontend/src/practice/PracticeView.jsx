@@ -103,9 +103,7 @@ export default function PracticeView({ toast, dark }) {
     <div className="space-y-4">
       {/* ── 子视图头（覆盖层态隐藏） ── */}
       {!inOverlay && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-base font-semibold">{SUBS.find(s => s.key === sub)?.label}</h1>
-          <span className="flex-1" />
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {/* 导入导出仅题库子视图有，与新增题目同一行 */}
           {sub === 'list' && (
             <div className="flex items-center gap-2">

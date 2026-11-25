@@ -1,0 +1,115 @@
+/* 触发器和 portal 中的菜单使用同一组明暗主题颜色。 */
+:root {
+  --db-select-bg: #fff;
+  --db-select-text: #292524;
+  --db-select-muted: #716c68;
+  --db-select-border: #d8d5d2;
+  --db-select-hover-border: #aaa5a1;
+  --db-select-hover: #f4f3f2;
+  --db-select-picked: #eeedfb;
+  --db-select-accent: #5146a8;
+  --db-select-ring: #847ace;
+  --db-select-shadow: 0 8px 24px #29252420, 0 2px 5px #2925240d;
+}
+.dark {
+  --db-select-bg: #242322;
+  --db-select-text: #f1efed;
+  --db-select-muted: #b4afaa;
+  --db-select-border: #494542;
+  --db-select-hover-border: #786f69;
+  --db-select-hover: #34312f;
+  --db-select-picked: #38334e;
+  --db-select-accent: #d4cbff;
+  --db-select-ring: #a79cde;
+  --db-select-shadow: 0 10px 30px #0006;
+}
+.db-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--db-select-border);
+  border-radius: 8px;
+  background: var(--db-select-bg);
+  color: var(--db-select-text);
+  font-size: 14px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.db-select-size-sm { min-height: 30px; padding: 3px 8px; font-size: 13px; }
+.db-select:not(.db-select-disabled):hover { border-color: var(--db-select-hover-border); }
+.db-select:focus-within, .db-select-open {
+  border-color: var(--db-select-ring);
+  outline: 2px solid color-mix(in srgb, var(--db-select-ring) 28%, transparent);
+  outline-offset: 1px;
+}
+.db-select:has([aria-invalid="true"]) { border-color: #dc5656; }
+.db-select-disabled { opacity: .55; cursor: not-allowed; }
+.db-select-content { flex: 1 1 auto; min-width: 0; position: relative; }
+.db-select-single .db-select-content {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.db-select .db-select-input {
+  margin: 0; padding: 0; border: 0; outline: none; box-shadow: none; border-radius: 0;
+  background: transparent; color: var(--db-select-text); font: inherit; cursor: inherit;
+}
+.db-select-single .db-select-input { position: absolute; inset: 0; width: 100%; opacity: 0; }
+.db-select-single.db-select-open.db-select-show-search .db-select-input { cursor: text; opacity: 1; }
+.db-select-single .db-select-content-has-search-value .db-select-input { opacity: 1; }
+.db-select-single .db-select-content-has-search-value { color: transparent; }
+.db-select-placeholder, .db-select-prefix, .db-select-suffix { color: var(--db-select-muted); }
+.db-select-placeholder { pointer-events: none; }
+.db-select-prefix, .db-select-suffix, .db-select-clear { display: inline-flex; align-items: center; flex: none; }
+.db-select-suffix { pointer-events: none; }
+.db-select-open .db-select-suffix svg { transform: rotate(180deg); }
+.db-select-clear {
+  position: absolute; inset-inline-end: 6px; padding: 4px; border-radius: 4px;
+  background: var(--db-select-bg); color: var(--db-select-muted); cursor: pointer;
+}
+.db-select-clear:hover { color: var(--db-select-text); background: var(--db-select-hover); }
+.db-select-multiple .db-select-content { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; }
+.db-select-multiple .db-select-content-item { min-width: 0; max-width: 100%; }
+.db-select-multiple .db-select-input { width: calc(var(--select-input-width, 4) * 1px); min-width: 4px; max-width: 100%; }
+.db-select-multiple .db-select-placeholder { position: absolute; inset-inline-start: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-select-multiple:has(.db-select-placeholder) { min-width: min(11rem, 100%); }
+.db-select-selection-item {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 6px;
+  border-radius: 5px; background: var(--db-select-picked); color: var(--db-select-accent); font-size: 12px;
+}
+.db-select-selection-item-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.db-select-selection-item-remove { display: inline-flex; align-items: center; cursor: pointer; }
+.db-select-dropdown {
+  position: absolute; z-index: 11000; box-sizing: border-box; max-width: min(32rem, calc(100vw - 16px));
+  /* 弹层定位需要同步测量 inset，减少动态效果设置也不能让几何属性产生过渡。 */
+  transition-property: none;
+  padding: 4px; font-size: 14px; line-height: 1.4; text-align: start;
+}
+.db-select-dropdown, .db-menu-surface, .ant-dropdown .ant-dropdown-menu.db-menu-surface {
+  border: 1px solid var(--db-select-border); border-radius: 10px;
+  background: var(--db-select-bg); color: var(--db-select-text); box-shadow: var(--db-select-shadow);
+}
+.db-select-dropdown-hidden { display: none; }
+.db-select-item-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px;
+  padding: 5px 9px; border-radius: 6px; cursor: pointer;
+}
+.db-select-item-option-content { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+.db-select-item-option-state { display: inline-flex; align-items: center; flex: none; color: var(--db-select-accent); }
+.db-select-item-option-active { background: var(--db-select-hover); }
+.db-select-item-option-selected { color: var(--db-select-accent); background: var(--db-select-picked); font-weight: 600; }
+.db-select-item-option-active.db-select-item-option-selected { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--db-select-ring) 42%, transparent); }
+.db-select-item-option-disabled { opacity: .48; cursor: not-allowed; }
+.db-select-item-empty { padding: 8px 10px; color: var(--db-select-muted); font-size: 13px; }
+.db-select-menu-action {
+  display: block; width: 100%; margin-top: 4px; padding: 7px 9px;
+  border-top: 1px solid var(--db-select-border); text-align: start; color: var(--db-select-accent);
+}
+.db-select-menu-action:hover, .db-select-menu-action:focus-visible { background: var(--db-select-hover); }

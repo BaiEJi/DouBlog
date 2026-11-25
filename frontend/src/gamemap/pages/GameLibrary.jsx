@@ -1,9 +1,10 @@
 /* 游戏库页：卡片墙（渐变封面/上传封面）+ 搜索过滤 + 创建/导入备份。
  * 适配 DouBlog：去源 AppShell 外壳；nav 挂 /gamemap 前缀；上传走 apiUpload。 */
+import Select from '@/shared/ui/Select'
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { App as AntApp, Button, Card, Col, Empty, Input, Modal, Row, Segmented, Select, Space, Typography, Upload } from 'antd'
+import { App as AntApp, Button, Card, Col, Empty, Input, Modal, Row, Segmented, Space, Typography, Upload } from 'antd'
 import { PlusOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons'
 import { motion } from 'framer-motion'
 import { api, apiUpload, assetUrl } from '../api'
@@ -61,7 +62,7 @@ export default function GameLibrary() {
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-3 mb-5">
-        <h1 className="text-lg font-semibold tracking-tight">游戏库 · <span className="gm-gradient-text">{filtered.length} 个世界</span></h1>
+        <span className="text-sm tabular-nums">{filtered.length} 个世界</span>
         <div className="ml-auto flex items-center gap-2">
           <Button icon={<UploadOutlined />} loading={importing} onClick={() => fileRef.current?.click()}>导入备份</Button>
           <input ref={fileRef} type="file" accept="application/json" style={{ display: 'none' }}
@@ -136,7 +137,7 @@ export default function GameLibrary() {
         <Space orientation="vertical" size={14} style={{ width: '100%', marginTop: 8 }}>
           <Input size="large" placeholder="游戏名称" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <Input.TextArea placeholder="一句话简介（可选）" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-          <Select value={form.play_status} onChange={(v) => setForm({ ...form, play_status: v })} style={{ width: '100%' }}
+          <Select aria-label="游玩状态" value={form.play_status} onChange={(v) => setForm({ ...form, play_status: v })} style={{ width: '100%' }}
             options={[{ value: 'playing', label: '🎮 游玩中' }, { value: 'finished', label: '✅ 已通关' }, { value: 'planned', label: '📌 想玩' }]} />
         </Space>
       </Modal>

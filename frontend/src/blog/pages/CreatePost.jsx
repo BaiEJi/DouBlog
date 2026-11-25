@@ -1,3 +1,4 @@
+import Select from '@/shared/ui/Select'
 import { useDeferredValue, useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import CodeEditor from '@/shared/CodeEditor'
@@ -216,8 +217,6 @@ export default function CreatePost({ dark, setDark }) {
 
 
       <main className="mx-auto w-full max-w-full p-0">
-        <h1 className="text-xl font-semibold tracking-tight mb-5">新建文章</h1>
-
         {/* Meta Info */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div>
@@ -244,41 +243,33 @@ export default function CreatePost({ dark, setDark }) {
           </div>
           <div>
             <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">所属知识库</label>
-            <select
+            <Select
+              aria-label="所属知识库" className="w-full"
               value={wsId}
-              onChange={e => { setWsId(e.target.value); setParentId('') }}
-              className="w-full px-2.5 py-1.5 text-[13px] bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all"
-            >
-              {workspaces.map(w => (
-                <option key={w.id} value={w.id}>{w.name}</option>
-              ))}
-            </select>
+              onChange={next => { setWsId(next); setParentId('') }}
+              options={workspaces.map(w => ({ value: String(w.id), label: w.name }))}
+            />
           </div>
           <div>
             <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">父文章</label>
-            <select
+            <Select
+              aria-label="父文章" className="w-full font-mono"
               value={parentId}
-              onChange={e => setParentId(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
-            >
-              <option value="">无（顶级文章）</option>
-              {flatPosts.map(p => (
-                <option key={p.id} value={p.id}>{' '.repeat(p.level * 4)}{'└ '}{p.title}</option>
-              ))}
-            </select>
+              onChange={setParentId}
+              options={[{ value: '', label: '无（顶级文章）' }, ...flatPosts.map(p => ({ value: String(p.id), label: ' '.repeat(p.level * 4) + '└ ' + p.title }))]}
+            />
           </div>
           <div>
             <label className="block text-[12px] font-medium text-[#666] dark:text-[#888] mb-1">状态</label>
-            <select
+            <Select
+              aria-label="文章状态" className="w-full"
               value={status}
-              onChange={e => setStatus(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-[13px] font-mono bg-white dark:bg-[#111] border border-black/10 dark:border-white/10 rounded-lg text-[#111] dark:text-[#eee] focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all appearance-none"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23666' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e\")", backgroundPosition: 'right 0.5rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.5em 1.5em', paddingRight: '2.5rem' }}
-            >
-              <option value="published">已发布</option>
-              <option value="archived">归档</option>
-            </select>
+              onChange={setStatus}
+              options={[
+                { value: 'published', label: '已发布' },
+                { value: 'archived', label: '归档' }
+              ]}
+            />
           </div>
         </div>
         <div className="mb-3">

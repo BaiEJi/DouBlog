@@ -1,130 +1,55 @@
 import { apiFetch } from '@/shared/client'
 
-export { API_BASE } from '@/shared/client'   // PwsvcView 展示 curl 示例用
-
-// 密码库与密码服务 API。
-
-export async function pwsvcCreateProject(payload) {
-  const res = await apiFetch('/api/pwsvc/projects', { method: 'POST', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcListProjects() {
-  const res = await apiFetch('/api/pwsvc/projects')
-  return res.json()
-}
-
-export async function pwsvcUpdateProject(id, payload) {
-  const res = await apiFetch(`/api/pwsvc/projects/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcDeleteProject(id) {
-  const res = await apiFetch(`/api/pwsvc/projects/${id}`, { method: 'DELETE' })
-  return res.json()
-}
-
-export async function pwsvcResetApiKey(id) {
-  const res = await apiFetch(`/api/pwsvc/projects/${id}/api-key`, { method: 'POST' })
-  return res.json()
-}
-
-export async function pwsvcCreateType(pid, payload) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/types`, { method: 'POST', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcListTypes(pid, options) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/types`, options)
-  return res.json()
-}
-
-export async function pwsvcUpdateType(tid, payload) {
-  const res = await apiFetch(`/api/pwsvc/types/${tid}`, { method: 'PUT', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcDeleteType(tid) {
-  const res = await apiFetch(`/api/pwsvc/types/${tid}`, { method: 'DELETE' })
-  return res.json()
-}
-
-export async function pwsvcCreateUser(pid, payload) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/users`, { method: 'POST', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcListUsers(pid, options) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/users`, options)
-  return res.json()
-}
-
-export async function pwsvcUpdateUser(uid, payload) {
-  const res = await apiFetch(`/api/pwsvc/users/${uid}`, { method: 'PUT', body: JSON.stringify(payload) })
-  return res.json()
-}
-
-export async function pwsvcDeleteUser(uid) {
-  const res = await apiFetch(`/api/pwsvc/users/${uid}`, { method: 'DELETE' })
-  return res.json()
-}
-
-export async function pwsvcCurrentPassword(uid, options) {
-  const res = await apiFetch(`/api/pwsvc/users/${uid}/current`, options)
-  return res.json()
-}
-/** 校验日志（倒序分页）+ 失败统计（近 1h/24h 成败计数、失败 TOP5 用户名） */
-
-export async function pwsvcListLogs(pid, page = 1, perPage = 50, options) {
-  const res = await apiFetch(`/api/pwsvc/projects/${pid}/logs?page=${page}&per_page=${perPage}`, options)
-  return res.json()
-}
-
 /** ─── Vault（零知识密码库，见 docs/vault-design.md）─────────
  * 所有载荷均为客户端加密后的密文；本文件不出现任何明文口令参数 */
 
-export async function vaultGetAccount() {
-  const res = await apiFetch('/api/vault/account')
+export async function vaultGetAccount(options) {
+  const res = await apiFetch('/api/vault/account', options)
   return { status: res.status, data: await res.json() }
 }
 
-export async function vaultInitAccount(account) {
-  const res = await apiFetch('/api/vault/account', { method: 'POST', body: JSON.stringify(account) })
+export async function vaultInitAccount(account, options) {
+  const res = await apiFetch('/api/vault/account', { ...options, method: 'POST', body: JSON.stringify(account) })
   return res.json()
 }
 
-export async function vaultRotateKeys(payload) {
-  const res = await apiFetch('/api/vault/account/keys', { method: 'PUT', body: JSON.stringify(payload) })
+export async function vaultRotateKeys(payload, options) {
+  const res = await apiFetch('/api/vault/account/keys', { ...options, method: 'PUT', body: JSON.stringify(payload) })
   return res.json()
 }
 
-export async function vaultListItems(trash = false) {
-  const res = await apiFetch(`/api/vault/items?trash=${trash ? 1 : 0}`)
+export async function vaultSaveGroups(payload, options) {
+  const res = await apiFetch('/api/vault/account/groups', { ...options, method: 'PUT', body: JSON.stringify(payload) })
   return res.json()
 }
 
-export async function vaultCreateItem(payload) {
-  const res = await apiFetch('/api/vault/items', { method: 'POST', body: JSON.stringify(payload) })
+export async function vaultListItems(trash = false, options) {
+  const res = await apiFetch(`/api/vault/items?trash=${trash ? 1 : 0}`, options)
   return res.json()
 }
 
-export async function vaultUpdateItem(id, payload) {
-  const res = await apiFetch(`/api/vault/items/${id}`, { method: 'PUT', body: JSON.stringify(payload) })
+export async function vaultCreateItem(payload, options) {
+  const res = await apiFetch('/api/vault/items', { ...options, method: 'POST', body: JSON.stringify(payload) })
   return res.json()
 }
 
-export async function vaultMarkUsed(id) {
-  const res = await apiFetch(`/api/vault/items/${id}/use`, { method: 'POST' })
+export async function vaultUpdateItem(id, payload, options) {
+  const res = await apiFetch(`/api/vault/items/${id}`, { ...options, method: 'PUT', body: JSON.stringify(payload) })
   return res.json()
 }
 
-export async function vaultTrashItem(id) {
-  const res = await apiFetch(`/api/vault/items/${id}`, { method: 'DELETE' })
+export async function vaultMarkUsed(id, options) {
+  const res = await apiFetch(`/api/vault/items/${id}/use`, { ...options, method: 'POST' })
   return res.json()
 }
 
-export async function vaultRestoreItem(id) {
-  const res = await apiFetch(`/api/vault/items/${id}/restore`, { method: 'POST' })
+export async function vaultTrashItem(id, options) {
+  const res = await apiFetch(`/api/vault/items/${id}`, { ...options, method: 'DELETE' })
+  return res.json()
+}
+
+export async function vaultRestoreItem(id, options) {
+  const res = await apiFetch(`/api/vault/items/${id}/restore`, { ...options, method: 'POST' })
   return res.json()
 }
 
@@ -138,13 +63,18 @@ export async function vaultAudit(page = 1) {
   return res.json()
 }
 
-export async function vaultExport() {
-  const res = await apiFetch('/api/vault/export')
+export async function vaultExport(options) {
+  const res = await apiFetch('/api/vault/export', options)
   return res.json()
 }
 
-export async function vaultImport(backup) {
-  const res = await apiFetch('/api/vault/import', { method: 'POST', body: JSON.stringify(backup) })
+export async function vaultImport(backup, options) {
+  const res = await apiFetch('/api/vault/import', { ...options, method: 'POST', body: JSON.stringify(backup) })
+  return res.json()
+}
+
+export async function vaultAppendItems(payload, options) {
+  const res = await apiFetch('/api/vault/items/append', { ...options, method: 'POST', body: JSON.stringify(payload) })
   return res.json()
 }
 

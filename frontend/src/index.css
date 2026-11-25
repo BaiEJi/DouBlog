@@ -1,4 +1,5 @@
 @import "tailwindcss" source(none);
+@import "./shared/ui/select.css";
 @source "./app";
 @source "./apihub";
 @source "./blog";
@@ -16,6 +17,7 @@
 @source "./subs";
 @source "./todo";
 @source "./vault";
+@source "./pwsvc";
 @source "./main.jsx";
 @source "./index.css";
 @source not "./components/node_modules";
@@ -27,8 +29,6 @@
 .module-shell { display: flex; align-items: flex-start; }
 .module-main { min-height: 100vh; }
 .module-nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
-.module-content select { color-scheme: light; }
-.dark .module-content select { color-scheme: dark; }
 .module-content input[type="date"], .module-content input[type="datetime-local"] { color-scheme: light; }
 .dark .module-content input[type="date"], .module-content input[type="datetime-local"] { color-scheme: dark; }
 

@@ -8,7 +8,6 @@ import { copyText } from './lib/misc'
 
 export const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
 export const inputCls = 'px-3 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
-export const selectCls = 'px-2.5 py-2 text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 rounded-lg text-stone-800 dark:text-stone-100 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
 export const areaCls = 'w-full font-mono text-[13px] leading-relaxed p-3 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/[0.04] text-stone-800 dark:text-stone-100 placeholder:text-stone-400 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors resize-y'
 export const outCls = 'w-full font-mono text-[13px] leading-relaxed p-3 rounded-lg border border-black/[0.05] dark:border-white/[0.06] bg-black/[0.02] dark:bg-white/[0.03] text-stone-700 dark:text-stone-200 whitespace-pre-wrap break-all'
 export const btn = 'px-4 py-2 text-sm font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
@@ -16,15 +15,12 @@ export const btnPri = 'px-4 py-2 text-sm font-medium rounded-lg bg-lime-600 hove
 export const btnSm = 'px-2.5 py-1.5 text-[13px] font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 export const LBL = 'text-xs text-stone-500 dark:text-stone-400'
 
-/** 工具页头：标题 + 描述 + 右侧动作区（right 为主入口；children 为兼容别名） */
+/** 工具说明与操作区，工具名称由侧栏显示。 */
 export function ToolHead({ title, desc, right, children }) {
   const actions = right ?? children
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-      <div className="min-w-0">
-        <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-        {desc && <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{desc}</p>}
-      </div>
+    <div role="group" aria-label={title} className="flex flex-wrap items-start justify-between gap-3 mb-4">
+      {desc && <p className="min-w-0 text-xs text-stone-500 dark:text-stone-400">{desc}</p>}
       {actions && <div className="flex flex-wrap items-center gap-2 shrink-0">{actions}</div>}
     </div>
   )

@@ -1,10 +1,11 @@
 /* 剧情事件 / 统计 / 演变对比 / 批量导入 / 添加人物目标提示 / 空状态三步引导（#5）
  * —— 从 GameWorkspace 拆出（#7）。 */
+import Select from '@/shared/ui/Select'
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Alert, App as AntApp, Button, Card, Checkbox, Divider, Empty, Input, Modal,
-  Popconfirm, Progress, Select, Space, Statistic, Tag, Timeline, Typography,
+  Popconfirm, Progress, Space, Statistic, Tag, Timeline, Typography,
 } from 'antd'
 import { DeleteOutlined, TeamOutlined } from '@ant-design/icons'
 import { api } from '../api'
@@ -106,7 +107,7 @@ export function EventsPanel({ gid, chapterId, chapters, allCharMap, onJumpChapte
         <Space orientation="vertical" size={10} style={{ width: '100%' }}>
           <Input placeholder="事件标题（如：北境之战、主角觉醒）" value={title} onChange={(e) => setTitle(e.target.value)} />
           <Input.TextArea placeholder="发生了什么（可选）" rows={3} value={content} onChange={(e) => setContent(e.target.value)} />
-          <Select mode="multiple" allowClear placeholder="关联人物（可选）" style={{ width: '100%' }} value={chars} onChange={setChars}
+          <Select aria-label="关联人物" mode="multiple" allowClear placeholder="关联人物（可选）" style={{ width: '100%' }} value={chars} onChange={setChars}
             options={boardChars.map((c) => ({ value: c.id, label: c.name }))} />
           <Space>
             <Button type="primary" disabled={!title.trim()} onClick={submit}>{editing ? '保存修改' : '添加事件'}</Button>
@@ -285,9 +286,9 @@ export function DiffModal({ open, onClose, gid, chapters, defaultA, defaultB, al
   return (
     <Modal title="🔀 关系演变对比" open={open} onCancel={onClose} footer={null} width={640}>
       <Space style={{ marginBottom: 14 }} size={10}>
-        <Select style={{ minWidth: 180 }} value={aId} onChange={setAId} options={opts} placeholder="对比起点章" />
+        <Select aria-label="起点章节" style={{ minWidth: 180 }} value={aId} onChange={setAId} options={opts} placeholder="对比起点章" />
         <span style={{ color: '#8b93a8' }}>➡️</span>
-        <Select style={{ minWidth: 180 }} value={bId} onChange={setBId} options={opts} placeholder="对比终点章" />
+        <Select aria-label="终点章节" style={{ minWidth: 180 }} value={bId} onChange={setBId} options={opts} placeholder="对比终点章" />
       </Space>
       {aId === bId && <Alert type="warning" showIcon title="请选择两个不同的章节" />}
       {diff.data && (

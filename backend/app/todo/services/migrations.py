@@ -82,7 +82,7 @@ def migrate_task(session: Session, task_id: str, to_date: str, reason: Optional[
     if t.status != "pending":
         raise HTTPException(422, "只有待办状态的任务可以迁移")
     if t.task_date is None:
-        raise HTTPException(422, "收件箱任务请直接排期(PATCH task_date)")
+        raise HTTPException(422, "待排期任务请直接设置日期（PATCH task_date）")
     if t.task_date == target:
         raise HTTPException(422, f"任务已属于 {target.isoformat()}")
 

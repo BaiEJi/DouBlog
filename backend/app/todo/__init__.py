@@ -5,6 +5,7 @@
 """
 from fastapi import APIRouter
 
+from .mcp_tools import mcp_provider as mcp_provider
 from .routes import router as _todo_router
 
 router = APIRouter()

@@ -5,6 +5,7 @@
  * 解法编辑器（动态增删；名称/思路/复杂度快选+自由输入/按语言 Tab 的代码编辑器）。
  * 编辑保存通过聚合事务：题目、标签、解法和代码整体提交；冲突和失败保留本地输入。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import CodeEditor from '@/shared/CodeEditor'
 
@@ -21,7 +22,6 @@ let keySeq = 0
 const nextKey = () => `k${++keySeq}`
 
 const COMPLEXITY_PRESETS = ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)', 'O(n²)', 'O(n³)', 'O(√n)', 'O(2ⁿ)']
-const selectCls = 'h-9 px-2.5 rounded-lg text-sm bg-white dark:bg-white/[0.04] border border-black/10 dark:border-white/10 outline-none focus:border-black/30 dark:focus:border-white/30 transition-colors'
 
 /** Markdown 编辑区（textarea + 编辑/预览切换），描述/易错点/解法思路共用 */
 function MdArea({ label, value, onChange, dark, minHeight = 200 }) {
@@ -129,11 +129,12 @@ function SolutionEditor({ solution, index, onChange, onRemove, dark }) {
               ))}
             </div>
           )}
-          <select value="" onChange={e => addLanguage(e.target.value)} className="h-7 px-2 rounded-lg text-xs bg-black/[0.05] dark:bg-white/[0.08] border border-transparent dark:border-white/[0.06] outline-none focus:border-black/30 dark:focus:border-white/30 text-stone-500 dark:text-stone-400">
-            <option value="">＋ 添加语言</option>
-            {LANGUAGES.filter(l => !s.codes.some(c => c.language === l.value))
-              .map(l => <option key={l.value} value={l.value}>{l.label}</option>)}
-          </select>
+          <Select
+            aria-label="添加语言" size="sm"
+            value={null} placeholder="＋ 添加语言"
+            onChange={addLanguage}
+            options={LANGUAGES.filter(l => !s.codes.some(c => c.language === l.value))}
+          />
           {active && s.codes.length > 0 && (
             <button type="button" onClick={() => removeLanguage(active.key)}
               className="px-2 h-7 rounded-lg text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors">
@@ -456,9 +457,12 @@ export default function ProblemForm({ problemId, dark, toast, tags, onCreateTag,
       <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] p-5">
         <div className="grid grid-cols-2 gap-3">
           <Field label="来源">
-            <select value={source} onChange={e => setSource(e.target.value)} className={selectCls + ' w-full'}>
-              {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
+            <Select
+              aria-label="题目来源" className="w-full"
+              value={source}
+              onChange={setSource}
+              options={SOURCES}
+            />
           </Field>
           <Field label="题号（可空）">
             <input value={sourceNo} onChange={e => setSourceNo(e.target.value)} placeholder="如 1 / P1001 / JZ01"

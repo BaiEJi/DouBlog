@@ -1,6 +1,7 @@
 /** UUID / 短 ID 生成：v4（随机）/ v7（时间有序）批量 + NanoID 自定义字母表 */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
-import { ToolHead, CopyBtn, Segmented, Check, LBL, btnPri, inputCls, selectCls, card } from '../kit'
+import { ToolHead, CopyBtn, Segmented, Check, LBL, btnPri, inputCls, card } from '../kit'
 import { uuidV4, uuidV7, nanoId } from '../lib/misc'
 
 export default function UuidTool() {
@@ -37,9 +38,12 @@ export default function UuidTool() {
       <div className={'flex flex-wrap items-center gap-x-5 gap-y-3 p-4 ' + card}>
         <label className="flex items-center gap-2 text-[13px] text-stone-600 dark:text-stone-300">
           数量
-          <select className={selectCls} value={count} onChange={e => setCount(+e.target.value)} aria-label="数量">
-            {[1, 5, 10, 20, 50].map(n => <option key={n} value={n}>{n} 个</option>)}
-          </select>
+          <Select
+            aria-label="生成数量"
+            value={count}
+            onChange={setCount}
+            options={[1, 5, 10, 20, 50].map(n => ({ value: n, label: n + ' 个' }))}
+          />
         </label>
         {kind === 'nano' ? (
           <label className="flex items-center gap-2 text-[13px] text-stone-600 dark:text-stone-300">

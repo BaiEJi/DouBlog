@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select, text
 from sqlalchemy.exc import OperationalError
 
 from app.db import db, run_db
@@ -62,7 +62,7 @@ async def _json_body(request: Request):
         data = await request.json()
     except ValueError:
         return {}
-    return data or {}
+    return data if isinstance(data, dict) else {}
 
 
 def _query_int(request: Request, key: str, default: int) -> int:
@@ -138,6 +138,13 @@ def _items_response(rows) -> Response:
 
 # ─── 账号（加密材料）────────────────────────────────────
 
+def _empty_library(session):
+    items = select(VaultItem.id).exists()
+    attachments = select(VaultAttachment.id).exists()
+    groups = select(VaultAccount.id).where(VaultAccount.group_catalog.is_not(None)).exists()
+    return not session.scalar(select(items | attachments | groups))
+
+
 @router.get('/account')
 async def get_account():
     """KDF 参数 + 被包裹的 VEK（客户端据此派生 KEK 解锁）；未初始化 404"""
@@ -145,48 +152,97 @@ async def get_account():
         account = db.session.query(VaultAccount).first()
         if not account:
             return api_response(None, 404, 'Vault 未初始化')
-        return api_response(account.to_dict())
+        return api_response({**account.to_dict(), 'can_reinitialize_empty': _empty_library(db.session)})
     return await run_db(_retry_locked(_impl))
+
+
+def initialize_account(session, data):
+    """Create keys, or replace both wrappers only for the exact, still empty library."""
+    _lock_bulk_write(session)
+    accounts = session.scalars(select(VaultAccount).limit(2)).all()
+    previous = accounts[0] if accounts else None
+    replacing = 'replace_empty' in data
+    if not replacing and previous:
+        return api_response(None, 409, 'Vault 已初始化')
+    if replacing:
+        expected = data['replace_empty']
+        if not isinstance(expected, dict) or set(expected) != {'kdf_salt', 'recovery_salt'}:
+            return api_response(None, 400, '需要原空库的两项密钥标识')
+        if (len(accounts) != 1 or previous.kdf_salt != expected['kdf_salt']
+                or previous.recovery_salt != expected['recovery_salt']):
+            return api_response(None, 409, '密码库已变化，请刷新后重试')
+        if not _empty_library(session):
+            return api_response(None, 409, '库中已有账号、最近删除、附件或分组，无法重新设置空库')
+        if data.get('kdf_salt') == previous.kdf_salt or data.get('recovery_salt') == previous.recovery_salt:
+            return api_response(None, 400, '重新设置需要全新的加密材料')
+
+    try:
+        params = data['kdf_params'] if isinstance(data['kdf_params'], dict) else json.loads(data['kdf_params'])
+    except (KeyError, TypeError, ValueError):
+        return api_response(None, 400, 'kdf_params 必须是对象')
+    if not isinstance(params, dict) or any(type(params.get(k)) is not int or params[k] < minimum
+                                           for k, minimum in (('t', 1), ('m', 8192), ('p', 1))):
+        return api_response(None, 400, 'kdf_params 非法（需 t>=1, m>=8192, p>=1）')
+    if data.get('kdf_algo') != 'argon2id':
+        return api_response(None, 400, 'kdf_algo 仅支持 argon2id')
+    for field in ('kdf_salt', 'recovery_salt'):
+        val = data.get(field)
+        if not isinstance(val, str) or not 16 <= len(val) <= 64:
+            return api_response(None, 400, f'{field} 非法')
+    for field in ('wrapped_vault_key', 'recovery_wrapped_vault_key'):
+        if not _valid_box(data.get(field)):
+            return api_response(None, 400, f'{field} 必须是 {{n, ct}} 密文结构')
+
+    account = previous if previous is not None else VaultAccount()
+    account.kdf_algo = 'argon2id'
+    account.kdf_params = json.dumps({k: params[k] for k in ('t', 'm', 'p')})
+    account.kdf_salt = data['kdf_salt']
+    account.recovery_salt = data['recovery_salt']
+    for field in ('wrapped_vault_key', 'recovery_wrapped_vault_key'):
+        setattr(account, field, json.dumps({k: data[field][k] for k in ('n', 'ct')}))
+    session.add(account)
+    session.add(VaultAuditLog(action='empty_vault_reinitialized' if replacing else 'vault_initialized'))
+    session.commit()
+    return api_response(account.to_dict(), 200 if replacing else 201, '空密码库已重新设置' if replacing else '创建成功')
 
 
 @router.post('/account')
 async def init_account(request: Request):
-    """初始化 Vault（单账号，仅一次）"""
     data = await _json_body(request)
+    return await run_db(_retry_locked(lambda: initialize_account(db.session, data)))
+
+
+def _valid_group_box(box):
+    return box is None or (_valid_box(box) and set(box) == {'n', 'ct'})
+
+
+@router.put('/account/groups')
+async def update_groups(request: Request):
+    data = await _json_body(request)
+    if set(data) != {'blob', 'expected_key', 'expected_nonce'} or not _valid_group_box(data['blob']):
+        return api_response(None, 400, '需要分组目录密文和原版本标识')
+    expected, box = data['expected_nonce'], data['blob']
+    if not isinstance(data['expected_key'], str) or (expected is not None and not isinstance(expected, str)):
+        return api_response(None, 400, '分组版本标识无效')
 
     def _impl():
-        if db.session.query(VaultAccount).count() > 0:
-            return api_response(None, 409, 'Vault 已初始化')
-        try:
-            params = data['kdf_params'] if isinstance(data['kdf_params'], dict) else json.loads(data['kdf_params'])
-        except (KeyError, TypeError, ValueError):
-            return api_response(None, 400, 'kdf_params 必须是对象')
-        if not (isinstance(params.get('t'), int) and isinstance(params.get('m'), int)
-                and isinstance(params.get('p'), int) and params['t'] >= 1 and params['m'] >= 8192
-                and params['p'] >= 1):
-            return api_response(None, 400, 'kdf_params 非法（需 t>=1, m>=8192, p>=1）')
-        if data.get('kdf_algo') != 'argon2id':
-            return api_response(None, 400, 'kdf_algo 仅支持 argon2id')
-        for field in ('kdf_salt', 'recovery_salt'):
-            v = data.get(field)
-            if not isinstance(v, str) or not (16 <= len(v) <= 64):
-                return api_response(None, 400, f'{field} 非法')
-        for field in ('wrapped_vault_key', 'recovery_wrapped_vault_key'):
-            if not _valid_box(data.get(field)):
-                return api_response(None, 400, f'{field} 必须是 {{n, ct}} 密文结构')
-
-        account = VaultAccount(
-            kdf_algo='argon2id',
-            kdf_params=json.dumps(params),
-            kdf_salt=data['kdf_salt'],
-            recovery_salt=data['recovery_salt'],
-            wrapped_vault_key=json.dumps(data['wrapped_vault_key']),
-            recovery_wrapped_vault_key=json.dumps(data['recovery_wrapped_vault_key']),
-        )
-        db.session.add(account)
-        _audit('vault_initialized')
-        db.session.commit()
-        return api_response(account.to_dict(), 201, '创建成功')
+        _lock_bulk_write()
+        account = db.session.query(VaultAccount).first()
+        if not account:
+            return api_response(None, 404, 'Vault 未初始化')
+        if account.kdf_salt != data['expected_key']:
+            return api_response(None, 409, '密码库密钥已变化，请重新解锁')
+        current = orjson.loads(account.group_catalog) if account.group_catalog else None
+        if current != box:
+            current_nonce = current['n'] if current else None
+            if current_nonce != expected:
+                return api_response(None, 409, '分组已在其他窗口更新，请核对后再保存')
+            if box and box['n'] == current_nonce:
+                return api_response(None, 400, '分组密文需要新的随机数')
+            account.group_catalog = orjson.dumps(box).decode() if box else None
+            _audit('groups_updated')
+            db.session.commit()
+        return api_response({'group_catalog': box})
     return await run_db(_retry_locked(_impl))
 
 
@@ -196,9 +252,13 @@ async def rotate_keys(request: Request):
     data = await _json_body(request)
 
     def _impl():
+        _lock_bulk_write()
         account = db.session.query(VaultAccount).first()
         if not account:
             return api_response(None, 404, 'Vault 未初始化')
+        if (('expected_key' in data and data['expected_key'] != account.kdf_salt)
+                or ('expected_recovery' in data and data['expected_recovery'] != account.recovery_salt)):
+            return api_response(None, 409, '密钥已变化，请重新解锁后再试')
 
         if 'wrapped_vault_key' in data:
             if not _valid_box(data['wrapped_vault_key']):
@@ -249,6 +309,31 @@ async def list_items(request: Request):
     return await run_db(_retry_locked(_impl))
 
 
+def _lock_item_write():
+    if db.engine.dialect.name == 'sqlite':
+        db.session.execute(text('BEGIN IMMEDIATE'))
+    else:
+        db.session.execute(text('LOCK TABLE vault_accounts IN ROW EXCLUSIVE MODE'))
+
+
+def _check_item_context(data, *, creating=False):
+    if 'expected_key' in data or 'expected_group_nonce' in data:
+        query = select(VaultAccount.kdf_salt)
+        if 'expected_group_nonce' in data:
+            query = query.add_columns(VaultAccount.group_catalog)
+        row = db.session.execute(query.limit(1)).first()
+        if not row or data.get('expected_key') != row.kdf_salt:
+            return api_response(None, 409, '密码库密钥已变化，请重新解锁')
+        if 'expected_group_nonce' in data:
+            nonce = orjson.loads(row.group_catalog)['n'] if row.group_catalog else None
+            if data['expected_group_nonce'] != nonce:
+                return api_response(None, 409, '分组已在其他窗口更新，请重新选择分组')
+    elif creating and db.session.scalar(select(select(VaultAuditLog.id).where(
+                VaultAuditLog.action == 'empty_vault_reinitialized').exists())):
+        return api_response(None, 409, '空库已重新设置，请刷新后使用当前密钥保存')
+    return None
+
+
 @router.post('/items')
 async def create_item(request: Request):
     data = await _json_body(request)
@@ -256,6 +341,10 @@ async def create_item(request: Request):
     def _impl():
         if not _valid_box(data.get('blob')):
             return api_response(None, 400, 'blob 必须是 {n, ct} 密文结构')
+        _lock_item_write()
+        error = _check_item_context(data, creating=True)
+        if error is not None:
+            return error
         item = VaultItem(
             blob=json.dumps(data['blob']),
             favorite=bool(data.get('favorite')),
@@ -274,13 +363,27 @@ async def update_item(item_id: int, request: Request):
     data = await _json_body(request)
 
     def _impl():
-        item = db.session.query(VaultItem).filter(VaultItem.id == item_id).first()
+        guarded = any(key in data for key in ('expected_key', 'expected_item_nonce', 'expected_group_nonce'))
+        query = db.session.query(VaultItem).filter(VaultItem.id == item_id)
+        if guarded:
+            _lock_item_write()
+            error = _check_item_context(data)
+            if error is not None:
+                return error
+            query = query.with_for_update()
+        item = query.first()
         if not item:
             return api_response(None, 404, '条目不存在')
-        if not _valid_box(data.get('blob')):
+        if guarded and (item.deleted_at or ('expected_item_nonce' in data and
+                        data['expected_item_nonce'] != orjson.loads(item.blob)['n'])):
+            return api_response(None, 409, '账号已在其他窗口修改，请重新打开后再编辑')
+        fields = data.keys() - {'expected_key', 'expected_group_nonce', 'expected_item_nonce'}
+        favorite_only = fields == {'favorite'} and type(data['favorite']) is bool
+        if not favorite_only and not _valid_box(data.get('blob')):
             return api_response(None, 400, 'blob 必须是 {n, ct} 密文结构')
         old_pw_at = item.password_updated_at
-        item.blob = json.dumps(data['blob'])
+        if not favorite_only:
+            item.blob = json.dumps(data['blob'])
         if 'favorite' in data:
             item.favorite = bool(data.get('favorite'))
         if 'password_updated_at' in data:
@@ -352,8 +455,16 @@ async def mark_used(item_id: int):
 
 # ─── 安全附件（零知识：前端 VEK 加密，服务端只存密文）────
 
-ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024          # 明文 5MB
-ATTACHMENT_MAX_CIPHER_CHARS = 8 * 1024 * 1024   # 密文 base64 上限（5MB→~6.7MB + JSON 余量）
+ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
+_LEGACY_ATTACHMENT_CIPHER_LIMIT = 8 * 1024 * 1024
+
+
+def _attachment_cipher_limit(size):
+    # The browser encrypts JSON containing Base64 file data, then Base64-encodes the
+    # ciphertext. Reserve 4 KiB for JSON/filename/MIME and 16 bytes for the GCM tag.
+    file_chars = 4 * ((size + 2) // 3)
+    encrypted_bytes = file_chars + 4096 + 16
+    return max(_LEGACY_ATTACHMENT_CIPHER_LIMIT, 4 * ((encrypted_bytes + 2) // 3))
 
 
 def _live_item(item_id):
@@ -390,14 +501,14 @@ async def add_attachment(item_id: int, request: Request):
         # 附件盒校验：结构同 _valid_box 但 ct 无上限（大文件密文先给 413 而非 400）
         if not _valid_box(box, ct_max=None):
             return api_response(None, 400, 'blob 需为 {n, ct} 密文结构')
-        if len(box['ct']) > ATTACHMENT_MAX_CIPHER_CHARS:
-            return api_response(None, 413, f'附件密文超过上限（明文约 {ATTACHMENT_MAX_BYTES // 1024 // 1024}MB）')
         try:
             size = int(data.get('size', 0))
         except (TypeError, ValueError):
             return api_response(None, 400, 'size 需为整数')
         if size < 0 or size > ATTACHMENT_MAX_BYTES:
             return api_response(None, 413, f'附件明文需在 0–{ATTACHMENT_MAX_BYTES // 1024 // 1024}MB 之间')
+        if len(box['ct']) > _attachment_cipher_limit(size):
+            return api_response(None, 413, f'附件密文超过上限（明文约 {ATTACHMENT_MAX_BYTES // 1024 // 1024}MB）')
         a = VaultAttachment(item_id=item_id, blob=orjson.dumps(box).decode(), size=size)
         db.session.add(a)
         _audit('attachment_added', item_id)
@@ -446,79 +557,177 @@ async def list_audit(request: Request):
     return await run_db(_retry_locked(_impl))
 
 
+def _lock_bulk_write(session=None):
+    """Fence competing item/attachment writes for a whole-library change, including empty libraries."""
+    session = db.session if session is None else session
+    if session.get_bind().dialect.name == 'sqlite':
+        session.execute(text('BEGIN IMMEDIATE'))
+    else:
+        session.execute(text('LOCK TABLE vault_accounts, vault_items, vault_attachments IN SHARE ROW EXCLUSIVE MODE'))
+
+
+def _valid_snapshot(rows):
+    return isinstance(rows, list) and all(
+        isinstance(row, list) and len(row) == 2 and type(row[0]) is int and isinstance(row[1], str)
+        for row in rows
+    )
+
+
+@router.post('/items/append')
+async def append_items(request: Request):
+    """Append one browser import atomically. Compare the encrypted snapshot used for local deduplication."""
+    data = await _json_body(request)
+
+    def _impl():
+        if not isinstance(data, dict) or not _valid_snapshot(data.get('expected_items')):
+            return api_response(None, 400, '缺少预览时的账号快照')
+        boxes = data.get('items')
+        if not isinstance(boxes, list) or not boxes or any(not _valid_box(b) or set(b) != {'n', 'ct'} for b in boxes):
+            return api_response(None, 400, '导入内容必须为加密条目')
+        _lock_bulk_write()
+        account = db.session.query(VaultAccount).first()
+        if not account or data.get('expected_key') != account.kdf_salt:
+            return api_response(None, 409, '密码库密钥已变化，请重新解锁')
+        current = db.session.execute(select(VaultItem.id, VaultItem.blob).where(VaultItem.deleted_at.is_(None))).all()
+        actual = {item_id: orjson.loads(blob)['n'] for item_id, blob in current}
+        expected = data['expected_items']
+        if len(actual) != len(expected) or actual != dict(expected):
+            return api_response(None, 409, '账号列表已变化，请重新预览后导入')
+        now = datetime.now(timezone.utc)
+        db.session.execute(insert(VaultItem), [
+            {'blob': orjson.dumps(box).decode(), 'favorite': False, 'password_updated_at': now} for box in boxes
+        ])
+        _audit('accounts_appended')
+        db.session.commit()
+        return api_response({'imported_items': len(boxes)}, 201)
+    return await run_db(_retry_locked(_impl))
+
+
 @router.get('/export')
 async def export_vault():
-    """加密备份：账号包裹材料 + 全部条目密文（客户端可直接落盘，恢复需主密码/恢复密钥）"""
+    """v2 加密快照包含回收站和附件；密钥、条目及附件来自同一数据库快照。"""
     def _impl():
+        if db.engine.dialect.name == 'sqlite':
+            db.session.execute(text('BEGIN IMMEDIATE'))
+        else:
+            db.session.execute(text('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ'))
         account = db.session.query(VaultAccount).first()
         if not account:
             return api_response(None, 404, 'Vault 未初始化')
-        rows = db.session.execute(select(*_ITEM_COLS)).all()   # 含回收站
+        rows = db.session.execute(select(*_ITEM_COLS)).all()
         items = [{'id': r[0], 'blob': orjson.loads(r[1] or '{}'), 'favorite': bool(r[2]),
                   'last_used_at': _iso(r[3]), 'password_updated_at': _iso(r[4]),
                   'deleted_at': _iso(r[5]), 'created_at': _iso(r[6]), 'updated_at': _iso(r[7])}
                  for r in rows]
+        attachments = [a.to_dict() for a in db.session.scalars(select(VaultAttachment)).all()]
+        materials = account.to_dict()
         _audit('exported')
         db.session.commit()
-        return api_response({
-            'format': 'doublog-vault-backup',
-            'version': 1,
-            'exported_at': datetime.now(timezone.utc).isoformat(),
-            'account': account.to_dict(),
-            'items': items,
-        })
+        return api_response({'format': 'doublog-vault-backup', 'version': 2,
+                             'exported_at': datetime.now(timezone.utc).isoformat(),
+                             'account': materials, 'items': items, 'attachments': attachments})
     return await run_db(_retry_locked(_impl))
+
+
+def _prepare_backup(data):
+    """Build and validate detached records before touching the current library."""
+    if not isinstance(data, dict) or data.get('format') not in ('doublog-vault-backup', 'doublog-vault-backdown'):
+        raise ValueError('不是有效的 DouBlog Vault 备份文件')
+    version = data.get('version', 1)
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError('不支持的备份版本')
+    raw_account = data.get('account')
+    if not isinstance(raw_account, dict) or raw_account.get('kdf_algo', 'argon2id') != 'argon2id':
+        raise ValueError('备份账号材料不完整')
+    params = raw_account.get('kdf_params')
+    if isinstance(params, str):
+        params = json.loads(params)
+    if not isinstance(params, dict) or any(type(params.get(k)) is not int or params[k] < minimum
+                                           for k, minimum in (('t', 1), ('m', 8192), ('p', 1))):
+        raise ValueError('备份 KDF 参数非法')
+    account = {'kdf_algo': 'argon2id', 'kdf_params': json.dumps(params)}
+    for field in ('kdf_salt', 'recovery_salt'):
+        val = raw_account.get(field)
+        if not isinstance(val, str) or not 16 <= len(val) <= 64:
+            raise ValueError('备份账号材料不完整')
+        account[field] = val
+    for field in ('wrapped_vault_key', 'recovery_wrapped_vault_key'):
+        val = raw_account.get(field)
+        if not _valid_box(val):
+            raise ValueError('备份账号材料不完整')
+        account[field] = orjson.dumps({'n': val['n'], 'ct': val['ct']}).decode()
+    groups = raw_account.get('group_catalog')
+    if not _valid_group_box(groups):
+        raise ValueError('备份的分组目录密文结构非法')
+    account['group_catalog'] = orjson.dumps(groups).decode() if groups else None
+
+    if not isinstance(data.get('items'), list):
+        raise ValueError('备份缺少条目列表')
+    items, parents = [], {}
+    for raw in data['items']:
+        if not isinstance(raw, dict) or not _valid_box(raw.get('blob')):
+            raise ValueError('备份条目密文结构非法')
+        old_id = raw.get('id')
+        if old_id is not None or version == 2:
+            if type(old_id) is not int or old_id < 1 or old_id in parents:
+                raise ValueError('备份条目编号无效或重复')
+        box = raw['blob']
+        dates = {}
+        for field in ('created_at', 'updated_at', 'password_updated_at', 'last_used_at', 'deleted_at'):
+            if raw.get(field) is not None:
+                dates[field] = _iso_or_none(raw[field])
+                if dates[field] is None:
+                    raise ValueError('备份条目时间格式不正确')
+        item = VaultItem(blob=orjson.dumps({'n': box['n'], 'ct': box['ct']}).decode(),
+                         favorite=bool(raw.get('favorite')), **dates)
+        items.append(item)
+        if old_id is not None:
+            parents[old_id] = item
+    files = data.get('attachments', [] if version == 1 else None)
+    if not isinstance(files, list):
+        raise ValueError('备份缺少附件列表')
+    attachments = []
+    for raw in files:
+        if not isinstance(raw, dict) or type(raw.get('item_id')) is not int or raw['item_id'] not in parents:
+            raise ValueError('附件关联了不存在的条目')
+        box, size = raw.get('blob'), raw.get('size')
+        if (type(size) is not int or not 0 <= size <= ATTACHMENT_MAX_BYTES
+                or not _valid_box(box, _attachment_cipher_limit(size))):
+            raise ValueError('备份附件密文或大小非法')
+        row = {'blob': orjson.dumps({'n': box['n'], 'ct': box['ct']}).decode(), 'size': size}
+        if raw.get('created_at') is not None:
+            row['created_at'] = _iso_or_none(raw['created_at'])
+            if row['created_at'] is None:
+                raise ValueError('备份附件时间格式不正确')
+        attachments.append((parents[raw['item_id']], row))
+    return account, items, attachments
 
 
 @router.post('/import')
 async def import_vault(request: Request):
-    """导入备份（替换式）：以备份的账号材料与本库条目整体覆盖当前库"""
     data = await _json_body(request)
 
     def _impl():
-        # 双接受：'doublog-vault-backdown' 是历史导出笔误串，保留兼容老备份文件
-        if data.get('format') not in ('doublog-vault-backup', 'doublog-vault-backdown'):
-            return api_response(None, 400, '不是有效的 DouBlog Vault 备份文件')
-        backup_account = data.get('account') or {}
-        backup_items = data.get('items')
-        if not isinstance(backup_items, list):
-            return api_response(None, 400, '备份缺少 items')
         try:
-            params = backup_account['kdf_params']
-            if isinstance(params, str):
-                params = json.loads(params)
-        except (KeyError, TypeError, ValueError):
-            return api_response(None, 400, '备份账号材料不完整')
-        for field in ('kdf_salt', 'recovery_salt'):
-            if not isinstance(backup_account.get(field), str):
-                return api_response(None, 400, '备份账号材料不完整')
-        for field in ('wrapped_vault_key', 'recovery_wrapped_vault_key'):
-            if not _valid_box(backup_account.get(field)):
-                return api_response(None, 400, '备份账号材料不完整')
-
+            materials, items, attachments = _prepare_backup(data)
+        except ValueError as error:
+            return api_response(None, 400, str(error))
+        _lock_bulk_write()
         account = db.session.query(VaultAccount).first()
+        if 'expected_key' in data and (account.kdf_salt if account else None) != data['expected_key']:
+            return api_response(None, 409, '密码库已变化，请重新打开备份')
         if not account:
             account = VaultAccount()
             db.session.add(account)
-        account.kdf_algo = 'argon2id'
-        account.kdf_params = json.dumps(params)
-        account.kdf_salt = backup_account['kdf_salt']
-        account.recovery_salt = backup_account['recovery_salt']
-        account.wrapped_vault_key = json.dumps(backup_account['wrapped_vault_key'])
-        account.recovery_wrapped_vault_key = json.dumps(backup_account['recovery_wrapped_vault_key'])
-
-        VaultItem.query.delete()
-        for raw in backup_items:
-            if not isinstance(raw, dict) or not _valid_box(raw.get('blob')):
-                return api_response(None, 400, '备份条目密文结构非法')
-            db.session.add(VaultItem(
-                blob=json.dumps(raw['blob']),
-                favorite=bool(raw.get('favorite')),
-                last_used_at=_iso_or_none(raw.get('last_used_at')),
-                password_updated_at=_iso_or_none(raw.get('password_updated_at')),
-                deleted_at=_iso_or_none(raw.get('deleted_at')),
-            ))
+        for key, value in materials.items():
+            setattr(account, key, value)
+        db.session.execute(delete(VaultAttachment))
+        db.session.execute(delete(VaultItem))
+        db.session.add_all(items)
+        db.session.flush()
+        if attachments:
+            db.session.execute(insert(VaultAttachment), [dict(row, item_id=item.id) for item, row in attachments])
         _audit('imported')
         db.session.commit()
-        return api_response({'imported_items': len(backup_items)})
+        return api_response({'imported_items': len(items), 'imported_attachments': len(attachments)})
     return await run_db(_retry_locked(_impl))

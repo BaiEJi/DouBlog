@@ -15,7 +15,7 @@ const mark=name=>{checks.push(name);console.log('PASS',name)}
 const api=async(method,url,data)=>{const r=await context.request.fetch(base+url,{method,data}),body=await r.json();assert.ok(r.ok(),JSON.stringify(body));return body.data}
 const saved=()=>page.getByRole('status').filter({hasText:'布局已保存'}).waitFor()
 const shot=async name=>{if(/-(dark|light)$/.test(name)){const dark=name.endsWith('-dark');await page.evaluate(dark=>{document.documentElement.classList.toggle('dark',dark);localStorage.setItem('doublog_dark',String(dark))},dark);await page.waitForTimeout(150)}return page.screenshot({path:path.join(shots,name+'.png')})}
-async function unlock(){await page.goto(base+'/vault');await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁保险库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()}
+async function unlock(){await page.goto(base+'/vault');await page.getByPlaceholder('输入主密码…').fill('QA-vault-password-only');await page.getByRole('button',{name:'解锁密码库',exact:true}).click();await page.getByRole('button',{name:'锁定',exact:true}).waitFor()}
 try{
  await page.goto(base+'/login');assert.equal(await page.evaluate(async()=>(await import('/src/shared/client.js')).API_BASE),'')
  await page.getByPlaceholder('用户名',{exact:true}).fill('mindmap-qa');await page.getByPlaceholder('密码',{exact:true}).fill('qa-only-isolated-db');await page.getByRole('button',{name:'登 录'}).click();await page.waitForURL(base+'/')
@@ -80,10 +80,10 @@ try{
  await shot('database-changed-dark');await page.unroute('**/api/qa-database-boundary',mismatch);await page.reload();await page.locator('.cm-editor').first().waitFor()
  mark('database identity: foreign response cannot enter old page; unsaved editor and epoch preserved; subsequent mutation blocked before network')
 
- await unlock();await page.getByRole('button',{name:'全部条目',exact:false}).first().click();await page.getByTitle('新建',{exact:true}).click();await page.getByPlaceholder('GitHub').fill('QA rejected vault draft')
+ await unlock();await page.getByRole('button',{name:'我的账号',exact:false}).first().click();await page.getByRole('button',{name:'新增账号',exact:true}).click();await page.getByLabel('名称',{exact:true}).fill('QA rejected vault draft')
  let rejected=false
  const rejectVault=route=>{if(route.request().method()!=='POST')return route.continue();rejected=true;return route.fulfill({status:400,json:{success:false,message:'QA rejected ciphertext fixture'}})}
- await page.route('**/api/vault/items',rejectVault);await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByRole('alert').filter({hasText:'QA rejected ciphertext fixture'}).first().waitFor();assert.equal(rejected,true);assert.equal(await page.getByPlaceholder('GitHub').inputValue(),'QA rejected vault draft')
+ await page.route('**/api/vault/items',rejectVault);await page.getByRole('button',{name:'保存',exact:true}).click();await page.getByRole('alert').filter({hasText:'QA rejected ciphertext fixture'}).first().waitFor();assert.equal(rejected,true);assert.equal(await page.getByLabel('名称',{exact:true}).inputValue(),'QA rejected vault draft')
  await shot('vault-rejected-draft-dark');await page.unroute('**/api/vault/items',rejectVault);await page.getByRole('button',{name:'取消',exact:true}).click();assert.equal(await page.getByText('QA rejected ciphertext fixture',{exact:true}).count(),0)
  mark('vault: server rejection preserves the complete editable input and displays the error')
 
@@ -97,7 +97,7 @@ try{
  if(!users.length){await api('POST',`/api/pwsvc/projects/${project.id}/users`,{username:'qa-frontend-user',type_id:type.id});users=await api('GET',`/api/pwsvc/projects/${project.id}/users`)}
  let currentCalls=0,logCalls=0
  const countService=route=>{const u=new URL(route.request().url());if(/\/users\/\d+\/current$/.test(u.pathname))currentCalls++;if(u.pathname.endsWith('/logs'))logCalls++;return route.continue()}
- await page.route('**/api/pwsvc/**',countService);await page.getByRole('button',{name:'密码服务',exact:true}).click();await page.getByRole('button',{name:new RegExp(project.name)}).click();await page.getByText('qa-frontend-user',{exact:true}).waitFor();await page.waitForTimeout(1200)
+ await page.route('**/api/pwsvc/**',countService);await page.goto(base+'/pwsvc');await page.getByRole('button',{name:new RegExp(project.name)}).click();await page.getByText('qa-frontend-user',{exact:true}).waitFor();await page.waitForTimeout(1200)
  const count=currentCalls;assert.ok(count>0);await page.waitForTimeout(2300);assert.equal(currentCalls,count);assert.equal(logCalls,0)
  await page.getByRole('button',{name:'查询校验日志',exact:true}).click();await page.waitForTimeout(350);assert.equal(logCalls,1);await shot('pwsvc-dark');await page.evaluate(()=>{document.documentElement.classList.remove('dark')});await shot('pwsvc-light');await page.unroute('**/api/pwsvc/**',countService)
  mark('pwsvc: valid passwords avoid per-second backend refetch; logs load only after explicit open; both themes render')

@@ -424,6 +424,8 @@ GET /api/posts/audit-logs?page=1&page_size=20
 
 后端支持 SQLite / PostgreSQL 双数据库，以下接口完成"测试连接 → 切换"。前端总配置页（`/config`）是本组接口的统一操作界面。
 
+数据库状态、连接测试和切换使用相同的库名规则。配置文件或请求中的 `postgres.dbname` 为 `app_dev` 或 `app` 时，Windows 后端选用 `app_dev`，Linux 后端选用 `app`。其他库名按配置使用。
+
 > **切换语义**：只更换连接配置（`data/db_config.json`）并重启生效，**不迁移数据**——直接读取目标库的现有数据（空库自动建表并播种默认知识库/虚拟根）；两侧数据互不影响，随时可切回。
 
 ### 6.1 当前数据库状态
@@ -665,30 +667,32 @@ POST /api/admin/logging/test       发一条 WARNING（sys_name=doublog.system�
 > 服务端只存密文：`blob = {n, ct}`（AES-256-GCM，base64）与包裹后的 VEK 材料；**不存在任何明文敏感字段参数**；无服务端搜索（客户端解密后搜）。单账号（首行）。
 
 ```
-GET    /api/vault/account                KDF 参数 + 双通道包裹的 VEK（404=未初始化）
-POST   /api/vault/account                初始化 {kdf_algo:'argon2id', kdf_params, kdf_salt, recovery_salt, wrapped_vault_key, recovery_wrapped_vault_key}
-PUT    /api/vault/account/keys           主密码修改/恢复密钥轮换（仅替换包裹材料）
+GET    /api/vault/account                KDF 参数、双通道包裹的 VEK、可选 group_catalog 密文、can_reinitialize_empty（404=未初始化）
+PUT    /api/vault/account/groups         {blob:{n,ct}|null, expected_key:kdf_salt, expected_nonce:旧目录n|null}。返回 {group_catalog:密文|null}，首次目录的旧版本传 null，版本过期 409
+POST   /api/vault/account                新材料首次初始化 201。已初始化的空库可另带 replace_empty:{kdf_salt,recovery_salt}（原材料的两项盐）重新设置，成功 200。库内已有数据或原材料已变返回 409
+PUT    /api/vault/account/keys           主密码修改、恢复密钥重设或轮换（expected_key 和 expected_recovery 可校验旧盐，冲突返回 409）
 GET    /api/vault/items?trash=0|1        条目列表（密文+非敏感元数据：favorite/last_used_at/password_updated_at/deleted_at）
-POST   /api/vault/items                  创建 {blob, favorite?, password_updated_at?}
-PUT    /api/vault/items/<id>             更新（整包密文覆盖；password_updated_at 变化会记审计 password_changed）
+POST   /api/vault/items                  创建 {blob, expected_key?, favorite?, password_updated_at?}。expected_key 为当前 kdf_salt，空库重新设置后必传。分组赋值可另带 expected_group_nonce，版本过期返回 409
+PUT    /api/vault/items/<id>             更新整包密文或仅提交 {favorite:bool}。可带 expected_item_nonce 校验原条目版本，expected_key 和 expected_group_nonce 校验库及分组目录，变动返回 409
 DELETE /api/vault/items/<id>             移入回收站（软删）
 POST   /api/vault/items/<id>/restore     恢复
 DELETE /api/vault/items/<id>/purge       永久删除
 POST   /api/vault/items/<id>/use         记录最近使用（仅 ID+时间）
 GET    /api/vault/audit?page=&page_size= 审计（action + item_id + 时间，无任何内容；page_size ≤200）
 GET    /api/vault/items/<id>/attachments 附件元数据列表
-POST   /api/vault/items/<id>/attachments 上传加密附件（JSON {blob, size}；5MB/文件，总量 8MB，超限 413）
+POST   /api/vault/items/<id>/attachments 上传加密附件（JSON {blob, size}；每文件最多 5 MiB，密文限额包含两次 Base64 编码及元数据开销，超限 413）
 GET    /api/vault/attachments/<aid>      下载密文附件
 DELETE /api/vault/attachments/<aid>      删除附件（purge 级联清理）
-GET    /api/vault/export                 加密备份（账号材料+全部条目密文；格式串 doublog-vault-backup）
-POST   /api/vault/import                 导入（替换式；兼容历史笔误串 doublog-vault-backdown）
+POST   /api/vault/items/append           {expected_key,expected_items:[[id,nonce]],items:[{n,ct}]} → 201 {imported_items}，预览变化 409
+GET    /api/vault/export                 v2 一致快照（包裹材料、所有条目含最近删除、加密附件及所属条目 ID）
+POST   /api/vault/import                 事务恢复 v1/v2 → {imported_items,imported_attachments}，格式错误 400，目标 expected_key 冲突 409。兼容 doublog-vault-backdown
 ```
 
 ---
 
 ## 11. Pwsvc API（密码服务：轮换密码，非零知识）
 
-> 密码库内子模块：项目 → 用户类型（密码策略+轮换周期）→ 用户（独立密码链）。
+> 独立工作台模块 `/pwsvc`。项目 → 用户类型（密码策略+轮换周期）→ 用户（独立密码链）。
 > 密码**不存储**，由 `derive(seed, 时间窗口, 策略)` 确定性推导（HMAC-SHA256 + 拒绝采样 + 洗牌，黄金向量防漂移）；
 > 每用户独立 32 字节（256-bit）seed（AES-256-GCM 加密落盘，密钥 `data/pwsvc.key`）。
 > 校验：当前窗口命中→valid+剩余秒数；否则**进入窗口 30s 内**（`min(30, rotation)`）比对上一窗口（宽限）；常数时间比较。
@@ -1013,6 +1017,8 @@ POST /api/apihub/gw/apis/qq-send-c2c       (Authorization: Bearer sk-…)
 
 ## 15. Todo API（四象限待办，MyTodo 迁入）
 
+MCP 客户端访问 `/mcp/todo` 时每次发送 `Authorization: Bearer <token>`。配置中心管理工具开关和令牌。[MyTodo 工具清单](docs/modules/todo.md#mcp-接入)
+
 > 模块代码 `app/todo/`，前端页面 `/todo`。**全部接口挂统一登录**（会话 Cookie 或 Basic）。
 > 数据表 `todo_*` 五表；象限 = is_important × is_urgent 派生；revision 乐观锁。详见 `docs/modules/todo.md`。
 
@@ -1138,6 +1144,18 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 ```
 
 ## 19. 配置中心 API（confcenter）
+
+### MCP 配置
+
+| 方法 | 路径 | 输入和响应 |
+| --- | --- | --- |
+| GET | `/api/confcenter/mcp` | 返回已注册模块、连接地址 `endpoint`、远程接入状态 `remote_enabled` 和工具清单。每个工具包含 `description`、`read_only`、`input_schema`、`enabled`。MyTodo 的每个输入属性通过 `description` 和 `examples` 提供中文含义及带类型的 JSON 示例，与 MCP 的 `tools/list` 一致 |
+| PUT | `/api/confcenter/mcp/{module}/tools/{tool}` | 例如 `{"enabled":false}`，立即对该模块的所有令牌生效 |
+| GET / POST | `/api/confcenter/mcp/{module}/tokens` | 列出令牌摘要或签发 30 天令牌。签发可传 `{"name":"桌面助手"}`，响应 201，`data.token` 为一次展示的明文 |
+| POST | `/api/confcenter/mcp/{module}/tokens/{id}/renew` | 传 `{"expected_expires_at":"2026-12-26T08:00:00+00:00"}`，值取自列表。有效令牌从原到期时间加 30 天，过期令牌从现在起加 30 天。返回新的令牌摘要，版本冲突 409，令牌不存在或已撤销 404 |
+| DELETE | `/api/confcenter/mcp/{module}/tokens/{id}` | 撤销指定模块的令牌 |
+
+以上接口要求站点登录。未注册的模块或工具返回 404。已关闭的工具从 MCP 的 `tools/list` 消失，直接调用返回协议错误 `-32602`。令牌只能用于签发时的模块及数据源。
 
 > 模块代码 `app/confcenter/`，前端页面 `/confcenter`。全部接口挂统一登录。
 > 扁平 KV：namespace+key 唯一定位 value；value = {type, data}（str 原样 / json 校验）；type 可变更。

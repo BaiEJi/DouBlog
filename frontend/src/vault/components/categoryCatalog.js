@@ -52,7 +52,7 @@ export function useCategoryCatalog(items) {
   const persist = useCallback(next => { setCustom(next); saveCustomCategories(next) }, [])
   const catalog = useMemo(() => buildCatalog(custom, items), [custom, items])
 
-  /** 整体替换自定义目录（导入备份时恢复文件内的 custom_categories） */
+  /** 整体替换自定义目录（备份成功恢复后替换本机目录） */
   const replaceCustom = useCallback(list => {
     persist((list || []).filter(c => c && typeof c.key === 'string' && typeof c.label === 'string').map(c => ({ key: c.key, label: c.label })))
   }, [persist])

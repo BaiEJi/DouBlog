@@ -3,7 +3,8 @@
  * Ctrl/Cmd+Enter 立即落库，成功后抖进时间线顶部。随记必须选日记本。
  */
 import { useEffect, useRef, useState } from 'react'
-import { MOODS, Icon } from '../kit'
+import Select from '@/shared/ui/Select'
+import { MOODS, TemplateSelect } from '../kit'
 import { diaryCreate, diaryTemplates, diaryPrompt } from '../api'
 import { fetchWeather } from '../api-entry'
 
@@ -11,10 +12,8 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
   const [content, setContent] = useState('')
   const [mood, setMood] = useState('')
   const [jid, setJid] = useState(null)   // 本次录入写入的日记本
-  const [showJ, setShowJ] = useState(false)
   const [templates, setTemplates] = useState([])
   const [prompt, setPrompt] = useState('')
-  const [showTpl, setShowTpl] = useState(false)
   const [busy, setBusy] = useState(false)
   const [wx, setWx] = useState(null)          // {weather, location}
   const [wxState, setWxState] = useState('')  // '' | getting | done | denied
@@ -26,7 +25,6 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
   useEffect(() => {
     setJid(activeJournal ?? journals[0]?.id ?? null)
   }, [activeJournal, journals])
-  const curJournal = journals.find(j => j.id === jid)
 
   useEffect(() => {
     diaryTemplates().then(d => d.success && setTemplates(d.data))
@@ -87,30 +85,16 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
       <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-black/[0.05] dark:border-white/[0.06]">
         {/* 日记本（必选） */}
         {journals.length > 0 && (
-          <div className="relative">
-            <button onClick={() => { setShowJ(s => !s); setShowTpl(false) }}
-              title="选择要写入的日记本（必选）"
-              className={'h-6 px-2 rounded-full text-[11.5px] border transition-colors flex items-center gap-1 ' +
-                (curJournal
-                  ? 'border-rose-500/30 text-rose-600 dark:text-rose-400 bg-rose-500/10'
-                  : 'border-red-500/30 text-red-600 dark:text-red-400')}>
-              {curJournal ? `${curJournal.emoji || '📔'} ${curJournal.name}` : '选日记本'} ▾
-            </button>
-            {showJ && (
-              <div className="absolute z-20 mt-1 py-1 w-40 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
-                {journals.map(j => (
-                  <button key={j.id}
-                    onClick={() => { setJid(j.id); setShowJ(false); taRef.current?.focus() }}
-                    className={'w-full text-left px-3 h-8 text-xs flex items-center gap-1.5 ' +
-                      (j.id === jid ? 'text-rose-600 dark:text-rose-400 bg-rose-500/10' : 'text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.05]')}>
-                    <span>{j.emoji || '📔'}</span>
-                    <span className="truncate flex-1">{j.name}</span>
-                    <span className="text-[11px] text-stone-400 tabular-nums">{j.entry_count}</span>
-                  </button>
-                ))}
-              </div>
+          <Select aria-label="录入日记本" size="sm" className="max-w-44"
+            value={jid} placeholder="选择日记本" invalid={!jid}
+            options={journals.map(j => ({ value: j.id, label: (j.emoji || '📔') + ' ' + j.name, count: j.entry_count }))}
+            onChange={setJid}
+            optionRender={({ data }) => (
+              <span className="flex items-center justify-between gap-3">
+                {data.label}<small className="tabular-nums">{data.count}</small>
+              </span>
             )}
-          </div>
+          />
         )}
         {/* 心情 */}
         <div className="flex gap-0.5">
@@ -130,23 +114,10 @@ export default function QuickCapture({ journals, activeJournal, onSaved }) {
           {wxState === 'getting' ? '定位中…' : wxState === 'done' ? `${wx.weather.text} ${Math.round(wx.weather.temp)}°` : wxState === 'denied' ? '🚫定位' : '🌤️天气'}
         </button>
         {/* 模板 */}
-        <div className="relative">
-          <button onClick={() => { setShowTpl(s => !s); setShowJ(false) }}
-            className="h-6 px-2 rounded-full border border-black/[0.06] dark:border-white/[0.08] text-[11.5px] text-stone-400 hover:text-stone-600 dark:hover:text-stone-300">
-            📋模板
-          </button>
-          {showTpl && (
-            <div className="absolute z-20 mt-1 py-1 w-40 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-[#1c1b1a] shadow-lg">
-              {templates.map(t => (
-                <button key={t.key}
-                  onClick={() => { setContent(c => (c ? c + '\n\n' : '') + t.body); setShowTpl(false); taRef.current?.focus() }}
-                  className="w-full text-left px-3 h-8 text-xs text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-white/[0.05]">
-                  {t.emoji} {t.name}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <TemplateSelect templates={templates} onInsert={body => {
+          setContent(text => (text ? text + '\n\n' : '') + body)
+          taRef.current?.focus()
+        }} />
         <button onClick={submit} disabled={!content.trim() || busy || !jid}
           className="ml-auto px-4 h-8 rounded-lg bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 text-sm font-medium transition-opacity disabled:opacity-40">
           {busy ? '记录中…' : '记下'}

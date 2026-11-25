@@ -1,6 +1,7 @@
 /** 二维码生成：文本/URL → SVG（矢量）+ PNG（data URL 预览与下载）；纠错级别/尺寸可调（后端 segno） */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
-import { ToolHead, StatusLine, LBL, selectCls, areaCls, btnPri, card } from '../kit'
+import { ToolHead, StatusLine, LBL, areaCls, btnPri, card } from '../kit'
 import { dtQrcode } from '../api'
 import { downloadText } from '../lib/misc'
 
@@ -31,18 +32,29 @@ export default function QrTool() {
     <div>
       <ToolHead title="二维码生成" desc="文本 / URL → 二维码（后端 segno 生成，≤2000 字符；SVG 矢量可直接内嵌）"
         right={<>
-          <select className={selectCls} value={ecc} onChange={e => setEcc(e.target.value)} aria-label="纠错级别">
-            <option value="l">纠错 L (7%)</option>
-            <option value="m">纠错 M (15%)</option>
-            <option value="q">纠错 Q (25%)</option>
-            <option value="h">纠错 H (30%)</option>
-          </select>
-          <select className={selectCls} value={scale} onChange={e => setScale(+e.target.value)} aria-label="尺寸">
-            {[2, 4, 6, 8, 12, 16].map(s => <option key={s} value={s}>尺寸 {s}x</option>)}
-          </select>
-          <select className={selectCls} value={border} onChange={e => setBorder(+e.target.value)} aria-label="边距">
-            {[0, 1, 2, 3, 4].map(b => <option key={b} value={b}>边距 {b}</option>)}
-          </select>
+          <Select
+            aria-label="纠错级别"
+            value={ecc}
+            onChange={setEcc}
+            options={[
+              { value: 'l', label: '纠错 L (7%)' },
+              { value: 'm', label: '纠错 M (15%)' },
+              { value: 'q', label: '纠错 Q (25%)' },
+              { value: 'h', label: '纠错 H (30%)' }
+            ]}
+          />
+          <Select
+            aria-label="尺寸"
+            value={scale}
+            onChange={setScale}
+            options={[2, 4, 6, 8, 12, 16].map(n => ({ value: n, label: '尺寸 ' + n + 'x' }))}
+          />
+          <Select
+            aria-label="边距"
+            value={border}
+            onChange={setBorder}
+            options={[0, 1, 2, 3, 4].map(n => ({ value: n, label: '边距 ' + n }))}
+          />
           <button className={btnPri} disabled={busy || !content.trim()} onClick={generate}>{busy ? '生成中…' : '生成'}</button>
         </>} />
       <textarea className={areaCls} rows={4} value={content} spellCheck={false}

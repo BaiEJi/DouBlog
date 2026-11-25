@@ -1,5 +1,5 @@
 /**
- * 配置中心页 /confcenter：公共侧栏两个同级视图（PageHeader tabs 注册）——
+ * 配置中心页 /confcenter：公共侧栏注册配置管理、限流配置和 MCP 配置。
  * · 配置管理（entries）：namespace → KV + Redis 缓存状态/配置；表头四数据列
  *   key/类型/值预览/更新时间支持升降排序（SQL 端完整结果集排序，跨页稳定）
  * · 限流配置（ratelimit）：独立主页面（RateLimitPage），不再用限流 Modal
@@ -11,16 +11,18 @@
  *   反馈区固定占位（48px），格式化/校验状态变化不改变弹窗几何布局
  * - 删除两步确认（第一步入列就位，3.5s 自动撤销）；搜索框 q（防抖）；分页
  * - 顶部 Redis 缓存状态条（cache/status）+ 缓存配置 Modal（测试连接/保存/清空缓存）
- * - URL：?view=entries|ratelimit&namespace=… 可深链/刷新；缺省/非法 view 回 entries
+ * - URL：?view=entries|ratelimit|mcp&namespace=… 可深链/刷新；缺省/非法 view 回 entries
  * 接口全部走 ./api（apiFetch + unwrap）；个性色 cyan——只用于徽章、主按钮、选中态；其余中性 stone。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import PageHeader from '../shared/PageHeader'
+import { CONF_CENTER_TABS as VIEW_TABS } from '../shared/modules'
+import McpConfigPage from './McpConfigPage'
 import JsonEditor, { JsonHighlightedView } from './JsonEditor'
 import useJsonValue from './useJsonValue'
 import RateLimitPage from './RateLimitPage'
-import Select from './Select'
+import Select from '@/shared/ui/Select'
 import { FONT_DEFAULT, FONT_MIN, FONT_MAX, loadFontSize, saveFontSize, clampFontSize } from './editorPreferences'
 import {
   confNamespaces, confCreateNamespace, confEntries, confGetEntry, confPutEntry, confDeleteEntry,
@@ -382,7 +384,7 @@ function FontSizeControl({ fontSize, onChange }) {
         onClick={() => onChange(fontSize - 1)}
         className="w-6 h-6 rounded-md text-[13px] font-medium text-stone-500 dark:text-stone-400 hover:bg-black/5 dark:hover:bg-white/10 transition-colors disabled:opacity-40">A−</button>
       <Select size="sm" className="w-14 tabular-nums" value={fontSize}
-        ariaLabel="编辑器字号"
+        aria-label="编辑器字号"
         options={Array.from({ length: FONT_MAX - FONT_MIN + 1 }, (_, i) => FONT_MIN + i).map(px => ({ value: px, label: String(px) }))}
         onChange={onChange} />
       <button type="button" aria-label="增大字号" disabled={fontSize >= FONT_MAX}
@@ -643,15 +645,12 @@ function SortHeader({ label, field, sortBy, sortOrder, onSort, thCls }) {
   )
 }
 
-const VIEW_TABS = [
-  { key: 'entries', label: '配置管理' },
-  { key: 'ratelimit', label: '限流配置' },
-]
-
 export default function ConfCenterPage() {
   const [params, setParams] = useSearchParams()
   // 缺省/非法 view 回 entries；entries 为默认视图（URL 不带 view）
-  const view = params.get('view') === 'ratelimit' ? 'ratelimit' : 'entries'
+  const view = VIEW_TABS.find(tab => tab.key === params.get('view'))?.key ?? 'entries'
+  const [openedWorkspace, setOpenedWorkspace] = useState(view !== 'mcp')
+  const mountWorkspace = openedWorkspace || view !== 'mcp'
   const requestedNs = params.get('namespace') || ''
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
@@ -695,6 +694,7 @@ export default function ConfCenterPage() {
     catch (e) { say(`缓存状态加载失败：${e.message}`, 'error') }
   }, [say])
   useEffect(() => {
+    if (!mountWorkspace) return
     let alive = true
     const requestId = ++namespaceRequest.current
     confNamespaces().then(rows => { if (alive && requestId === namespaceRequest.current) { setNamespaces(normNamespaces(rows)); setNsError('') } })
@@ -702,7 +702,7 @@ export default function ConfCenterPage() {
     confCacheStatus().then(status => { if (alive) setCache(status) })
       .catch(e => { if (alive) say(`缓存状态加载失败：${e.message}`, 'error') })
     return () => { alive = false }
-  }, [say])
+  }, [say, mountWorkspace])
 
   useEffect(() => {
     if (!ns) return
@@ -745,6 +745,7 @@ export default function ConfCenterPage() {
     setQInput(''); setQ(''); setPage(1); setEditing(null); disarmDel()
   }
   function switchView(key) {
+    if (key !== 'mcp') setOpenedWorkspace(true)
     setParams(p => {
       const next = new URLSearchParams(p)
       if (key === 'entries') next.delete('view')
@@ -784,8 +785,8 @@ export default function ConfCenterPage() {
   const thBase = 'py-2 font-normal'
 
   return (
-    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors [&_h1]:text-lg">
-      <PageHeader title="配置中心" subtitle="namespace · KV 配置 · Redis 缓存 · 限流"
+    <div className="min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
+      <PageHeader title="配置中心" subtitle="KV 配置 · Redis 缓存 · 限流 · MCP"
         tabs={VIEW_TABS} activeTab={view} onTabChange={switchView} />
       {/* 两个视图都保持挂载：切换侧栏菜单保留未保存的限流草稿与列表状态 */}
       <div hidden={view !== 'entries'}>
@@ -885,8 +886,9 @@ export default function ConfCenterPage() {
         </div>
       </div>
       <div hidden={view !== 'ratelimit'}>
-        <RateLimitPage namespaces={namespaces} say={say} />
+        {mountWorkspace && <RateLimitPage namespaces={namespaces} say={say} />}
       </div>
+      {view === 'mcp' && <McpConfigPage say={say} />}
       {namespaceOpen && <NamespaceModal onClose={() => setNamespaceOpen(false)} onCreated={onNamespaceCreated} />}
       {editing && ns && <EntryModal init={editing} defaultNs={ns} onClose={() => setEditing(null)} onSaved={onEntrySaved} say={say} />}
       {cacheOpen && <CacheModal status={cache} onClose={() => setCacheOpen(false)} onSaved={loadCache} say={say} />}

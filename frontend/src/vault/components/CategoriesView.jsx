@@ -7,6 +7,7 @@
  */
 import { useMemo, useState } from 'react'
 import { TYPE_LABELS, itemMatches, domainOf } from './core'
+import { loginName } from './accountBook.js'
 import { Favicon, I } from './ui'
 import CategoryManager from './CategoryManager'
 
@@ -66,10 +67,7 @@ export default function CategoriesView({
       <div className="flex items-start gap-4">
         {/* 左栏：类别目录（计数 + 管理入口） */}
         <aside aria-label="类别" className={`${card} w-52 shrink-0 p-2 sticky top-8`}>
-          <div className="px-2 py-2 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-stone-500 dark:text-stone-400">类别</h2>
-            <span className="text-[13px] tabular-nums text-stone-400 dark:text-stone-500">{items.length}</span>
-          </div>
+          <p className="px-2 py-2 text-[13px] tabular-nums text-stone-500 dark:text-stone-400">共 {items.length} 个条目</p>
           <div className="px-2 pb-2">
             <button type="button" className={btnGhost + ' w-full justify-center inline-flex items-center gap-1'} onClick={() => setManagerOpen(true)}>
               {I.sliders} 管理类别
@@ -92,13 +90,10 @@ export default function CategoriesView({
 
         {/* 右栏：当前类别条目表 */}
         <section aria-label={`类别 ${activeEntry?.label || ''}`} className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-4 min-w-0">
-            <h2 className="text-xl font-semibold">{activeEntry?.label || '类别'}</h2>
-            <span className="shrink-0 text-sm text-stone-400 dark:text-stone-500">{inCategory.length} 个条目</span>
-          </div>
+          <p className="mb-4 text-sm text-stone-500 dark:text-stone-400">当前类别有 {inCategory.length} 个条目</p>
           <div className="flex items-center gap-2 mb-3">
             <input value={q} onChange={e => setQ(e.target.value)} aria-label="搜索当前类别" placeholder="搜索当前类别内的条目…" className={inputCls} />
-            <button type="button" className={`${btnPri} ml-auto`} onClick={onNew}>{I.plus} 新建条目</button>
+            <button type="button" className={`${btnPri} ml-auto`} onClick={onNew}>{I.plus} 新增账号</button>
           </div>
           <div className={`${card} overflow-x-auto`}>
             <table className="w-full min-w-[640px] table-fixed text-base">
@@ -112,7 +107,7 @@ export default function CategoriesView({
                 {rows.length === 0 && (
                   <tr><td colSpan={5} className="py-14 text-center">
                     <p className="text-base text-stone-500 dark:text-stone-400">{q ? `没有匹配“${q}”的条目` : '这个类别还没有条目'}</p>
-                    {!q && <button type="button" onClick={onNew} className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-400 hover:underline">新建第一个条目</button>}
+                    {!q && <button type="button" onClick={onNew} className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-400 hover:underline">新增第一个账号</button>}
                   </td></tr>
                 )}
                 {rows.map(item => (
@@ -124,7 +119,7 @@ export default function CategoriesView({
                         {item.favorite && <span className="text-amber-500 shrink-0">{I.starFill}</span>}
                       </button>
                     </td>
-                    <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300"><span className="block truncate" title={item.data.username}>{item.data.username || item.data.account_id || (item.data.identities || [])[0]?.value || '—'}</span></td>
+                    <td className="px-2 py-2.5 text-stone-600 dark:text-stone-300"><span className="block truncate" title={loginName(item.data)}>{loginName(item.data) || '—'}</span></td>
                     <td className="px-2 py-2.5 whitespace-nowrap"><TypeBadge type={item.data.type} /></td>
                     <td className="px-2 py-2.5 whitespace-nowrap text-sm text-stone-500 dark:text-stone-400">{fmtTime(item.updated_at)}</td>
                     <td className="pl-2 pr-4 py-2.5 text-right whitespace-nowrap">

@@ -61,7 +61,7 @@ export function MigrationList({ items, today, onChanged, toast }) {
   const sendToBacklog = async task => {
     try {
       await todoUpdateTask(task.id, { task_date: null, revision: task.revision })
-      toast('该任务已降入待办池')
+      toast('任务已移至「待排期」')
       onChanged()
     } catch (err) {
       toast(err instanceof Error ? err.message : '操作失败', 'error')
@@ -143,7 +143,7 @@ export function MigrationList({ items, today, onChanged, toast }) {
               该任务已迁移 {intervene.migrated_count} 次（最初属于 {intervene.original_date || '未知日期'}），确定还要继续吗？
             </p>
             <div className="flex gap-2 justify-end mt-5">
-              <button onClick={() => { sendToBacklog(intervene); setIntervene(null) }} className={btn.plain}>降入待办池</button>
+              <button onClick={() => { sendToBacklog(intervene); setIntervene(null) }} className={btn.plain}>移至待排期</button>
               <button onClick={() => { decideDelete(intervene); setIntervene(null) }}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-red-600 dark:text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors">删除它</button>
               <button onClick={() => { const t = intervene; setIntervene(null); doMigrate(t, today) }} className={btn.primary}>继续迁移</button>

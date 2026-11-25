@@ -1,8 +1,17 @@
 """配置中心：独立 namespace、KV 存储与可选 Redis 读缓存。"""
-from .routes import router
+from fastapi import APIRouter
+
+from .mcp_admin import router as mcp_admin_router
+from .mcp_transport import router as mcp_transport_router
+from .routes import router as kv_router
 from .migrations import ensure_migrations
 
 __all__ = ['router', 'ensure_migrations']
+
+router = APIRouter()
+router.include_router(mcp_admin_router)
+router.include_router(mcp_transport_router)
+router.include_router(kv_router)
 
 
 def stop_background(app, timeout=5.0):

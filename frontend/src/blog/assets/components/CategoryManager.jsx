@@ -1,6 +1,7 @@
 /**
  * 分类管理弹窗：新建 / 重命名 / emoji·颜色·适用类型 / 排序；删除受后端关联校验保护。
  */
+import Select from '@/shared/ui/Select'
 import { useEffect, useState } from 'react'
 import { assetsCategories, assetsCreateCategory, assetsDeleteCategory, assetsUpdateCategory } from '../api'
 import { BTN_GHOST, BTN_PRIMARY, INPUT } from '../kit'
@@ -51,9 +52,12 @@ function CatRow({ cat, onSaved, onDeleted, toast }) {
         <input className={INPUT} value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="分类名称" aria-label="分类名称" />
         <input className={INPUT} value={draft.icon} onChange={e => setDraft(d => ({ ...d, icon: e.target.value }))} placeholder="emoji 图标" aria-label="emoji 图标" />
         <input className={INPUT} value={draft.color} onChange={e => setDraft(d => ({ ...d, color: e.target.value }))} placeholder="#7c3aed" aria-label="颜色" />
-        <select className={INPUT} value={draft.kind} onChange={e => setDraft(d => ({ ...d, kind: e.target.value }))} aria-label="适用类型">
-          {KINDS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
-        </select>
+        <Select
+          aria-label="适用类型" className="w-full"
+          value={draft.kind}
+          onChange={next => setDraft(d => ({ ...d, kind: next }))}
+          options={KINDS.map(([value, label]) => ({ value, label }))}
+        />
       </div>
       <div className="flex items-center gap-2.5">
         <input type="number" className={`${INPUT} w-24`} value={draft.sort_order}

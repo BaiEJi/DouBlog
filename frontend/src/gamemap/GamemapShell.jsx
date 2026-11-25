@@ -46,13 +46,11 @@ export default function GamemapShell({ dark }) {
     <ConfigProvider locale={zhCN} theme={dark ? darkTheme : lightTheme}>
       <AntApp>
           <div className="gamemap-shell flex flex-col min-h-0 bg-stone-50 dark:bg-[#100f0e] text-stone-800 dark:text-stone-100 transition-colors">
-            {/* ── 顶栏（统一 PageHeader + 路由 tabs）── */}
-            <PageHeader title="剧情图谱" subtitle="游戏 · 人物 · 关系" backLabel="门户"
-
+            <PageHeader title="剧情图谱" subtitle="游戏 · 人物 · 关系"
               tabs={NAV.map(t => ({ key: t.to, label: t.label }))}
               activeTab={NAV.find(t => t.exact ? pathname === t.to : pathname.startsWith(t.to))?.to || NAV[0].to}
               onTabChange={to => navigate(to)}
-              accent="violet" hideTitle />
+              accent="violet" />
 
             {/* ── 主区（Workspace 需整幅画布，故不加统一内边距，由各页自管） ── */}
             <main className="flex-1 min-h-0">

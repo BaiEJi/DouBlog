@@ -4,6 +4,8 @@
 
 ## 数据库与任务归属
 
+PostgreSQL 的内置库名由后端运行系统决定。Windows 使用 `app_dev`，Linux 使用 `app`。启动、状态查询和连接测试或切换都会解析旧配置中的内置库名，手动指定的其他库名直接使用。
+
 每个应用的 `app.state.db_runtime` 持有独立 engine、scoped_session、稳定 `identity`、本次启动的 `generation`、在途计数与写入屏障。`db.engine`、`db.session` 和 `Model.query` 优先解析 ContextVar 绑定；请求由纯 ASGI 中间件绑定所属应用。没有绑定时保留最近初始化 runtime 的同步兼容入口，供脚本与旧测试使用。
 
 `run_db(fn,*args,_pool=None,**kwargs)` 在提交时捕获 runtime，计入排队与执行中的任务，在实际工作线程清理同一个 registry。清理前用 `runtime.sessions.registry.has()` 检查该线程是否已有 Session；已有时仍按 `try rollback() / finally remove()` 执行，即使回滚异常也移除会话，没有时跳过，避免纯缓存或仅 `engine.connect()` 的函数因清理而创建空 ORM 会话。Core 连接仍由函数自己的上下文关闭。Future 完成或排队取消时释放 admission，已经运行的线程在HTTP取消后仍保留ticket，直到实际执行及会话清理完成。默认使用 SDK 的 `doublog-db`（16 workers、512 在途上限、满载503）。配置中心可指定自己的 SDK 池隔离 Redis 等待。创建另一个 app 不再 dispose 第一个 app 的连接；嵌套创建应用也临时清除调用方数据库绑定，再用新runtime执行全部迁移。

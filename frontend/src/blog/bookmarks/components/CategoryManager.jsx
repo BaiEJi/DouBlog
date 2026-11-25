@@ -1,6 +1,7 @@
 /**
  * 分类管理（模态）：树形列表 + 新建（选父级，最深 3 层）+ 重命名 + 移动 + 删除（子孙上提一级）。
  */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
 
 import { createCategory, updateCategory, deleteCategory } from '../api'
@@ -48,12 +49,12 @@ export default function CategoryManager({ open, onClose, categories, onChanged, 
         <div className="flex items-center gap-2">
           <input value={name} onChange={e => setName(e.target.value)} placeholder="新分类名"
             className={inputCls + ' flex-1'} onKeyDown={e => e.key === 'Enter' && add()} />
-          <select value={parentId} onChange={e => setParentId(e.target.value)} className={inputCls} style={{ width: '10rem' }}>
-            <option value="">作为顶级</option>
-            {flat.filter(c => c.depth < 2).map(c => (
-              <option key={c.id} value={c.id}>{'　'.repeat(c.depth)}{c.name} 下</option>
-            ))}
-          </select>
+          <Select
+            aria-label="上级分类" className="w-40"
+            value={parentId}
+            onChange={setParentId}
+            options={[{ value: '', label: '作为顶级' }, ...flat.filter(c => c.depth < 2).map(c => ({ value: c.id, label: '　'.repeat(c.depth) + c.name + ' 下' }))]}
+          />
           <button type="button" onClick={add} disabled={busy}
             className="inline-flex items-center gap-1 px-3 h-9 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 whitespace-nowrap">
             {Icon.plus}新建</button>

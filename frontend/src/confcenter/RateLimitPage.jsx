@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { confRatelimitStatus, confRatelimitConfig, confRatelimitSave } from './api'
 import { buildOverrides, parseOverrides } from './overrides'
-import Select from './Select'
+import Select from '@/shared/ui/Select'
 
 const card = 'rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]'
 const btn = 'px-4 py-2 text-base font-medium rounded-lg bg-black/[0.06] dark:bg-white/[0.08] text-stone-700 dark:text-stone-200 hover:bg-black/10 dark:hover:bg-white/[0.14] transition-colors disabled:opacity-50'
@@ -191,15 +191,15 @@ export default function RateLimitPage({ namespaces, say }) {
 
       {/* 配置表单 */}
       <section aria-label="限流配置" className={`${card} p-5`}>
-        <h2 className="text-lg font-semibold text-stone-900 dark:text-stone-100">限流配置</h2>
-        {configState === 'loading' && <p className="mt-3 text-sm text-stone-400 dark:text-stone-500">配置加载中…</p>}
+        {configState === 'loading' && <p className="text-sm text-stone-400 dark:text-stone-500">配置加载中…</p>}
         {configState === 'error' && (
-          <div role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">
+          <div role="alert" className="text-sm text-red-600 dark:text-red-400">
             配置加载失败：{configError}——已禁用保存以防默认值覆盖真实配置。
             <button type="button" onClick={() => loadConfig()} className="ml-3 underline">重试</button>
           </div>
         )}
-        {configState !== 'error' && (<>          <label className="flex items-center gap-2 mt-4 text-base cursor-pointer select-none">
+        {configState !== 'error' && (<>
+          <label className="flex items-center gap-2 text-base cursor-pointer select-none">
             <input type="checkbox" className="accent-cyan-600 [color-scheme:light] dark:[color-scheme:dark] w-4 h-4" checked={cfg.enabled}
               disabled={formDisabled}
               onChange={e => { touchDraft(); setCfg({ ...cfg, enabled: e.target.checked }) }} />
@@ -225,8 +225,8 @@ export default function RateLimitPage({ namespaces, say }) {
                   return (
                     <div key={i} className="flex items-center gap-2 px-2.5 py-2">
                       <div className="flex-1 min-w-0">
-                        <Select value={r.ns} invalid={bad} disabled={formDisabled} size="form"
-                          ariaLabel={`覆盖 namespace ${i + 1}`}
+                        <Select value={r.ns} invalid={bad} disabled={formDisabled} size="sm" className="w-full"
+                          aria-label={`覆盖 namespace ${i + 1}`}
                           placeholder="选择 namespace…"
                           onChange={v => setRow(i, { ns: String(v) })}
                           options={(namespaces || []).map(n => ({ value: n.namespace, label: n.namespace }))} />

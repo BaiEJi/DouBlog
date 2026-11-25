@@ -18,14 +18,6 @@ import ItemForm from './components/ItemForm'
 import ItemDetail from './components/ItemDetail'
 import CategoryManager from './components/CategoryManager'
 
-const SUBS = [
-  { key: 'shelf', label: '收藏夹' },
-  { key: 'queue', label: '稍后阅读' },
-  { key: 'stats', label: '统计' },
-  { key: 'tools', label: '工具' },
-  { key: 'trash', label: '回收站' },
-]
-
 export default function BookmarksView({ toast, dark }) {
   const [sub, setSub] = useState('shelf')
   const [detailId, setDetailId] = useState(null)
@@ -77,9 +69,7 @@ export default function BookmarksView({ toast, dark }) {
     <div className="space-y-4">
       {/* ── 子视图头（覆盖层态隐藏） ── */}
       {!inOverlay && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-base font-semibold">书签 · {SUBS.find(s => s.key === sub)?.label}</h1>
-          <span className="flex-1" />
+        <div className="flex justify-end">
           <button type="button" onClick={() => setEdit({ id: null })}
             className="inline-flex items-center gap-1.5 px-4 h-9 rounded-lg text-sm font-medium bg-orange-500 text-white hover:bg-orange-600 transition-colors">
             {Icon.plus}收录网址</button>

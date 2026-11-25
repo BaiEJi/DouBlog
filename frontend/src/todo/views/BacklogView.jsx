@@ -1,6 +1,6 @@
 /**
  * 待办池（照搬 MyTodo BacklogPage 交互）：
- * 收件箱（inbox=true 未排期任务，排期/编辑/删除）+ 迁移池（复用 MigrationList）
+ * 待排期（inbox=true，排期/编辑/删除）+ 迁移池（复用 MigrationList）
  * + 搁置计划（迁移到今天/恢复催办/删除）。
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -145,18 +145,13 @@ export default function BacklogView({ toast }) {
     }
   }
 
-  const TABS = [
-    { key: 'inbox', label: `待办池（${total}）` },
-    { key: 'migrate', label: `迁移池（${migrations.length}）` },
-    { key: 'shelved', label: `搁置计划（${shelved.length}）` },
-  ]
+  const counts = { inbox: total, migrate: migrations.length, shelved: shelved.length }
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
       {taskQuery.error && <div role="alert" className="mb-3 text-sm text-red-500">{taskQuery.error.message}</div>}
-      {/* Tab 行 + 快速添加 */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <h2 className="text-sm font-medium">{TABS.find(t => t.key === tab)?.label}</h2>
+        <span className="text-sm tabular-nums text-stone-600 dark:text-stone-400">共 {counts[tab]} 项任务</span>
         {tab === 'inbox' && (
           <button onClick={() => { setEditing(null); setFormOpen(true) }} className={btn.primary + ' ml-auto'}>
             {Icon.plus}快速添加
@@ -166,12 +161,12 @@ export default function BacklogView({ toast }) {
 
       {tab === 'inbox' && (
         <>
-          <div className="mb-3 text-xs text-stone-500 dark:text-stone-400">未排期的任务收件箱，给它们安排一个日子</div>
+          <div className="mb-3 text-xs text-stone-500 dark:text-stone-400">先记下任务，确定日期后再点「排期」。</div>
           {!tasks ? (
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]"><Spinner /></div>
           ) : tasks.length === 0 ? (
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025]">
-              <Empty text="待办池是空的，点击右上角「快速添加」创建一个" />
+              <Empty text="暂无待排期任务，可点「快速添加」记一项。" />
             </div>
           ) : (
             <div className="rounded-2xl border border-black/[0.07] dark:border-white/[0.07] bg-white dark:bg-white/[0.025] overflow-hidden">
@@ -195,7 +190,7 @@ export default function BacklogView({ toast }) {
               </div>
             </div>
           )}
-          {total > 50 && <nav aria-label="待办池分页" className="flex gap-4 justify-center text-sm my-4">
+          {total > 50 && <nav aria-label="待排期任务分页" className="flex gap-4 justify-center text-sm my-4">
             <button type="button" disabled={page <= 1} onClick={() => setPage(value => value - 1)} className="disabled:opacity-30">上一页</button>
             <span>{page} / {Math.ceil(total / 50)} · {total} 条</span>
             <button type="button" disabled={page * 50 >= total} onClick={() => setPage(value => value + 1)} className="disabled:opacity-30">下一页</button>

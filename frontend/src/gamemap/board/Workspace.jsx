@@ -5,12 +5,12 @@
  * 适配 DouBlog：去 TS 类型；nav 路径改挂 /gamemap 前缀；根容器高度 100vh → 100%
  * （GamemapShell 顶栏占据视口顶部，剩余高度由本组件铺满）。画布逻辑（xyflow 非受控
  * defaultNodes、自绘 EdgeLayer、50ms 防重叠时序、Ctrl-Z 撤销栈）逐行保持原样。 */
+import Select from '@/shared/ui/Select'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  App as AntApp, Alert, Avatar, Button, Card, Empty, Input, Modal, Select,
-  Space, Typography,
+  App as AntApp, Alert, Avatar, Button, Card, Empty, Input, Modal, Space, Typography,
 } from 'antd'
 import { CopyOutlined, PlusOutlined } from '@ant-design/icons'
 import {
@@ -532,7 +532,7 @@ export default function Workspace() {
       title: '🔗 建立关系', icon: null, okText: '确定', cancelText: '取消',
       okButtonProps: { disabled: true, style: { display: 'none' } },
       content: (
-        <Select style={{ width: '100%', marginTop: 12 }} placeholder="选择关系类型" autoFocus
+        <Select aria-label="建立关系的类型" style={{ width: '100%', marginTop: 12 }} placeholder="选择关系类型" autoFocus
           onChange={(v) => { picked = v }}
           onOpenChange={(open) => { if (!open && picked !== null) {
             const targetChapter = isMerged ? (mergedBoard.data?.anchor_chapter_id ?? null) : activeChapterId

@@ -13,8 +13,7 @@ export default function RelationConfig({ dark = true }) {
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-3 mb-5">
-        <h1 className="text-lg font-semibold tracking-tight">关系配置 · <span className="gm-gradient-text">全局默认类型</span></h1>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>游戏可在工作区中覆盖样式或新增自定义类型</Typography.Text>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>以下为全局默认类型，可在游戏工作区中覆盖样式或新增类型。</Typography.Text>
       </div>
       <Row gutter={[16, 16]}>
         {list.map((t) => (

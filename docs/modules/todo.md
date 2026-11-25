@@ -1,12 +1,29 @@
 # Todo 模块（四象限待办，MyTodo 迁入）
 
-> 数据表：todo_* 七表　路由前缀：/api/todo　前端：/todo（门户"待办 · 四象限"卡）　更新：2026-10-21（并发、分页与共享UI优化；gamemap/practice/steamidler为独立模块）
+> 数据表：todo_* 七表　业务 API：/api/todo　MCP：/mcp/todo　前端：/todo（门户"待办 · 四象限"卡）
 > 源仓库 C:\Users\Lizy\Desktop\Code\MyTodo（只读保留）；迁移规范见 docs/todo-migration.md；数据已导入（2500 任务/5695 事件）
+
+## MCP 接入
+
+登录后进入「配置中心 → MCP 配置」，在模块侧栏选中 MyTodo。逐项查看工具详情、选择开放范围，签发并保存模块令牌。令牌有效期 30 天，可在同一页续期或撤销。
+
+在 MCP 客户端选择 Streamable HTTP，填写页面显示的 URL 和 `Authorization: Bearer <YOUR_TOKEN>` 请求头，并替换占位符。默认本机地址为 `http://127.0.0.1:60100/mcp/todo`。部署 HTTPS 后页面会显示配置的远程地址。[服务器远程接入](confcenter.md#服务器远程接入)
+
+| 功能 | 工具 | 用法 |
+| --- | --- | --- |
+| 今日看板与查询 | `get_today`、`list_tasks`、`get_task` | 读四象限，按日期、关键词、象限或状态分页查询，查看详情和事件 |
+| 待办池与迁移 | `list_tasks`、`list_migration_queue`、`migrate_task`、`set_task_shelved` | `inbox=true` 看待排期，首次排期用 `update_task`。已排期的待办可迁移、搁置或取消搁置 |
+| 任务办理与排列 | `create_task`、`update_task`、`complete_task`、`reopen_task`、`arrange_task` | 新建、编辑、完成或重开，可按参照任务排序或跨象限移动 |
+| 日历与回顾 | `get_calendar`、`get_report` | 按起止日期查看日历，读取单日、区间回顾、年度热力图或连续活跃天数 |
+
+写工具需要 `mutation_id`，每次新操作生成一个 UUID。同一令牌重试时传回原参数和 ID，服务返回第一次的结果。编辑、排列还需传入查询得到的 `revision`。遇到版本冲突时重新读取任务，再决定是否提交新的操作。
+
+服务随后端启动，使用官方 MCP SDK 的无状态 Streamable HTTP。每次请求验证模块令牌及工具开放状态。原 MyTodo 令牌随数据库升级迁入配置中心，业务写入和 `todo_mutations` 收据在同一事务提交。
 
 ## 1. 功能概述
 
 - **四象限看板**：is_important × is_urgent 两布尔正交存储，象限为派生值；象限内排序 = 浮点中点插入法（position）；今日/特定日期视图
-- **日期体系**：task_date 为空 = 收件箱（待办池）；original_date 迁移后不变；due_at + due_is_full_day
+- **日期体系**：task_date 为空的任务归入待办池的「待排期」列表。original_date 迁移后不变。到期时间由 due_at 和 due_is_full_day 表示。
 - **任务迁移链**：逾期任务待迁移（migrated_count / last_migrated_from）；干预阈值（默认 3 次触发三选：删除/降池/继续）；搁置（shelved_at 不再催办）；自动迁移开关（auto_migrate + auto_urgent_days）
 - **规律生活计划（life）**：四种循环规则（weekly 周几 / interval 间隔天 / weekly_times 每周次数自动均摊 / monthly_times 每月次数），`materialize_plans` 把 [today-2, today+90] 窗口物化为真实任务实例（plan_id+task_date 幂等）；触发点 = 启动 start_background + GET /today 30s 节流 + 计划写操作
 - **统计**：daily / range / heatmap / streak（按当前状态计，取消完成即回退）
@@ -27,7 +44,7 @@
 
 **users 表未迁移**（MyTodo 的 token 登录闸门整体舍弃，鉴权 = Doublog 统一登录 require_basic）。
 
-## 3. API 契约（全部挂 require_basic，Doublog 信封）
+## 3. 站点 REST API 契约（登录会话或 Basic，DouBlog 信封）
 
 tasks：GET /api/todo/tasks（date/from/to/inbox/overdue/status/category_id/quadrant/q/sort/plan_only/exclude_plans；可选page/page_size，分页时返回items/total/page/page_size）、POST(201)、GET /{id}（含最近 50 事件）、PATCH /{id}（revision 乐观锁 409）、DELETE（软删）、POST /{id}/restore|complete（可带 note）|reopen|move|reorder。
 categories：GET/POST/PATCH/DELETE（删除时任务归未分类，返回 moved_to_uncategorized）。
@@ -52,9 +69,11 @@ notifications：POST /test（email 实测发送；未配置/未启用 400，未�
 
 ## 5. 前端（frontend/src/todo/）
 
-TodoPage 壳（公共侧栏 + 7 视图（生活下含 5 子项）：今日/待办池/日历/回顾/统计/生活/设置，视图走 ?v= 深链）+ kit（象限文案Hook/日期/业务徽章；通用Modal/Toast/图标由shared/ui兼容导出）+ charts.jsx（转导出shared/ui/charts的纯SVG图表；其他模块可直接引用shared）。核心视图：Today（四象限 dnd-kit 拖拽/迁移面板）、Backlog（收件箱/待迁移/已搁置）、Calendar（周/月/年，plan_only 切 life 模式）、Review、Stats（热力图 CSS grid）、Settings（偏好/类别/邮件推送）、Life（打卡/计划 CRUD 四规则表单/日历/统计/回顾，views/life/ 四文件）。鉴权/主题/请求层全部复用 Doublog（apiFetch 会话 Cookie）。
+TodoPage 壳（公共侧栏 + 7 视图（生活下含 5 子项）：今日/待办池/日历/回顾/统计/生活/设置，视图走 ?v= 深链）+ kit（象限文案Hook/日期/业务徽章；通用Modal/Toast/图标由shared/ui兼容导出）+ charts.jsx（转导出shared/ui/charts的纯SVG图表；其他模块可直接引用shared）。核心视图：Today（四象限 dnd-kit 拖拽/迁移面板）、Backlog（待排期/迁移池/搁置计划）、Calendar（周/月/年，plan_only 切 life 模式）、Review、Stats（热力图 CSS grid）、Settings（偏好/类别/邮件推送）、Life（打卡/计划 CRUD 四规则表单/日历/统计/回顾，views/life/ 四文件）。鉴权/主题/请求层全部复用 Doublog（apiFetch 会话 Cookie）。
 
-今日 / 特定日期看板按视口可用高度铺满，四象限为两行两列等宽等高；空象限保留完整空间。每格可见区固定容纳 8 行，行高随可用高度均分，超过 8 条时仅该象限内部滚动。任务标题、类别、生活/迁移标记同一行显示；长标题省略，备注和完成备注通过悬停提示或编辑弹窗查看。软上限告警移到象限标题旁，避免挤占任务行；操作菜单通过 portal 定位在视口内，可跨出滚动区显示，滚动 / Escape / 点击外部关闭。
+今日 / 特定日期看板按视口可用高度铺满，四象限为两行两列等宽等高。每格保留 8 行空间，超过 8 条时在象限内滚动。象限名称与说明按文字基线对齐，待办数量和软上限告警靠右。任务标题后依次紧跟该任务的生活、迁移和类别标记，操作按钮统一靠右。长标题或长类别名单行省略，悬停可看全文，任务备注和完成备注也可在悬停提示或编辑弹窗中查看。操作菜单通过 portal 定位在视口内，滚动、按 Escape 或点击外部均可关闭。
+
+任务回顾页的日期选择控制当日指标与记录。完成记录按完成时间倒序，迁入记录显示来源日期和迁移次数，两种清单可在同一位置切换。区间回顾有独立的起止日期、汇总和带刻度的柱图。任务统计页将五项指标等宽排列，年度热力图可切换年份，近 30 天趋势与分布图使用较大的刻度和图例。两页的阅读字号见 `docs/ui-baseline.md`。
 
 ## 6. 测试（tests/todo/ 原核心5文件53例，新增优化专项另列）
 
@@ -71,7 +90,7 @@ test_api（任务 CRUD/过滤/象限/排序/乐观锁/软删恢复/401 鉴权/�
 
 前端由 `shared/ModuleShell.jsx` 提供统一侧栏（默认 220px，可拖动/键盘调整 180–420px，可折叠为 56px 图标窄轨；见 docs/modules/frontend.md）、多级菜单与内容画布；导航状态经 `useModuleNavigation` 注册。前端仅适配桌面浏览器，无移动端布局。页面内部的业务工具栏、表格、编辑器与弹层仍由模块管理。布局与性能契约见 `frontend.md` 的页面布局约定。
 
-待办池的收件箱 / 迁移池 / 搁置计划使用侧栏二级菜单，URL 为 `?v=backlog&bsub=inbox|migrate|shelved`；生活子视图仍使用 `lsub`。长表单通用 Modal 限制到视口高度，正文内部滚动，标题与操作按钮固定可见。
+待办池的待排期 / 迁移池 / 搁置计划使用侧栏二级菜单，分别对应 `?v=backlog&bsub=inbox|migrate|shelved`。正文从当前任务数和操作开始。日历从日期工具栏开始。生活子视图使用 `lsub`。长表单通用 Modal 限制到视口高度，正文内部滚动，标题与操作按钮固定可见。
 
 ### 内容画布占满约定（2026-10-17）
 

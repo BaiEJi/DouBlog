@@ -1,11 +1,41 @@
 # 配置中心模块（confcenter）
 
-> 表：confcenter_namespaces / confcenter_entries　前缀：/api/confcenter　前端：/confcenter（门户卡，cyan）　更新：2026-10-24
+> 表：confcenter_namespaces、confcenter_entries、confcenter_mcp_tokens、confcenter_mcp_tools　前缀：/api/confcenter　前端：/confcenter（门户卡，cyan）
 > 规范：docs/confcenter-spec.md
 
 ## 1. 功能概述
 
 通用 KV 配置平台：**独立 namespace → key → value** 映射（空间可为空）；value 统一 `{type, data}` 包装——`type=str` 原样字符串、`type=json` 合法 JSON（对象/数组/数字）；显式 type 消除 "123"/"[1,2]" 的裸值歧义。**Redis 读穿缓存**（可选可降级），减轻数据库压力。**namespace 维度限流**（可选可降级，2026-10-17）：单条 KV 读写按空间计数，优先 Redis 滑动窗口（lizysdk），无 Redis 降级本地窗口。
+
+## MCP 配置
+
+登录后打开「配置中心 → MCP 配置」。左侧按接入状态列出各模块，选择已接入模块查看工具和令牌。每行「查看详情」展示工具用途和读写类型。输入参数表列出参数名、类型或取值、参数含义、示例参数和必填状态。例如搜索任务的 `q` 在标题和描述中查找关键词，示例值为 `"周报"`。工具开关即时保存，已签发的令牌从下一次请求起遵循新清单。
+
+在「访问令牌」填写客户端名称，签发 30 天有效的模块令牌。明文仅在签发时显示。点击「续期」可沿用原令牌，尚有效的从原到期日加 30 天，已过期的从当前时间起加 30 天。已撤销令牌无法续期。
+
+「MCP 接入配置」列出传输方式 Streamable HTTP、当前服务 URL 和 `Authorization: Bearer <YOUR_TOKEN>` 请求头。支持 `mcpServers` 的客户端可以复制 JSON 示例并替换令牌占位符。其他客户端可直接填写上述连接参数。[MCP 传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)
+
+目前接入 MyTodo 的 13 个工具。模块通过 `mcp_provider` 声明工具后，配置中心即可管理它。新增工具默认关闭，工具开关按模块与工具名持久化，令牌绑定模块和数据库。[MyTodo 工具清单](todo.md#mcp-接入)
+
+### 服务器远程接入
+
+默认接受本机连接。要让外部客户端接入，为域名配置 DNS 和 HTTPS，在后端服务环境中设置 `DOUBLOG_MCP_PUBLIC_ORIGIN=https://todo.example.com` 并重启。该值填写 HTTPS 来源，可含非默认端口，路径由服务按模块追加。示例中的 MyTodo 地址为 `https://todo.example.com/mcp/todo`。
+
+在该域名的 HTTPS 虚拟主机中将 `/mcp/` 转发到后端。例如同机 Nginx 可使用以下 location。
+
+```nginx
+location /mcp/ {
+    proxy_pass http://127.0.0.1:60100;
+    proxy_http_version 1.1;
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Authorization $http_authorization;
+    proxy_buffering off;
+}
+```
+
+公网客户端需能访问该 HTTPS 端口。后端按配置的域名和 HTTPS 协议验证远程请求。带有 `Origin` 的远程请求须与配置同源。TLS 在代理处终止时，Uvicorn 只采用受信代理提供的协议和来源地址。代理位于其他主机或容器时，将 `FORWARDED_ALLOW_IPS` 设置为其实际连接后端的地址。[Uvicorn 代理设置](https://uvicorn.dev/settings/#http)
 
 ## 2. 数据模型
 
@@ -44,9 +74,9 @@
 
 ## 7. 前端（frontend/src/confcenter/）
 
-公共侧栏两个同级视图（PageHeader tabs 注册，2026-10-24）：**配置管理**（默认）+ **限流配置**（`?view=ratelimit&namespace=…` 深链/刷新，缺省/非法回 entries）；两视图保持挂载（hidden 切换），限流草稿与列表状态跨菜单保留。
+公共侧栏提供配置管理（默认）、限流配置（`?view=ratelimit`）和 MCP 配置（`?view=mcp`）。缺省或非法视图回到配置管理。已打开的 KV 和限流工作区保留草稿与列表状态。
 
-配置管理视图：先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧 KV 表的四个数据列（key/类型/值预览/更新时间）表头可排序（button + aria-sort + 方向箭头；点当前列切升/降、其他列从升序、变更回第 1 页；服务端全量排序后分页；namespace 切换保留排序，保存/删除刷新保留排序）；值预览单行省略（↵ 标识换行、空字符串标注、整格点击查看完整值并可进入编辑）；新建/编辑 Modal（编辑时 key 可改 → 单请求原子重命名+更新值，if_updated_at 防旧覆盖；max-w-4xl）：**str/json 共用同一个带行号的 CodeMirror 值编辑器实例**（`JsonEditor.jsx` 适配公共 CodeEditor：行号 gutter、虚拟长文档、明暗主题、撤销；切换 type/字号不重建实例）；str 原样存取不解析；json 着色 + Worker 格式化/压缩（>64KiB 防抖进 Worker、迟到结果代次校验不落地）+ 失焦校验非法标红禁存（行列定位）；值工具栏**字号调整**：默认 15px、整数 12–24、A−/A+/统一下拉/恢复默认，正文与行号同步，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（缺失/越界/损坏/存储禁用回退 15，仅本次会话）；状态/错误反馈区固定 48px 占位（aria-live）——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）；模块统一下拉 `Select.jsx`（apihub 同款 button+菜单，选中 cyan 高亮，明暗一致）替代原生 select（字号/重置目标）。删除两步确认；搜索当前空间防抖（切换空间重置搜索分页，请求身份含排序+版本，旧结果不覆盖）；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）。
+配置管理视图：先创建 namespace；左侧列表选择空间（含 KV 计数，无“全部”项），选中状态由 `?namespace=` 保存；右侧 KV 表的四个数据列（key/类型/值预览/更新时间）表头可排序（button + aria-sort + 方向箭头；点当前列切升/降、其他列从升序、变更回第 1 页；服务端全量排序后分页；namespace 切换保留排序，保存/删除刷新保留排序）；值预览单行省略（↵ 标识换行、空字符串标注、整格点击查看完整值并可进入编辑）；新建/编辑 Modal（编辑时 key 可改 → 单请求原子重命名+更新值，if_updated_at 防旧覆盖；max-w-4xl）：**str/json 共用同一个带行号的 CodeMirror 值编辑器实例**（`JsonEditor.jsx` 适配公共 CodeEditor：行号 gutter、虚拟长文档、明暗主题、撤销；切换 type/字号不重建实例）；str 原样存取不解析；json 着色 + Worker 格式化/压缩（>64KiB 防抖进 Worker、迟到结果代次校验不落地）+ 失焦校验非法标红禁存（行列定位）；值工具栏**字号调整**：默认 15px、整数 12–24、A−/A+/统一下拉/恢复默认，正文与行号同步，localStorage `doublog.confcenter.editor.fontSize.v1` 持久化（缺失/越界/损坏/存储禁用回退 15，仅本次会话）；状态/错误反馈区固定 48px 占位（aria-live）——格式化/校验文案增删不改变弹窗几何（修复格式化屏幕抖动）；字号和 namespace 选项使用 `shared/ui/Select.jsx`。删除两步确认；搜索当前空间防抖（切换空间重置搜索分页，请求身份含排序+版本，旧结果不覆盖）；Redis 状态条（绿=启用/琥珀=降级/灰=未启用 + 命中计数）+ 缓存配置 Modal（测试连接/保存/清空）。
 
 限流配置视图（`RateLimitPage.jsx`，自原状态条+Modal 迁移）：状态卡（三态 mode + 规则/放行/拒绝/tracked 计数 + 主动刷新；status GET 失败显示错误+重试）；配置表单（启用开关 + 覆盖行编辑（**namespace 用统一下拉选择已有空间**（2026-10-24 用户指令，替代文本输入）；**默认额度/窗口不在页面编辑**（2026-10-24 用户指令）——保存 payload 省略两字段、后端部分缺省沿用已存默认值，状态卡只读展示当前默认规则；limit=0 豁免、重复/未选禁存）；**配置 GET 失败禁存+重试**（不放开默认值提交）；保存提交→回读完成期间禁用表单防草稿被回读覆盖，PUT 失败与"已保存但回读失败"区分提示且草稿均保留，手动回读带编辑代次围栏（在途编辑只更新已保存快照不动草稿），"恢复已保存值"）。**重置计数卡已按用户要求移除（2026-10-24）**——`POST /ratelimit/reset` API 保留（api.js 的 confRatelimitReset 可供需要时复用）。覆盖行构造走 `overrides.js` 纯函数：`__proto__`/`constructor` 等合法 namespace 经 `Object.defineProperty` 成为自有可枚举键（普通赋值会触发原型 setter 静默丢失覆盖），JSON 往返与后端回读一致。
 

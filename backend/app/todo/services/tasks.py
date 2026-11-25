@@ -460,7 +460,7 @@ def update_task(session: Session, task_id: str, p: TaskUpdate) -> Task:
             changed["task_date"] = [iso(t.task_date), iso(new_date)]
             t.task_date = new_date
             t.shelved_at = None  # 重新排期即脱离搁置
-            # 首次排期:写入 original_date;改回收件箱:清空迁移链起点
+            # 首次排期写入 original_date，改回待排期时清空迁移链起点
             if new_date is not None and t.original_date is None:
                 t.original_date = new_date
             elif new_date is None:

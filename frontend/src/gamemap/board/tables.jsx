@@ -1,6 +1,7 @@
 /* 人物 / 关系 表格（#6 增强）：搜索、排序、阵营/来源章节筛选、行内快捷操作。 */
+import Select from '@/shared/ui/Select'
 import { useMemo, useState } from 'react'
-import { App as AntApp, Avatar, Button, Empty, Input, Popconfirm, Select, Space, Switch, Table, Tag, Typography } from 'antd'
+import { App as AntApp, Avatar, Button, Empty, Input, Popconfirm, Space, Switch, Table, Tag, Typography } from 'antd'
 import { BookOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons'
 import { api } from '../api'
 import { avatarGradient, factionColor } from '../theme'
@@ -30,7 +31,7 @@ export function CharactersTable({ board, gid, onOpen, onChanged, onCodex }) {
       <Space wrap style={{ marginBottom: 14, maxWidth: '100%' }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="搜索姓名/简介…"
           style={{ width: 220 }} value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select allowClear placeholder="阵营筛选" style={{ minWidth: 140 }} value={faction}
+        <Select aria-label="阵营筛选" allowClear placeholder="阵营筛选" style={{ minWidth: 140 }} value={faction}
           onChange={setFaction} options={factions.map((f) => ({ value: f, label: f }))} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{filtered.length} / {chars.length} 人</Typography.Text>
       </Space>
@@ -92,7 +93,7 @@ export function RelationsTable({ board, allCharMap, typeMap, activeChapterTitle,
       <Space wrap style={{ marginBottom: 14, maxWidth: '100%' }}>
         <Input allowClear prefix={<SearchOutlined style={{ color: '#6b7488' }} />} placeholder="搜索人物/说明…"
           style={{ width: 220 }} value={q} onChange={(e) => setQ(e.target.value)} />
-        <Select allowClear placeholder="关系类型" style={{ minWidth: 130 }} value={typeFilter}
+        <Select aria-label="关系类型" allowClear placeholder="关系类型" style={{ minWidth: 130 }} value={typeFilter}
           onChange={setTypeFilter} options={types.map(([id, t]) => ({ value: id, label: t.name }))} />
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>{filtered.length} / {relations.length} 条</Typography.Text>
       </Space>

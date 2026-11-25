@@ -69,6 +69,43 @@ def test_admin_requires_auth(client):
     assert client.get('/api/admin/database').status_code == 401
 
 
+@pytest.mark.parametrize(('server_os', 'other_db', 'expected'), [
+    ('Windows', 'app', 'app_dev'),
+    ('Linux', 'app_dev', 'app'),
+])
+def test_postgres_platform_database(client, auth_headers, monkeypatch, server_os, other_db, expected):
+    from sqlalchemy.engine import make_url
+    from app import config
+    from app.db import get_database_url, load_db_config, save_db_config
+    from app.system import routes
+
+    monkeypatch.setattr(config, 'system', lambda: server_os)
+    assert load_db_config()['postgres']['dbname'] == expected
+
+    # 另一平台保存的配置，在当前系统读取和切换时都应指向本机的目标库。
+    save_db_config({'backend': 'sqlite', 'postgres': {'dbname': other_db}})
+    status = client.get('/api/admin/database', headers=auth_headers).json()['data']
+    assert status['backend'] == 'sqlite'
+    assert status['postgres']['dbname'] == expected
+
+    request = {'target': 'postgres', 'postgres': {'dbname': other_db}}
+    monkeypatch.setattr(routes, '_try_connect', lambda url: (None, f'offline {make_url(url).database}'))
+    result = client.post('/api/admin/database/test', headers=auth_headers, json=request)
+    assert result.status_code == 400
+    assert result.json()['message'].endswith(f'offline {expected}')
+
+    checked = []
+    monkeypatch.setattr(routes, '_ensure_postgres_database', lambda pg: checked.append(pg['dbname']))
+    result = client.post('/api/admin/database/switch', headers=auth_headers, json=request)
+    assert result.status_code == 200
+    assert checked == [expected]
+    assert make_url(get_database_url()).database == expected
+
+    custom = load_db_config(postgres_overrides={'dbname': 'reporting'})
+    save_db_config(custom)
+    assert make_url(get_database_url()).database == 'reporting'
+
+
 # ─── 连通性测试（不切换）────────────────────────────────
 
 def test_connection_test_sqlite(client, auth_headers):

@@ -1,3 +1,7 @@
+export const CONF_CENTER_TABS = [
+  { key: 'entries', label: '配置管理' }, { key: 'ratelimit', label: '限流配置' }, { key: 'mcp', label: 'MCP 配置' },
+]
+
 export const MODULES = {
   blog: { title: '博客 · 知识库', subtitle: '文章 · 双链 · 知识库 · 资产', accent: 'amber', items: [
     { key: 'blog', label: '知识库', to: '/blog', children: [
@@ -21,11 +25,13 @@ export const MODULES = {
   steamidler: { title: 'Steam 挂机', subtitle: '账号 · 挂机时长 · 日志', accent: 'slate', items: [{ key: 'accounts', label: '账号管理' }] },
   gamemap: { title: '剧情图谱', subtitle: '游戏 · 人物 · 关系', accent: 'violet' },
   mindmap: { title: '思维导图', accent: 'teal', items: [{ key: 'library', label: '我的导图', to: '/mindmap' }] },
-  vault: { title: '密码库', subtitle: '条目 · 安全中心 · 密码服务', accent: 'emerald' },
+  vault: { title: '密码库', subtitle: '个人账号 · 收藏 · 安全检查', accent: 'emerald' },
+  pwsvc: { title: '密码服务', subtitle: '项目 · 轮换策略 · 校验日志', accent: 'teal', items: [{ key: 'projects', label: '项目管理' }] },
   apihub: { title: 'API Hub', subtitle: '系统 · API · 平台令牌', accent: 'amber' },
   logs: { title: '日志查询', subtitle: '检索 · 统计 · 告警', accent: 'sky', items: [{ key: 'search', label: '日志检索' }] },
   config: { title: '系统配置', subtitle: '账号 · 数据库 · 日志上报', accent: 'teal', items: [{ key: 'config', label: '系统配置' }] },
-  confcenter: { title: '配置中心', subtitle: 'namespace → key → value', accent: 'cyan', items: [{ key: 'entries', label: '配置管理' }] },
+  confcenter: { title: '配置中心', subtitle: 'namespace → key → value', accent: 'cyan',
+    items: CONF_CENTER_TABS.map(tab => ({ ...tab, to: tab.key === 'entries' ? '/confcenter' : `/confcenter?view=${tab.key}` })) },
   clash: { title: 'Clash 代理', subtitle: '内核 · 订阅 · Tun · Mixin', accent: 'sky' },
   devtoolbox: { title: '开发者工具箱', subtitle: 'JSON · Diff · 编码 · 哈希 · 正则', accent: 'lime' },
 }

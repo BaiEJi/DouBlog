@@ -1,11 +1,12 @@
 /* 人物/关系详情抽屉（#3 重构）：Tab 分区（档案 / 本章状态 / 章节绑定），
  * 底部统一保存栏：保存当前分区，未保存更改显示小圆点，支持 Ctrl+S。
  * 聚合模式下"本章状态"只读提示（写回语义见时间范围文档）。 */
+import Select from '@/shared/ui/Select'
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  App as AntApp, AutoComplete, Avatar, Button, Divider, Drawer, Form, Input,
-  Popconfirm, Select, Space, Switch, Tabs, Tag, Typography, Upload,
+  App as AntApp, Avatar, Button, Divider, Drawer, Form, Input,
+  Popconfirm, Space, Switch, Tabs, Tag, Typography, Upload,
 } from 'antd'
 import { BookOutlined, DeleteOutlined, SaveOutlined, UploadOutlined } from '@ant-design/icons'
 import { api, apiUpload, assetUrl } from '../api'
@@ -105,11 +106,10 @@ function NodeDrawer(p) {
               <Input.TextArea rows={3} placeholder="外貌、性格、背景……会显示在卡片上" />
             </Form.Item>
             <Form.Item name="faction" label="阵营" initialValue={c?.faction || undefined}>
-              <AutoComplete
+              <Select mode="combobox" aria-label="人物阵营" className="w-full"
                 allowClear placeholder="如：王国军 / 魔族（同名阵营自动同色）"
-                options={[...new Set([...allCharMap.values()].map((x) => x.faction).filter(Boolean))].map((f) => ({
-                  value: f, label: <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: factionColor(f), marginRight: 6 }} />{f}</span>,
-                }))}
+                options={[...new Set([...allCharMap.values()].map(x => x.faction).filter(Boolean))]}
+                optionRender={({ value }) => <span><i className="mr-1.5 inline-block size-2 rounded-full" style={{ background: factionColor(value) }} />{value}</span>}
               />
             </Form.Item>
             <Form.Item name="alive" label="生死状态（档案默认值）" initialValue={c?.alive !== false} valuePropName="checked">
@@ -136,15 +136,15 @@ function NodeDrawer(p) {
               <Input placeholder="如：下落不明" /></Form.Item>
             <Form.Item name="alive_mode" label="本章生死"
               initialValue={st == null || st.alive == null ? 'inherit' : st.alive ? 'alive' : 'dead'}>
-              <Select options={[
+              <Select aria-label="本章人物状态" options={[
                 { value: 'inherit', label: '跟随档案（默认）' },
                 { value: 'alive', label: '本章存活' },
                 { value: 'dead', label: '本章死亡 💀' },
               ]} /></Form.Item>
             <Form.Item name="faction_chapter" label="本章阵营（留空跟随档案）" initialValue={st?.faction || undefined}>
-              <AutoComplete allowClear
+              <Select mode="combobox" aria-label="本章阵营" className="w-full" allowClear
                 placeholder={c?.faction ? `档案：${c.faction}` : '如：帝国（留空=跟随档案）'}
-                options={[...new Set([...allCharMap.values()].map((x) => x.faction).filter(Boolean))].map((f) => ({ value: f }))} />
+                options={[...new Set([...allCharMap.values()].map(x => x.faction).filter(Boolean))]} />
             </Form.Item>
             <Form.Item name="notes" label="本章备注" initialValue={st?.notes ?? ''}>
               <Input.TextArea rows={4} /></Form.Item>

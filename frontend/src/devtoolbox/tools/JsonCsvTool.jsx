@@ -1,6 +1,7 @@
 /** JSON ⇄ CSV：数组对象 ↔ CSV（RFC 4180 引号规则；分隔符可选；嵌套字段点路径扁平化） */
+import Select from '@/shared/ui/Select'
 import { useState } from 'react'
-import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine, selectCls } from '../kit'
+import { ToolHead, TwoPane, CopyBtn, Segmented, Check, StatusLine } from '../kit'
 import useComputation from '../../shared/useComputation'
 import CodeEditor from '../../shared/CodeEditor'
 
@@ -28,11 +29,16 @@ export default function JsonCsvTool() {
             { key: 'json2csv', label: 'JSON → CSV' },
             { key: 'csv2json', label: 'CSV → JSON' },
           ]} />
-          <select className={selectCls} value={delim} onChange={e => setDelim(e.target.value)} aria-label="分隔符">
-            <option value=",">逗号 ,</option>
-            <option value=";">分号 ;</option>
-            <option value={'\t'}>Tab</option>
-          </select>
+          <Select
+            aria-label="分隔符"
+            value={delim}
+            onChange={setDelim}
+            options={[
+              { value: ',', label: '逗号 ,' },
+              { value: ';', label: '分号 ;' },
+              { value: '\t', label: 'Tab' }
+            ]}
+          />
           {direction === 'json2csv' && <Check checked={flattenNested} onChange={setFlattenNested} label="扁平化嵌套" />}
         </>} />
       <TwoPane

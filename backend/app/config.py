@@ -7,6 +7,17 @@
 """
 
 import os
+from platform import system
+
+
+POSTGRES_DB_BY_SYSTEM = {'Windows': 'app_dev', 'Linux': 'app'}
+
+
+def resolve_postgres_dbname(name: str | None = None) -> str:
+    """内置库名跟随后端系统，显式配置的其他库名直接使用。"""
+    if name and name not in POSTGRES_DB_BY_SYSTEM.values():
+        return name
+    return POSTGRES_DB_BY_SYSTEM.get(system(), name or 'app_dev')
 
 
 class Settings:
@@ -20,6 +31,7 @@ class Settings:
     host: str = '0.0.0.0'
     port: int = 60100
     debug: bool = True
+    mcp_public_origin: str = os.environ.get('DOUBLOG_MCP_PUBLIC_ORIGIN', '')
 
     # 安全配置
     secret_key: str = 'dev-secret-key-change-in-production'
@@ -45,7 +57,8 @@ class Settings:
     postgres_port: int = 50002
     postgres_user: str = 'lizy'
     postgres_password: str = 'lizy111pg'
-    postgres_dbname: str = 'app_dev'
+
+    postgres_dbname: str = resolve_postgres_dbname()
 
     # 分页配置
     max_page_size: int = 100

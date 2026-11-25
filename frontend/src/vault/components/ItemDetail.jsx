@@ -2,12 +2,13 @@
  * Vault 条目详情（右栏）：LOGIN / TOTP / IDENTITIES / SECRETS / SECURITY /
  * 附件 / PASSWORD HISTORY / NOTES / CUSTOM FIELDS。密文默认隐藏，Reveal 15s 自动隐藏。
  */
-import { useMemo, useEffect, useState, useRef } from 'react'
+import { useMemo, useEffect, useState, useRef, useCallback } from 'react'
 import md from '@/shared/md'
 import {
   passwordEntropy, strengthLabel, daysAgo, usageDays, domainOf, expiryInfo,
   TYPE_LABELS, CATEGORY_LABELS, SECRET_KIND_LABELS, METHOD_LABELS,
 } from './core'
+import { accountSiteName, loginName, websiteUrl } from './accountBook.js'
 import { totpNow, parseOtpauth } from './totp'
 import { encryptBlob, decryptBlob } from './crypto'
 import { vaultListAttachments, vaultAddAttachment, vaultDeleteAttachment } from '../api'
@@ -74,7 +75,7 @@ function TotpDisplay({ secret, copier, digits, period }) {
 }
 
 /** 安全附件区：上传（VEK 加密→密文上传）/ 下载（密文→解密→Blob）/ 删除 */
-function Attachments({ item, vek, vaultSession }) {
+function Attachments({ item, getVaultKey, vaultSession }) {
   const [rows, setRows] = useState(null)      // [{meta, attachment}]，meta=解密后 {filename, mime, data}
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -82,12 +83,12 @@ function Attachments({ item, vek, vaultSession }) {
   const lifecycle = useRef(null), reloadGeneration = useRef(0)
   const MAX = 5 * 1024 * 1024
 
-  const reload = async () => {
+  const reload = useCallback(() => {
     const scope = lifecycle.current, generation = ++reloadGeneration.current
     if (!scope?.isCurrent()) return
+    const vek = getVaultKey()
     const current = () => scope.isCurrent() && generation === reloadGeneration.current
-    try {
-      const d = await vaultListAttachments(item.id, { signal: scope.signal })
+    return vaultListAttachments(item.id, { signal: scope.signal }).then(async d => {
       if (!current()) return
       if (!d?.success) { setRows([]); setErr(d?.message || '读取附件失败'); return }
       const out = await decryptBatches(d.data, async a => {
@@ -95,14 +96,14 @@ function Attachments({ item, vek, vaultSession }) {
         catch { return { a, meta: { filename: '（无法解密）', mime: '', data: '' } } }
       }, { concurrency: 3, batchSize: 10, isCurrent: current })
       if (current() && out) { setRows(out); setErr('') }
-    } catch (error) { if (current() && error.name !== 'AbortError') { setRows([]); setErr(error.message || '读取附件失败') } }
-  }
+    }).catch(error => { if (current() && error.name !== 'AbortError') { setRows([]); setErr(error.message || '读取附件失败') } })
+  }, [getVaultKey, item.id])
 
   useEffect(() => {
     const scope = createVaultTaskScope(vaultSession); lifecycle.current = scope
-    if (vek && !item.deleted_at) reload(); else setRows([])
+    if (!item.deleted_at) reload()
     return () => { scope.dispose(); reloadGeneration.current += 1; if (lifecycle.current === scope) lifecycle.current = null }
-  }, [item.id, item.deleted_at, vek, vaultSession])
+  }, [item.deleted_at, reload, vaultSession])
 
   const upload = async file => {
     const scope = lifecycle.current
@@ -116,7 +117,7 @@ function Attachments({ item, vek, vaultSession }) {
       let bin = ''
       for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000))
       const b64 = btoa(bin)
-      const blob = await encryptBlob(vek, { filename: file.name, mime: file.type || 'application/octet-stream', data: b64 })
+      const blob = await encryptBlob(getVaultKey(), { filename: file.name, mime: file.type || 'application/octet-stream', data: b64 })
       scope.assert()
       const d = await vaultAddAttachment(item.id, { blob, size: file.size }, { signal: scope.signal })
       scope.assert()
@@ -185,8 +186,10 @@ function Attachments({ item, vek, vaultSession }) {
   )
 }
 
-export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, onDelete, onToggleFav, categoryLabel }) {
+export default function ItemDetail({ item, copier, getVaultKey, vaultSession, onEdit, onDelete, onToggleFav, categoryLabel, groupLabel, onUsed }) {
   const d = item.data
+  const login = loginName(d)
+  const site = accountSiteName(d)
   const domain = domainOf(d.urls?.[0]?.value)
   const entropy = passwordEntropy(d.password?.value)
   const strength = strengthLabel(entropy)
@@ -214,6 +217,8 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
           <h2 className="text-xl font-semibold leading-tight truncate">{d.service || '未命名'}</h2>
           <div className="flex items-center gap-2 mt-1 text-[12px] text-stone-400 dark:text-stone-500 flex-wrap">
             {domain && <span className="truncate">{domain}</span>}
+            {d.purpose && <span>{d.purpose}</span>}
+            <span className="vault-detail-group" title={'所属分组 · ' + groupLabel}>{I.folder} {groupLabel}</span>
             {d.app_name && <span>· {d.app_name}</span>}
             {d.category && <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.07] text-[11px]">{categoryLabel ? categoryLabel(d.category) : (CATEGORY_LABELS[d.category] || d.category)}</span>}
             {d.type && d.type !== 'Website' && <span className="px-2 py-0.5 rounded-md bg-black/[0.05] dark:bg-white/[0.07] text-[11px]">{TYPE_LABELS[d.type] || d.type}</span>}
@@ -232,20 +237,64 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
               ? 'text-amber-500' : 'text-stone-300 dark:text-stone-600 hover:text-stone-500 dark:hover:text-stone-400 hover:bg-black/5 dark:hover:bg-white/5')}
           >{item.favorite ? I.starFill : I.star}</button>
           <button onClick={onEdit} title="编辑" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">{I.edit}</button>
-          <button onClick={() => onDelete(item)} title="删除（不可恢复）" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-500/10 transition-colors">{I.trash}</button>
+          <button onClick={() => onDelete(item)} title="移入最近删除" className="w-8 h-8 flex items-center justify-center rounded-lg text-stone-400 hover:text-red-500 hover:bg-red-500/10 transition-colors">{I.trash}</button>
         </div>
       </div>
 
       {/* LOGIN */}
       <Section title="登录信息">
-        {d.username && (
-          <FieldRow label="用户名">
+        <FieldRow label="所属网站"><span className="text-sm break-words">{site || '未填写'}</span></FieldRow>
+        {login && (
+          <FieldRow label="登录账号">
             <div className="flex items-center gap-1">
-              <span className="text-sm font-mono truncate text-stone-800 dark:text-stone-100">{d.username}</span>
-              <CopyButton value={d.username} copier={copier} />
+              <span className="text-sm font-mono truncate text-stone-800 dark:text-stone-100">{login}</span>
+              <CopyButton value={login} copier={copier} />
             </div>
           </FieldRow>
         )}
+        {d.password?.value ? (
+          <SecretField label="密码" value={d.password.value} copier={copier} />
+        ) : (
+          <FieldRow label="密码"><span className="text-[12px] text-stone-400">未设置</span></FieldRow>
+        )}
+        {(d.urls || []).filter(u => u.value).map((u, i) => {
+          const url = websiteUrl(u.value)
+          return <FieldRow key={i} label={i ? '其他网址' : '登录网址'}>
+            <div className="flex min-w-0 items-center gap-2">
+              {url ? <a href={url} target="_blank" rel="noopener noreferrer" onClick={onUsed}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate">{u.value} ↗</a>
+                : <span className="truncate text-sm">{u.value}</span>}
+              <CopyButton value={u.value} copier={copier} />
+            </div>
+          </FieldRow>
+        })}
+      </Section>
+
+      {/* TOTP 验证码（2FA Secret 可用时实时生成） */}
+      {totpSecrets.length > 0 && (
+        <Section title="TOTP 验证码">
+          {totpSecrets.map((t, i) => (
+            <div key={i} className="mb-2 last:mb-0">
+              {t.issuer && <p className="text-[11px] text-stone-400 mb-0.5">{t.issuer}</p>}
+              <TotpDisplay secret={t.secret} digits={t.digits} period={t.period} copier={copier} />
+            </div>
+          ))}
+          <p className="text-[11px] text-stone-400 mt-1">本地生成（RFC 6238），密钥不出设备；环形进度为本周期剩余时间。</p>
+        </Section>
+      )}
+
+      {/* NOTES */}
+      {d.notes && (
+        <Section title="备注">
+          <NotesView text={d.notes} />
+        </Section>
+      )}
+
+      {/* 附件（VEK 可用时） */}
+      <Attachments key={item.id} item={item} getVaultKey={getVaultKey} vaultSession={vaultSession} />
+
+      <details className="vault-advanced"><summary>更多信息</summary>
+        {(d.account_id || d.phone || d.email || d.real_name || d.login_methods?.length > 0) && <Section title="账号资料">
         {d.account_id && (
           <FieldRow label="账号昵称">
             <span className="text-sm text-stone-600 dark:text-stone-300 truncate">{d.account_id}</span>
@@ -272,26 +321,6 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
             <span className="text-sm text-stone-600 dark:text-stone-300 truncate">{d.real_name}</span>
           </FieldRow>
         )}
-        {d.password?.value ? (
-          <SecretField label="密码" value={d.password.value} copier={copier} />
-        ) : (
-          <FieldRow label="密码"><span className="text-[12px] text-stone-400">未设置</span></FieldRow>
-        )}
-        {(d.urls || []).filter(u => u.value).map((u, i) => (
-          <FieldRow key={i} label={i === 0 ? 'Website' : ' '}>
-            <div className="flex items-center gap-1">
-              <a href={u.value.includes('://') ? u.value : `https://${u.value}`} target="_blank" rel="noreferrer"
-                className="text-sm text-blue-600 dark:text-blue-400 hover:underline truncate">
-                {u.value}
-              </a>
-              <button
-                onClick={() => window.open(u.value.includes('://') ? u.value : `https://${u.value}`, '_blank', 'noreferrer')}
-                className="px-1.5 h-6 rounded-md text-[11px] text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-              >打开</button>
-              <CopyButton value={u.value} copier={copier} />
-            </div>
-          </FieldRow>
-        ))}
         {(d.login_methods || []).length > 0 && (
           <FieldRow label="登录方式">
             <div className="flex gap-1.5 flex-wrap">
@@ -301,21 +330,7 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
             </div>
           </FieldRow>
         )}
-      </Section>
-
-      {/* TOTP 验证码（2FA Secret 可用时实时生成） */}
-      {totpSecrets.length > 0 && (
-        <Section title="TOTP 验证码">
-          {totpSecrets.map((t, i) => (
-            <div key={i} className="mb-2 last:mb-0">
-              {t.issuer && <p className="text-[11px] text-stone-400 mb-0.5">{t.issuer}</p>}
-              <TotpDisplay secret={t.secret} digits={t.digits} period={t.period} copier={copier} />
-            </div>
-          ))}
-          <p className="text-[11px] text-stone-400 mt-1">本地生成（RFC 6238），密钥不出设备；环形进度为本周期剩余时间。</p>
-        </Section>
-      )}
-
+        </Section>}
       {/* IDENTITIES */}
       {(emails.length > 0 || recoveryEmails.length > 0 || phones.length > 0 || recoveryPhones.length > 0) && (
         <Section title="绑定身份">
@@ -367,9 +382,6 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
         </FieldRow>
       </Section>
 
-      {/* 附件（VEK 可用时） */}
-      {vek && <Attachments key={item.id} item={item} vek={vek} vaultSession={vaultSession} />}
-
       {/* PASSWORD HISTORY */}
       {d.password?.value && (
         <Section title={`密码历史（${history.length + 1}）`}>
@@ -412,12 +424,7 @@ export default function ItemDetail({ item, copier, vek, vaultSession, onEdit, on
         </Section>
       )}
 
-      {/* NOTES */}
-      {d.notes && (
-        <Section title="备注">
-          <NotesView text={d.notes} />
-        </Section>
-      )}
+      </details>
 
       <div className="pt-6 mt-6 border-t border-black/[0.06] dark:border-white/[0.06] text-[11px] text-stone-400 dark:text-stone-600 flex gap-4">
         <span>创建于 {(item.created_at || '').slice(0, 10)}</span>

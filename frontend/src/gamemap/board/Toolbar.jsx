@@ -1,7 +1,8 @@
 /* 顶栏（#1 收纳分组）：视图切换 | 时间范围（#8 与 URL 同步）| 高频操作常驻，
  * 低频操作（导出/对比/批量/备份）收进「操作 ▾」。
  * 适配 DouBlog：去掉源版右侧 DbSwitcherCompact（数据库切换由 Doublog /config 统一）。 */
-import { Button, Dropdown, Select, Space, Tag } from 'antd'
+import Select from '@/shared/ui/Select'
+import { Button, Dropdown, Space, Tag } from 'antd'
 import {
   AppstoreOutlined, CameraOutlined, DownOutlined, DiffOutlined, DownloadOutlined,
   TeamOutlined, UserAddOutlined,
@@ -16,7 +17,7 @@ export function Toolbar(p) {
       {p.view === 'board' && (
         <>
           <Space.Compact style={{ maxWidth: '100%', flexWrap: 'wrap' }}>
-            <Select size="small" style={{ minWidth: 138 }} value={p.scopeMode}
+            <Select aria-label="章节范围" size="sm" style={{ minWidth: 138 }} value={p.scopeMode}
               onChange={(v) => p.setScopeMode(v)}
               options={[
                 { value: 'chapter', label: '📄 当前章节' },
@@ -25,11 +26,11 @@ export function Toolbar(p) {
                 { value: 'custom', label: '📑 指定章节' },
               ]} />
             {(p.scopeMode === 'upto' || p.scopeMode === 'from') && (
-              <Select size="small" style={{ minWidth: 150 }} value={p.scopeBoundaryId ?? p.activeChapterId ?? undefined}
+              <Select aria-label="范围边界章节" size="sm" style={{ minWidth: 150 }} value={p.scopeBoundaryId ?? p.activeChapterId ?? undefined}
                 onChange={p.setScopeBoundaryId} options={chOpts} />
             )}
             {p.scopeMode === 'custom' && (
-              <Select mode="multiple" size="small" style={{ minWidth: 0, width: 220, maxWidth: '100%' }} maxTagCount="responsive"
+              <Select aria-label="指定章节" mode="multiple" size="sm" style={{ minWidth: 0, width: 220, maxWidth: '100%' }} maxTagCount="responsive"
                 placeholder="选择要查看的章节（可多选）" value={p.scopeIds} onChange={p.setScopeIds} options={chOpts.map((o) => ({ ...o, label: '🔖 ' + o.label }))} />
             )}
           </Space.Compact>
@@ -39,6 +40,7 @@ export function Toolbar(p) {
           <Button size="small" icon={<UserAddOutlined />} onClick={p.onAddChar}>添加人物</Button>
           <Button size="small" icon={<AppstoreOutlined />} onClick={p.onScatter}>打散布局</Button>
           <Dropdown trigger={['click']} menu={{
+            className: 'db-menu-surface',
             items: [
               { key: 'export', icon: <CameraOutlined />, label: '导出图片 PNG', disabled: p.exporting },
               { key: 'diff', icon: <DiffOutlined />, label: '演变对比' },
