@@ -15,7 +15,7 @@
 
 「MCP 接入配置」列出传输方式 Streamable HTTP、当前服务 URL 和 `Authorization: Bearer <YOUR_TOKEN>` 请求头。支持 `mcpServers` 的客户端可以复制 JSON 示例并替换令牌占位符。其他客户端可直接填写上述连接参数。[MCP 传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)
 
-目前接入 MyTodo 的 17 个工具。原有 13 项延续既有开放设置，「类别管理」的查询、新建、编辑与归档、删除四项默认关闭，可独立开启。模块通过 `mcp_provider` 声明工具后，配置中心即可管理它。工具开关按模块与工具名持久化，令牌绑定模块和数据库。[MyTodo 工具清单](todo.md#mcp-接入)
+当前接入 MyTodo 的 17 个工具和订阅管理的 10 个工具。工具开关按模块和工具名持久化，令牌绑定模块与数据库。订阅工具默认关闭，可逐项启用。[MyTodo 工具清单](todo.md#mcp-接入) · [订阅管理工具清单](subs.md#mcp-接入)
 
 ### 服务器远程接入
 

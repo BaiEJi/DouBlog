@@ -784,6 +784,8 @@ GET /api/v1/alerts · PUT /api/v1/alerts/config · POST /api/v1/alerts/check|ack
 
 ## 13. Subs API（订阅管理，CrownFlow 迁移）
 
+订阅管理提供 `/mcp/subs` Streamable HTTP 入口，与网页接口复用业务逻辑。配置中心签发模块令牌，客户端用 `Authorization: Bearer <token>` 连接。[订阅 MCP 工具清单](docs/modules/subs.md#mcp-接入)
+
 > 会员订阅管理（源自 CrownFlow 项目全量迁移）：**会员主表**（基础信息 + 提醒天数）一对多
 > **订阅记录**（每次购买/续费一条：价格/币种/计费周期/起止日期/渠道），按**分类**组织；
 > 支出统计按「日均 = 价格 ÷ 周期天数，实际支出 = 日均 × 与查询范围重叠天数（闭区间）」计算，

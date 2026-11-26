@@ -57,7 +57,7 @@ def test_access_and_discovery(app, local, auth_headers, monkeypatch):
     assert item['token'] not in listing.text and 'digest' not in listing.text
     assert [row['id'] for row in listing.json()['data']] == [item['id']]
     modules = local.get(ADMIN, headers=auth_headers).json()['data']
-    assert [(m['key'], m['endpoint']) for m in modules] == [('todo', 'http://127.0.0.1:60100/mcp/todo')]
+    assert {m['key']: m['endpoint'] for m in modules}['todo'] == 'http://127.0.0.1:60100/mcp/todo'
     assert local.post('/api/todo/mcp/tokens', headers=auth_headers, json={}).status_code == 404
     with Session(app.state.db_runtime.engine) as s:
         record = s.get(McpToken, item['id'])

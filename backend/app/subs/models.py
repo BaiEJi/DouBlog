@@ -14,12 +14,21 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.shared.timestamps import _iso
 from app.subs.currency import convert_to_base, parse_date
+
+
+class SubsMcpMutation(Base):
+    """按令牌隔离的写操作回执，和业务记录一起提交。"""
+    __tablename__ = 'subs_mcp_mutations'
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    result: Mapped[dict] = mapped_column(JSON, nullable=False)
 
 
 class SubsCategory(Base):

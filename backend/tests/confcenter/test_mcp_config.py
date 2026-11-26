@@ -72,7 +72,7 @@ def test_remote_mcp_without_public_origin(app, auth_headers, monkeypatch, base_u
     monkeypatch.setattr(settings, 'mcp_public_origin', '')
     with TestClient(app, base_url=base_url, client=(caller, 40000)) as remote:
         token = issue(remote, auth_headers)
-        catalog = remote.get(ADMIN, headers=auth_headers).json()['data'][0]
+        catalog = next(m for m in remote.get(ADMIN, headers=auth_headers).json()['data'] if m['key'] == 'todo')
         assert catalog['remote_enabled']
         assert catalog['endpoint'] == f'{base_url}/mcp/todo'
         assert remote.post('/mcp/todo', json={}).status_code == 401
@@ -93,7 +93,7 @@ def test_public_origin_is_optional_and_sets_advertised_url(app, auth_headers, mo
     proxy_app = ProxyHeadersMiddleware(app, trusted_hosts='127.0.0.1')
     with TestClient(app, **LOCAL) as owner:
         token = issue(owner, auth_headers)
-        catalog = owner.get(ADMIN, headers=auth_headers).json()['data'][0]
+        catalog = next(m for m in owner.get(ADMIN, headers=auth_headers).json()['data'] if m['key'] == 'todo')
         assert catalog['remote_enabled'] and catalog['endpoint'] == f'https://{public_host}/mcp/todo'
         tool = next(t for t in catalog['tools'] if t['name'] == 'create_task')
         assert tool['description'] and not tool['read_only']
@@ -200,7 +200,7 @@ def test_registered_modules_have_separate_tools_and_credentials(app, auth_header
     app.state.loaded_modules.append(('example', SimpleNamespace(mcp_provider=demo)))
     with TestClient(app, **LOCAL) as client:
         modules = client.get(ADMIN, headers=auth_headers).json()['data']
-        assert {m['key'] for m in modules} == {'todo', 'example'}
+        assert {m['key'] for m in modules} == {'todo', 'subs', 'example'}
         todo_token = issue(client, auth_headers)
         demo_token = issue(client, auth_headers, 'example')
         assert client.post(f"{ADMIN}/example/tokens/{todo_token['id']}/renew", headers=auth_headers,

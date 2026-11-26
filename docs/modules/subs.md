@@ -1,8 +1,8 @@
 # Subs 模块文档（订阅管理 / CrownFlow 全量迁移）
 
-> 模块：`backend/app/subs/`（`__init__.py` + `models.py` + `routes.py` + `currency.py`）
+> 模块：`backend/app/subs/`（HTTP 路由、共享业务服务 `service.py`、`mcp_api.py`、模型与币种计算）
 > ＋ 前端 `frontend/src/subs/`（`SubsPage.jsx` + `api.js` + `kit.jsx` + `charts.jsx` + `useHolidays.js` + `views/×5`）
-> 契约入口：`app/subs/__init__.py` 导出 `router` + `start_background(app)`（`app.state.testing` 时空转）；
+> 契约入口：`app/subs/__init__.py` 导出 `router`、`mcp_provider` 和后台调度钩子（`app.state.testing` 时空转）。
 > `ensure_migrations(engine)` 为会员/订阅补revision；另导出stop_background/drain_background供统一生命周期调用
 > 更新日期：**2026-10-21**（原核心用例见第6节，新增专项见末节）
 
@@ -24,9 +24,28 @@ subs 是从 CrownFlow 项目全量迁移的**会员订阅管理**能力包（路
   统计图表（面积趋势图 + 环形饼图，纯 SVG 零依赖）、设置（分类 CRUD）
 - **每日后台线程**：10:00 当日支出摘要写模块日志
 
+## MCP 接入
+
+在「配置中心 → MCP 配置 → 订阅管理」启用所需工具并签发订阅模块令牌。使用与 DouBlog 相同的 HTTP 端口，连接地址为 `/mcp/subs`，传输方式为 Streamable HTTP。工具默认关闭，每项独立开放。
+
+| 工具 | 用途 |
+| --- | --- |
+| `search_memberships` | 分页搜索会员，可同时返回包含空分类的清单 |
+| `get_membership` | 通过会员 ID 或订阅 ID 查看会员信息、版本号和分页订阅历史 |
+| `get_expiring_subscriptions` | 按给定天数或各会员提醒天数查询未到期记录 |
+| `get_spending_report` | 选择返回概览、区间汇总、分类月年汇总、趋势、排行榜或分页明细 |
+| `create_membership` | 创建会员，可原子登记首期订阅 |
+| `record_subscription` | 为现有会员登记新一期订阅或续订 |
+| `update_membership` | 编辑名称、归类、备注和提前提醒天数 |
+| `update_subscription` | 更正指定订阅记录 |
+| `save_category` | 新建或编辑分类 |
+| `delete_subscription` | 删除单条订阅记录 |
+
+所有写工具使用 `mutation_id`。同一令牌下，以同编号、同参数重试会返回原结果。会员和订阅编辑、单条订阅删除须传当前 `revision`。支出复用网页口径，缺省区间为业务时区的整月。分类删除和会员删除使用网页入口。
+
 ## 2. 数据模型（`app/subs/models.py`）
 
-三张表，`subs_` 前缀隔离，同库存储；**日期一律 `YYYY-MM-DD` 字符串**（跨 SQLite/PG 比较语义一致）。
+三张业务表及 `subs_mcp_mutations` 回执表按 `subs_` 前缀隔离，同库存储。回执与业务写入在同一事务提交。业务日期使用 `YYYY-MM-DD` 字符串，便于在 SQLite 和 PostgreSQL 上保持比较语义一致。
 
 ### `subs_categories`（SubsCategory）
 

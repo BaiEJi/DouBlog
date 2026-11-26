@@ -1,4 +1,5 @@
 """订阅管理能力（CrownFlow 迁移）：会员 / 订阅记录 / 分类 / 支出统计 / 到期提醒。"""
+from .mcp_api import mcp_provider as mcp_provider
 from .routes import router, start_daily_loop, stop_daily_loop
 
 
