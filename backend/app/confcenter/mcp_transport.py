@@ -14,6 +14,7 @@ from starlette.responses import Response
 
 from app.db import run_db
 from app.shared.mcp_catalog import mcp_modules
+from app.shared.mcp_write import mcp_application
 from .mcp_admin import authenticate
 from .mcp_network import McpNetwork
 
@@ -21,13 +22,19 @@ from .mcp_network import McpNetwork
 _access = ContextVar('mcp_request_access')
 
 
-async def _call_tool(provider, params):
+async def _call_tool(app, provider, params):
     token_id, enabled = _access.get()
     if params.name not in enabled:
         raise MCPError(-32602, '工具未开放或不存在')
     try:
         args = provider.tools[params.name].inputs.model_validate(params.arguments or {})
-        data = await run_db(provider.execute, params.name, args, token_id)
+        def execute():
+            binding = mcp_application.set(app)
+            try:
+                return provider.execute(params.name, args, token_id)
+            finally:
+                mcp_application.reset(binding)
+        data = await run_db(execute)
     except ValidationError as error:
         fields = ', '.join('.'.join(map(str, item['loc'])) for item in error.errors(include_input=False))
         message = '参数不符合工具定义：' + fields
@@ -41,7 +48,7 @@ async def _call_tool(provider, params):
     return types.CallToolResult(is_error=True, content=[types.TextContent(type='text', text=message)])
 
 
-def _transport(provider):
+def _transport(app, provider):
     catalog = {name: types.Tool(name=name, title=tool.title, description=tool.handler.__doc__,
                                 input_schema=tool.inputs.model_json_schema(),
                                 annotations=types.ToolAnnotations(read_only_hint=tool.read_only, open_world_hint=False))
@@ -52,7 +59,7 @@ def _transport(provider):
         return types.ListToolsResult(tools=[spec for name, spec in catalog.items() if name in enabled])
 
     async def call_tool(ctx, params):
-        return await _call_tool(provider, params)
+        return await _call_tool(app, provider, params)
 
     def input_schema(name):
         _, enabled = _access.get()
@@ -70,7 +77,7 @@ async def _lifespan(app):
     network = McpNetwork.configured()
     async with AsyncExitStack() as stack:
         for key, provider in mcp_modules(app).items():
-            manager = _transport(provider)
+            manager = _transport(app, provider)
             await stack.enter_async_context(manager.run())
             managers[key] = (provider, manager)
         yield {'mcp_managers': managers, 'mcp_network': network}

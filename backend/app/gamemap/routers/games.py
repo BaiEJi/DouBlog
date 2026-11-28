@@ -52,8 +52,7 @@ async def list_games():
 async def create_game(data: GameCreate):
     def _impl():
         session = db.session
-        game = Game(name=data.name, description=data.description, play_status=data.play_status)
-        session.add(game)
+        game = save_game_record(session, None, data.model_dump())
         session.commit()
         session.refresh(game)
         response_cache.invalidate_all()
@@ -78,17 +77,27 @@ async def get_game(game_id: int):
 async def update_game(game_id: int, data: GameUpdate):
     def _impl():
         session = db.session
-        game = session.get(Game, game_id)
-        if not game:
-            raise HTTPException(404, "游戏不存在")
-        for k, v in data.model_dump(exclude_unset=True).items():
-            setattr(game, k, v)
+        game = save_game_record(session, game_id, data.model_dump(exclude_unset=True))
         session.commit()
         session.refresh(game)
         response_cache.invalidate_game(game_id)
         _attach_urls(session, [game])
         return api_response(_dump(GameOut.model_validate(game)))
     return await run_db(_guard(_impl))
+
+
+def save_game_record(session, game_id, fields):
+    if game_id is None:
+        game = Game(**fields)
+        session.add(game)
+    else:
+        game = session.get(Game, game_id, with_for_update=True)
+        if game is None:
+            raise HTTPException(404, '游戏不存在')
+        for key, value in fields.items():
+            setattr(game, key, value)
+    session.flush()
+    return game
 
 
 @router.delete("/{game_id}")

@@ -432,6 +432,8 @@ FastAPI 无代理概念）：配置内存快照（版本化，管理端改动 re
 
 ## 11. 测试
 
+门户 MCP 写工具通过 `app/shared/mcp_write.py` 接入。模块可使用同事务写入回执，也可沿用已有的领域事务或状态设置接口。测试覆盖逐工具写入、重试、版本冲突、网页数据一致性和权限隔离。
+
 门户模块通过各自的 `mcp_api.py` 注册领域工具。`app/shared/mcp_read.py` 统一只读工具的输入配置、分页和错误转换，模块定义各自的业务查询与返回字段。`tests/confcenter/test_mcp_portal_modules.py` 验证全量工具发现和调用、模块令牌隔离、已关闭工具及凭据字段投影。
 
 订阅模块的 `app/subs/mcp_api.py` 组合查询和写入，`app/subs/service.py` 供 REST 与 MCP 共用。`tests/subs/test_subs_mcp.py` 验证模块令牌隔离、开关、同步数据、统计口径、订阅修改版本和并发重试。

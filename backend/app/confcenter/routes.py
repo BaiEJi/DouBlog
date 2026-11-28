@@ -556,12 +556,16 @@ async def get_entry(namespace: str, key: str, request: Request):
 async def put_entry(namespace: str, key: str, request: Request):
     """upsert {type:'str'|'json', data}：新建 201 / 整体覆盖 200（type 可变更）。"""
     await run_db(lambda: ratelimit.check(request.app, namespace))
+    body = await _json_body(request)
+    return await run_db(save_entry, request.app, namespace, key, body)
+
+
+def save_entry(app, namespace, key, body):
     if len(namespace) > NAMESPACE_MAX or not NAME_RE.fullmatch(namespace):
         raise ParamError(message='namespace 含非法字符（仅允许字母数字 _ . : -）')
     if len(key) > KEY_MAX or not NAME_RE.match(key):
         raise ParamError(message='key 含非法字符（仅允许字母数字 _ . : -）')
 
-    body = await _json_body(request)
     entry_type, stored = _stored_value(body)
     expected = _expected_timestamp(body['if_updated_at']) if 'if_updated_at' in body else None
     only_create = body.get('if_absent', False)
@@ -569,7 +573,7 @@ async def put_entry(namespace: str, key: str, request: Request):
         raise ParamError(message='if_absent 必须为布尔值')
 
     def _upsert():
-        state = cache.get_cache_state(request.app)
+        state = cache.get_cache_state(app)
         now = _utcnow()
 
         def _attempt() -> bool:
@@ -598,7 +602,7 @@ async def put_entry(namespace: str, key: str, request: Request):
         cache.cache_invalidate(state, namespace, key)   # 先落库再 DEL
         return created, payload
 
-    created, payload = await run_db(_upsert)
+    created, payload = _upsert()
     if created == 'conflict':
         return api_response(None, 409, '配置已存在或版本已变化，请重新载入')
     return api_response(_entry_dict(namespace, key, payload),
@@ -611,10 +615,14 @@ async def delete_entry(namespace: str, key: str, request: Request):
     """删除单条：200；不存在 404。写路径同样先落库再 DEL 缓存。"""
     await run_db(lambda: ratelimit.check(request.app, namespace))
     expected_raw = request.query_params.get('if_updated_at')
+    return await run_db(remove_entry, request.app, namespace, key, expected_raw)
+
+
+def remove_entry(app, namespace, key, expected_raw):
     expected = _expected_timestamp(expected_raw) if expected_raw is not None else None
 
     def _delete():
-        state = cache.get_cache_state(request.app)
+        state = cache.get_cache_state(app)
 
         def _attempt() -> int:
             with db.engine.begin() as conn:
@@ -626,7 +634,7 @@ async def delete_entry(namespace: str, key: str, request: Request):
             cache.cache_invalidate(state, namespace, key)
         return found
 
-    found = await run_db(_delete)
+    found = _delete()
     if not found:
         if expected is not None:
             return api_response(None, 409, '配置已变化或已删除，请重新载入')

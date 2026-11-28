@@ -15,7 +15,7 @@
 
 「MCP 接入配置」列出传输方式 Streamable HTTP、当前服务 URL 和 `Authorization: Bearer <YOUR_TOKEN>` 请求头。支持 `mcpServers` 的客户端可以复制 JSON 示例并替换令牌占位符。其他客户端可直接填写上述连接参数。[MCP 传输规范](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http)
 
-全部 15 个门户模块已接入。工具开关按模块和工具名持久化，令牌绑定模块与数据库。新增工具默认关闭，可逐项启用。配置中心本身提供 `/mcp/confcenter` 的 `search_config_catalog`，用来查询命名空间、键名和类型。[MCP 工具清单](../../api.md#mcp-模块目录)
+全部 15 个门户模块已接入。工具开关按模块和工具名持久化，令牌绑定模块与数据库。新增工具默认关闭，可逐项启用。`/mcp/confcenter` 可查配置目录、新建命名空间、按版本保存和删除配置项。[MCP 工具清单](../../api.md#mcp-模块目录) · [写入工具](../../api.md#mcp-写入工具)
 
 ### 服务器远程接入
 

@@ -1,9 +1,11 @@
 from datetime import timedelta
 
 from pydantic import Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
-from app.shared.mcp_read import Hours, Paged, page_rows, read_provider, read_tool
+from app.db import db
+from app.shared.mcp_read import Hours, IntId, Paged, page_rows, read_provider, read_tool
+from app.shared.mcp_write import Write, add_writes, write_tool
 from app.shared.timestamps import _utcnow
 from .models import SdkAlert, SdkLog
 
@@ -40,4 +42,20 @@ def list_log_alerts(args):
 mcp_provider = read_provider('日志查询', 'sdklogs', '查看日志活动和告警摘要。', {
     'get_log_activity': read_tool('查询日志活动', '日志与告警', LogActivity, get_log_activity),
     'list_log_alerts': read_tool('查询告警记录', '日志与告警', Alerts, list_log_alerts),
+})
+
+
+class AcknowledgeAlerts(Write):
+    alert_ids: list[IntId] = Field(min_length=1, max_length=100, description='要确认的告警 ID 列表。', examples=[[1, 2]])
+
+
+def acknowledge_alerts(args):
+    """确认指定告警，保留日志和告警记录。"""
+    changed = db.session.execute(update(SdkAlert).where(
+        SdkAlert.id.in_(args.alert_ids), SdkAlert.acked.is_(False)).values(acked=True)).rowcount
+    return {'acked': changed}
+
+
+mcp_provider = add_writes(mcp_provider, {
+    'acknowledge_alerts': write_tool('确认告警', '告警处理', AcknowledgeAlerts, acknowledge_alerts),
 })

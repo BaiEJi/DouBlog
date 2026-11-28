@@ -1171,6 +1171,25 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 | `todo` | [MyTodo 工具](docs/modules/todo.md#mcp-接入) | 待办、复盘和分类管理 |
 | `subs` | [订阅管理工具](docs/modules/subs.md#mcp-接入) | 订阅搜索、到期提醒、报表和记账 |
 
+#### MCP 写入工具
+
+| 模块 | 工具 | 写入范围 |
+| --- | --- | --- |
+| `blog` | `save_article`、`save_diary`、`save_bookmark`、`save_asset` | 新建文章草稿、日记、书签或文本资产，亦可编辑指定记录 |
+| `mindmap` | `create_map`、`rename_map`、`add_map_node` | 建立导图、重命名、追加文本节点 |
+| `gamemap` | `save_game`、`save_chapter` | 新建和编辑游戏、章节资料，为新章节建立画板 |
+| `practice` | `create_problem`、`update_problem`、`record_review` | 录题、修改题面和笔记、登记复习结果 |
+| `confcenter` | `create_namespace`、`save_config_entry`、`delete_config_entry` | 建空间，按需新增、覆盖或删除单个配置项 |
+| `system` | `save_portal_layout` | 按版本保存门户分组和卡片顺序 |
+| `vault` | `set_vault_favorite`、`set_vault_trash_state` | 设置收藏、移入回收站或恢复；用 `list_vault_entries` 获取条目 ID |
+| `sdklogs` | `acknowledge_alerts` | 按 ID 批量确认告警 |
+| `pwsvc` | `update_project_profile`、`set_project_user_status` | 修改项目资料、启停现有用户；用 `list_project_users` 获取用户 ID |
+| `apihub` | `set_api_enabled` | 启停已登记 API 并刷新网关目录 |
+| `steamidler` | `set_idle_preferences` | 更新已登录账号的自动恢复偏好 |
+| `clash` | `set_proxy_enabled` | 设置本机系统代理开关 |
+
+写入工具默认关闭。带 `mutation_id` 的写入用同一令牌、同一编号和参数重试可重放结果。配置项可使用 `if_absent` 或 `if_updated_at` 做并发检查，接口与系统代理开关采用明确的目标状态。开发者工具箱处理输入并返回结果，属于无持久状态的计算。
+
 查询示例通过 `POST /mcp/blog` 发送以下 JSON-RPC 消息。客户端同时发送 `Authorization: Bearer <token>`、`Content-Type: application/json` 和 `Accept: application/json, text/event-stream`。
 
 ```json

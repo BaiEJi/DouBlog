@@ -1251,14 +1251,21 @@ async def toggle_api(aid: int, request: Request):
     app = request.app
 
     def _run():
-        a = db.session.get(ApihubApi, aid)
+        a = set_api_enabled(app, aid, bool(body.get('enabled')))
         if a is None:
             return api_response(None, 404, 'API 不存在')
-        a.enabled = bool(body.get('enabled'))
-        db.session.commit()
-        get_state(app).reload()
         return api_response(_api_dict(app, a))
     return await run_db(_run)
+
+
+def set_api_enabled(app, api_id, enabled):
+    api = db.session.get(ApihubApi, api_id)
+    if api is None:
+        return None
+    api.enabled = enabled
+    db.session.commit()
+    get_state(app).reload()
+    return api
 
 
 # ─── 管理端：平台令牌 ───────────────────────────────────────────────

@@ -554,112 +554,115 @@ async def create_post(request: Request):
     data = await _json_body(request)
     ip = request_ip(request)
 
-    def _impl():
-        session = db.session
-
-        if not data.get('title'):
-            return api_response(None, 400, '标题不能为空')
-
-        # 确定知识库
-        workspace_id = data.get('workspace_id')
-        if workspace_id:
-            workspace = session.query(Workspace).filter(Workspace.id == workspace_id).first()
-            if not workspace:
-                return api_response(None, 400, '知识库不存在')
-        else:
-            workspace = session.query(Workspace).order_by(Workspace.id.asc()).first()
-            if not workspace:
-                return api_response(None, 400, '知识库不存在')
-
-        _lock_workspace(session, workspace.id)
-        session.refresh(workspace)
-        # name 字段：优先使用传入的 name，否则从 slug 解析
-        name = data.get('name') or (data.get('slug', '').strip('/') or '').split('/')[-1]
-
-        if not name:
-            return api_response(None, 400, '英文名不能为空')
-
-        # 验证slug格式
-        if not validate_slug(name):
-            return api_response(None, 400, '英文名格式无效：必须以英文字母开头，只允许英文、数字和连字符，长度3-100字符')
-
-        parent_id = data.get('parent_id') or ROOT_ID
-
-        # 验证name在知识库内唯一
-        existing = session.query(Post).filter(
-            Post.name == name, Post.workspace_id == workspace.id
-        ).first()
-        if existing:
-            return api_response(None, 400, '该英文名已被使用，请使用其他名称')
-
-        # 父文章单次查询，复用于层级/归属校验、slug 前缀与 children_order 追加
-        # （层级判断内联于此，避免对同一父行重复回查）
-        parent = None
-        if parent_id != ROOT_ID:
-            parent = session.query(Post).filter(Post.id == parent_id).first()
-
-        level = 0
-        if parent is not None:
-            if parent.level + 1 > MAX_LEVEL:
-                return api_response(None, 400, f'父文章已达最大层级限制（最多{MAX_LEVEL + 1}层）')
-            if parent.workspace_id != workspace.id:
-                return api_response(None, 400, '父文章不属于该知识库')
-            level = parent.level + 1
-
-        # 完整slug：父级 slug 前缀直推（存量空 slug 回退逐级回溯），
-        # 免去对刚插入行再做整链查询
-        if parent is not None and parent.slug:
-            full_slug = parent.slug + '/' + name
-        elif parent is not None:
-            full_slug = build_full_slug(parent.id, session) + '/' + name
-        else:
-            full_slug = '/' + name
-
-        # 创建文章
-        post = Post(
-            title=data['title'],
-            name=name,
-            slug=full_slug,
-            content=data.get('content', ''),
-            summary=data.get('summary'),
-            workspace_id=workspace.id,
-            parent_id=parent_id,
-            level=level,
-            author='admin',
-            status=data.get('status', 'published'),
-            is_top=data.get('is_top', False),
-            tags=json.dumps(data.get('tags')) if data.get('tags') else None
-        )
-
-        session.add(post)
-        session.flush()  # 获取ID（created_at/updated_at 经 INSERT RETURNING 一并带回）
-
-        # 追加到父节点（或知识库顶级）的 children_order
-        if parent_id == ROOT_ID:
-            order = workspace._parse_children_order()
-            if post.id not in order:
-                order.append(post.id)
-                workspace.children_order = json.dumps(order)
-        elif parent is not None:
-            append_child(parent, post.id)
-
-        log_action('create', 'post', post.id, {'title': post.title, 'workspace_id': workspace.id},
-                   ip_address=ip)
-        session.commit()  # expire_on_commit=False，flush 时取回的属性仍有效（免 refresh 回查）
-
-        return api_response({
-            'id': post.id,
-            'title': post.title,
-            'name': post.name,
-            'slug': post.slug,
-            'workspace_id': post.workspace_id,
-            'level': post.level,
-            'created_at': _iso(post.created_at)
-        }, 201, '创建成功')
-    return await run_db(_impl)
+    return await run_db(create_post_data, data, ip)
 
 
-def _update_post(session, post, data, ip):
+def create_post_data(data, ip, *, commit=True):
+    session = db.session
+
+    if not data.get('title'):
+        return api_response(None, 400, '标题不能为空')
+
+    # 确定知识库
+    workspace_id = data.get('workspace_id')
+    if workspace_id:
+        workspace = session.query(Workspace).filter(Workspace.id == workspace_id).first()
+        if not workspace:
+            return api_response(None, 400, '知识库不存在')
+    else:
+        workspace = session.query(Workspace).order_by(Workspace.id.asc()).first()
+        if not workspace:
+            return api_response(None, 400, '知识库不存在')
+
+    _lock_workspace(session, workspace.id)
+    session.refresh(workspace)
+    # name 字段：优先使用传入的 name，否则从 slug 解析
+    name = data.get('name') or (data.get('slug', '').strip('/') or '').split('/')[-1]
+
+    if not name:
+        return api_response(None, 400, '英文名不能为空')
+
+    # 验证slug格式
+    if not validate_slug(name):
+        return api_response(None, 400, '英文名格式无效：必须以英文字母开头，只允许英文、数字和连字符，长度3-100字符')
+
+    parent_id = data.get('parent_id') or ROOT_ID
+
+    # 验证name在知识库内唯一
+    existing = session.query(Post).filter(
+        Post.name == name, Post.workspace_id == workspace.id
+    ).first()
+    if existing:
+        return api_response(None, 400, '该英文名已被使用，请使用其他名称')
+
+    # 父文章单次查询，复用于层级/归属校验、slug 前缀与 children_order 追加
+    # （层级判断内联于此，避免对同一父行重复回查）
+    parent = None
+    if parent_id != ROOT_ID:
+        parent = session.query(Post).filter(Post.id == parent_id).first()
+
+    level = 0
+    if parent is not None:
+        if parent.level + 1 > MAX_LEVEL:
+            return api_response(None, 400, f'父文章已达最大层级限制（最多{MAX_LEVEL + 1}层）')
+        if parent.workspace_id != workspace.id:
+            return api_response(None, 400, '父文章不属于该知识库')
+        level = parent.level + 1
+
+    # 完整slug：父级 slug 前缀直推（存量空 slug 回退逐级回溯），
+    # 免去对刚插入行再做整链查询
+    if parent is not None and parent.slug:
+        full_slug = parent.slug + '/' + name
+    elif parent is not None:
+        full_slug = build_full_slug(parent.id, session) + '/' + name
+    else:
+        full_slug = '/' + name
+
+    # 创建文章
+    post = Post(
+        title=data['title'],
+        name=name,
+        slug=full_slug,
+        content=data.get('content', ''),
+        summary=data.get('summary'),
+        workspace_id=workspace.id,
+        parent_id=parent_id,
+        level=level,
+        author='admin',
+        status=data.get('status', 'published'),
+        is_top=data.get('is_top', False),
+        tags=json.dumps(data.get('tags')) if data.get('tags') else None
+    )
+
+    session.add(post)
+    session.flush()  # 获取ID（created_at/updated_at 经 INSERT RETURNING 一并带回）
+
+    # 追加到父节点（或知识库顶级）的 children_order
+    if parent_id == ROOT_ID:
+        order = workspace._parse_children_order()
+        if post.id not in order:
+            order.append(post.id)
+            workspace.children_order = json.dumps(order)
+    elif parent is not None:
+        append_child(parent, post.id)
+
+    log_action('create', 'post', post.id, {'title': post.title, 'workspace_id': workspace.id},
+               ip_address=ip)
+    if commit:
+        session.commit()
+
+    return api_response({
+        'id': post.id,
+        'title': post.title,
+        'name': post.name,
+        'slug': post.slug,
+        'workspace_id': post.workspace_id,
+        'level': post.level,
+        'created_at': _iso(post.created_at)
+    }, 201, '创建成功')
+
+
+def _update_post(session, post, data, ip, *, commit=True):
     """更新文章公共逻辑（ID 与 slug 两个入口共用）"""
     _lock_workspace(session, post.workspace_id)
     session.refresh(post)
@@ -801,7 +804,10 @@ def _update_post(session, post, data, ip):
             update_slug_for_subtree(post.id, session)
 
     log_action('update', 'post', post.id, {'fields': list(data.keys())}, ip_address=ip)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(post)
 
     return api_response({

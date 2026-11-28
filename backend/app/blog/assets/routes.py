@@ -337,31 +337,36 @@ async def list_items(request: Request):
 async def create_item(request: Request):
     data = await _json_or_empty(request)
 
-    def _impl():
-        patch = validate_item_payload(data)
-        if not patch.get('title') or not patch.get('content'):
-            raise ParamError(message='标题与正文不能为空')
-        category_id = data.get('category_id')
-        if category_id is not None:
-            _require_category(category_id)
-        favorite = data.get('favorite')
-        if favorite not in (None, True, False):
-            raise ParamError(message='favorite 必须为布尔值')
-        item = AssetItem(
-            kind=patch['kind'], title=patch['title'], summary=patch.get('summary'),
-            content=patch['content'], category_id=category_id,
-            tags=patch.get('tags', []),
-            variables=extract_variables(patch['content']),
-            favorite=bool(favorite),
-        )
-        db.session.add(item)
-        db.session.flush()                      # 取 id 后写 v1 快照
-        db.session.add(snapshot_version(
-            item, (data.get('version_note') or '').strip() or '初始版本'))
+    return await run_db(create_asset_data, data)
+
+
+def create_asset_data(data, *, commit=True):
+    patch = validate_item_payload(data)
+    if not patch.get('title') or not patch.get('content'):
+        raise ParamError(message='标题与正文不能为空')
+    category_id = data.get('category_id')
+    if category_id is not None:
+        _require_category(category_id)
+    favorite = data.get('favorite')
+    if favorite not in (None, True, False):
+        raise ParamError(message='favorite 必须为布尔值')
+    item = AssetItem(
+        kind=patch['kind'], title=patch['title'], summary=patch.get('summary'),
+        content=patch['content'], category_id=category_id,
+        tags=patch.get('tags', []),
+        variables=extract_variables(patch['content']),
+        favorite=bool(favorite),
+    )
+    db.session.add(item)
+    db.session.flush()                      # 取 id 后写 v1 快照
+    db.session.add(snapshot_version(
+        item, (data.get('version_note') or '').strip() or '初始版本'))
+    if commit:
         db.session.commit()
-        logger.info(f'创建资产 {item.title}(#{item.id}, {item.kind})')
-        return api_response(item.to_dict(include_content=True), 201, '创建成功')
-    return await run_db(_impl)
+    else:
+        db.session.flush()
+    logger.info(f'创建资产 {item.title}(#{item.id}, {item.kind})')
+    return api_response(item.to_dict(include_content=True), 201, '创建成功')
 
 
 @router.get('/items/{item_id}')
@@ -376,34 +381,39 @@ async def get_item(item_id: int):
 async def update_item(item_id: int, request: Request):
     data = await _json_or_empty(request)
 
-    def _impl():
-        item = _require_item(item_id)
-        if item.status == 'trash':
-            raise ConflictError(message='回收站资产不能编辑，请先恢复')
-        patch = validate_item_payload(data, partial=True)
-        if 'category_id' in data:
-            cid = data.get('category_id')
-            if cid is not None:
-                _require_category(cid)
-            patch['category_id'] = cid
-        if 'favorite' in data:
-            if not isinstance(data['favorite'], bool):
-                raise ParamError(message='favorite 必须为布尔值')
-            patch['favorite'] = data['favorite']
+    return await run_db(update_asset_data, item_id, data)
 
-        versioned = content_changed(item, patch)
-        for k, v in patch.items():
-            setattr(item, k, v)
-        if 'content' in patch:
-            item.variables = extract_variables(item.content)
-        if versioned:
-            item.version += 1
-            db.session.add(snapshot_version(
-                item, (data.get('version_note') or '').strip() or None))
+
+def update_asset_data(item_id, data, *, commit=True):
+    item = _require_item(item_id)
+    if item.status == 'trash':
+        raise ConflictError(message='回收站资产不能编辑，请先恢复')
+    patch = validate_item_payload(data, partial=True)
+    if 'category_id' in data:
+        cid = data.get('category_id')
+        if cid is not None:
+            _require_category(cid)
+        patch['category_id'] = cid
+    if 'favorite' in data:
+        if not isinstance(data['favorite'], bool):
+            raise ParamError(message='favorite 必须为布尔值')
+        patch['favorite'] = data['favorite']
+
+    versioned = content_changed(item, patch)
+    for k, v in patch.items():
+        setattr(item, k, v)
+    if 'content' in patch:
+        item.variables = extract_variables(item.content)
+    if versioned:
+        item.version += 1
+        db.session.add(snapshot_version(
+            item, (data.get('version_note') or '').strip() or None))
+    if commit:
         db.session.commit()
-        logger.info(f'更新资产 {item.title}(#{item.id}) -> v{item.version}')
-        return api_response(item.to_dict(include_content=True), 200, '更新成功')
-    return await run_db(_impl)
+    else:
+        db.session.flush()
+    logger.info(f'更新资产 {item.title}(#{item.id}) -> v{item.version}')
+    return api_response(item.to_dict(include_content=True), 200, '更新成功')
 
 
 @router.delete('/items/{item_id}')

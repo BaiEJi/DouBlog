@@ -358,18 +358,20 @@ async def get_entry(entry_id: int):
 async def create_entry(request: Request):
     data = await _json_body(request)
 
-    def _impl():
-        old, mutation, fingerprint = _receipt(data, 'create')
-        if old:
-            return api_response(old.result, old.status)
-        payload, err = _validate_payload(data)
-        if err:
-            raise ParamError(message=err)
-        entry = Diary(**payload)   # kind 已限 note（列默认值即 note）
-        db.session.add(entry)
-        db.session.flush()
-        return _finish_mutation(entry.to_dict(), 201, mutation, fingerprint)
-    return await run_db(_impl)
+    return await run_db(save_new_entry, data)
+
+
+def save_new_entry(data):
+    old, mutation, fingerprint = _receipt(data, 'create')
+    if old:
+        return api_response(old.result, old.status)
+    payload, err = _validate_payload(data)
+    if err:
+        raise ParamError(message=err)
+    entry = Diary(**payload)   # kind 已限 note（列默认值即 note）
+    db.session.add(entry)
+    db.session.flush()
+    return _finish_mutation(entry.to_dict(), 201, mutation, fingerprint)
 
 
 @_authed_router.post('/quick')
@@ -406,41 +408,42 @@ async def update_entry(entry_id: int, request: Request):
     """整包更新（自动保存）；或动作模式 ?action=pin|unpin|archive|unarchive|restore"""
     data = await _json_body(request)
 
-    def _impl():
-        old, mutation, fingerprint = _receipt(data, f'entry:{entry_id}:{request.query_params.get("action", "")}')
-        if old:
-            return api_response(old.result, old.status)
-        entry = db.session.get(Diary, entry_id)
-        if not entry:
-            raise NotFoundError(message='日记不存在')
-        _claim_entry(entry, data.get('revision'))
+    return await run_db(save_existing_entry, entry_id, data, request.query_params.get('action'))
 
-        action = request.query_params.get('action')
-        if action:
-            if action == 'pin':
-                entry.pinned = True
-            elif action == 'unpin':
-                entry.pinned = False
-            elif action == 'archive':
-                entry.archived_at = _utcnow()
-                entry.pinned = False
-            elif action == 'unarchive':
-                entry.archived_at = None
-            elif action == 'restore':
-                entry.deleted_at = None
-            else:
-                raise ParamError(message='action 可选 pin/unpin/archive/unarchive/restore')
-            db.session.flush()
-            return _finish_mutation(entry.to_dict(), 200, mutation, fingerprint)
 
-        payload, err = _validate_payload(data, partial=True)
-        if err:
-            raise ParamError(message=err)
-        for k, v in payload.items():
-            setattr(entry, k, v)
+def save_existing_entry(entry_id, data, action=None):
+    old, mutation, fingerprint = _receipt(data, f'entry:{entry_id}:{action or ""}')
+    if old:
+        return api_response(old.result, old.status)
+    entry = db.session.get(Diary, entry_id)
+    if not entry:
+        raise NotFoundError(message='日记不存在')
+    _claim_entry(entry, data.get('revision'))
+
+    if action:
+        if action == 'pin':
+            entry.pinned = True
+        elif action == 'unpin':
+            entry.pinned = False
+        elif action == 'archive':
+            entry.archived_at = _utcnow()
+            entry.pinned = False
+        elif action == 'unarchive':
+            entry.archived_at = None
+        elif action == 'restore':
+            entry.deleted_at = None
+        else:
+            raise ParamError(message='action 可选 pin/unpin/archive/unarchive/restore')
         db.session.flush()
         return _finish_mutation(entry.to_dict(), 200, mutation, fingerprint)
-    return await run_db(_impl)
+
+    payload, err = _validate_payload(data, partial=True)
+    if err:
+        raise ParamError(message=err)
+    for k, v in payload.items():
+        setattr(entry, k, v)
+    db.session.flush()
+    return _finish_mutation(entry.to_dict(), 200, mutation, fingerprint)
 
 
 @_authed_router.delete('/entries/{entry_id}')
