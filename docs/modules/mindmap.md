@@ -2,6 +2,10 @@
 
 > 2026-10-20。独立顶级模块，与 todo/vault 平级；页面 `/mindmap`、`/mindmap/:id`，API 前缀 `/api/mindmap`。选型依据见 [核心选型与适配边界](../mindmap-selection.md)，接口总索引见 [api.md 第 25 章](../../api.md#25-思维导图-apimindmap)。
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/mindmap`。搜索导图，在分页结果中查看节点提纲和父子关系。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 模块边界
 
 后端 `backend/app/mindmap/` 的 `models.py`、`validation.py`、`services.py`、`routes.py` 分别负责存储、数据边界、事务与树操作、HTTP 适配。`__init__.py` 只导出 router；没有新后台线程、缓存服务或独立数据库。模型随 `Base.metadata.create_all` 建表，注册在 `main.MODULES`、`MODULES_WITH_DB`、日志路径映射中。

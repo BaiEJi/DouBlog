@@ -4,6 +4,7 @@
 安装检测：DOUBLOG_CLASHCTL_DIR（默认 ~/clashctl）下存在 scripts/cmd/clashctl.sh 即可用。
 """
 from .routes import router
+from .mcp_api import mcp_provider as mcp_provider
 
 __all__ = ['router']
 from .events import start_background, stop_background

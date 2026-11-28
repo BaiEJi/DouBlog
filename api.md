@@ -1149,6 +1149,36 @@ POST /api/steamidler/accounts/{steamid}/idle {appids:[]} | /stop | /shared_secre
 
 ### MCP 配置
 
+#### MCP 模块目录
+
+各模块使用同一 DouBlog 端口和独立的 `/mcp/{module}` 地址。配置中心按模块签发 Bearer 令牌，新增工具默认关闭。列表型工具可按返回的分页信息继续读取。
+
+| 模块 | 工具 | 能力 |
+| --- | --- | --- |
+| `blog` | `search_knowledge`、`read_knowledge` | 选择文章、日记、书签或资产，分页搜索并分段读取正文 |
+| `mindmap` | `search_maps`、`read_map_outline` | 查导图目录并分页读取节点文本摘要和父子关系 |
+| `gamemap` | `search_games`、`list_chapters`、`get_chapter_brief` | 查游戏、按剧情顺序查章节并组合读取事件与人物 |
+| `practice` | `search_problems`、`read_problem` | 查题库和到期复习题，读取题面、题解和代码 |
+| `steamidler` | `list_idle_profiles` | 查看已保存的游戏选择、自动恢复和累计挂机时长 |
+| `vault` | `get_vault_status`、`list_vault_audit` | 查看条目计数和审计动作 |
+| `pwsvc` | `list_password_projects`、`get_project_health` | 查看项目与策略计数、聚合密码校验结果 |
+| `apihub` | `list_api_catalog`、`get_gateway_health` | 查看登记接口及现有探活和调用统计 |
+| `system` | `get_runtime_status`、`get_portal_layout` | 查看执行池、数据库运行统计和门户布局 |
+| `confcenter` | `search_config_catalog` | 查命名空间、键名和值类型 |
+| `sdklogs` | `get_log_activity`、`list_log_alerts` | 按系统和级别统计日志，并查结构化告警摘要 |
+| `clash` | `get_proxy_status` | 检查已经配置的本机 Clash 组件及内核运行状态 |
+| `devtoolbox` | `compute_text_hash`、`convert_text_encoding` | 对给定文本计算摘要和转换字符集 |
+| `todo` | [MyTodo 工具](docs/modules/todo.md#mcp-接入) | 待办、复盘和分类管理 |
+| `subs` | [订阅管理工具](docs/modules/subs.md#mcp-接入) | 订阅搜索、到期提醒、报表和记账 |
+
+查询示例通过 `POST /mcp/blog` 发送以下 JSON-RPC 消息。客户端同时发送 `Authorization: Bearer <token>`、`Content-Type: application/json` 和 `Accept: application/json, text/event-stream`。
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_knowledge","arguments":{"kind":"post","keyword":"项目","page":1,"page_size":10}}}
+```
+
+成功结果的 `structuredContent` 含 `items`、`page`、`page_size` 和 `has_more`。页面可显示各工具的参数和类型。
+
 | 方法 | 路径 | 输入和响应 |
 | --- | --- | --- |
 | GET | `/api/confcenter/mcp` | 返回已注册模块、连接地址 `endpoint`、兼容字段 `remote_enabled`（固定为 `true`）和工具清单。连接地址使用当前后端访问地址或配置的公开地址。每个工具包含 `description`、`read_only`、`input_schema`、`enabled`。MyTodo 的输入属性通过 `description` 和 `examples` 提供含义及 JSON 示例，与 MCP 的 `tools/list` 一致 |

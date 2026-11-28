@@ -163,7 +163,7 @@ npm run dev
 > 前端不经过代理，直接请求 `http://{当前主机名}:60100`（CORS 凭据模式，来源收敛 `:60101`）。
 > **统一登录**：打开前端即进 `/login`，登录一次签发会话 Cookie（30 天）全站生效；前端 bundle 不再持有任何凭据。Basic Auth 仅作为 API/脚本/测试的兼容通道。
 
-在「配置中心 → MCP 配置」选择 MyTodo 或订阅管理，可查看工具说明、启停工具，或签发、续期和撤销模块令牌。「MCP 接入配置」提供 Streamable HTTP 地址、认证请求头和可复制的 JSON 示例。[MCP 接入说明](docs/modules/confcenter.md#mcp-配置)
+在「配置中心 → MCP 配置」可以管理全部 15 个模块的 MCP 工具，查看参数示例，按模块签发、续期及撤销令牌。配置页提供 Streamable HTTP URL 及认证请求头。[MCP 工具清单](api.md#mcp-模块目录)
 
 ## 生产部署
 
@@ -222,7 +222,7 @@ MCP 支持从网络访问。直连可使用 `http://服务器IP:60100/mcp/todo`�
 | `GET` | `/api/auth/check` | 检查认证状态 |
 | `GET / PUT` | `/api/confcenter/mcp`、`/api/confcenter/mcp/{module}/tools/{tool}` | 查询注册模块与工具，设置工具是否开放 |
 | `GET / POST / DELETE` | `/api/confcenter/mcp/{module}/tokens`、`…/tokens/{id}/renew`、`…/tokens/{id}` | 列出、签发、续期和撤销模块令牌 |
-| `POST` | `/mcp/todo`、`/mcp/subs` | Streamable HTTP，发送对应模块的 Bearer 令牌 |
+| `POST` | `/mcp/{module}` | Streamable HTTP，发送对应模块的 Bearer 令牌 |
 | `GET` | `/api/posts` | 文章列表（`page/page_size`分页；**不含正文**；`workspace_id`按库，`keyword`由服务端匹配正文等字段） |
 | `GET` | `/api/posts/tree` | 文章树（**不含正文**，按知识库返回，缺省 = 默认库） |
 | `GET` | `/api/posts/id/<id>` | 详情（含正文，自增浏览量；`?no_view=1` 预取不计） |

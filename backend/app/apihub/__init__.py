@@ -19,6 +19,7 @@ from app.apihub.routes import probe_api
 from app.apihub.routes import drain_background, stop_background
 from app.apihub.routes import router as _apihub_router
 from app.apihub.routes import start_apihub_loop
+from .mcp_api import mcp_provider as mcp_provider
 
 router = APIRouter()
 router.include_router(_apihub_router)

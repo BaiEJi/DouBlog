@@ -4,6 +4,10 @@
 > `backend/tests/test_apihub_*.py`、`frontend/src/apihub/**`（以当前代码为准）。
 > 接口契约的对外版本见 `api.md` 第 14 章（14.1b 内置目录对外契约）；架构总览见 `backend.md` 10.51 节。
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/apihub`。查登记的接口目录和既有网关健康统计。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 功能概述
 
 API Hub 是 DouBlog 的能力包之一（`app/apihub/`，导出 `router` + `start_background(app)` +

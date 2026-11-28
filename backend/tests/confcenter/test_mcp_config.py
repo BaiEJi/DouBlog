@@ -177,7 +177,7 @@ def test_settings_apply_to_existing_tokens_and_survive_restart(app, auth_headers
         assert client.put(setting + 'create_task', headers={'Authorization': 'Bearer ' + first['token']},
                           json={'enabled': False}).status_code == 401
         assert client.put(setting + 'unknown', headers=auth_headers, json={'enabled': True}).status_code == 404
-        assert client.post(ADMIN + '/vault/tokens', headers=auth_headers, json={}).status_code == 404
+        assert client.post(ADMIN + '/missing-module/tokens', headers=auth_headers, json={}).status_code == 404
         for name in all_tools:
             assert client.put(setting + name, headers=auth_headers, json={'enabled': False}).status_code == 200
         for token in [first, second]:
@@ -200,7 +200,7 @@ def test_registered_modules_have_separate_tools_and_credentials(app, auth_header
     app.state.loaded_modules.append(('example', SimpleNamespace(mcp_provider=demo)))
     with TestClient(app, **LOCAL) as client:
         modules = client.get(ADMIN, headers=auth_headers).json()['data']
-        assert {m['key'] for m in modules} == {'todo', 'subs', 'example'}
+        assert {m['key'] for m in modules} >= {'todo', 'subs', 'example'}
         todo_token = issue(client, auth_headers)
         demo_token = issue(client, auth_headers, 'example')
         assert client.post(f"{ADMIN}/example/tokens/{todo_token['id']}/renew", headers=auth_headers,

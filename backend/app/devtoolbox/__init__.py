@@ -11,5 +11,6 @@
 对外契约：仅 router——不需要 start_background / ensure_migrations。
 """
 from .routes import router
+from .mcp_api import mcp_provider as mcp_provider
 
 __all__ = ['router']

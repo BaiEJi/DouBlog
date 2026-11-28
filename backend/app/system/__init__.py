@@ -9,6 +9,7 @@ from fastapi import APIRouter
 from . import models  # noqa: F401  注册 system_accounts 等到 Base.metadata（create_all 前必须导入）
 from .home import router as home_router
 from .routes import router as admin_router
+from .mcp_api import mcp_provider as mcp_provider
 
 router = APIRouter()
 router.include_router(admin_router)

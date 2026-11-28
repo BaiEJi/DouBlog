@@ -432,6 +432,8 @@ FastAPI 无代理概念）：配置内存快照（版本化，管理端改动 re
 
 ## 11. 测试
 
+门户模块通过各自的 `mcp_api.py` 注册领域工具。`app/shared/mcp_read.py` 统一只读工具的输入配置、分页和错误转换，模块定义各自的业务查询与返回字段。`tests/confcenter/test_mcp_portal_modules.py` 验证全量工具发现和调用、模块令牌隔离、已关闭工具及凭据字段投影。
+
 订阅模块的 `app/subs/mcp_api.py` 组合查询和写入，`app/subs/service.py` 供 REST 与 MCP 共用。`tests/subs/test_subs_mcp.py` 验证模块令牌隔离、开关、同步数据、统计口径、订阅修改版本和并发重试。
 
 `tests/todo/test_mcp.py` 通过 ASGI 入口覆盖协议发现、各工具、令牌生命周期和并发重试，并用临时 PostgreSQL 验证开关与跨库隔离。网页和 MCP 共用 `app/todo/services/categories.py`，类别生命周期测试在 SQLite 和 PostgreSQL 上校验任务、回收站与计划的关联。`tests/confcenter/test_mcp_config.py` 验证工具即时启停、输入示例、模块隔离及旧令牌升级。

@@ -90,21 +90,25 @@ def get_capabilities():
 @router.post('/hash')
 def compute_hash(body: _HashBody):
     """哈希 / HMAC：UTF-8 字节摘要（hex 小写）。带 hmac_key 时走 HMAC 模式。"""
-    _guard_size(body.text)
-    algorithm = body.algorithm.lower()
-    data = body.text.encode('utf-8')
+    return api_response(hash_text(body.text, body.algorithm, body.hmac_key))
+
+
+def hash_text(text: str, algorithm: str, hmac_key: str = '') -> dict:
+    _guard_size(text)
+    algorithm = algorithm.lower()
+    data = text.encode('utf-8')
     try:
-        if body.hmac_key:
+        if hmac_key:
             if algorithm not in HMAC_ALGORITHMS:
                 raise ParamError(message=f'HMAC 不支持 {algorithm}（可选：{" / ".join(HMAC_ALGORITHMS)}）')
-            digest = hmac.new(body.hmac_key.encode('utf-8'), data, algorithm).hexdigest()
+            digest = hmac.new(hmac_key.encode('utf-8'), data, algorithm).hexdigest()
         else:
             if algorithm not in HASH_ALGORITHMS:
                 raise ParamError(message=f'不支持的算法 {algorithm}（可选：{" / ".join(HASH_ALGORITHMS)}）')
             digest = hashlib.new(algorithm, data).hexdigest()
     except ValueError as e:      # hashlib.new 对未知算法
         raise ParamError(message=f'不支持的算法：{e}') from e
-    return api_response({'algorithm': algorithm, 'hmac': bool(body.hmac_key), 'hex': digest})
+    return {'algorithm': algorithm, 'hmac': bool(hmac_key), 'hex': digest}
 
 
 @router.post('/charset/convert')
@@ -114,25 +118,29 @@ def charset_convert(body: _CharsetBody):
     典型场景：UTF-8 内容被按 latin-1 误解码成 "ä½ å¥½"，
     提交 from=latin-1 / to=utf-8 即还原。同时返回字节 hex 供核对。
     """
-    _guard_size(body.text)
-    src, dst = body.from_charset.lower(), body.to_charset.lower()
+    return api_response(convert_text(body.text, body.from_charset, body.to_charset))
+
+
+def convert_text(text: str, from_charset: str, to_charset: str) -> dict:
+    _guard_size(text)
+    src, dst = from_charset.lower(), to_charset.lower()
     for name in (src, dst):
         if name not in CHARSETS:
             raise ParamError(message=f'不支持的字符集 {name}（可选：{" / ".join(CHARSETS)}）')
     try:
-        raw = body.text.encode(src, errors='strict')
+        raw = text.encode(src, errors='strict')
     except UnicodeEncodeError as e:
         raise ParamError(message=f'无法用 {src} 编码该文本（{e}）——换 gb18030/utf-8 试试') from e
     try:
         fixed = raw.decode(dst, errors='strict')
     except UnicodeDecodeError as e:
         raise ParamError(message=f'无法用 {dst} 解释字节（{e}）——检查方向是否反了') from e
-    return api_response({
+    return {
         'from': src, 'to': dst,
         'result': fixed,
         'hex': raw.hex(' '),          # 每字节分组的小写 hex
         'bytes': len(raw),
-    })
+    }
 
 
 @router.post('/yaml/convert')

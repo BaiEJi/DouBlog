@@ -3,6 +3,10 @@
 > 数据表：steamidler_accounts 单表　路由前缀：/api/steamidler　前端：/steamidler（门户"Steam 挂机"卡直达）　sys_name：doublog.steamidler
 > 源 Code/steam-idler（只读）；迁移规范 docs/steamidler-migration.md；后端 `app/steamidler/`；前端 `src/steamidler/`
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/steamidler`。查询保存的游戏列表、自动恢复设置和累计挂机时间。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 模块契约（app/steamidler/__init__.py）
 
 - 导出 `router`（12 端点，/api/steamidler/*，router 级 require_basic + 信封）+ `start_background(app)`（启动即恢复已保存账号的挂机 worker，TESTING 空转）；同步业务经异步包装提交 `steamidler-api` SDK 池（8 workers），完整网络与 DB 操作保守计入 runtime write admission。无 ensure_migrations（表由 create_all 直接建）。

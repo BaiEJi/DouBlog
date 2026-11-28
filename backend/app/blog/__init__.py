@@ -14,6 +14,7 @@ from .bookmarks import router as bookmarks_router
 from .bookmarks import ensure_migrations as _bookmarks_migrations
 from .services.migrations import ensure_migrations as _kb_migrations
 from .services import links as _links  # noqa: F401 注册正文投影监听
+from .mcp_api import mcp_provider as mcp_provider
 
 router = APIRouter()
 router.include_router(posts_router)

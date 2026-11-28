@@ -11,6 +11,7 @@
 """
 from .routes import router
 from .manager import stop_manager as stop_background
+from .mcp_api import mcp_provider as mcp_provider
 
 
 def drain_background(app, timeout=5.0):

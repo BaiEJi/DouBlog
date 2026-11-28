@@ -3,6 +3,10 @@
 > 数据表：无　路由前缀：/api/clash　前端：/clash（门户"Clash 代理"卡）　sys_name：doublog.clash
 > 后端 `app/clash/`；前端 `src/clash/`。**底层能力完全复用本机 clashctl**（bash 函数集）+ **mihomo 控制器 REST API**（与 clashctl 的 Web 控制台 zashboard 同源同能力），本模块只做 Web 管理迁移，不在 Python 重实现任何 clashctl 逻辑。
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/clash`。查看本机 Clash 内核和系统代理状态。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 模块契约（app/clash/__init__.py）
 
 - 导出 `router`（/api/clash/*，router 级 require_basic + 信封）；短 REST/命令通过异步包装交给 `clash-api` SDK 池（16 workers），完整操作计入 runtime write admission，取消 HTTP 等待也要等待底层操作结束后才释放；SSE 采用独立有界订阅，不占该池。无表、不进 MODULES_WITH_DB；start/stop_background 管理按需实时流停止事件，无常驻调度线程。

@@ -7,5 +7,6 @@
 - 抓题适配器(fetchers)纯网络调用不落库;导入导出(importer)JSON 无损 + Obsidian zip
 """
 from .routes import router
+from .mcp_api import mcp_provider as mcp_provider
 
 __all__ = ["router"]

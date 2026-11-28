@@ -6,6 +6,7 @@
 - 舍弃源版的 /api/db 切换、SDK 日志/异常组件、CORS、SPA 托管与 config.py(Doublog 统一提供)
 """
 from .routers import gamemap_router
+from .mcp_api import mcp_provider as mcp_provider
 
 #: 骨架契约:模块对外暴露单一 router
 router = gamemap_router

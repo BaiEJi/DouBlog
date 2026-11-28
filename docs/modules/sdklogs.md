@@ -6,6 +6,10 @@
 
 ---
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/sdklogs`。查询分系统的日志活动和告警摘要。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 功能概述
 
 sdklogs 是 **lizysdk `send_json` 的服务端**：接收任意接入 lizysdk 的进程逐条/批量 POST 上来的 JSON 日志，

@@ -3,6 +3,10 @@
 > 数据表：gamemap_* 14 表　路由前缀：/api/gamemap　前端：/gamemap（门户"剧情图谱"卡直达）　sys_name：doublog.gamemap
 > 源 C:\Users\Lizy\Desktop\Code\gamemap（只读）；迁移规范 docs/gamemap-migration.md；后端 `app/gamemap/`；前端 `src/gamemap/`
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/gamemap`。搜索游戏并按章节查询剧情摘要、事件与人物。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 模块契约（app/gamemap/__init__.py）
 
 - 导出 `router`（10 组路由，/api/gamemap/*）+ `ensure_migrations(engine)`（7 默认关系类型种子 + 附件目录 ensure，幂等）；**无 start_background**

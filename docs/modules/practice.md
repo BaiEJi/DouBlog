@@ -3,6 +3,10 @@
 > 数据表：practice_* 7 表　路由前缀：/api/practice　前端：/practice（门户"刷题 · 算法练习"卡直达）　sys_name：doublog.practice
 > 后端 `app/practice/`；前端 `src/practice/`；规范 docs/practice-spec.md；更新：2026-10-21
 
+## MCP 接入
+
+在配置中心为本模块启用工具并签发令牌，再连接 `/mcp/practice`。分页查询题库和待复习的题目，读取题目及题解。[MCP 工具清单](../../api.md#mcp-模块目录)
+
 ## 1. 模块契约（app/practice/__init__.py）
 
 - 仅导出 `router`（/api/practice/*，含聚合编辑端点）；无 start_background、无 ensure_migrations（全新表，create_all 直接建）

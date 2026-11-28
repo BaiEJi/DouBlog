@@ -1,5 +1,6 @@
 """密码库能力。"""
 from .routes import router  # noqa: F401
+from .mcp_api import mcp_provider as mcp_provider
 
 
 def ensure_migrations(engine):

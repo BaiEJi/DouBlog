@@ -5,6 +5,7 @@ from .mcp_admin import router as mcp_admin_router
 from .mcp_transport import router as mcp_transport_router
 from .routes import router as kv_router
 from .migrations import ensure_migrations
+from .mcp_api import mcp_provider as mcp_provider
 
 __all__ = ['router', 'ensure_migrations']
 
